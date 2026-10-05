@@ -68,6 +68,7 @@ c2.addEventListener("pointerdown",e=>{
     const m=window._last.m;
     if(RAMPMOVE && m.ramp){ if(!S.estudo.rampa){ const a=Math.atan2(m.ramp.dir[1],m.ramp.dir[0])*180/Math.PI; S.estudo.rampa={x:m.ramp.c[0],y:m.ramp.c[1],a} } drag={type:"ramp", start:w, x:S.estudo.rampa.x, y:S.estudo.rampa.y}; return }
     drag={type:"pan",px,py,ox:cur().ox,oy:cur().oy,moved:false,tap:w}; return }
+  if(VIEW==="tipo" && typeof comHit==="function"){ const h=comHit(px,py); if(h){ drag={type:"com",...h}; return } }   // divisões entre cômodos (src/ui/comodos.js)
   if(VIEW!=="impl"){ drag={type:"pan",px,py,ox:cur().ox,oy:cur().oy}; return }
   if(TOOL==="draw"){ if(!DRAW) DRAW=[]; if(DRAW.length>=3){ const f=w2s_(DRAW[0]); if(Math.hypot(f[0]-px,f[1]-py)<14){ finishDraw(); return } } DRAW.push(w); redraw2d(); return }
   if(TOOL==="calib"){ if(!CAL||CAL.length>=2) CAL=[]; CAL.push(w); if(CAL.length===2){ document.getElementById("calibBox").hidden=false; document.getElementById("calibDist").focus() } redraw2d(); return }
@@ -80,13 +81,15 @@ c2.addEventListener("pointermove",e=>{
   if(ptrs.has(e.pointerId)) ptrs.set(e.pointerId,pos(e));
   if(pinch && ptrs.size===2){ const [a,b]=[...ptrs.values()], d=Math.hypot(a[0]-b[0],a[1]-b[1]); zoomAt(pinch.c[0],pinch.c[1], pinch.s*d/pinch.d); return }
   const [px,py]=pos(e); HOVER=s2w_(px,py);
-  if(!drag){ if(DRAW||(CAL&&CAL.length===1)) redraw2d(); return }
+  if(!drag){ if(DRAW||(CAL&&CAL.length===1)) redraw2d(); else if(VIEW==="tipo" && typeof comHover==="function" && e.pointerType!=="touch") comHover(px,py); return }
+  if(drag.type==="com"){ comDragMove(drag, s2w_(px,py)); return }
   if(drag.type==="pan"){ if(Math.hypot(px-drag.px,py-drag.py)>4) drag.moved=true; const V=cur(); V.ox=drag.ox+px-drag.px; V.oy=drag.oy+py-drag.py; redraw2d() }
   if(drag.type==="v"){ drag.arr[drag.i]=s2w_(px,py); update({fast:true}) }
   if(drag.type==="ramp"){ const w=s2w_(px,py); S.estudo.rampa.x=drag.x+w[0]-drag.start[0]; S.estudo.rampa.y=drag.y+w[1]-drag.start[1]; update({fast:true}) }
   if(drag.type==="img"){ const w=s2w_(px,py); BG.x=drag.bx+w[0]-drag.start[0]; BG.y=drag.by+w[1]-drag.start[1]; redraw2d() }
 });
 const endPtr=e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null;
+  if(drag && drag.type==="com"){ drag=null; comDragEnd(); return }
   if(drag && (VIEW==="gar"||VIEW==="andar") && drag.tap && !drag.moved && !RAMPMOVE) toggleVaga(drag.tap);
   if(drag&&(drag.type==="v"||drag.type==="ramp")){ update(); if(TAB==="terreno") renderTabLive(window._last.m, window._last.f) } drag=null };
 c2.addEventListener("pointerup",endPtr); c2.addEventListener("pointercancel",endPtr);
@@ -111,7 +114,7 @@ function hintFor(){ const h=document.getElementById("hint");
   const nomes={lote:"do lote","entorno":"do volume vizinho","lim:emb":"do limite do embasamento","lim:tor":"do limite das torres","lim:sub":"do limite do subsolo"};
   const msg = VIEW==="impl" ? {edit:"Arraste os vértices (lote, limites e entorno). Toque no ponto azul no meio de um lado do lote para criar um vértice.", draw:`Clique nos cantos ${nomes[DRAWT]||""}. Clique no primeiro ponto (amarelo) para fechar.`, img:"Arraste para posicionar a imagem de fundo.", calib:"Clique em dois pontos de distância conhecida (ex.: a régua de escala do mapa)."}[TOOL]
     : VIEW==="gar" ? (RAMPMOVE? "Arraste para mover a rampa. As vagas se reorganizam ao soltar." : "Cinza: onde o carro consegue circular. Linha amarela: rota desde a rampa. Hachura: patamar sem vagas. Toque numa vaga para tirá-la ou devolvê-la.")
-    : VIEW==="tipo" ? "Núcleo com escada enclausurada, antecâmara e elevadores. Ajuste tipo de escada e posição na etapa Projeto."
+    : VIEW==="tipo" ? (S.comodos&&S.comodos.on? "Arraste as divisões entre os cômodos (aparecem ao passar sobre uma unidade). Vale para todas as unidades da tipologia." : "Núcleo com escada enclausurada, antecâmara e elevadores. Ajuste tipo de escada e posição na etapa Projeto.")
     : VIEW==="clima" ? (S.clima.modo==="vento"? "Simulação 2D do vento numa fatia horizontal. Vermelho: aceleração; azul: calmaria/esteira." : "Horas de sol direto no chão para a data escolhida, com sombras do prédio e do entorno.") : "";
   h.textContent=msg; h.hidden = VIEW==="3d" || !msg || !!HINTSEEN[VIEW+TOOL] }
 document.getElementById("toolSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; setTool(b.dataset.t, b.dataset.dt) });
@@ -206,13 +209,13 @@ function planLegend(){
   let h="";
   const a = VIEW==="andar"? floorsList(window._last.m).find(f=>f.key===ANDAR) : null;
   const lzLeg = ()=> sw("var(--lz-c)","lazer coberto")+sw("var(--lz-agua)","piscina")+sw("var(--lz-deck)","lazer descoberto")+sw("var(--c-hall)","hall dos elevadores","border:1px dashed var(--ink)");
-  const garLeg = ()=> sw("var(--m-gar)","vaga comum")+sw("var(--accent)","vaga PCD")+sw("var(--c-circ)","faixa de transferência PCD e corredor transversal")+sw("var(--ok)","vaga para idoso")+sw("transparent","vaga removida","border:1px dashed var(--bad)")+sw("var(--ink)","núcleos das torres e pilares")+sw("var(--mark)","rampa (seta = descida)")+ln("var(--bad)","caminho do carro",true);
+  const garLeg = ()=> sw("var(--m-gar)","vaga comum")+sw("var(--accent)","vaga PCD")+sw("var(--c-circ)","faixa de transferência PCD e corredor transversal")+sw("var(--ok)","vaga para idoso")+sw("transparent","vaga removida","border:1px dashed var(--bad)")+sw("var(--ink)","núcleos das torres e pilares")+sw("var(--mark)","rampa (seta = descida)")+ln("var(--bad)","caminho do carro",true)+(typeof garLegExtra==="function"? garLegExtra(sw) : "");
   const tipoLeg = ()=> S.produto.mix.map((u,i)=>sw(`var(--u${i%5+1})`,u.nome)).join("")+sw("var(--c-sac)","sacada")+sw("var(--surface)","corredor e hall")+sw("var(--c-esc)","escada")+sw("var(--c-ant)","antecâmara / hall da escada")+sw("var(--c-duto)","dutos / pressurização")+sw("var(--c-balc)","balcão aberto")+sw("var(--c-elev)","elevadores")+sw("var(--c-shaft)","shafts")+sw("var(--c-hserv)","hall de serviço")+sw("var(--c-lixo)","lixo / DML");
   if(VIEW==="impl") h=sw("var(--m-lote)","lote")+sw("var(--m-loja)","lojas no térreo")+sw("var(--m-ter)","hall e lazer do térreo")+sw("var(--m-gar)","garagem do térreo")+sw("var(--m-tipo)","projeção das torres")+ln("var(--m-env)","limite máximo das torres (recuos)",true)+ln("var(--muted)","subsolo",true)+ln("var(--mark)","frente principal")+ln("var(--accent)","acesso de pedestres")+ln("var(--bad)","acesso de veículos")+sw("var(--muted)","entorno");
   else if((VIEW==="gar" && FLOOR==="ter") || (a&&a.tipo==="ter")) h=sw("var(--m-loja)","lojas")+sw("var(--m-ter)","hall social e lazer")+sw("var(--c-drive)","acesso de veículos")+lzLeg()+garLeg();
   else if(VIEW==="gar" || (a&&(a.tipo==="sub"||a.tipo==="ac"))) h=sw("var(--surface)","área do pavimento")+sw("var(--c-hall)","hall dos elevadores","border:1px dashed var(--ink)")+garLeg();
   else if(a&&(a.tipo==="lazemb"||a.tipo==="pavlaz"||a.tipo==="roof")) h=lzLeg()+sw("var(--c-esc)","escada")+sw("var(--c-elev)","elevadores");
-  else if(VIEW==="tipo" || (a&&a.tipo==="tipo")) h=tipoLeg()+sw("var(--m-cob)","coberturas");
+  else if(VIEW==="tipo" || (a&&a.tipo==="tipo")) h=tipoLeg()+sw("var(--m-cob)","coberturas")+(typeof comLeg==="function"? comLeg(sw) : "");
   else if(a) h=sw("var(--m-cob)","duplex / cobertura")+sw("var(--m-gar)","ático técnico")+sw("var(--c-circ)","laje do embasamento");
   el.innerHTML=`<b>Legenda</b>`+h; el.hidden = !h || !LEGON; if(b) b.setAttribute("aria-pressed",LEGON);
 }

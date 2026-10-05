@@ -11,19 +11,31 @@ Publicado como Artifact no claude.ai: https://claude.ai/artifact/4wBW5QrbVhLrqDQ
 - Mostrar só o que está ativo: configurações de uma visualização aparecem apenas quando ela está ligada.
 - Não editar `index.html` à mão — ele é gerado.
 
-## Build
+## Build, testes e desenvolvimento (protótipo local)
 
 ```
-python build.py        # concatena src/ → index.html e test.html
+npm install                       # uma vez (vite, vitest, playwright, three, typescript)
+npx playwright install chromium-headless-shell   # uma vez, para o teste visual
+npm run dev                       # http://localhost:5173 — monta src/ a cada pedido e recarrega ao salvar
+npm run bundle                    # src/ → index.html e test.html (mesmo que `python build.py`)
+npm run build                     # + cópia em dist/
+npm test                          # Vitest: funções puras + estudos de referência (~1 min)
+npm run screens -- all            # Playwright: 7 etapas e sub-abas, desktop+celular, claro+escuro → shots/
+npm run typecheck                 # tsc sobre os scripts globais (arquivos com // @ts-check)
 ```
 
-- `index.html` é o que se publica (o Artifact adiciona o esqueleto HTML).
-- `test.html` é a mesma coisa com `<html><body>` para abrir no navegador ou no Playwright.
-- Bibliotecas: three.js r128 + OrbitControls (jsDelivr) no carregamento; jsPDF, JSZip e pdf.js carregados sob demanda (cdnjs).
-- Teste visual: `npm i -D playwright three@0.128.0` e `node tools/screens.js d` (ou `m` para celular).
+- O empacotador é `tools/bundle.mjs` (o `build.py` só o chama; o Vite usa o mesmo). `index.html` é o que se publica; `test.html` tem `<html><body>` para o navegador/Playwright.
+- Ordem de concatenação (tudo global, `"use strict"`): núcleo de cálculo `state, hooks, geom, layout, garagem, model, programa, finance, optim, clima` → **`src/calc/*.js`** (alfabética) → núcleo de interface `plan2d, view3d, ui, steps, views, ai, export, wind3d` → **`src/ui/*.js`** (alfabética) → `main`.
+- O código de cálculo (núcleo + `src/calc`) vai também como texto em `<script type="text/plain" id="calcSrc">`: é dele que nasce o Web Worker e é ele que os testes carregam no Node (`tests/harness.js`). Por isso **`src/calc` não pode tocar em DOM** no nível superior.
+- Bibliotecas: three.js r128 + OrbitControls (jsDelivr) no carregamento; jsPDF, JSZip, pdf.js (cdnjs) e MapLibre (unpkg) sob demanda.
+- Testes: `tests/*.test.js` (Vitest). Estudos de referência em `tests/cenarios/*.json` — se uma mudança de número for intencional, `node tools/gera-cenarios.mjs` e confira o diff. Testes de ponta a ponta: `tools/teste-plataforma.cjs`, `tools/apresentacao.cjs` (`--html <build>/test.html`).
+- Git local (sem remoto). Regras para trabalho em paralelo com agentes: `docs/AGENTES.md`. Plano de backend (Supabase): `docs/BACKEND.md` e `docs/supabase/schema.sql`.
 
-Ordem de concatenação (importa — tudo é global, `"use strict"`):
-`state, geom, layout, garagem, model, programa, finance, optim, clima, plan2d, view3d, ui, steps, views, ai, export, wind3d, main`
+### Pontos de extensão (`src/hooks.js`) — recursos novos entram por aqui
+- `extendDEF("chave", padrão)` cria `S.chave` com migração. `HOOK.compute` (fim de `compute`; `opt.quick` = otimizador, pule o pesado), `HOOK.finance`, `HOOK.draw2d` (`ctx={W,H,V,mode,m,opt,w2s,s2w}`), `HOOK.draw3d` (`grp`, `m`), `HOOK.pdf` (páginas extras).
+- `m.custosExtra.push({k,nome,sistema,valor})` soma à obra (o orçamento agrupa por `sistema`); `m.vgvUnidades` substitui a receita do mix.
+- `addCard(etapa,{key,order,sub,when,html,live,after})` = card extra no inspetor; `ACT.x` / `FX.x` = ações e efeitos novos.
+- Um `HOOK.compute` registrado em `src/ui/` NÃO roda no Worker — cálculo que muda `m` mora em `src/calc/`.
 
 ## Arquitetura (src/)
 
@@ -48,6 +60,33 @@ Ordem de concatenação (importa — tudo é global, `"use strict"`):
 | `export.js` | PDF, DXF + IFC (zip), JSON (`downloads`) |
 | `wind3d.js` | túnel de vento 3D: LBM D3Q19 + LES num Web Worker, linhas de corrente animadas, fumaça (coluna/cortina/ponto), partículas, setas, plano de cor, pressão (Cp), sonda |
 | `main.js` | inicialização |
+| `hooks.js` | registros de extensão: `HOOK`, `extendDEF`, `addCard/cardsFor` |
+
+### Módulos de recursos (`src/calc` = cálculo puro · `src/ui` = interface)
+
+| módulo | item | papel |
+|---|---|---|
+| `ui/calcworker.js` | 0.3 | Web Worker criado do `#calcSrc`. `update()` mostra um cálculo barato (`calcBarato`, reaproveita `lastGar`) e pede o completo (`calcPedir`); pedidos numerados, o mais novo vence; `showModel(m)` aplica; `calcPronto()` espera o completo (PDF, zip, versões). Otimizador e melhor acesso num Worker "job" cancelável. Falhou → volta à página (`localStorage gabarito.worker=false` desliga). `calc/serial.js` deixa o `m` clonável |
+| `ui/historico.js` + `calc/histdiff.js` | 0.4 | desfazer/refazer por diferenças JSON (200 passos, um por mudança confirmada: `save()` → `histTouch()`), Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, `#undoBtn/#redoBtn` |
+| `ui/repo.js` + `ui/estudos.js` | 4.1 local | `Repo.estudos/versoes/regras` (assíncrono, IndexedDB; troca por Supabase em `docs/BACKEND.md`). Vários estudos (cópia de trabalho em `gabarito.v2`, id em `gabarito.estudo`), versões automáticas (5 min) e nomeadas, restaurar exato, comparar |
+| `calc/unidades.js` + `ui/vendas.js` | 1.1 | `m.unidades[]` (torre/andar/final, tipologia, área, fachadas, `sol{inverno,equinocio,verao,media}`, `vista`, `premios`, `preco`); sol por raios a cada 15 min contra `prisms()`; cache por geometria. `S.venda.modo` "medio" (padrão) \| "unidade" (→ `m.vgvUnidades`). `unidadesSolMedio(st,m)` rápido p/ otimizador. Tabela ordenável, CSV/XLSX, 3D e planta tipo coloridos, cartão ao toque, página no PDF |
+| `calc/vizinhanca.js` + `ui/vizinhanca.js` | 1.4 | `m.viz` com `S.vizinhanca.on`: perda de sol no entorno (com/sem o prédio, dia 21 de cada mês), mapa de horas perdidas, animação anual, PDF |
+| `calc/pareto.js` + `ui/pareto.js` (+ `optim.js`) | 1.3 | `otimizar(opts,onProg?,onDone?)` puro, devolve Promise; guarda lucro, margem, TIR, vagas e sol de cada combinação; fronteira de Pareto conferida com a garagem; gráfico lucro × sol com filtros e "aplicar" |
+| `calc/comodos.js` + `ui/comodos.js` | 1.2 | cômodos das unidades: modelos `COM_MODELOS` (studio…3d1s), faixas fachada/circulação/molhada, variações pontuadas, validação (mínimos `S.comodos.min`, janela ≥ 1/6), desenho (paredes, portas, janelas, mobiliário), arrastar divisões, variações salvas por tipologia, DXF por camada, IfcWall/IfcSpace, quadro no PDF |
+| `garagem.js` (ampliado) | 2.1 | `estudo.rampaTipo`: reta, alternada, `helicoidal`, `L`, `elevador` (cabine 2,7×5,8, fila M/D/1). Vagas presas, motos, bicicletário, recarga EV perto do quadro; `m.quadroVagas`; opções em `S.garagem` (tudo desligado por padrão) |
+| `calc/estrutura.js` + `ui/estrutura.js` | 2.2 | malha de pilares da torre testada em cada garagem; desalinhados viram transição (custo em `custosExtra`, sistema "estrutura"); `estruturaMalhas(st,m)` compara malhas. `S.estrutura.on` (desligado) |
+| `calc/forma.js` + `ui/forma.js` | 2.4 | recuos progressivos por faixa de altura, torres escalonadas (`m.T[i].faixas`, `m.env`), embasamento máximo, soleira, plano de aeródromo (`m.hLim`). `S.forma.on` (desligado) |
+| `calc/topografia.js` + `ui/topografia.js` | 2.3 | importação CSV/KML/DXF, Delaunay próprio, corte/aterro exato, cota ótima do térreo, contenção e arrimo, lençol freático, curvas de nível e terreno 3D. `S.topo.on` substitui o desnível simples (`m.terra` → `m.terraSimples`) |
+| `calc/geo.js` + `ui/mapa.js` | 4.3 | lat/lon ↔ metros locais, UTM SIRGAS, GeoJSON da prefeitura, Overpass → `S.entorno`. Mapa MapLibre (satélite Esri / OSM) sob demanda — o Overpass exige o app servido por http (`npm run dev`) |
+| `calc/normas.js` + `ui/normas.js` | 2.5 | checklist PRELIMINAR (IN 09 CBMSC/NBR 9077, NBR 9050): tipo e nº de escadas, larguras, distância a percorrer pelo caminho real no tipo, elevador de emergência, vagas PCD/idoso, rota acessível. Só leitura |
+| `calc/cidades.js` | — | biblioteca de regras por cidade/zona (valores ILUSTRATIVOS, "conferir na lei"), `cidadeAplicar/cidadeDesfazer/cidadeSalvarLocal`, `S.regrasRef` |
+| `calc/orcamento.js` + `calc/cub.js` | 3.1 | `S.orc.modo` "cub" (padrão) \| "param": custo por sistema com direcionadores do modelo, agrupa `custosExtra`; tabela CUB por UF × padrão (ilustrativa, importável CSV/JSON) |
+| `calc/fluxo.js` | 3.2 | curva de obra (senoidal padrão, S, por sistema), recebimento detalhado (ato, mensais, semestrais, chaves, repasse, INCC→IPCA, distratos), cenários, tornado, Monte Carlo com semente. Estado `S.flx` |
+| `calc/terreno.js` | 3.3 | compra à vista/parcelada, permuta física/financeira, SPE: fluxo e VPL dos dois lados e ponto de indiferença (`S.terAlt`) |
+| `ui/financeiro.js` | 3.x | cards da Viabilidade e páginas do PDF dos itens 3.1–3.3 |
+| `calc/verlink.js` + `ui/apresentacao.js` + `ui/marca.js` | 4.2 | modo apresentação (`AP_PASSOS`), link somente leitura `#ver=` (deflate + base64url; não grava nada no navegador de quem abre), marca no PDF (`S.marca`, logo em `gabarito.marca.logo`) |
+
+Padrões: todo recurso que muda números vem desligado; os 5 estudos de referência dão os mesmos resultados de antes.
 
 ### Etapas (trilho)
 
@@ -77,6 +116,6 @@ O listener delegado grava em `S`, roda o efeito (`upd` recalcula tudo; `cfdLines
 
 ## Ideias em aberto
 
-- Layout interno das unidades (paredes, cômodos) — hoje são blocos com área.
-- Escada mais profunda quando o núcleo vai até a fachada (hoje ocupa toda a profundidade).
-- Mais cidades com regras pré-cadastradas; base de CUB por estado.
+- Andamento do plano e pendências por item: `PLANO.md` (seção "Andamento").
+- Migração real para módulos ES/TypeScript (item 0.1 completo) fica para o MVP, junto com o backend.
+- Dados que dependem do Luiz: tabela de vendas real (calibrar prêmios), planilha de viabilidade real, revisão das normas e das regras das cidades, coeficientes de custo e CUB atuais.

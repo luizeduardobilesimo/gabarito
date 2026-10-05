@@ -15,14 +15,16 @@ STEP_R.terreno = ()=>{
       <div class="row"><button class="btn pri" data-act="newDraw">Desenhar do zero</button><button class="btn" data-act="rmVert">Remover último vértice</button></div>`,
     ret: `<div class="kv three"><div class="fld"><label class="fl" for="rf">Frente</label><div class="inp"><input id="rf" type="number" value="20"><em>m</em></div></div><div class="fld"><label class="fl" for="rp">Fundo</label><div class="inp"><input id="rp" type="number" value="40"><em>m</em></div></div><div class="fld"><span class="fl">&nbsp;</span><button class="btn pri" data-act="rect">Criar</button></div></div>`,
     coord: `<p class="note">Cole um KML do Google Earth ou pontos “latitude, longitude”, um por linha. Latitude e norte são ajustados sozinhos.</p><textarea id="coords" placeholder="-28.6775, -49.3697&#10;-28.6777, -49.3694&#10;…"></textarea><div class="row"><button class="btn pri" data-act="coords">Importar pontos</button></div>`,
-    img: `<p class="note">Print do Google Maps com a régua de escala visível. Depois de enviar: <b>Calibrar</b> (dois pontos e a distância real) e desenhe o lote por cima.</p><input type="file" id="bgFile" accept="image/*" class="txt">${BG?`<div class="sl"><div class="slh"><label for="bgOp">Opacidade da imagem</label></div><input id="bgOp" type="range" min="0.1" max="1" step="0.05" value="${BG.op}"></div>`:""}`
+    img: `<p class="note">Print do Google Maps com a régua de escala visível. Depois de enviar: <b>Calibrar</b> (dois pontos e a distância real) e desenhe o lote por cima.</p><input type="file" id="bgFile" accept="image/*" class="txt">${BG?`<div class="sl"><div class="slh"><label for="bgOp">Opacidade da imagem</label></div><input id="bgOp" type="range" min="0.1" max="1" step="0.05" value="${BG.op}"></div>`:""}`,
+    mapa: typeof mapaFormHTML==="function" ? mapaFormHTML() : ""
   };
   const lim=[["emb","Embasamento"],["tor","Torres"],["sub","Subsolo"]];
-  return { body:
-    CARD("Contorno do lote", `<div class="seg full">${[["desenhar","Desenhar"],["ret","Retângulo"],["coord","Coordenadas"],["img","Imagem"]].map(([k,l])=>`<button type="button" data-act="tmeth" data-v="${k}" aria-pressed="${TMETH===k}">${l}</button>`).join("")}</div>${forms[TMETH]}`) +
+  return { after: ()=>{ if(typeof topoAfter==="function") topoAfter(); if(typeof mapaAfter==="function") mapaAfter() }, body:
+    CARD("Contorno do lote", `<div class="seg full">${[["desenhar","Desenhar"],["ret","Retângulo"],["coord","Coordenadas"],["img","Imagem"],["mapa","Mapa"]].map(([k,l])=>`<button type="button" data-act="tmeth" data-v="${k}" aria-pressed="${TMETH===k}" style="padding:5px 4px">${l}</button>`).join("")}</div>${forms[TMETH]}`) +
     CARD("Lados", `<div class="list" id="edges"></div><label class="sw"><input type="checkbox" data-act="reclado" ${RECLADO?"checked":""}><span class="tg"></span><span>Recuos diferentes por lado</span></label>`, {aside:`<span id="loteArea"></span>`}) +
     CARD("Frente e acessos", `<p class="note">A frente principal (amarela) recebe lojas, hall e acessos. Posição medida ao longo dela.</p>${SLD("lote.acessoPed","Acesso de pedestres",0.05,0.95,0.01,"%",{pct:true})}${SLD("lote.acessoVei","Acesso de veículos",0.05,0.95,0.01,"%",{pct:true,sub:""})}`) +
-    CARD("Localização e topografia", KV(NUM("lote.norte","Norte","°",{step:1,help:"Rotação do norte em relação ao topo da planta"})+NUM("lote.lat","Latitude","°",{step:0.01,sub:"Criciúma −28,68"})+NUM("lote.desnivel","Desnível frente→fundos","m",{step:0.1})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1}))+`<div class="fsub" id="sub-terra"></div>`, {details:false, key:"topo"}) +
+    CARD("Localização", KV(NUM("lote.norte","Norte","°",{step:1,help:"Rotação do norte em relação ao topo da planta"})+NUM("lote.lat","Latitude","°",{step:0.0001,sub:"Criciúma −28,68",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas"})+NUM("lote.lon","Longitude","°",{step:0.0001,help:"Origem do lote (0,0): usada pelo entorno do OpenStreetMap e pelos levantamentos em lat/lon ou UTM"})), {details:false, key:"topo"}) +
+    (typeof topoCardHTML==="function" ? topoCardHTML() : KV(NUM("lote.desnivel","Desnível frente→fundos","m",{step:0.1})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1}))+`<div class="fsub" id="sub-terra"></div>`) +
     CARD("Limites especiais", `<p class="note">APP, servidão ou recuo escalonado: desenhe o limite edificável. Ele substitui o recuo calculado.</p><div class="list">${lim.map(([k,l])=>{ const has=S.custom[k]&&S.custom[k].length; return `<div class="li"><span class="dot ${has?"ok":""}"></span><span class="tt">${l}</span><span class="row" style="gap:4px"><button class="btn sm" data-act="lim" data-k="${k}">${has?"Redesenhar":"Desenhar"}</button>${has?`<button class="btn sm ghost" data-act="limx" data-k="${k}">Limpar</button>`:""}</span></div>` }).join("")}</div>`, {details:false, key:"lim"})
   };
 };
@@ -34,7 +36,7 @@ STEP_LIVE.terreno = (m)=>{
       ${RECLADO?`<span class="recs"><div class="inp"><input type="number" step="0.25" data-rec="${i}" data-rk="e" value="${rp(i).e??""}" placeholder="${nf(fr?S.regras.recFrente:S.regras.recEmb,2)}" aria-label="Recuo do embasamento"><em>emb.</em></div><div class="inp"><input type="number" step="0.25" data-rec="${i}" data-rk="t" value="${rp(i).t??""}" placeholder="${nf(fr?S.regras.recFrente:m.afast,2)}" aria-label="Recuo da torre"><em>torre</em></div></span>`:""}</div>` }).join(""));
   const la=document.getElementById("loteArea"); if(la) la.textContent=`${m2(m.A)} · perímetro ${nf(G.perimeter(S.lote.pts),1)} m`;
   { const T=m.ter||{}; setSub("lote.acessoVei", T.drive0? `${T.drive0.dv? nf(T.drive0.dv[1]-T.drive0.dv[0],1)+" m de largura (rampas"+(T.lanes?" + faixa da garagem":"")+")" : ""}${T.veiShift? " · ajustado "+nf(Math.abs(T.veiShift),1)+" m para não passar pelos núcleos":""}` : "") }
-  setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`);
+  if(typeof topoLive==="function") topoLive(m); else setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`);
 };
 Object.assign(ACT,{
   tmeth: b=>{ TMETH=b.dataset.v; renderTab(); if(TMETH!=="desenhar" && VIEW!=="impl") setView("impl") },
@@ -65,11 +67,12 @@ STEP_R.regras = ()=>{
   const cid=LS.get("gabarito.cidades")||[];
   return { body:
     `<div class="inp" style="background:var(--surface)"><svg viewBox="0 0 24 24" width="16" height="16" style="margin-left:10px;flex:none;fill:none;stroke:var(--muted);stroke-width:1.8"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg><input class="t" id="qFind" placeholder="Buscar parâmetro — recuo, CA, vaga, pé-direito…" aria-label="Buscar parâmetro" autocomplete="off"></div>` +
-    CARD("Cidade e zona", TXT("regras.cidade","Cidade / zona")+`<div class="row" style="flex-wrap:nowrap"><select class="sel" id="cidSel" aria-label="Regras salvas"><option value="">Carregar regras salvas…</option>${cid.map((c,i)=>`<option value="${i}">${esc(c.nome)}</option>`).join("")}</select><button class="btn" data-act="cidSave">Salvar</button></div>`) +
+    CARD("Cidade e zona", typeof cidadesCardHTML==="function"? cidadesCardHTML() : TXT("regras.cidade","Cidade / zona")+`<div class="row" style="flex-wrap:nowrap"><select class="sel" id="cidSel" aria-label="Regras salvas"><option value="">Carregar regras salvas…</option>${cid.map((c,i)=>`<option value="${i}">${esc(c.nome)}</option>`).join("")}</select><button class="btn" data-act="cidSave">Salvar</button></div>`) +
     CARD("Ler o plano diretor com IA", `<p class="note">Envie o PDF da lei de uso do solo (ou cole o trecho) e diga a zona. O Claude propõe os parâmetros para você revisar antes de aplicar.</p>
       <input class="txt" id="aiZona" placeholder="Ex.: Criciúma, ZR-4"><div class="row"><input type="file" id="aiPdf" accept="application/pdf" class="txt" style="flex:1"><span class="note" id="aiPdfInfo"></span></div>
       <textarea id="aiTxt" placeholder="…ou cole aqui a tabela de parâmetros da zona"></textarea><div class="row"><button class="btn pri" data-act="aiGo" id="aiGo">Ler regras</button><span class="note" id="aiStatus"></span></div><div id="aiResult"></div>`, {details:false, key:"ai", aside:"PDF ou texto"}) +
     CARD("Conformidade do estudo", `<div class="use" id="compl"></div>`, {aside:`<span id="complTxt"></span>`}) +
+    (typeof normasCardHTML==="function"? normasCardHTML() : "") +
     CARD("Potencial construtivo", KV(
       NUM("regras.caBas","CA básico","×",{step:0.05,q:"coeficiente aproveitamento"})+NUM("regras.caMax","CA máximo","×",{step:0.05,q:"coeficiente outorga"})+
       NUM("regras.outorgaRS","Outorga onerosa","R$/m²",{step:10,wide:true})+
@@ -77,8 +80,8 @@ STEP_R.regras = ()=>{
       NUM("regras.permeab","Permeabilidade","%",{pct:true,step:1})+NUM("regras.hMax","Altura máxima","m",{step:0.5,q:"gabarito"})), {filter:true}) +
     CARD("Recuos e afastamentos", KV(
       NUM("regras.recFrente","Recuo frontal","m",{step:0.25})+NUM("regras.recEmb","Lateral/fundos emb.","m",{step:0.25,q:"recuo embasamento"})+
-      NUM("regras.afMin","Afastamento mín. torre","m",{step:0.25})+NUM("regras.afDiv","Torre às divisas: H ÷","",{step:0.5,q:"afastamento altura"})+
-      NUM("regras.afTorresDiv","Entre torres: H ÷","",{step:0.5,q:"afastamento"})+NUM("regras.recSub","Recuo do subsolo","m",{step:0.25})), {filter:true}) +
+      (S.forma && S.forma.on && S.forma.prog ? "" : NUM("regras.afMin","Afastamento mín. torre","m",{step:0.25})+NUM("regras.afDiv","Torre às divisas: H ÷","",{step:0.5,q:"afastamento altura"}))+
+      NUM("regras.afTorresDiv","Entre torres: H ÷","",{step:0.5,q:"afastamento"})+NUM("regras.recSub","Recuo do subsolo","m",{step:0.25})) + (typeof formaRecuosHTML==="function"? formaRecuosHTML() : ""), {filter:true}) +
     CARD("Vagas, unidades e não computáveis", KV(
       NUM("regras.vagasApto","Vagas por unidade","vg",{step:0.25,q:"garagem"})+NUM("regras.m2LojaVaga","Loja: 1 vaga a cada","m²",{step:5})+
       NUM("regras.m2Vaga","Área bruta por vaga","m²",{step:0.5,q:"estimativa"})+NUM("regras.aptoMin","Unidade mínima","m²",{step:1,q:"apartamento área"})+
@@ -91,8 +94,9 @@ STEP_R.regras = ()=>{
     `<p class="note">Valores de exemplo — confira no plano diretor / LUOS da cidade e salve para reaproveitar.</p>`
   };
 };
-STEP_LIVE.regras = (m)=>{
+STEP_LIVE.regras = (m,f,fast)=>{
   const R=S.regras, s=status(m,S), tor=m.T.reduce((a,t)=>a+t.A,0);
+  if(typeof normasLive==="function") normasLive(m, fast);
   const rows=[
     ["CA", m.CA/Math.max(1e-9,R.caMax), `${nf(m.CA,2)} / ${nf(R.caMax,2)}`, s.ca],
     ["Ocupação emb.", m.TO/Math.max(1e-9,R.toEmb), `${pct(m.TO,0)} / ${pct(R.toEmb,0)}`, m.TO>R.toEmb+1e-6?"bad":"ok"],
@@ -100,7 +104,8 @@ STEP_LIVE.regras = (m)=>{
     ["Altura", m.H/Math.max(1e-9,R.hMax), `${nf(m.H,1)} / ${nf(R.hMax,0)} m`, s.h],
     ["Permeável", Math.min(1,m.perm/Math.max(1e-9,R.permeab||1e-9)), `${pct(m.perm,0)} / ${pct(R.permeab,0)}`, s.perm],
     ["Vagas", m.vagas/Math.max(1,m.vagasReq), `${m.vagas} / ${m.vagasReq}`, s.vg],
-    ["Menor unidade", Math.min(1,m.minApto/Math.max(1,R.aptoMin)), `${nf(m.minApto,0)} / ${nf(R.aptoMin,0)} m²`, s.apto]];
+    ["Menor unidade", Math.min(1,m.minApto/Math.max(1,R.aptoMin)), `${nf(m.minApto,0)} / ${nf(R.aptoMin,0)} m²`, s.apto],
+    ...(typeof formaRows==="function"? formaRows(m) : [])];
   setHTML("compl", rows.map(r=>useRow(r[0],r[1],r[2],r[3]==="ok"?"ok":r[3])).join(""));
   const bad=Object.values(s).filter(x=>x==="bad").length; const ct=document.getElementById("complTxt"); if(ct) ct.innerHTML = bad? `<span style="color:var(--bad)">${bad} item(ns) fora</span>` : `<span style="color:var(--ok)">tudo dentro</span>`;
   setSub("regras.caMax",`máx. ${m2(R.caMax*m.A)} · usado ${m2(m.comp)}`);
@@ -111,7 +116,7 @@ STEP_LIVE.regras = (m)=>{
   setSub("regras.hMax",`estudo ${nf(m.H,1)} m`); setSub("regras.m2Vaga",`estim. ${m.vagasEst} · layout ${m.vagasLay??"—"}`);
 };
 Object.assign(ACT,{
-  cidSave: ()=>{ const l=LS.get("gabarito.cidades")||[]; const nome=S.regras.cidade||"Sem nome"; const i=l.findIndex(c=>c.nome===nome); const r=clone(S.regras); if(i>=0) l[i]={nome,regras:r}; else l.push({nome,regras:r}); LS.set("gabarito.cidades",l); toast("Regras salvas: "+nome); renderTab() },
+  // cidSave / cidUndo e o seletor "Aplicar regras de…" ficam em src/ui/normas.js (biblioteca em src/calc/cidades.js)
   aiGo: ()=>aiRun(),
 });
 
@@ -123,8 +128,9 @@ STEP_R.produto = ()=>{
     `<section class="card hero"><div class="ch"><h2>Potencial do terreno</h2><span class="aside" id="potLim"></span></div><div class="cb" id="pot"></div></section>` +
     CARD("Gerar a melhor viabilidade", `<p class="note">Testa número de torres, tipologias, unidades por andar, subsolos e garagens — sempre dentro das regras — e ordena pelo objetivo.</p>
       ${ROW("Maximizar", SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","TIR"],["vpl","VPL"]],{fx:"save",rr:false}))}
-      <div class="chips">${[["torres","Nº de torres"],["tipologias","Tipologias"],["unidades","Unidades/andar"]].map(([k,l])=>`<button type="button" class="chip" data-act="otk" data-k="${k}" aria-pressed="${!!O[k]}">${l}</button>`).join("")}</div>
+      <div class="chips">${[["torres","Nº de torres"],["tipologias","Tipologias"],["unidades","Unidades/andar"]].map(([k,l])=>`<button type="button" class="chip" data-act="otk" data-k="${k}" aria-pressed="${!!O[k]}">${l}</button>`).join("")}${typeof paretoChipsHTML==="function"? paretoChipsHTML() : ""}</div>
       <button class="btn pri full" data-act="otim" ${OTRUN?"disabled":""}>${OTRUN?"Analisando…":"Gerar opções"}</button><div class="prog" id="otProg" ${OTRUN?"":"hidden"}><i style="width:0"></i></div><div class="list" id="otRes">${OTIM? otimHTML() : ""}</div>`, {id:"otCard"}) +
+    (typeof paretoCardHTML==="function"? paretoCardHTML() : "") +
     CARD("Torres", `<div class="list" id="torres"></div><div class="row"><button class="btn" data-act="addTorre" ${P.torres.length>=4?"disabled":""}>+ Torre</button><button class="btn" data-act="maxPav">Máximo de pavimentos</button></div>${P.torres.length>1? ROW("Disposição",SEG("produto.torreEixo",[["long","ao longo do lote"],["trans","transversais"]])) : ""}`) +
     CARD("Mix do andar tipo", `<p class="note">Unidades por andar tipo — iguais em todas as torres. O tamanho do andar sai do mix ÷ eficiência.</p><div class="list" id="mix"></div>
       <div class="row sb"><button class="btn sm" data-act="addMix" ${P.mix.length>=5?"disabled":""}>+ Tipologia</button><span class="note" id="mixSum"></span></div>
@@ -152,6 +158,7 @@ function otimHTML(){
 }
 STEP_LIVE.produto = (m,f)=>{
   const P=S.produto, R=S.regras, po=potencial(S,m);
+  if(typeof paretoLive==="function") paretoLive();
   const lim=document.getElementById("potLim"); if(lim) lim.textContent = po.limita==="ca"? "limite: coeficiente" : "limite: altura";
   setHTML("pot", `<div class="mets"><div class="met big"><div class="l">Privativo possível</div><div class="v">${m2(po.priv)}</div><div class="s">≈ ${po.un} unidades do mix · VGV ≈ ${mi(po.vgv)}</div></div>
       <div class="met"><div class="l">Computável máx.</div><div class="v">${m2(po.compMax)}</div><div class="s">CA ${nf(R.caMax,1)} × ${m2(m.A)}</div></div>
@@ -215,23 +222,34 @@ STEP_R.viab = ()=>{
   const F=S.fin;
   return { body:
     `<section class="card hero"><div class="ch"><h2>Resultado</h2><span class="aside" id="vStat"></span></div><div class="cb" id="finTop"></div></section>` +
-    CARD("Fluxo de caixa acumulado", `<div id="cash"></div>`) +
-    CARD("Sensibilidade da margem", `<div class="sens" id="sens"></div><p class="note">Linhas: preço de venda · colunas: custo de obra.</p>`, {details:false, key:"sens"}) +
+    CARD("Fluxo de caixa acumulado", `<div id="cash"></div>`+(S.flx.curva.modo!=="sen"?`<div class="grp">Desembolso da obra</div><div id="obraCurve"></div>`:"")) +
+    finCenHTML() + finSensHTML() + finMCHTML() + finOrcHTML() + finTerHTML() +
     CARD("DRE do empreendimento", `<table class="tbl" id="dre"></table>`, {details:false, key:"dre"}) +
     `<div class="inp" style="background:var(--surface)"><svg viewBox="0 0 24 24" width="16" height="16" style="margin-left:10px;flex:none;fill:none;stroke:var(--muted);stroke-width:1.8"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg><input class="t" id="qFind" placeholder="Buscar premissa — CUB, INCC, corretagem…" aria-label="Buscar premissa" autocomplete="off"></div>` +
     CARD("Terreno e obra", KV(NUM("fin.terreno","Terreno (à vista)","R$",{step:10000,wide:true})+NUM("fin.itbi","ITBI + escritura","%",{pct:true,step:0.5})+NUM("fin.cub","CUB referência","R$/m²",{step:1})+
-      NUM("fin.fator","Custo ÷ CUB","×",{step:0.01})+NUM("fin.eqGar","Equivalência garagem","×",{step:0.05})+NUM("fin.incc","INCC a.a.","%",{pct:true,step:0.25})+NUM("fin.projetos","Projetos e taxas","% obra",{pct:true,step:0.5})+
+      (S.orc.modo==="param"? "" : NUM("fin.fator","Custo ÷ CUB","×",{step:0.01})+NUM("fin.eqGar","Equivalência garagem","×",{step:0.05}))+NUM("fin.incc","INCC a.a.","%",{pct:true,step:0.25})+NUM("fin.projetos","Projetos e taxas","% obra",{pct:true,step:0.5})+
       NUM("fin.adm","Administração","% obra",{pct:true,step:0.5})+NUM("fin.conting","Contingência","% obra",{pct:true,step:0.5})+NUM("fin.decorLazer","Lazer: equipamentos","R$/m²",{step:50,q:"mobiliário decoração lazer"})+NUM("fin.custoDesc","Lazer descoberto","R$/m²",{step:50,q:"piscina deck paisagismo"})), {filter:true}) +
     CARD("Receita e vendas", KV(NUM("fin.precoLoja","Preço das lojas","R$/m²",{step:50})+NUM("fin.reaj","Reajuste tabela a.a.","%",{pct:true,step:0.5})+NUM("fin.corret","Corretagem","%",{pct:true,step:0.5})+NUM("fin.mkt","Marketing","%",{pct:true,step:0.5})+
       NUM("fin.imp","Impostos (RET)","%",{pct:true,step:0.25})+NUM("fin.permuta","Permuta física","% un",{pct:true,step:1})+NUM("fin.permutaFin","Permuta financeira","% rec",{pct:true,step:0.5}))+
       `<div data-q="incc correção parcelas">${SW("fin.correcao","Parcelas até as chaves corrigidas pelo INCC")}</div><p class="note">Preços das unidades ficam no mix, na etapa Produto.</p>`, {filter:true}) +
     CARD("Cronograma", KV(NUM("fin.prelanc","Até o lançamento","meses",{step:1,int:true,q:"aprovação"})+NUM("fin.obra","Prazo de obra","meses",{step:1,int:true})+NUM("fin.venda","Vender 100% em","meses",{step:1,int:true})+
-      NUM("fin.vendaLanc","Vendido no lançamento","%",{pct:true,step:5})+NUM("fin.entrada","Pago até as chaves","%",{pct:true,step:5,q:"entrada"})), {filter:true}) +
+      NUM("fin.vendaLanc","Vendido no lançamento","%",{pct:true,step:5})) +
+      `<div class="fld wide" data-q="curva de obra desembolso s sistema"><span class="fl">Curva de obra</span>${SEG("flx.curva.modo",[["sen","Senoidal"],["s","Curva S"],["sis","Por sistema"]],{full:true,label:"Curva de obra"})}</div>` +
+      (S.flx.curva.modo==="sen"? "" : KV(NUM("flx.curva.ini","Início","% prazo",{pct:true,step:5,min:0,max:0.9,q:"curva"})+(S.flx.curva.modo==="s"? NUM("flx.curva.pico","Pico","% prazo",{pct:true,step:5,min:0.05,max:0.95,q:"curva"}) : "")+NUM("flx.curva.fim","Fim","% prazo",{pct:true,step:5,min:0.1,max:1,q:"curva"}),3) +
+        `<p class="note">${S.flx.curva.modo==="s"? "Desembolso em S: começa, acelera até o pico e desacelera até o fim (frações do prazo de obra)." : "Cada sistema do orçamento segue a sua janela no cronograma (fundação no início, acabamentos no fim)."}</p>`), {filter:true}) +
+    CARD("Recebimento", `<div data-q="recebimento parcelas ato repasse distrato">${SEG("flx.receb.modo",[["simples","Simples"],["det","Detalhado"]],{full:true,label:"Modo de recebimento"})}</div>` +
+      (S.flx.receb.modo!=="det"? KV(NUM("fin.entrada","Pago até as chaves","%",{pct:true,step:5,q:"entrada"})) + `<p class="note">O restante entra nas chaves.</p>` :
+      KV(NUM("flx.receb.ato","Ato","%",{pct:true,step:1,q:"sinal entrada",sub:""})+NUM("flx.receb.mensais","Mensais até as chaves","%",{pct:true,step:1})+NUM("flx.receb.interm","Intermediárias semestrais","%",{pct:true,step:1,q:"balão"})+NUM("flx.receb.chaves","Nas chaves","%",{pct:true,step:1})+
+        NUM("flx.receb.pos","Pós-chaves (direto)","%",{pct:true,step:1})+(S.flx.receb.pos>0? NUM("flx.receb.posN","Pós-chaves em","meses",{step:1,int:true,min:1}) : "")+
+        NUM("flx.receb.repasseMes","Repasse do banco","meses após",{step:1,int:true,min:0,q:"financiamento bancário"})+NUM("flx.receb.ipca","IPCA a.a. (pós-chaves)","%",{pct:true,step:0.25})) +
+      GRP("Distratos") + KV(NUM("flx.receb.distrato","Contratos distratados","%",{pct:true,step:1})+(S.flx.receb.distrato>0? NUM("flx.receb.distratoMes","Meses após o lançamento","mês",{step:1,int:true,min:0})+NUM("flx.receb.retencao","Retenção do valor pago","%",{pct:true,step:5}) : ""), S.flx.receb.distrato>0?3:2) +
+      `<p class="note">O saldo que falta para 100% vem pelo repasse bancário. Parcelas corrigidas pelo INCC até as chaves e pelo IPCA depois. Unidades distratadas não são revendidas no estudo.</p>`), {filter:true}) +
     CARD("Financiamento à produção", `<div data-q="financiamento plano empresário">${SW("fin.finOn","Usar plano empresário",{rr:true})}</div>`+(F.finOn? KV(NUM("fin.finPct","Financiado","% obra",{pct:true,step:5})+NUM("fin.finTaxa","Juros a.a.","%",{pct:true,step:0.25})+NUM("fin.finVendaMin","Vendas p/ liberar","%",{pct:true,step:5}),3) : ""), {filter:true}) +
-    CARD("Metas", KV(NUM("fin.tma","TMA a.a.","%",{pct:true,step:0.5,q:"taxa atratividade"})+NUM("fin.margemAlvo","Margem alvo","%",{pct:true,step:1})), {filter:true})
+    CARD("Metas", KV(NUM("fin.tma","TMA a.a.","%",{pct:true,step:0.5,q:"taxa atratividade"})+NUM("fin.margemAlvo","Margem alvo","%",{pct:true,step:1})), {filter:true}),
+    after: finViabAfter
   };
 };
-STEP_LIVE.viab = (m,f)=>{
+STEP_LIVE.viab = (m,f,fast)=>{
   const F=S.fin, sCol=v=> v<0?"var(--bad)": v<F.margemAlvo?"var(--warn)":"var(--ok)";
   const parts=[["Terreno e outorga",f.terreno+f.outorga,"var(--m-sub)"],["Obra e indiretos",f.obraTot+f.projetos+f.terra,"var(--m-ter)"],["Vendas, impostos, juros",f.corret+f.mkt+f.imp+f.permFin+f.juros,"var(--mark)"],["Lucro",Math.max(0,f.lucro),"var(--ok)"]];
   const tot=parts.reduce((s,p)=>s+p[1],0)||1;
@@ -244,17 +262,18 @@ STEP_LIVE.viab = (m,f)=>{
     <div class="stack">${parts.map(p=>`<span style="width:${p[1]/tot*100}%;background:${p[2]}"></span>`).join("")}</div>
     <div class="stackleg">${parts.map(p=>`<span><i style="background:${p[2]}"></i>${p[0]} ${pct(p[1]/tot,0)}</span>`).join("")}</div>`);
   if(!fast_skip(m)) setHTML("cash", cashSVG(f));
-  const sens=sensGrid(S,m);
-  setHTML("sens", `<div class="h"></div><div class="h">obra −10%</div><div class="h">base</div><div class="h">obra +10%</div>`+["preço −10%","preço base","preço +10%"].map((l,i)=>`<div class="h" style="text-align:right">${l}</div>`+sens[i].map(v=>`<div style="background:color-mix(in srgb, ${sCol(v)} 22%, transparent);${i===1?"font-weight:600":""}">${pct(v)}</div>`).join("")).join(""));
+  if(!fast && finOpen("sens")){ const sens=sensGrid(S,m);
+  setHTML("sens", `<div class="h"></div><div class="h">obra −10%</div><div class="h">base</div><div class="h">obra +10%</div>`+["preço −10%","preço base","preço +10%"].map((l,i)=>`<div class="h" style="text-align:right">${l}</div>`+sens[i].map(v=>`<div style="background:color-mix(in srgb, ${sCol(v)} 22%, transparent);${i===1?"font-weight:600":""}">${pct(v)}</div>`).join("")).join("")) }
   const ln=(l,v)=> v? `<tr class="neg"><td>${l}</td><td>−${brl(v)}</td></tr>` : "";
-  setHTML("dre", `<tr><td>VGV de tabela</td><td>${brl(f.vgvB)}</td></tr>${f.permV?`<tr class="neg"><td>(−) Permuta física</td><td>−${brl(f.permV)}</td></tr>`:""}<tr><td>Receita nominal</td><td>${brl(f.receita)}</td></tr>
-    ${ln("Terreno + ITBI",f.terreno)}${ln("Outorga onerosa",f.outorga)}${ln(`Obra (${m2(f.eqA)} equiv.) com INCC`,f.obraTot)}${f.lazerC?`<tr><td style="padding-left:12px;color:var(--muted)">inclui lazer: equipamentos e áreas descobertas</td><td style="color:var(--muted)">${brl(f.lazerC)}</td></tr>`:""}${ln("Movimento de terra",f.terra)}${ln("Projetos e aprovações",f.projetos)}
+  setHTML("dre", `<tr><td>VGV de tabela</td><td>${brl(f.vgvB)}</td></tr>${f.permV?`<tr class="neg"><td>(−) Permuta física</td><td>−${brl(f.permV)}</td></tr>`:""}<tr><td>Receita nominal</td><td>${brl(f.receita)}</td></tr>${f.distratoV?`<tr><td style="padding-left:12px;color:var(--muted)">já descontados os distratos</td><td style="color:var(--muted)">−${brl(f.distratoV)}</td></tr>`:""}
+    ${ln("Terreno + ITBI",f.terreno)}${ln("Outorga onerosa",f.outorga)}${ln(f.orc? "Obra (orçamento por sistema) com INCC" : `Obra (${m2(f.eqA)} equiv.) com INCC`,f.obraTot)}${f.lazerC?`<tr><td style="padding-left:12px;color:var(--muted)">inclui lazer: equipamentos e áreas descobertas</td><td style="color:var(--muted)">${brl(f.lazerC)}</td></tr>`:""}${ln("Movimento de terra",f.terra)}${ln("Projetos e aprovações",f.projetos)}
     ${ln("Corretagem + marketing",f.corret+f.mkt)}${ln("Impostos (RET)",f.imp)}${ln("Permuta financeira",f.permFin)}${ln("Juros do financiamento",f.juros)}
     <tr class="tot ${f.lucro<0?"neg":"pos"}"><td>Lucro</td><td>${brl(f.lucro)}</td></tr><tr><td>Custo total / m² privativo</td><td>${brl(f.custo/Math.max(1,m.priv))}</td></tr><tr><td>Obra / m² construído</td><td>${brl(f.obraTot/Math.max(1,m.constr))}</td></tr><tr><td>Lucro ÷ custo</td><td>${pct(f.lucro/Math.max(1,f.custo))}</td></tr>`);
   setSub("fin.terreno",`${brl(F.terreno/Math.max(1,m.A))}/m² · ${pct(F.terreno/Math.max(1,f.vgvB))} do VGV`);
   setSub("fin.fator",`${brl(F.cub*F.fator)}/m² equiv.`); setSub("fin.incc",`efeito ${mi(f.obraTot-(f.obra+f.adm+f.conting))}`);
-  setSub("fin.cub","CUB/SC médio set/26 ≈ 3.159");
+  { const r=cubLinha(S,S.orc.uf), v=r&&r.v[S.orc.padrao]; setSub("fin.cub", v? `${S.orc.padrao} ${r.uf} ${r.ref||""}: ${nf(v,0)}${r.ilustrativo?" (ilustrativo)":""}` : "") }
   if(F.finOn) setSub("fin.finPct",`limite ${mi(f.lim)} · juros ${mi(f.juros)}`);
+  finViabLive(m, f, fast);
 };
 const fast_skip=()=>false;
 
@@ -267,12 +286,24 @@ STEP_R.projeto = ()=>{
     CARD("Layout", ROW("Ângulo",SEG("estudo.angulo",[["90","90°"],["60","60°"],["45","45°"],["melhor","melhor"]],{rr:false}))+ROW("Fileiras",SEG("estudo.garDir",[["auto","automáticas"],["man","manual"]]))+(E.garDir==="auto"?"":SLD("estudo.garDirGraus","Rotação das fileiras",0,179,1,"°"))+
       `<p class="note">90°: corredor de mão dupla. 60° e 45°: mão única, corredores mais estreitos ligados em circuito.</p>`) +
     CARD("Acesso e rampas", `<p class="note">O carro entra pela rua no acesso de veículos (etapa Terreno), anda no plano pelo menos 5 m e só então começa a rampa. A rampa que desce e a que sobe ficam em faixas separadas.</p>`+
-      ROW("Rampas",SEG("estudo.rampaTipo",[["reta","retas empilhadas"],["alternada","alternadas (tesoura)"]],{rr:true}))+
-      `<p class="note">${E.rampaTipo==="alternada"? "Duas faixas lado a lado com sentidos opostos: o carro chega e já faz o retorno para a próxima rampa na mesma ponta." : "Todas na mesma projeção: em cada pavimento o carro chega pela ponta de dentro e volta até a frente para descer de novo."}</p>`+
-      KV(NUM("estudo.rampaL","Largura","m",{step:0.05,sub:"≥ 2,75 m mão única · ≥ 5 m mão dupla"})+NUM("estudo.rampaInc","Inclinação","%",{pct:true,step:1,sub:"residencial ≤ 20%"}))+
+      `<div class="fld wide"><label class="fl" for="rampSel">Circulação vertical</label><select class="sel" id="rampSel" data-p="estudo.rampaTipo" data-t="s" data-rr="1">${Object.entries(RAMPA_TIPOS).map(([k,l])=>`<option value="${k}" ${E.rampaTipo===k?"selected":""}>${l}</option>`).join("")}</select>
+      <div class="fsub" style="font-family:var(--f-body)">${({alternada:"Duas faixas lado a lado com sentidos opostos: o carro chega e já faz o retorno para a próxima rampa na mesma ponta.",
+        helicoidal:"Uma volta por pavimento, no mesmo lugar em todos os andares. O carro entra e sai pela tangente, num patamar ao lado da helicoidal.",
+        L:"Primeiro lance ao longo da entrada, patamar plano no canto e segundo lance para o lado. Encurta a profundidade ocupada pela rampa.",
+        elevador:"Para lotes estreitos: vagas de espera na entrada, poço com cabine de 2,7 × 5,8 m e área de acomodação em cada pavimento."})[E.rampaTipo] || "Todas na mesma projeção: em cada pavimento o carro chega pela ponta de dentro e volta até a frente para descer de novo."}</div></div>`+
+      (E.rampaTipo==="elevador"? KV(NUM("garagem.ecN","Elevadores","un",{int:true,step:1,min:1,max:3})+NUM("garagem.ecEspera","Vagas de espera","vg",{int:true,step:1,min:0,zero:true,ph:"auto"})+NUM("garagem.ecVel","Velocidade","m/s",{step:0.05,min:0.1})+NUM("garagem.ecManobra","Manobra e portas","s",{step:5,min:5,sub:"por ponta da viagem"})+NUM("garagem.ecPico","Movimento no pico","%",{pct:true,step:1,sub:"das vagas, em 1 h"})+NUM("garagem.ecCusto","Custo por elevador","R$",{step:10000}),3)+`<div class="fsub" id="ecInfo"></div>`
+       : E.rampaTipo==="helicoidal"? KV(NUM("garagem.heliRi","Raio interno","m",{step:0.1,min:3,sub:"≥ 3 m"})+NUM("garagem.heliRe","Raio externo","m",{step:0.1,min:7.5,sub:"≥ 7,5 m"})+NUM("estudo.rampaL","Faixa de entrada","m",{step:0.05})+NUM("estudo.rampaInc","Inclinação máx.","%",{pct:true,step:1,sub:"no eixo da faixa"}))
+       : KV(NUM("estudo.rampaL","Largura","m",{step:0.05,sub:"≥ 2,75 m mão única · ≥ 5 m mão dupla"})+NUM("estudo.rampaInc","Inclinação","%",{pct:true,step:1,sub:"residencial ≤ 20%"})))+
       `<div class="fsub" id="rampInfo"></div>
       <div class="row sb"><span class="pill">${E.rampa?"posição desenhada":"automática, no acesso"}</span><span class="row" style="gap:4px">${E.rampa?`<button class="btn sm" data-act="rampAuto">Voltar ao automático</button>`:""}<button class="btn sm" data-act="view" data-v="gar">Mover na planta</button></span></div>
       <button class="btn pri full" data-act="acessoStudy">Encontrar o melhor acesso de veículos</button><span class="note" id="rsStat"></span><div class="list" id="rsList">${RS?rsHTML():""}</div>`) +
+    CARD("Vagas especiais", (()=>{ const X=S.garagem||DEF.garagem; return SW("garagem.presas","Vagas presas (tandem) nas sobras",{rr:true})+
+      (X.presas? SLD("garagem.presasMax","Unidades que aceitam vaga presa",0,1,0.05,"%",{pct:true})+ROW("Vínculo",SEG("garagem.presasVinc",[["unidade","mesma unidade"],["manobrista","manobrista"]],{rr:false})) : "")+
+      SW("garagem.motos","Motos nas sobras pequenas (1,0 × 2,2 m)",{rr:true})+(X.motos? SLD("garagem.motosMax","Máximo de motos",0,0.5,0.01,"% das un.",{pct:true}) : "")+
+      ROW("Bicicletário",SEG("garagem.bici",[["off","não"],["un","por unidade"],["area","por área"]]))+
+      (X.bici==="un"? NUM("garagem.biciPorUn","Bicicletas por unidade","bic.",{step:0.1,min:0,wide:true}) : X.bici==="area"? NUM("garagem.biciM2","Uma bicicleta a cada","m² constr.",{step:5,min:1,wide:true}) : "")+
+      SLD("garagem.ev","Vagas com recarga de carro elétrico",0,1,0.05,"%",{pct:true,sub:""})+`<div id="evCustoW" ${X.ev>0?"":"hidden"}>${NUM("garagem.evCusto","Custo por ponto de recarga","R$",{step:500,min:0,wide:true})}</div>`+
+      `<p class="note">Presas, motos e bicicletas entram nas sobras, de frente para a circulação, sem tirar o acesso de nenhuma vaga. A recarga fica nas vagas comuns mais perto do quadro elétrico (QE), junto ao núcleo.</p>` })(), {details:false, key:"vesp"}) +
     CARD("Dimensões da vaga", KV(NUM("estudo.vagaL","Largura","m",{step:0.05})+NUM("estudo.vagaC","Comprimento","m",{step:0.05})+NUM("estudo.corredor","Corredor 90°","m",{step:0.1})+NUM("estudo.porModulo","Entre pilares","vg",{int:true,step:1})+NUM("estudo.pilar","Pilar","m",{step:0.05})+NUM("estudo.rampaL","Largura rampa","m",{step:0.05})+NUM("estudo.rampaInc","Inclinação rampa","%",{pct:true,step:1})+NUM("estudo.pcd","PCD","%",{pct:true,step:1})+NUM("estudo.idoso","Idosos","%",{pct:true,step:1}),3), {details:false, key:"vdim"}) +
     CARD("Ajuste manual", `<p class="note">Na planta, escolha o que o toque faz (barra superior): tirar ou devolver, tornar comum, PCD ou idoso. Para não ter PCD/idoso automáticos, zere os percentuais.</p><button class="btn" data-act="resetOff">Desfazer marcações manuais</button>`, {details:false, key:"man"});
   else if(PSUB==="tipo"){
@@ -295,8 +326,17 @@ STEP_LIVE.projeto = (m)=>{
     const flo=Object.keys(m.gar).sort((a,b)=>{ const o=k=>k==="ter"?0:k[0]==="s"? -(+k.slice(1)) : +k.slice(1); return o(a)-o(b) });
     const gs=document.getElementById("garStat"); if(gs) gs.innerHTML = `<span style="color:${m.vagas>=m.vagasReq?"var(--ok)":"var(--bad)"}">${m.vagas>=m.vagasReq?"atende":"faltam "+(m.vagasReq-m.vagas)}</span>`;
     setHTML("garRes", `<div class="mets"><div class="met"><div class="l">No layout</div><div class="v">${m.vagasLay??"—"}</div><div class="s">estimativa ${m.vagasEst}</div></div><div class="met"><div class="l">Exigidas</div><div class="v">${m.vagasReq}</div><div class="s">${nf(m.vagas/Math.max(1,m.units),2)} por unidade</div></div></div>
+      ${m.quadroVagas? `<table class="tbl">${garQuadroRows(m).map(([l,v])=>`<tr class="${/^Total/.test(l)?"tot":""}"><td>${esc(l)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
       <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg · ${l.vagas.filter(v=>v.tipo==="pcd").length} PCD · ${l.vagas.filter(v=>v.tipo==="idoso").length} id.`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).map(a=>`<p class="note" style="color:var(--warn)">${esc(a)}</p>`).join("")}`);
-    const ri=document.getElementById("rampInfo"); if(ri && m.vert){ const s0=m.vert.strips[0]; ri.textContent = s0? `faixa de rampa: ${nf(s0.L,1)} m de comprimento · ${m.vert.strips.length} faixa${m.vert.strips.length>1?"s":""}${m.vert.ok?"":" · verifique os avisos"}` : "" }
+    const ri=document.getElementById("rampInfo"); if(ri && m.vert){ const V_=m.vert, s0=V_.strips[0], pend=V_.ok?"":" · verifique os avisos";
+      ri.textContent = !s0? "" : V_.helix? `helicoidal Ø ${nf(2*V_.helix.Re,1)} m · faixa ${nf(V_.helix.faixa,2)} m · ${nf(V_.helix.incl*100,1)}% no eixo${pend}`
+        : V_.elev? `${V_.elev.n} poço${V_.elev.n>1?"s":""} de ${nf(EC_CAB[0]+2*EC_PAREDE,1)} × ${nf(EC_CAB[1]+2*EC_PAREDE,1)} m · ${V_.elev.espera.length} vaga${V_.elev.espera.length>1?"s":""} de espera · saída ${V_.elev.porta==="frente"?"pela frente (de ré)":"pelo fundo"}${pend}`
+        : s0.Lshape? `rampa em L: lance 1 com ${nf(rampExt(S,m,V_.fd).L1,1)} m, patamar no canto e lance 2 com ${nf(rampExt(S,m,V_.fd).L2,1)} m${pend}`
+        : `faixa de rampa: ${nf(s0.L,1)} m de comprimento · ${V_.strips.length} faixa${V_.strips.length>1?"s":""}${pend}` }
+    const ec=m.elevCarros, ei=document.getElementById("ecInfo");
+    if(ei) ei.innerHTML = ec? `ciclo ${nf(ec.ciclo,0)} s · ${nf(ec.cap,0)} carros/h · pico ${nf(ec.dem,0)}/h · fila prevista ${isFinite(ec.fila95)? ec.fila95 : "sem limite"} <span style="color:${ec.ok?"var(--ok)":"var(--bad)"}">(${ec.espera} de espera)</span>` : "";
+    const X=S.garagem||{}, ew=document.getElementById("evCustoW"); if(ew) ew.hidden=!(X.ev>0);
+    setSub("garagem.ev", X.ev>0? `${m.evN||0} pontos · ${mi((m.evN||0)*(+X.evCusto||0))} na obra` : "desligado");
   }
   if(PSUB==="tipo"){
     setHTML("tipoRes", m.T.map((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l) return `<p class="note">Torre ${i+1}: sem andar tipo.</p>`; const us=l.units.filter(u=>!u.livre), K=l.coreKinds||{};
@@ -314,9 +354,18 @@ STEP_LIVE.projeto = (m)=>{
       return `<div class="li clk ${ANDAR===a.key&&VIEW==="andar"?"on":""}" data-act="andar" data-k="${a.key}"><span class="dot ${a.tipo==="tipo"?"ok":a.tipo==="ter"?"warn":""}"></span><span class="tt">${a.nome}</span><span class="ss">${info}</span></div>` }).join(""));
   }
 };
+/* itens da legenda da garagem que só aparecem quando o recurso está em uso */
+function garLegExtra(sw){ const m=window._last&&window._last.m, q=m&&m.quadroVagas, V=m&&m.vert; let h="";
+  if(q&&q.presa) h+=sw("var(--warn)","vaga presa (tandem)","border:1px dashed var(--ink)");
+  if(q&&q.moto) h+=sw("var(--u3)","moto");
+  if(q&&q.bici) h+=sw("var(--lz-deck)","bicicletário");
+  if(q&&q.ev) h+=sw("transparent","vaga com recarga (EV)","border:2px solid var(--accent)")+sw("var(--c-tec)","quadro elétrico (QE)","border:1px solid var(--ink)");
+  if(V&&V.elev) h+=sw("var(--c-elev)","elevador de carros")+sw("var(--c-drive)","acomodação e espera");
+  if(V&&V.helix) h+=sw("var(--surface)","miolo da helicoidal","border:1px solid var(--mark)");
+  return h }
 let RS=null;
 function rsHTML(){ const base=RS.cur? RS.cur.vagas : 0;
-  return RS.list.slice(0,4).map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${c.atual?"Atual":k===0?"Melhor acesso":"Opção "+(k+1)} · ${pct(c.acessoVei,0)} da frente</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">Rampas ${c.rampaTipo==="alternada"?"alternadas":"retas empilhadas"}${c.ok?"":" · com pendências"}</div>${c.atual?"":`<button class="btn sm ${k===0?"pri":""}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
+  return RS.list.slice(0,4).map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${c.atual?"Atual":k===0?"Melhor acesso":"Opção "+(k+1)} · ${pct(c.acessoVei,0)} da frente</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">${c.rampaTipo==="elevador"? `Elevador de carros${c.cap?` · ${c.cap} carros/h`:""}${c.fila!=null&&isFinite(c.fila)?` · fila ${c.fila}`:""}` : c.rampaTipo==="alternada"? "Rampas alternadas" : c.rampaTipo==="reta"? "Rampas retas empilhadas" : (RAMPA_TIPOS[c.rampaTipo]||"")}${c.ok?"":" · com pendências"}</div>${c.atual?"":`<button class="btn sm ${k===0?"pri":""}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
     + `<p class="note">Cada opção refaz todos os pavimentos com rotas verificadas (análise rápida). Atual: ${base} vagas.</p>` }
 Object.assign(ACT,{
   garFl: b=>{ FLOOR=b.dataset.k; if(VIEW!=="gar") setView("gar"); else { viewbarSegs(window._last.m); fit2d() } STEP_LIVE.projeto(window._last.m) },
@@ -406,6 +455,7 @@ function compareHTML(sel){
 STEP_R.cen = ()=>{
   const list=LS.get("gabarito.cenarios2")||[], sel=list.filter(c=>c.cmp);
   return { body:
+    (typeof estCardsHTML==="function"? estCardsHTML() : "") +   // estudos e versões (src/ui/estudos.js)
     CARD("Salvar a simulação atual", `<div class="row" style="flex-wrap:nowrap"><input class="txt" id="cenNome" placeholder="Ex.: 2 torres · 12 e 9 pav"><button class="btn pri" data-act="cenSave">Salvar</button></div>`) +
     CARD(`Cenários salvos`, list.length? `<div class="list">${list.map((c,i)=>`<div class="res"><div class="rh"><b>${esc(c.nome)}</b>${c.aprovado?'<span class="pill ok">aprovado</span>':`<span class="pill">${esc(c.data)}</span>`}</div>
       <div class="rm"><span>Unid.<b>${c.k.units}</b></span><span>VGV<b>${mi(c.k.vgv)}</b></span><span>Margem<b>${pct(c.k.margem)}</b></span><span>TIR<b>${c.k.tir==null?"—":pct(c.k.tir)}</b></span></div>
@@ -418,10 +468,10 @@ STEP_R.cen = ()=>{
   };
 };
 Object.assign(ACT,{
-  cenSave: ()=>{ saveScenario(document.getElementById("cenNome").value.trim()); renderTab(); toast("Cenário salvo") },
+  cenSave: async ()=>{ const nome=document.getElementById("cenNome").value.trim(); await calcPronto(); saveScenario(nome); renderTab(); toast("Cenário salvo") },
   cenLoad: b=>{ const c=(LS.get("gabarito.cenarios2")||[])[+b.dataset.i]; if(c){ S=merge(clone(DEF),c.S); document.getElementById("projName").value=S.nome; renderTab(); fit3d(); fit2d(); toast("Cenário aberto: "+c.nome) } },
   cenDel: b=>{ const l=LS.get("gabarito.cenarios2")||[]; l.splice(+b.dataset.i,1); LS.set("gabarito.cenarios2",l); renderTab() },
-  pdf: ()=>exportPDF(), zip: ()=>exportZIP(), json: ()=>exportJSON(),
+  pdf: ()=>calcPronto().then(()=>exportPDF()), zip: ()=>calcPronto().then(()=>exportZIP()), json: ()=>calcPronto().then(()=>exportJSON()),
   copy: ()=>{ const txt=resumo(); const fb=()=>{ const ta=document.createElement("textarea"); ta.value=txt; TB.appendChild(ta); ta.select(); try{ document.execCommand("copy"); toast("Resumo copiado") }catch(e){ toast("Selecione o texto e copie") } };
     try{ navigator.clipboard.writeText(txt).then(()=>toast("Resumo copiado"),fb) }catch(e){ fb() } },
   reset: b=>{ if(b.dataset.arm){ S=clone(DEF); document.getElementById("projName").value=S.nome; BG=null; OTIM=null; renderTab(); fit3d(); fit2d(); toast("Exemplo restaurado") } else { b.dataset.arm=1; b.textContent="Confirmar: apagar o estudo atual"; b.classList.add("on") } },

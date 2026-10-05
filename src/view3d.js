@@ -49,6 +49,21 @@ function rampa3d(E, X, w, zE, zX, color){
   const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color, roughness:0.7, side:THREE.DoubleSide, clippingPlanes:V3.clip})); mesh.castShadow=true; mesh.receiveShadow=true; V3.grp.add(mesh);
   V3.grp.add(new THREE.LineSegments(new THREE.EdgesGeometry(g,20), new THREE.LineBasicMaterial({color:col3("--ink"),transparent:true,opacity:0.5,clippingPlanes:V3.clip})));
 }
+/* rampa ao longo de um caminho [x,y,t] (t = fração da altura): helicoidal e rampa em L */
+function rampaPath3d(path, w, zE, zX, color){
+  const n=path.length, t=0.25, v=[], idx=[];
+  for(let i=0;i<n;i++){ const a=path[Math.max(0,i-1)], b=path[Math.min(n-1,i+1)], dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1;
+    let nx=-dy/l, ny=dx/l, k=1;
+    if(i>0 && i<n-1){ const p=path[i], u1=[p[0]-a[0],p[1]-a[1]], u2=[b[0]-p[0],b[1]-p[1]], l1=Math.hypot(...u1)||1, l2=Math.hypot(...u2)||1, c=(u1[0]*u2[0]+u1[1]*u2[1])/(l1*l2); k=1/Math.max(0.6,Math.sqrt((1+c)/2)) } // meia-esquadria nos cantos
+    const z=zE+(zX-zE)*path[i][2], p=path[i], L=[p[0]+nx*w/2*k, p[1]+ny*w/2*k], R=[p[0]-nx*w/2*k, p[1]-ny*w/2*k];
+    v.push(L[0],z,-L[1], R[0],z,-R[1], L[0],z-t,-L[1], R[0],z-t,-R[1]) }
+  for(let i=0;i<n-1;i++){ const a=i*4, b=(i+1)*4;
+    idx.push(a,a+1,b+1, a,b+1,b,  a+2,b+3,a+3, a+2,b+2,b+3,  a,b,b+2, a,b+2,a+2,  a+1,a+3,b+3, a+1,b+3,b+1) }
+  idx.push(0,2,3, 0,3,1); const e=(n-1)*4; idx.push(e,e+1,e+3, e,e+3,e+2);
+  const g=new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(v,3)); g.setIndex(idx); g.computeVertexNormals();
+  const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color, roughness:0.7, side:THREE.DoubleSide, clippingPlanes:V3.clip})); mesh.castShadow=true; mesh.receiveShadow=true; V3.grp.add(mesh);
+  V3.grp.add(new THREE.LineSegments(new THREE.EdgesGeometry(g,35), new THREE.LineBasicMaterial({color:col3("--ink"),transparent:true,opacity:0.4,clippingPlanes:V3.clip})));
+}
 function flat(p, y, color, op=1){ if(!p||!p.length) return; const g=new THREE.ShapeGeometry(shapeOf(p)); g.rotateX(-Math.PI/2); g.translate(0,y,0); const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,roughness:0.9,transparent:op<1,opacity:op,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2})); mesh.receiveShadow=true; V3.grp.add(mesh);
   const e=new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({color:col3("--ink"),transparent:true,opacity:0.5})); V3.grp.add(e) }
 function outline(p, y0, h, color, dashed){
@@ -72,7 +87,7 @@ function rebuild3d(m, force){
   gnd.rotation.x=-Math.PI/2; gnd.position.set(c[0],-0.08,-c[1]); gnd.receiveShadow=true; grp.add(gnd);
   const grid=new THREE.GridHelper(ext*2.4, Math.round(ext*2.4/5), col3("--line"), col3("--line")); grid.position.set(c[0],-0.05,-c[1]); grid.material.transparent=true; grid.material.opacity=0.35; grp.add(grid);
   // lote com desnível (frente na cota 0)
-  const fd=frontDir(S), [fmn,fmx]=G.extent(L,fd), depth=(fmx-fmn)||1, dn=S.lote.desnivel||0;
+  const fd=frontDir(S), [fmn,fmx]=G.extent(L,fd), depth=(fmx-fmn)||1, dn=m.topo? 0 : (S.lote.desnivel||0); // com topografia o lote é o platô do térreo (relevo em src/ui/topografia.js)
   { const g=new THREE.ShapeGeometry(shapeOf(L)); g.rotateX(-Math.PI/2); const pos=g.attributes.position; for(let i=0;i<pos.count;i++){ const x=pos.getX(i), y=-pos.getZ(i); pos.setY(i, 0.02 + dn*((x*fd[0]+y*fd[1])-fmn)/depth) } g.computeVertexNormals();
     const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:col3("--m-lote"),roughness:1,side:THREE.DoubleSide})); mesh.receiveShadow=true; grp.add(mesh);
     const lo=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(L.map(q=>new THREE.Vector3(q[0],0.06+dn*((q[0]*fd[0]+q[1]*fd[1])-fmn)/depth,-q[1]))), new THREE.LineBasicMaterial({color:col3("--ink"),transparent:true,opacity:0.6})); grp.add(lo);
@@ -99,17 +114,28 @@ function rebuild3d(m, force){
   m.T.forEach((t,ti)=>{
     let yy=y0; const lay=m.tipo[ti];
     if(ti===0 && m.pavLz){ slab(t.plate, yy, P.pe-0.22, glass, {op:0.6, rough:0.2, metal:0.1, eop:0.3}); lzMesh(LZ.pav, yy+0.02); yy+=P.pe }
-    for(let k=0;k<t.pav;k++){ const cob = t.hasCob && k===t.pav-1; slab(t.plate, yy, P.pe-0.22, cob? col3("--m-cob") : white, {eop:0.22, rough:0.75});
-      if(lay && !cob) lay.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length) return; if(u.sac.tipo==="balanco"){ slab(u.sac.poly, yy, 0.16, white, {eop:0.3}); slab(u.sac.poly, yy+0.16, 1.05, glass, {op:0.3, eop:0.25, rough:0.1}) } else { slab(G.scaleToArea(u.sac.poly,G.area(u.sac.poly)*0.999), yy+0.03, P.pe-0.3, sacCol, {op:0.55, eop:0.2, rough:0.2}) } });
+    // 2.4: planta de cada andar pela sua faixa (torres escalonadas); o recuo de um andar para o outro vira terraço
+    const fxs=t.faixas||[], plateK=k=>{ const f=fxs.find(f=>k+1>=f.de && k+1<=f.ate); return f? f.plate : t.plate }, topP=fxs.length? fxs[fxs.length-1].plate : t.plate;
+    for(let k=0;k<t.pav;k++){ const cob = t.hasCob && k===t.pav-1, pk=plateK(k), pPrev=k? plateK(k-1) : null;
+      if(pPrev && pPrev!==pk && G.area(pPrev)>G.area(pk)+0.5){ slab(pPrev, yy-0.02, 0.07, col3("--lz-deck"), {eop:0.35, rough:0.8}); outline(pPrev, yy, 1.05, col3("--ink"), false) }
+      slab(pk, yy, P.pe-0.22, cob? col3("--m-cob") : white, {eop:0.22, rough:0.75});
+      if(lay && !cob && pk===t.plate) lay.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length) return; if(u.sac.tipo==="balanco"){ slab(u.sac.poly, yy, 0.16, white, {eop:0.3}); slab(u.sac.poly, yy+0.16, 1.05, glass, {op:0.3, eop:0.25, rough:0.1}) } else { slab(G.scaleToArea(u.sac.poly,G.area(u.sac.poly)*0.999), yy+0.03, P.pe-0.3, sacCol, {op:0.55, eop:0.2, rough:0.2}) } });
       yy+=P.pe }
-    if(t.duplexA>1){ slab(G.scaleToArea(t.plate,t.duplexA), yy, P.pe-0.22, col3("--m-cob"), {eop:0.22}); yy+=P.pe }
+    if(t.duplexA>1){ slab(G.scaleToArea(topP,t.duplexA), yy, P.pe-0.22, col3("--m-cob"), {eop:0.22}); yy+=P.pe }
     if(ti===0) lzMesh(LZ.cob, yy);
-    if(P.atico && t.plate.length) slab(G.scaleToArea(t.plate, t.A*0.25), yy, 3, col3("--m-gar"));
+    if(P.atico && topP.length) slab(G.scaleToArea(topP, (t.Atop??t.A)*0.25), yy, 3, col3("--m-gar"));
   });
-  outline(m.torAll, 0, S.regras.hMax, col3("--m-env"), true);
+  // envelope: extrusão única ou (2.4) pilha de polígonos por cota com recuos progressivos
+  if(m.env && m.env.length){ const ce=col3("--m-env"); outline(m.torAll, 0, m.env[0].z0, ce, true); m.env.forEach(e=>{ outline(e.poly, e.z0, e.z1-e.z0, ce, true); outline(e.poly, e.z0, 0.001, ce, true) }) }
+  else outline(m.torAll, 0, m.hLim??S.regras.hMax, col3("--m-env"), true);
+  if(S.forma && S.forma.on && S.forma.aero && m.hLim>0) flat(L, m.hLim, col3("--warn"), 0.14); // plano de proteção do aeródromo
   // rampas inclinadas entre os pavimentos (cada uma na sua faixa)
   if(m.vert){ const zk=k=> k<0? k*P.peGar : k===0? 0 : P.peTerreo+(k-1)*P.peGar;
-    m.vert.segs.forEach(sg=>rampa3d(sg.E, sg.X, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark"))) }
+    m.vert.segs.forEach(sg=>{ if(sg.elev) return; if(sg.path) rampaPath3d(sg.path, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")); else rampa3d(sg.E, sg.X, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")) });
+    // helicoidal: pilar central · elevador de carros: poço do fundo ao último pavimento servido
+    const zTop=k=> zk(k)+(k===0? P.peTerreo : P.peGar), sH=(m.vert.strips||[]).find(s_=>s_.kind==="H");
+    if(sH && sH.hole) slab(sH.hole, zk(-P.subsolos), zTop(P.garAcima)-zk(-P.subsolos)-0.2, col3("--m-gar"), {eop:0.3});
+    if(m.vert.elev){ const E_=m.vert.elev; E_.shafts.forEach(p=>slab(p, zk(E_.kMin), zTop(E_.kMax)-zk(E_.kMin)-0.1, col3("--c-elev"), {op:0.55, eop:0.45})) } }
   (S.entorno||[]).forEach(e=>{ if(e.pts&&e.pts.length>2&&e.h>0) slab(e.pts, 0, e.h, col3("--m-viz"), {eop:0.35, noclip:true, rough:0.95}) });
   // andar cortado: planta do pavimento sobre a laje
   if(fl) cutFloor(m, fl);
@@ -135,7 +161,10 @@ function cutFloor(m, fl){
   if(fl.tipo==="ter"){ (m.ter.lojas||[]).forEach(p=>flat(p,y,col3("--m-loja"))); (m.ter.hall||[]).forEach(p=>flat(p,y,col3("--m-ter"))); ((m.lzLay||{}).terreo||[]).forEach(o=>flat(o.poly,y+0.01,col3("--lz-c"))) }
   if(fl.tipo!=="tipo") (m.coreSets||[]).forEach(cs=>{ if(fl.tipo==="pavlaz"||fl.tipo==="roof"){ if(cs.i!==0) return } (cs.lay.coreParts||[]).forEach(cp=>flat(cp.poly,y+0.012,col3("--c-"+cp.kind))) });
   if(garLay){ garLay.vagas.forEach(v=>{ if(v.tipo==="off") return; flat(v.poly,y+0.01, v.tipo==="pcd"? col3("--accent") : v.tipo==="idoso"? col3("--ok") : col3("--m-gar")) }); }
-  if(fl.tipo==="tipo") m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l||fl.j>=t.tipoFloors) return; l.units.forEach(u=>flat(u.poly,y,u.livre?col3("--c-circ"):pal[names.indexOf(u.nome)%5])); l.coreParts.forEach(cp=>flat(cp.poly,y+0.01,col3("--c-"+cp.kind))); flat(l.corridor,y+0.005,col3("--surface")) });
+  if(fl.tipo==="tipo") m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l||fl.j>=t.tipoFloors) return;
+    const fx=(t.faixas||[]).find(f=>fl.j+1>=f.de && fl.j+1<=f.ate), pf=fx && fx.plate!==t.plate ? fx.plate : null; // 2.4: andar recuado → terraço em volta
+    if(pf) flat(t.plate,y-0.004,col3("--lz-deck"));
+    l.units.forEach(u=>{ const p= pf? G.clipToPoly(u.poly,pf) : u.poly; if(p.length) flat(p,y,u.livre?col3("--c-circ"):pal[names.indexOf(u.nome)%5]) }); l.coreParts.forEach(cp=>flat(cp.poly,y+0.01,col3("--c-"+cp.kind))); flat(l.corridor,y+0.005,col3("--surface")) });
 }
 function sunPath(){ // trajetória do sol: refeita a cada mudança de data/hora, fora do grupo do prédio
   if(!V3.sunGrp){ V3.sunGrp=new THREE.Group(); V3.scene.add(V3.sunGrp) }

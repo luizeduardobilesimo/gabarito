@@ -22,18 +22,25 @@ function massing(st, opt={}){
   const princ = st.lote.front.includes(st.lote.principal)? st.lote.principal : st.lote.front[0];
   const recPF = P.vagasFrente? Math.max(R.recFrente, st.estudo.vagaC+0.5) : R.recFrente;
   const emb = G.scaleToArea(cust("emb") || G.offsetPoly(L, i=>val(rec(i).e)? +rec(i).e : i===princ? recPF : isF(i)?R.recFrente:R.recEmb), A*R.toEmb);
-  let torAll = G.offsetPoly(L, i=>val(rec(i).t)? +rec(i).t : isF(i)?R.recFrente:afast);
-  if(cust("tor")) torAll = torAll.length? G.clipToPoly(cust("tor"), torAll) : cust("tor");
+  // envelope da torre para um afastamento às divisas 'af' (2.4: com recuos progressivos 'af' varia com a cota)
+  const envAt = af=>{ let e=G.offsetPoly(L, i=>val(rec(i).t)? +rec(i).t : isF(i)?R.recFrente:af); if(cust("tor")) e = e.length? G.clipToPoly(cust("tor"), e) : cust("tor"); return e };
+  const FO = st.forma && st.forma.on ? st.forma : null, prog = !!(FO && FO.prog && FO.faixas && FO.faixas.length);
+  const afAt = prog ? z=>formaAf(FO, z) : ()=>afast;
+  let torAll = envAt(prog ? afAt(hEmb + P.pe) : afast);
   // divisão em torres ao longo do maior eixo do lote (ou transversal)
   let axis = G.longestDir(L); if(P.torreEixo==="trans") axis=[-axis[1],axis[0]];
-  let slots=[], slotOk=true;
+  let slots=[], slotOk=true; const slotR=[];
   if(nT===1) slots=[torAll];
   else if(torAll.length){
     const [t0,t1]=G.extent(torAll,axis), w=(t1-t0-(nT-1)*gap)/nT;
     if(w<6) slotOk=false;
-    else for(let i=0;i<nT;i++){ const s=t0+i*(w+gap); slots.push(G.band(torAll,axis,s,s+w)) }
+    else for(let i=0;i<nT;i++){ const s=t0+i*(w+gap); slotR.push([s,s+w]); slots.push(G.band(torAll,axis,s,s+w)) }
   }
   if(!slotOk) slots=torres.map(()=>[]);
+  // faixa da torre i dentro de um envelope (mesma posição ao longo do eixo do lote)
+  const slotIn = (i, env)=> !slotOk || !env.length ? [] : nT===1 ? env : G.band(env, axis, slotR[i][0], slotR[i][1]);
+  // torre reta com recuos progressivos: a torre inteira obedece ao recuo da cota do topo
+  if(prog && !FO.escalonar) slots = slots.map((s,i)=> s.length ? slotIn(i, envAt(afAt(Hs[i]))) : s);
   const sumSlot = slots.reduce((s,p)=>s+G.area(p),0), cap=A*R.toTorre, k=sumSlot>cap? cap/sumSlot : 1;
   const need = mixPriv/P.efic;
   const T = torres.map((t,i)=>{
@@ -41,32 +48,45 @@ function massing(st, opt={}){
     const plate = G.scaleToArea(maxP, need), pA=G.area(plate);
     const fit = maxA >= need-0.5 && pA>1;
     const r = mixPriv>0 ? Math.min(1, pA*P.efic/mixPriv) : 0; // fator de redução das unidades se não couber
-    const floorPriv = pA*P.efic;
     const hasCob = P.cob.on && t.pav>=2;
+    const tipoFloors = t.pav - (hasCob?1:0);
+    // faixas de andares (2.4): planta de cada andar recortada pelo recuo da sua cota; sem recuos progressivos é uma faixa só
+    const zB = hEmb + (pavLz && i===0 ? P.pe : 0);
+    let faixas = prog && FO.escalonar && plate.length ? formaTorre({plate, pav:t.pav, zBase:zB, pe:P.pe, envBand:z=>slotIn(i, envAt(afAt(z))), afAt}) : [];
+    if(!faixas.length) faixas=[{de:1, ate:t.pav, n:t.pav, plate, A:pA, z0:zB, z1:zB+t.pav*P.pe, af:afAt(zB+t.pav*P.pe)}];
+    faixas.forEach(f=>{ f.nTipo=Math.max(0, Math.min(f.ate, tipoFloors)-f.de+1);
+      if(Math.abs(f.A-pA)<0.25){ f.qtd=P.mix.map(u=>u.qtd); f.r=r; f.priv=mixPriv*r; f.un=mixUn }
+      else { const x= f.A<1 ? {qtd:P.mix.map(()=>0), r:0} : formaMix(P.mix, f.A*P.efic, FO.rMin||0.9); f.qtd=x.qtd; f.r=x.r; f.priv=P.mix.reduce((s,u,j)=>s+u.area*x.qtd[j],0)*x.r; f.un=x.qtd.reduce((s,n)=>s+n,0) } });
+    const Atop = faixas[faixas.length-1].A, one = faixas.length===1;
+    const floorPriv = Atop*P.efic;
     const rc = hasCob ? Math.min(1, (duplex? 2*floorPriv : floorPriv)/Math.max(1,cobPriv)) : 0;
     const cobP = hasCob ? cobPriv*rc : 0;
-    const duplexA = hasCob && duplex ? Math.min(pA, Math.max(0, cobP-floorPriv)/P.efic) : 0;
-    const tipoFloors = t.pav - (hasCob?1:0);
-    return {i, pav:t.pav, H:Hs[i], slot, maxP, maxA, plate, A:pA, fit, r, rc, hasCob, cobP, duplexA, tipoFloors,
-      priv: tipoFloors*mixPriv*r + cobP, units: tipoFloors*mixUn + (hasCob?P.cob.qtd:0) };
+    const duplexA = hasCob && duplex ? Math.min(Atop, Math.max(0, cobP-floorPriv)/P.efic) : 0;
+    const Atot = one ? pA*t.pav : faixas.reduce((s,f)=>s+f.A*f.n,0);
+    return {i, pav:t.pav, H:Hs[i], slot, maxP, maxA, plate, A:pA, Atop, Atot, faixas, fit, r, rc, hasCob, cobP, duplexA, tipoFloors,
+      priv: (one ? tipoFloors*mixPriv*r : faixas.reduce((s,f)=>s+f.nTipo*f.priv,0)) + cobP,
+      units: (one ? tipoFloors*mixUn : faixas.reduce((s,f)=>s+f.nTipo*f.un,0)) + (hasCob?P.cob.qtd:0) };
   });
   const subA=G.area(sub), embA=G.area(emb);
   // térreo (estimativa sem os núcleos; o compute refaz com eles)
   const acesso = accessPoints(st);
   const ter = terreoZones(st, {emb, sub, acesso, T, coreSets:[]}, lz);
-  const tiposA = T.reduce((s,t)=>s+t.A*t.pav,0), duplexA=T.reduce((s,t)=>s+t.duplexA,0);
-  const aticoA = P.atico ? T.reduce((s,t)=>s+t.A*0.25,0) : 0;
+  const tiposA = T.reduce((s,t)=>s+t.Atot,0), duplexA=T.reduce((s,t)=>s+t.duplexA,0);
+  const aticoA = P.atico ? T.reduce((s,t)=>s+t.Atop*0.25,0) : 0;
   const unitsRes = T.reduce((s,t)=>s+t.units,0), privRes=T.reduce((s,t)=>s+t.priv,0);
   const torProj = T.reduce((s,t)=>s+t.A,0);
   const H = Hmax;
   // aptos por tipologia (todas as torres)
   const unitRows = P.mix.map(u=>({nome:u.nome, alvo:u.area, n:0, area:0, preco:u.preco}));
-  T.forEach(t=>P.mix.forEach((u,j)=>{ unitRows[j].n += u.qtd*t.tipoFloors; unitRows[j].area += u.qtd*t.tipoFloors*u.area*t.r }));
+  T.forEach(t=>t.faixas.forEach(f=>P.mix.forEach((u,j)=>{ unitRows[j].n += f.qtd[j]*f.nTipo; unitRows[j].area += f.qtd[j]*f.nTipo*u.area*f.r })));
   const cobN = T.reduce((s,t)=>s+(t.hasCob?P.cob.qtd:0),0), cobArea = T.reduce((s,t)=>s+t.cobP,0);
-  const minApto = Math.min(...P.mix.map(u=>u.area*Math.min(...T.map(t=>t.r||1))));
+  const minApto = !prog ? Math.min(...P.mix.map(u=>u.area*Math.min(...T.map(t=>t.r||1))))
+    : Math.min(...P.mix.map((u,j)=>u.area*Math.min(1, ...T.flatMap(t=>t.faixas.filter(f=>f.qtd[j]>0 && f.nTipo>0).map(f=>f.r||1)))));
+  const hLim = typeof formaHLim==="function" ? formaHLim(st) : R.hMax;
+  const env = prog ? formaEnvelope(envAt, afAt, hEmb, Math.max(hLim, Hmax), P.pe) : null;
   const terra = subA*P.subsolos*P.peGar + A*Math.abs(st.lote.desnivel)*0.25;
   const TO = A? Math.max(embA,torProj)/A : 0, perm = A? (A-Math.max(P.subsolos>0?subA:0, embA))/A : 0;
-  const m = {A,H,Hs,afast,gap,axis,sub,emb,torAll,T,slotOk,subA,embA,tiposA,duplexA,aticoA,unitsRes,privRes,TO,perm,unitRows,cobN,cobArea,minApto,mixPriv,mixUn,duplex,terra,hEmb,lz,pavLz,acesso,ter,units:unitsRes};
+  const m = {A,H,Hs,afast: prog? afAt(hEmb+P.pe) : afast,gap,axis,sub,emb,torAll,env,hLim,forma:!!FO,T,slotOk,subA,embA,tiposA,duplexA,aticoA,unitsRes,privRes,TO,perm,unitRows,cobN,cobArea,minApto,mixPriv,mixUn,duplex,terra,hEmb,lz,pavLz,acesso,ter,units:unitsRes};
   areasFin(st, m);
   return m;
 }
@@ -147,12 +167,12 @@ function accessPoints(st){
   const at=t=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
   return {ped:at(st.lote.acessoPed), vei:at(st.lote.acessoVei), edge:i};
 }
-function maxPav(st){ let best=0; for(let n=1;n<=70;n++){ const m=massing(st,{pav:n}); if(m.H<=st.regras.hMax+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1)) best=n; } return best }
+function maxPav(st){ let best=0; for(let n=1;n<=70;n++){ const m=massing(st,{pav:n}); if(m.H<=(m.hLim??st.regras.hMax)+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1)) best=n; } return best }
 function status(m, st){
   const R=st.regras;
   return {
     ca: m.CA>R.caMax+1e-6?"bad": m.CA>R.caBas+1e-6?"warn":"ok",
-    h: m.H>R.hMax+1e-6?"bad":"ok",
+    h: m.H>(m.hLim??R.hMax)+1e-6 || (st.forma && st.forma.on && +st.forma.hEmbMax>0 && m.hEmb>+st.forma.hEmbMax+1e-6) ?"bad":"ok", // 2.4: aeródromo e embasamento
     vg: m.vagas<m.vagasReq?"bad":"ok",
     perm: m.perm<R.permeab-1e-6?"bad":"ok",
     apto: m.minApto<R.aptoMin?"bad":"ok",

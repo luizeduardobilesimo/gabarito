@@ -311,22 +311,26 @@ Ao terminar cada item: rodar os testes, gerar o build, publicar e marcar o item 
 
 ## Andamento
 
-- [ ] 0.1 Módulos, TypeScript e Vite
-- [ ] 0.2 Testes automáticos
-- [ ] 0.3 Cálculo em segundo plano
-- [ ] 0.4 Desfazer/refazer e versões
-- [ ] 1.1 Preço por unidade
-- [ ] 1.2 Unidades por dentro
-- [ ] 1.3 Otimizador com vários critérios
-- [ ] 1.4 Impacto de vizinhança
-- [ ] 2.1 Garagem completa
-- [ ] 2.2 Malha estrutural
-- [ ] 2.3 Topografia, corte e aterro, contenção
-- [ ] 2.4 Regras avançadas de forma
-- [ ] 2.5 Normas automáticas
-- [ ] 3.1 Orçamento paramétrico
-- [ ] 3.2 Curvas, cenários e riscos
-- [ ] 3.3 Permuta × compra × parceria
-- [ ] 4.1 Nuvem
-- [ ] 4.2 Modo apresentação
-- [ ] 4.3 Mapa real e entorno automático
+Execução de 05/10/2026 (protótipo local, 9 agentes em paralelo sobre a fundação de ganchos). Todos os testes passam (172), capturas desktop/celular claro/escuro sem erros de JS, e os estudos de referência mantêm os números (recursos que mudam números vêm desligados por padrão).
+
+- [~] 0.1 Módulos, TypeScript e Vite — **parcial**: Vite (`npm run dev` com recarga), empacotador único `tools/bundle.mjs`, `tsconfig` com typecheck dos scripts globais. **Falta** a troca de globais por `import/export` — fica para o MVP, junto com o backend.
+- [x] 0.2 Testes automáticos — Vitest (`tests/`, harness em Node), 5 estudos de referência (`tests/cenarios`), Playwright `tools/screens.cjs all`. Falta: comparação de capturas por diferença de pixels.
+- [x] 0.3 Cálculo em segundo plano — `ui/calcworker.js`; otimizador e melhor acesso canceláveis.
+- [x] 0.4 Desfazer/refazer e versões — `ui/historico.js`, `ui/estudos.js` (versões no IndexedDB; nuvem no 4.1).
+- [x] 1.1 Preço por unidade — `calc/unidades.js`, `ui/vendas.js`. Falta: calibrar prêmios com tabela de vendas real.
+- [x] 1.2 Unidades por dentro — `calc/comodos.js`, `ui/comodos.js` (3 fases). Faltam modelos 2 suítes / 4 dorm. / lavabo; portas não recortam paredes no DXF/IFC.
+- [x] 1.3 Otimizador com vários critérios — `calc/pareto.js`, `ui/pareto.js`. Atenção: a análise leva ~20 s (meta 15 s).
+- [x] 1.4 Impacto de vizinhança — `calc/vizinhanca.js`, `ui/vizinhanca.js`.
+- [x] 2.1 Garagem completa — helicoidal, L, elevador de carros, presas, motos, bicicletas, EV, quadro por tipo.
+- [x] 2.2 Malha estrutural — `calc/estrutura.js` (desligada por padrão).
+- [x] 2.3 Topografia, corte e aterro, contenção — `calc/topografia.js`. Falta: página de topografia no PDF.
+- [x] 2.4 Regras avançadas de forma — `calc/forma.js` (desligada por padrão). Pendente: `potencial()`/otimizador ainda usam `hMax` em vez de `m.hLim`; sol e vento usam a planta típica.
+- [x] 2.5 Normas automáticas — `calc/normas.js`. **Preliminar: precisa da revisão do Luiz/projetista.**
+- [x] 3.1 Orçamento paramétrico — `calc/orcamento.js`, `calc/cub.js` (CUB e coeficientes ilustrativos).
+- [x] 3.2 Curvas, cenários e riscos — `calc/fluxo.js`. Falta: validar com a planilha real do Luiz.
+- [x] 3.3 Permuta × compra × parceria — `calc/terreno.js`.
+- [~] 4.1 Nuvem — **parte local pronta**: `ui/repo.js` (IndexedDB, interface pronta para trocar), esquema em `docs/supabase/schema.sql`. **Falta** conectar Supabase/login/sincronização (decisão de não conectar nesta fase).
+- [x] 4.2 Modo apresentação — `ui/apresentacao.js`, `ui/marca.js`, link `#ver=` local (link curto depende do 4.1).
+- [x] 4.3 Mapa real e entorno automático — `calc/geo.js`, `ui/mapa.js` (Overpass só com o app servido por http).
+- [x] Cidades com regras pré-cadastradas — `calc/cidades.js` (7 cidades, valores ilustrativos a conferir).
+- [x] Escada mais rasa com núcleo na fachada — `layout.js` (vagas mantidas; ver nota no relatório sobre usar o contorno real nas garagens).

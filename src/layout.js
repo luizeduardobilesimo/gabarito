@@ -45,7 +45,12 @@ function coreBuild(ux,vy,cu0,vEdge,s,depthB,o){
   const P=(u,v)=>{ const uu=mir? cu0+L-u : cu0+u, vv= s>0? vEdge+v : vEdge-v; return [ux[0]*uu+vy[0]*vv, ux[1]*uu+vy[1]*vv] };
   const cells=[], doors=[], lines=[];
   FR.forEach(c=>cells.push({...c, poly:R(c.u,c.w,0,F), row:"f"}));
-  BK.forEach(c=>cells.push({...c, poly:R(c.u,c.w,F,F+B), row:"b"}));
+  // escada na ponta do núcleo encostado na fachada: profundidade do lance real (2 lances + parede), o resto volta para a unidade vizinha
+  const escD=o._escD||CORE_B, notches=[];
+  BK.forEach(c=>{ let d=B;
+    if(c.k==="esc" && o._notch && B-escD>=1.0){ const side= c.u<0.05? "start" : Math.abs(c.u+c.w-L)<0.05? "end" : null;
+      if(side && o._notch.includes(side)){ d=escD; notches.push({side, u:c.u, w:c.w}) } }
+    cells.push({...c, d, poly:R(c.u,c.w,F,F+d), row:"b"}) });
   const door=(u,v,du,dv,w,sw)=>{ doors.push({a:P(u,v), b:P(u+du*w,v+dv*w), sw}) };
   cells.forEach(c=>{
     if(c.door==="hall"){ const w=c.k==="elev"? 1.0 : c.k==="shaft"? 0.7 : 0.9; door(c.u+(c.w-w)/2,0,1,0,w, c.k==="elev"?0:1) }
@@ -53,7 +58,7 @@ function coreBuild(ux,vy,cu0,vEdge,s,depthB,o){
     if(c.doorSide){ const nb=cells.find(x=>x.row===c.row && x.k===c.doorSide && (Math.abs(x.u-(c.u+c.w))<0.05 || Math.abs(x.u+x.w-c.u)<0.05)); if(nb){ const uE= Math.abs(nb.u-(c.u+c.w))<0.05? c.u+c.w : c.u, v0=c.row==="f"?0:F, h=c.row==="f"?F:B; door(uE, v0+(h-0.9)/2, 0,1,0.9,1) } }
     if(c.k==="elev"){ const h=cells.find(x=>x.row==="b" && x.k==="hserv" && Math.min(c.u+c.w,x.u+x.w)-Math.max(c.u,x.u)>1.1); if(h){ const a=Math.max(c.u,h.u), b=Math.min(c.u+c.w,h.u+h.w); door(a+(b-a-1.0)/2,F,1,0,1.0,0) } }
     if(c.k==="esc"){ // lances, patamares e seta de subida
-      const v0=F, v1=F+B, vm=(v0+v1)/2, uA=c.u+1.2, uB=c.u+c.w-1.2;
+      const v0=F, v1=F+(c.d||B), vm=(v0+v1)/2, uA=c.u+1.2, uB=c.u+c.w-1.2;
       lines.push([P(uA,vm),P(uB,vm)]);
       for(let u=uA; u<=uB+0.01; u+=0.28){ lines.push([P(u,v0+0.05),P(u,vm)]); lines.push([P(u,vm),P(u,v1-0.05)]) }
       lines.push({arrow:[P(uB-0.3,v0+(vm-v0)/2),P(uA+0.3,v0+(vm-v0)/2)]});
@@ -61,7 +66,26 @@ function coreBuild(ux,vy,cu0,vEdge,s,depthB,o){
     if(c.k==="elev"||c.k==="emerg"){ const a=0.25; lines.push([P(c.u+a,c.row==="f"?a:F+a),P(c.u+c.w-a,c.row==="f"?F-a:F+B-a)]); lines.push([P(c.u+c.w-a,c.row==="f"?a:F+a),P(c.u+a,c.row==="f"?F-a:F+B-a)]) }
     if(c.k==="duto"){ const v0=c.row==="f"?0:F, h=c.row==="f"?F:B; for(let k=-h;k<c.w;k+=0.3){ const x0=Math.max(0,k), y0=Math.max(0,-k); lines.push([P(c.u+x0,v0+y0),P(c.u+Math.min(c.w,k+h),v0+Math.min(h,c.w-k))]) } }
   });
-  return {L, depth:F+B, cells, doors, lines, poly:R(0,L,0,F+B), lobby:R(0,L,-2.0,0)};
+  // contorno do núcleo: retângulo menos os recortes atrás das escadas (do lado da fachada)
+  const poly=R(0,L,0,F+B); let outline=poly;
+  if(notches.length){ const back=[[L,F+B]]; notches.slice().sort((a,b)=>b.u-a.u).forEach(n=>{ const d=F+escD;
+      if(n.side==="end"){ back.length=0; back.push([L,d],[n.u,d],[n.u,F+B]) } else back.push([n.u+n.w,F+B],[n.u+n.w,d],[0,d]) });
+    const pts=[[0,0],[L,0],...back]; if(!notches.some(n=>n.side==="start")) pts.push([0,F+B]);
+    outline=pts.filter((q,i)=>i===0||Math.hypot(q[0]-pts[i-1][0],q[1]-pts[i-1][1])>1e-6).map(([u,v])=>P(u,v)) }
+  const sobras=notches.map(n=>({side:n.side, u0:n.u, u1:n.u+n.w, vIn:F+escD, vOut:F+B, poly:R(n.u,n.w,F+escD,F+B)}));
+  // poly = projeção total (obstáculo nas garagens, como antes) · outline = contorno real no pavimento tipo
+  return {L, depth:F+B, cells, doors, lines, poly, outline, lobby:R(0,L,-2.0,0), sobras, mir};
+}
+// recorta um canto retangular de Q (convexo): corner = vértice do canto (u,v no referencial ux/vy), inner = canto oposto do recorte
+function notchPoly(Q, ux, vy, corner, inner){
+  if(!Q || Q.length<3) return null;
+  const uv=Q.map(q=>[G.dot(q,ux),G.dot(q,vy)]); let k=-1, bd=0.05;
+  uv.forEach((q,i)=>{ const d=Math.hypot(q[0]-corner[0],q[1]-corner[1]); if(d<bd){ bd=d; k=i } });
+  if(k<0) return null;
+  const n=uv.length, prev=uv[(k-1+n)%n], W=(u,v)=>[ux[0]*u+vy[0]*v, ux[1]*u+vy[1]*v];
+  const a=W(inner[0],corner[1]), b=W(inner[0],inner[1]), c=W(corner[0],inner[1]);
+  const ins = Math.abs(prev[1]-corner[1])<0.05 ? [a,b,c] : [c,b,a];
+  return [...Q.slice(0,k), ...ins, ...Q.slice(k+1)];
 }
 function tipoLayout(plate, units, o){
   if(!plate || !plate.length) return null;
@@ -73,7 +97,7 @@ function tipoLayout(plate, units, o){
   let dbl = D >= 2*o.profMin + corr; if(o.planta==="central") dbl=true; if(o.planta==="lateral") dbl=false;
   const reg=[]; let corridor, hallEnds=[], cv0, cv1, vEdge, sgn, depthB=CORE_B;
   const sub=(va,vb,ua,ub)=>{ const b=G.band(plate,vy,va,vb); return (ua===undefined||!b.length)? b : G.band(b,ux,ua,ub) };
-  const pos=Math.min(1,Math.max(0,o.pos??0.5)), cu0=u0+0.01+pos*Math.max(0,Lu-coreLen-0.02), cu1=cu0+coreLen;
+  const pos=Math.min(1,Math.max(0,o.pos??0.5)), cu0=u0+0.01+pos*Math.max(0,Lu-coreLen-0.02), cu1=cu0+Math.max(coreLen, coreBuild([1,0],[0,1],0,0,1,CORE_B,o).L); // ponta real do núcleo (a passagem de serviço alonga a frente): as unidades começam depois dela
   if(dbl){
     const vc=(v0+v1)/2, c0=vc-corr/2, c1=vc+corr/2;
     corridor = sub(c0,c1,u0+0.01,u1-0.01);
@@ -87,8 +111,19 @@ function tipoLayout(plate, units, o){
     const uv0 = side? v0 : v0+corr, uv1 = side? v1-corr : v1;
     reg.push({p:sub(uv0,uv1,u0,cu0),fac:side?"min":"max"}); reg.push({p:sub(uv0,uv1,cu1,u1),fac:side?"min":"max"});
   }
-  const CB=coreBuild(ux,vy,cu0,vEdge,sgn,depthB,o);
-  const core=CB.poly;
+  // núcleo na fachada: a escada fica com a profundidade do lance e a sobra vai para a unidade ao lado (se houver unidade desse lado)
+  const sideReg=w=>reg.find(r=>{ if(!r.p.length || G.area(r.p)<=4) return false; const [a,b]=G.extent(r.p,ux); return w==="esq"? Math.abs(b-cu0)<0.05 && a<cu0-0.5 : Math.abs(a-cu1)<0.05 && b>cu1+0.5 });
+  const mirC=o.escada==="D", wSide=ls=> (ls==="start")!==mirC ? "esq" : "dir";
+  const oc = (depthB-CORE_B>=1.0 && o.escProf!==false)? {...o, _escD:CORE_B, _notch:["start","end"].filter(ls=>sideReg(wSide(ls)))} : o;
+  const CB=coreBuild(ux,vy,cu0,vEdge,sgn,depthB,oc);
+  const core=CB.poly, sobraA=[], reserva=[];
+  (CB.sobras||[]).forEach(sb=>{ const w=wSide(sb.side), r=sideReg(w); if(!r) return;
+    const wu0= mirC? cu0+CB.L-sb.u1 : cu0+sb.u0, wu1= mirC? cu0+CB.L-sb.u0 : cu0+sb.u1, vIn=vEdge+sgn*sb.vIn;
+    const [ra,rb]=G.extent(r.p,ux), [rva,rvb]=G.extent(r.p,vy);
+    const Q=sub(rva,rvb, w==="esq"? ra : wu0, w==="esq"? wu1 : rb);
+    const np=notchPoly(Q, ux, vy, [w==="esq"? wu1 : wu0, vEdge], [w==="esq"? wu0 : wu1, vIn]);
+    if(np){ sobraA.push(G.area(np)-G.area(r.p)); r.p=np; reserva.push(sb.poly) } });
+  const coreOut = reserva.length===(CB.sobras||[]).length ? CB.outline : core;
   const cParts=CB.cells.map(c=>({nome:c.nome,kind:c.k,poly:c.poly,area:G.area(c.poly)}));
   const R=reg.filter(r=>r.p.length && G.area(r.p)>4).map(r=>({...r, A:G.area(r.p), list:[], used:0}));
   const us=units.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo);
@@ -106,11 +141,11 @@ function tipoLayout(plate, units, o){
       const un={poly, nome:u.nome, alvo:u.alvo, area:G.area(poly), fac:r.fac};
       if(u.sac>0 && poly.length){ const [pv0,pv1]=G.extent(poly,vy), wU=cut-prev, w=Math.max(1.2,Math.min(wU-1, u.sac/prof)), pr=u.sac/w, uc=(prev+cut)/2;
         let va,vb; if(r.fac==="max"){ va= sacTipo==="balanco"? pv1 : pv1-pr; vb=va+pr } else { vb= sacTipo==="balanco"? pv0 : pv0+pr; va=vb-pr }
-        let sp=G.rect(ux,vy,uc-w/2,va,w,vb-va); if(sacTipo!=="balanco"){ sp=G.clipToPoly(sp, poly) }
+        let sp=G.rect(ux,vy,uc-w/2,va,w,vb-va); if(sacTipo!=="balanco"){ sp=G.clipToPoly(sp, poly.length>4? plate : poly) }
         un.sac={poly:sp, area:G.area(sp), tipo:sacTipo} }
       prev=cut; out.push(un) });
   });
   const kinds={}; cParts.forEach(c=>kinds[c.kind]=(kinds[c.kind]||0)+c.area);
-  return {ux,vy,units:out,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(core),coreKinds:kinds,fachada};
+  return {ux,vy,units:out,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:sobraA.reduce((s,a)=>s+a,0)};
 }
 

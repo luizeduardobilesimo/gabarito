@@ -4,7 +4,9 @@ function finance(st, m, adj={}){
   const eqA = m.tiposA + m.duplexA + m.hallA + m.lojaA + m.aticoA + (m.lzExtraA||0) + m.garA*F.eqGar + (m.sacBal||0)*0.5;
   const lazerC = (m.lzCusto||0)*(1+dc);
   const extraC = (m.custosExtra||[]).reduce((s,x)=>s+(+x.valor||0),0)*(1+dc);
-  const obra = eqA*F.cub*F.fator*(1+dc) + lazerC + extraC;
+  // orçamento: "CUB × fator" (padrão) ou paramétrico por sistema (src/calc/orcamento.js)
+  const orc = st.orc && st.orc.modo==="param" ? orcCalc(st, m) : null;
+  const obra = orc ? orc.direto*(1+dc) + lazerC + extraC : eqA*F.cub*F.fator*(1+dc) + lazerC + extraC;
   // VGV de tabela (base)
   const vRes = m.vgvUnidades!=null ? m.vgvUnidades : m.unitRows.reduce((s,u)=>s+u.area*u.preco,0) + m.cobArea*P.cob.preco;
   const vLoja = m.lojaPriv*F.precoLoja;
@@ -14,21 +16,26 @@ function finance(st, m, adj={}){
   const projetos=obra*F.projetos, adm=obra*F.adm, conting=obra*F.conting;
   // cronograma
   const launch=Math.round(F.prelanc), N=Math.max(1,Math.round(F.obra)), chaves=launch+N, V=Math.max(1,Math.round(F.venda));
-  const T=Math.max(chaves, launch+V)+2;
+  const RD = st.flx && st.flx.receb && st.flx.receb.modo==="det" ? st.flx.receb : null;   // recebimento detalhado (src/calc/fluxo.js)
+  const T=Math.max(chaves, launch+V)+2 + (RD? flxMesesExtra(RD) : 0);
   const z=()=>new Array(T).fill(0);
-  const c={terreno:z(),outorga:z(),projetos:z(),obra:z(),terra:z(),mkt:z(),corret:z(),imp:z(),permFin:z(),juros:z(),receb:z(),finIn:z(),finOut:z()};
+  const c={terreno:z(),outorga:z(),projetos:z(),obra:z(),terra:z(),mkt:z(),corret:z(),imp:z(),permFin:z(),juros:z(),receb:z(),finIn:z(),finOut:z(),vendas:z(),distr:z()};
   const fI = mm => Math.pow(1+F.incc, mm/12);
   c.terreno[0] = terreno+itbi; c.outorga[Math.min(3,T-1)] = outorga;
   for(let k=0;k<Math.max(1,launch);k++) c.projetos[k] = projetos/Math.max(1,launch);
   for(let k=0;k<Math.min(3,N);k++) c.terra[launch+k] = terra/Math.min(3,N)*fI(launch+k);
-  let wsum=0; const w=[]; for(let k=0;k<N;k++){ w[k]=Math.sin(Math.PI*(k+.5)/N); wsum+=w[k] }
-  for(let k=0;k<N;k++) c.obra[launch+k] = (obra+adm+conting)*w[k]/wsum*fI(launch+k);
+  const curva = flxCurva(st, m, N, orc);   // null = senoidal (padrão)
+  if(curva){ for(let k=0;k<N;k++) c.obra[launch+k] = (obra+adm+conting)*curva.w[k]*fI(launch+k);
+    if(curva.sis && !adj.noHooks) c.obraSis = curva.sis.map(s=>({k:s.k, nome:s.nome, cor:s.cor, v:s.w.map((x,k)=>(obra+adm+conting)*x*fI(launch+k)), mes0:launch})) }
+  else { let wsum=0; const w=[]; for(let k=0;k<N;k++){ w[k]=Math.sin(Math.PI*(k+.5)/N); wsum+=w[k] }
+  for(let k=0;k<N;k++) c.obra[launch+k] = (obra+adm+conting)*w[k]/wsum*fI(launch+k) }
   const mStart=Math.max(0,launch-2), mLen=V+2; for(let k=0;k<mLen;k++) c.mkt[mStart+k] = vgv*F.mkt/mLen;
   const sold=[]; for(let k=0;k<V;k++) sold[k]=(k===0?F.vendaLanc:0)+(1-F.vendaLanc)/V;
-  const soldCum=z(); let sc=0;
-  for(let k=0;k<V;k++){
+  const soldCum=z(); let sc=0, dist=null;
+  if(RD){ dist = flxRecebDet(RD, F, c, vgv, sold, launch, chaves, V, T); for(let k=0;k<V;k++){ sc+=sold[k]; soldCum[launch+k]=sc } }
+  else for(let k=0;k<V;k++){
     const mth=launch+k, val=vgv*sold[k]*Math.pow(1+F.reaj, k/12); sc+=sold[k]; soldCum[mth]=sc;
-    c.corret[mth] += val*F.corret;
+    c.corret[mth] += val*F.corret; c.vendas[mth] += val;
     const corr = j => F.correcao ? Math.pow(1+F.incc,(j-mth)/12) : 1;
     if(mth<chaves){ const nP=chaves-mth; for(let j=0;j<nP;j++) c.receb[mth+j]+=val*F.entrada/nP*corr(mth+j); c.receb[chaves]+=val*(1-F.entrada)*corr(chaves) }
     else c.receb[mth]+=val;
@@ -57,7 +64,8 @@ function finance(st, m, adj={}){
   let cum=0, minCum=0; const cumA=cf.map(v=>{ cum+=v; if(cum<minCum) minCum=cum; return cum });
   let pay=null; for(let i=cumA.length-1;i>=0;i--){ if(cumA[i]<0){ pay=i+1<cumA.length?i+1:null; break } if(i===0) pay=0 }
   const maxTerreno = terreno + (lucro - F.margemAlvo*S_.receita)/(1+F.itbi);
-  const out = {eqA,lazerC,extraC,obra,vgvB,permV,vgv,vRes,vLoja,terreno,itbi,outorga,terra,projetos,adm,conting,...S_,custo,lucro,margem,cf,cumA,c,tirA,vpl,exp:minCum,pay,maxTerreno,chaves,launch,lim};
+  const out = {eqA,lazerC,extraC,obra,vgvB,permV,vgv,vRes,vLoja,terreno,itbi,outorga,terra,projetos,adm,conting,...S_,custo,lucro,margem,cf,cumA,c,tirA,vpl,exp:minCum,pay,maxTerreno,chaves,launch,lim,
+    orc, distratoV: dist? dist.loss : 0, distrato: dist, recebModo: RD? "det" : "simples", curvaModo: curva? st.flx.curva.modo : "sen"};
   if(!adj.noHooks) runHooks("finance", out, st, m, adj);
   return out;
 }

@@ -47,18 +47,22 @@ async function exportPDF(){
   }));
   const T=s=>String(s).replace(/[→]/g,"->").replace(/[≈]/g,"~").replace(/[−–—]/g,"-").replace(/[÷]/g,"/").replace(/[“”]/g,'"');
   const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"}); const PW=210, M=14; let y=0;
-  const ink=[28,39,41], mut=[93,106,106], acc=[31,95,139], mark=[227,169,11], ok=[44,138,87], bad=[191,61,42];
-  const head=(t)=>{ doc.setFillColor(...ink); doc.rect(0,0,PW,16,"F"); doc.setTextColor(255); doc.setFont("helvetica","bold"); doc.setFontSize(12); doc.text("GABARITO",M,10.5); doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.text(T(t),PW-M,10.5,{align:"right"}); doc.setTextColor(...ink); y=24 };
-  const h2=(t)=>{ if(y>262){ doc.addPage(); head(S.nome) } doc.setFont("helvetica","bold"); doc.setFontSize(11.5); doc.setTextColor(...ink); doc.text(T(t).toUpperCase(),M,y); doc.setDrawColor(...mark); doc.setLineWidth(0.6); doc.line(M,y+1.6,M+22,y+1.6); y+=7 };
+  const MK=(typeof marcaPdf==="function")? marcaPdf() : null;   // marca do usuário (null = PDF padrão do Gabarito)
+  const ink=[28,39,41], mut=[93,106,106], acc=MK?MK.cor:[31,95,139], mark=[227,169,11], ok=[44,138,87], bad=[191,61,42];
+  const head=(t)=>{ if(MK) marcaHead(doc,MK,t,PW,M,T); else { doc.setFillColor(...ink); doc.rect(0,0,PW,16,"F"); doc.setTextColor(255); doc.setFont("helvetica","bold"); doc.setFontSize(12); doc.text("GABARITO",M,10.5); doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.text(T(t),PW-M,10.5,{align:"right"}) } doc.setTextColor(...ink); y=24 };
+  const h2=(t)=>{ if(y>262){ doc.addPage(); head(S.nome) } doc.setFont("helvetica","bold"); doc.setFontSize(11.5); doc.setTextColor(...ink); doc.text(T(t).toUpperCase(),M,y); doc.setDrawColor(...(MK?MK.cor:mark)); doc.setLineWidth(0.6); doc.line(M,y+1.6,M+22,y+1.6); y+=7 };
   const rows=(list,o={})=>{ doc.setFontSize(9); list.forEach(([a,b,st])=>{ if(y>280){ doc.addPage(); head(S.nome) } doc.setFont("helvetica",o.bold&&o.bold.includes(a)?"bold":"normal"); doc.setTextColor(...ink); doc.text(T(a),M+(st?4:0),y); if(st){ doc.setFillColor(...(st==="ok"?ok:st==="warn"?mark:bad)); doc.circle(M+1.2,y-1.1,1.1,"F") } doc.text(T(b),PW-M,y,{align:"right"}); doc.setDrawColor(220); doc.setLineWidth(0.1); doc.line(M,y+1.6,PW-M,y+1.6); y+=5.4 }); y+=2 };
   const img=(url,w,h)=>{ if(!url) return; if(y+h>285){ doc.addPage(); head(S.nome) } doc.addImage(url,"JPEG",M,y,w,h); doc.setDrawColor(200); doc.rect(M,y,w,h); y+=h+5 };
   // capa
   head("Estudo de viabilidade");
+  if(MK) y=marcaCapa(doc,MK,{T,M,PW,y,ink,mut,nome:S.nome,sub:`${R.cidade} · ${new Date().toLocaleDateString("pt-BR")}`});
+  else {
   doc.setFont("helvetica","bold"); doc.setFontSize(18); doc.text(T(S.nome),M,y+4); y+=11;
   doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(...mut); doc.text(T(`${R.cidade} · ${new Date().toLocaleDateString("pt-BR")}`),M,y); y+=6; doc.setTextColor(...ink);
-  img(imgs.v3,PW-2*M,(PW-2*M)*0.62);
+  }
+  if(!MK || MK.capa3d) img(imgs.v3,PW-2*M,(PW-2*M)*0.62);
   const kp=[["Terreno",m2(m.A)],["Unidades",String(m.units)],["Área privativa",m2(m.priv)],["Vagas",`${m.vagas} / ${m.vagasReq}`],["VGV",mi(f.vgv)],["Lucro",mi(f.lucro)],["Margem",pct(f.margem)],["TIR a.a.",f.tirA==null?"-":pct(f.tirA)]];
-  const cw=(PW-2*M)/4; kp.forEach(([l,v],i)=>{ const x=M+(i%4)*cw, yy=y+Math.floor(i/4)*16; doc.setFillColor(242,244,239); doc.rect(x+0.5,yy,cw-1,14,"F"); doc.setFontSize(7.5); doc.setTextColor(...mut); doc.text(T(l.toUpperCase()),x+3,yy+5); doc.setFontSize(11.5); doc.setTextColor(...ink); doc.setFont("helvetica","bold"); doc.text(T(v),x+3,yy+11); doc.setFont("helvetica","normal") }); y+=36;
+  const cw=(PW-2*M)/4; kp.forEach(([l,v],i)=>{ const x=M+(i%4)*cw, yy=y+Math.floor(i/4)*16; doc.setFillColor(...(MK?MK.tint:[242,244,239])); doc.rect(x+0.5,yy,cw-1,14,"F"); doc.setFontSize(7.5); doc.setTextColor(...mut); doc.text(T(l.toUpperCase()),x+3,yy+5); doc.setFontSize(11.5); doc.setTextColor(...ink); doc.setFont("helvetica","bold"); doc.text(T(v),x+3,yy+11); doc.setFont("helvetica","normal") }); y+=36;
   doc.setFontSize(8); doc.setTextColor(...mut); doc.text(T("Estudo preliminar de massa. Não substitui projeto legal, consulta de viabilidade na prefeitura nem orçamento executivo."),M,y); doc.setTextColor(...ink);
   // implantação e regras
   doc.addPage(); head(S.nome); h2("Implantação"); img(imgs.impl,PW-2*M,(PW-2*M)*0.71);
@@ -80,10 +84,11 @@ async function exportPDF(){
   h2("Sensibilidade da margem (preço x custo de obra)");
   { const sg=sensGrid(S,m); rows([["","obra -10%  |  base  |  obra +10%"],...["preço -10%","preço base","preço +10%"].map((l,i)=>[l,sg[i].map(v=>pct(v)).join("   |   ")])]) }
   h2("Premissas");
-  rows([["CUB de referência / fator",`${brl(F.cub)}/m² × ${nf(F.fator,2)}`],["INCC / reajuste de tabela",`${pct(F.incc)} / ${pct(F.reaj)} a.a.`],["Lançamento / obra / vendas",`mês ${F.prelanc} / ${F.obra} meses / ${F.venda} meses`],["Vendido no lançamento / pago até as chaves",`${pct(F.vendaLanc,0)} / ${pct(F.entrada,0)}`],["Corretagem / marketing / impostos",`${pct(F.corret)} / ${pct(F.mkt)} / ${pct(F.imp)}`],["Financiamento à produção",F.finOn?`${pct(F.finPct,0)} da obra a ${pct(F.finTaxa)} a.a.`:"não"],["Permuta física / financeira",`${pct(F.permuta,0)} / ${pct(F.permutaFin,1)}`]]);
+  rows([S.orc&&S.orc.modo==="param"? ["CUB de referência / orçamento",`${brl(F.cub)}/m² · paramétrico por sistema`] : ["CUB de referência / fator",`${brl(F.cub)}/m² × ${nf(F.fator,2)}`],["INCC / reajuste de tabela",`${pct(F.incc)} / ${pct(F.reaj)} a.a.`],["Lançamento / obra / vendas",`mês ${F.prelanc} / ${F.obra} meses / ${F.venda} meses`],["Vendido no lançamento / pago até as chaves",`${pct(F.vendaLanc,0)} / ${pct(F.entrada,0)}`],["Corretagem / marketing / impostos",`${pct(F.corret)} / ${pct(F.mkt)} / ${pct(F.imp)}`],["Financiamento à produção",F.finOn?`${pct(F.finPct,0)} da obra a ${pct(F.finTaxa)} a.a.`:"não"],["Permuta física / financeira",`${pct(F.permuta,0)} / ${pct(F.permutaFin,1)}`]]);
   // estudo
   if(imgs.gar.length || imgs.tipo.some(Boolean)){
     doc.addPage(); head(S.nome); h2("Estudo de garagem");
+    if(typeof garQuadroRows==="function" && m.quadroVagas){ rows(garQuadroRows(m).map(r=>r.map(s=>T(s).replace(/×/g,"x")))); if(m.elevCarros){ const ec=m.elevCarros; rows([["Elevador de carros",T(`${ec.n} un. · ciclo ${nf(ec.ciclo,0)} s · ${nf(ec.cap,0)} carros/h · fila prevista ${isFinite(ec.fila95)?ec.fila95:"-"} (espera ${ec.espera})`)]]) } }
     const nomes=new Proxy({},{get:(o,k)=>k==="ter"?"Térreo":nomePav(k).replace(/^./,c=>c.toUpperCase())});
     imgs.gar.forEach(g=>{ doc.setFontSize(9.5); doc.setFont("helvetica","bold"); if(y>230){ doc.addPage(); head(S.nome) } doc.text(T(`${nomes[g.k]} · ${m.gar[g.k].count} vagas`),M,y); doc.setFont("helvetica","normal"); y+=3; img(g.img,PW-2*M,(PW-2*M)*0.64) });
     imgs.tipo.forEach((u,i)=>{ if(!u) return; if(y>150){ doc.addPage(); head(S.nome) } if(i===0) h2("Pavimento tipo"); doc.setFontSize(9.5); doc.setFont("helvetica","bold"); doc.text(T(`Torre ${i+1}`),M,y); doc.setFont("helvetica","normal"); y+=3; img(u,PW-2*M,(PW-2*M)*0.64) });
@@ -93,8 +98,8 @@ async function exportPDF(){
   if(imgs.vento){ const w=windStats(S); if(y>150){ doc.addPage(); head(S.nome) } h2(`Vento - de ${["N","NE","L","SE","S","SO","O","NO"][Math.round(S.clima.ventoDir/45)%8]}, ${nf(S.clima.ventoVel,1)} m/s a ${nf(S.clima.ventoAlt,1)} m`); img(imgs.vento,PW-2*M,(PW-2*M)*0.62);
     if(w) rows([["Velocidade máxima no lote",`${nf(w.max*S.clima.ventoVel,1)} m/s`],["Áreas com aceleração (>1,3x)",pct(w.hi,0)],["Áreas de calmaria (<0,35x)",pct(w.calm,0)]]) }
   doc.setFontSize(7.5); doc.setTextColor(...mut); if(y<280) doc.text(T("Sol: traçado de sombras. Vento: simulação 2D simplificada (Lattice Boltzmann) - uso comparativo."),M,Math.min(286,y+2));
-  await runHooksAsync("pdf", {doc,m,f,T,PW,M,head,h2,rows,img,ink,mut,acc,mark,ok,bad, y:()=>y, setY:v=>{y=v}, newPage:()=>{ doc.addPage(); head(S.nome) }});
-  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(...mut); doc.text(`${i}/${pages}`,PW-M,292,{align:"right"}) }
+  await runHooksAsync("pdf", {doc,m,f,T,PW,M,head,h2,rows,img,ink,mut,acc,mark,ok,bad,MK, y:()=>y, setY:v=>{y=v}, newPage:()=>{ doc.addPage(); head(S.nome) }});
+  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); if(MK) marcaRodape(doc,MK,T,PW,M); doc.setFontSize(7.5); doc.setTextColor(...mut); doc.text(`${i}/${pages}`,PW-M,292,{align:"right"}) }
   await saveFile(slug(S.nome)+"-viabilidade.pdf", doc.output("blob"));
 }
 
@@ -119,7 +124,8 @@ function dxfImpl(m){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("SUBSOLO
 function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (cs.lay.coreParts||[]).forEach(cp=>d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1)) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
   lay.vagas.forEach((v,i)=>{ if(v.tipo==="off") return; const L= v.tipo==="pcd"?"VAGAS-PCD": v.tipo==="idoso"?"VAGAS-IDOSO": v.tipo==="faixa"?"FAIXA-PCD":"VAGAS"; d.poly(L,v.poly, v.tipo==="pcd"?5:v.tipo==="idoso"?3:v.tipo==="faixa"?8:4); if(v.tipo!=="faixa") d.text("NUMERACAO",v.c,0.6,String(i+1)) });
   return d.out() }
-function dxfTipo(m,i){ const d=DXF(), l=m.tipo[i], t=m.T[i]; d.poly("PAVIMENTO",t.plate,7); if(!l) return d.out(); d.poly("NUCLEO",l.core,1); d.poly("CIRCULACAO",l.corridor,8); (l.hallEnds||[]).forEach(h=>d.poly("CIRCULACAO",h,8));
+function dxfTipo(m,i){ const d=DXF(), l=m.tipo[i], t=m.T[i]; d.poly("PAVIMENTO",t.plate,7); if(!l) return d.out(); d.poly("NUCLEO",l.coreOut||l.core,1); (l.coreParts||[]).forEach(cp=>d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1)); d.poly("CIRCULACAO",l.corridor,8); (l.hallEnds||[]).forEach(h=>d.poly("CIRCULACAO",h,8));
+  if(typeof comDxf==="function" && S.comodos && S.comodos.on) comDxf(d, l);   // cômodos: PAREDES, PORTAS, JANELAS, MOBILIARIO, TEXTOS
   l.units.forEach(u=>{ d.poly(u.livre?"LIVRE":"UNIDADES",u.poly,u.livre?8:3); if(u.poly.length){ const c=G.centroid(u.poly); d.text("TEXTOS",c,0.9,u.livre?"livre":u.nome); if(!u.livre) d.text("TEXTOS",[c[0],c[1]-1.3],0.6,`${nf(u.alvo,1)} m2 priv / ${nf(u.area,1)} m2 bruto`) } });
   return d.out() }
 
@@ -156,7 +162,12 @@ function IFC(m){
     const z=m.hEmb+j*P.pe, st=storey(`Pavimento ${j+1}`,z);
     m.T.forEach((t,i)=>{
       if(j<t.pav){ const cob=t.hasCob && j===t.pav-1; proxy(st,`Torre ${i+1} - Pav ${j+1}`,cob?"Cobertura":"Pavimento tipo",t.plate,P.pe);
-        const l=m.tipo[i]; if(l && !cob) l.units.filter(u=>!u.livre).forEach((u,q)=>space(st,`T${i+1}-${String(j+1).padStart(2,"0")}${String(q+1).padStart(2,"0")}`,`${u.nome} - ${nf(u.alvo,1)} m2 priv`,u.poly,2.6)) }
+        const l=m.tipo[i]; if(l && !cob) l.units.filter(u=>!u.livre).forEach((u,q)=>{ const cod=`T${i+1}-${String(j+1).padStart(2,"0")}${String(q+1).padStart(2,"0")}`; space(st,cod,`${u.nome} - ${nf(u.alvo,1)} m2 priv`,u.poly,2.6);
+          // cômodos: IfcSpace por cômodo (dentro do espaço da unidade) e IfcWall por parede
+          if(u.com && S.comodos && S.comodos.on){ const un=st.sp[st.sp.length-1], rs=[];
+            u.com.rooms.forEach((r,k)=>{ if(r.poly.length<3) return; const p=lp(st.p,0); rs.push(add(`IFCSPACE('${ifcGuid()}',$,${str(cod+"-"+String(k+1).padStart(2,"0"))},$,$,${p},${solid(r.poly,2.6)},${str(`${r.longo} - ${nf(r.area,2)} m2`)},.PARTIAL.,.SPACE.,$)`)) });
+            if(rs.length) add(`IFCRELAGGREGATES('${ifcGuid()}',$,$,$,${un},(${rs.join(",")}))`);
+            comParedes(u).forEach((w,k)=>{ const p=lp(st.p,0); st.els.push(add(`IFCWALL('${ifcGuid()}',$,${str(`${cod} parede ${k+1}`)},$,${str(w.tipo==="interna"?"Parede interna":w.tipo==="guarda"?"Guarda-corpo":w.tipo==="fachada"?"Parede de fachada":"Parede de divisa")},${p},${solid(w.poly, w.tipo==="guarda"? 1.1 : 2.8)},$,${w.tipo==="interna"?".PARTITIONING.":".STANDARD."})`)) }) } }) }
       else if(j===t.pav && t.duplexA>1) proxy(st,`Torre ${i+1} - Duplex`,"Cobertura duplex",G.scaleToArea(t.plate,t.duplexA),P.pe);
     });
   }
@@ -173,7 +184,7 @@ async function exportZIP(){
   if(m.gar) Object.entries(m.gar).forEach(([k,lay])=>{ if(lay) z.file(`garagem-${nomePav(k).replace(/\s+/g,"-")}.dxf`, dxfGar(m,lay,k[0]==="s"?m.sub:k[0]==="g"?m.emb:m.tGar)) });
   m.T.forEach((t,i)=>{ if(t.plate.length) z.file(`pavimento-tipo-torre-${i+1}.dxf`, dxfTipo(m,i)) });
   z.file(slug(S.nome)+".ifc", IFC(m));
-  z.file("leia-me.txt", ascii(`Gabarito - ${S.nome}\nUnidades em metros. DXF R12 (AC1009) em camadas. IFC4 com pavimentos (IfcBuildingStorey), volumes (IfcBuildingElementProxy) e unidades (IfcSpace).\nEstudo de massa preliminar: nao substitui projeto legal.\n`));
+  z.file("leia-me.txt", ascii(`Gabarito - ${S.nome}\nUnidades em metros. DXF R12 (AC1009) em camadas. IFC4 com pavimentos (IfcBuildingStorey), volumes (IfcBuildingElementProxy), unidades e comodos (IfcSpace) e paredes das unidades (IfcWall).\nEstudo de massa preliminar: nao substitui projeto legal.\n`));
   const blob=await z.generateAsync({type:"blob",compression:"DEFLATE"});
   await saveFile(slug(S.nome)+"-dxf-ifc.zip", blob);
 }

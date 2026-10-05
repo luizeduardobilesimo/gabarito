@@ -70,11 +70,30 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     const tl=w2s([G_.x0-G_.res/2, G_.y0+(G_.ny-0.5)*G_.res]); g.save(); g.imageSmoothingEnabled=true; g.globalAlpha=0.9; g.drawImage(lay._cv, tl[0], tl[1], G_.nx*G_.res*V.s, G_.ny*G_.res*V.s); g.restore() }
   function hatch(p,col,a=0.5){ if(!p||!p.length) return; path(p); g.save(); g.clip(); g.strokeStyle=col; g.globalAlpha=a; g.lineWidth=1; const c=w2s(G.centroid(p)), R=Math.max(...p.map(q=>{ const P_=w2s(q); return Math.hypot(P_[0]-c[0],P_[1]-c[1]) })); const st=Math.max(5,V.s*0.6);
     for(let k=-R;k<R;k+=st){ g.beginPath(); g.moveTo(c[0]+k-R,c[1]+R); g.lineTo(c[0]+k+R,c[1]-R); g.stroke() } g.restore(); g.globalAlpha=1 }
-  function rampsDraw(list){ (list||[]).forEach(r=>{ fillP(r.poly,css("--mark"),0.28); strokeP(r.poly,css("--mark"),1.6);
+  function rampsDraw(list){ (list||[]).forEach(r=>{
+      if(r.elev){ // poço do elevador de carros: cabine com as diagonais
+        fillP(r.poly,css("--c-elev"),0.6); strokeP(r.poly,css("--ink"),1.6);
+        (r.cabs||[]).forEach(cb=>{ strokeP(cb,css("--ink"),0.8); const q=cb.map(w2s); g.strokeStyle=css("--ink"); g.globalAlpha=0.45; g.lineWidth=0.8; g.beginPath(); g.moveTo(...q[0]); g.lineTo(...q[2]); g.moveTo(...q[1]); g.lineTo(...q[3]); g.stroke(); g.globalAlpha=1 });
+        if(V.s>3){ const c=w2s(G.centroid(r.poly)); label(r.txt, [c[0], c[1]], {size:9.5}) } return }
+      fillP(r.poly,css("--mark"),0.28); strokeP(r.poly,css("--mark"),1.6);
+      if(r.path){ rampPathDraw(r); return }
       const A=r.a, B=r.b, d=[B[0]-A[0],B[1]-A[1]], L_=Math.hypot(...d)||1, u=[d[0]/L_,d[1]/L_];
       arrow([A[0]+u[0]*1.2,A[1]+u[1]*1.2],[B[0]-u[0]*1.2,B[1]-u[1]*1.2],css("--ink"),1.6,8);
       for(let t=3;t<L_-2;t+=1.2){ const P_=[A[0]+u[0]*t,A[1]+u[1]*t], n=[-u[1],u[0]], hw=0.42*S.estudo.rampaL; const p1=w2s([P_[0]+n[0]*hw,P_[1]+n[1]*hw]), p2=w2s([P_[0]-n[0]*hw,P_[1]-n[1]*hw]); g.strokeStyle=css("--mark"); g.globalAlpha=0.35; g.lineWidth=1; g.beginPath(); g.moveTo(...p1); g.lineTo(...p2); g.stroke(); g.globalAlpha=1 }
       if(V.s>3){ const t=r.sai? 0.3 : 0.7, c=w2s([A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t]); label(`${r.txt}`, c, {size:9.5}) } }) }
+  /* rampa ao longo de um caminho (helicoidal, em L): miolo vazado, degraus perpendiculares e seta no sentido da descida/subida */
+  function rampPathDraw(r){
+    if(r.hole){ fillP(r.hole,css("--surface"),1); hatch(r.hole,css("--ink"),0.28); strokeP(r.hole,css("--mark"),1.2) }
+    const pts=r.path, seg=[]; let tot=0; for(let i=1;i<pts.length;i++){ const l=Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]); seg.push(l); tot+=l }
+    const at=t=>{ let d=Math.max(0,Math.min(tot,t)); for(let i=0;i<seg.length;i++){ if(d<=seg[i] || i===seg.length-1){ const l=seg[i]||1, k=Math.min(1,d/l), a=pts[i], b=pts[i+1]; return {p:[a[0]+(b[0]-a[0])*k, a[1]+(b[1]-a[1])*k], u:[(b[0]-a[0])/l,(b[1]-a[1])/l]} } d-=seg[i] } return {p:pts[0],u:[1,0]} };
+    const hw=0.42*(r.wl||S.estudo.rampaL);
+    g.strokeStyle=css("--mark"); g.globalAlpha=0.35; g.lineWidth=1;
+    for(let t=3;t<tot-2;t+=1.2){ const {p:P_,u}=at(t), n=[-u[1],u[0]], p1=w2s([P_[0]+n[0]*hw,P_[1]+n[1]*hw]), p2=w2s([P_[0]-n[0]*hw,P_[1]-n[1]*hw]); g.beginPath(); g.moveTo(...p1); g.lineTo(...p2); g.stroke() }
+    g.globalAlpha=1; g.strokeStyle=css("--ink"); g.lineWidth=1.6; g.lineJoin="round"; g.beginPath();
+    const n_=Math.max(2,Math.ceil((tot-2.4)/0.4)); for(let k=0;k<=n_;k++){ const P=w2s(at(1.2+(tot-2.4)*k/n_).p); k? g.lineTo(...P) : g.moveTo(...P) } g.stroke();
+    const e=at(tot-1.2); arrow([e.p[0]-e.u[0]*0.6, e.p[1]-e.u[1]*0.6], e.p, css("--ink"), 1.6, 8);
+    if(V.s>3) label(r.txt, w2s(r.hole? G.centroid(r.hole) : at(tot*(r.sai? 0.3 : 0.7)).p), {size:9.5});
+  }
   function routesDraw(lay){
     g.globalAlpha=0.55; (lay.path||[]).forEach(pp=>pathLine(pp.pts, pp.dir, css("--bad"))); g.globalAlpha=1;
     (lay.routes||[]).forEach(r=>{ g.strokeStyle=css("--mark"); g.lineWidth=3; g.lineJoin="round"; g.setLineDash([]); g.beginPath(); r.pts.forEach((q,i)=>{ const [x,y]=w2s(q); i?g.lineTo(x,y):g.moveTo(x,y) }); g.stroke();
@@ -84,10 +103,13 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
   function stallsDraw(lay){
     lay.pillars.forEach(p=>fillP(p,css("--ink"),0.85));
     lay.vagas.forEach((v,i)=>{
-      const col = v.tipo==="pcd"? css("--accent") : v.tipo==="idoso"? css("--ok") : v.tipo==="faixa"? css("--c-circ") : v.tipo==="off"? css("--bad") : css("--m-gar");
-      fillP(v.poly, col, v.tipo==="off"?0.12: v.tipo==="n"?0.55:0.7); strokeP(v.poly, css("--ink"), 0.8, v.tipo==="off"?[2,2]:null);
+      const col = v.tipo==="pcd"? css("--accent") : v.tipo==="idoso"? css("--ok") : v.tipo==="faixa"? css("--c-circ") : v.tipo==="off"? css("--bad") : v.tipo==="presa"? css("--warn") : v.tipo==="moto"? css("--u3") : v.tipo==="bici"? css("--lz-deck") : css("--m-gar");
+      fillP(v.poly, col, v.tipo==="off"?0.12: v.tipo==="n"?0.55:0.7); strokeP(v.poly, css("--ink"), 0.8, v.tipo==="off"||v.tipo==="presa"?[2,2]:null);
       if(v.tipo==="faixa" && V.s>6) hatch(v.poly, css("--accent"), 0.8);
-      if(V.s>9){ const t= v.tipo==="pcd"?"PCD": v.tipo==="idoso"?"ID": v.tipo==="faixa"?"":v.tipo==="off"?"×":String(i+1); if(t) label(t, w2s(v.c), {size:9,bg:false}) } });
+      if(v.tipo==="bici" && V.s>4) hatch(v.poly, css("--ink"), 0.35);
+      if(v.ev && v.tipo==="n") strokeP(v.poly, css("--accent"), Math.max(1.4,Math.min(2.6,V.s*0.18)));
+      if(V.s>9){ const t= v.tipo==="pcd"?"PCD": v.tipo==="idoso"?"ID": v.tipo==="faixa"?"":v.tipo==="off"?"×": v.tipo==="presa"?"presa": v.tipo==="moto"?"M": v.tipo==="bici"?`${v.bikes||""} bic.` : v.ev?"EV":String(i+1); if(t) label(t, w2s(v.c), {size:9,bg:false, col: v.ev&&v.tipo==="n"? css("--accent") : undefined}) } });
+    if(lay.qe){ const [x,y]=w2s(lay.qe), s_=Math.max(6,Math.min(12,V.s*0.7)); g.fillStyle=css("--c-tec"); g.strokeStyle=css("--ink"); g.lineWidth=1; g.fillRect(x-s_/2,y-s_/2,s_,s_); g.strokeRect(x-s_/2,y-s_/2,s_,s_); if(V.s>4) label("QE", [x, y-s_-6], {size:9}) }
   }
   function garBodyInner(lay){
     circDraw(lay);
@@ -111,10 +133,11 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     (lay.coreParts||[]).forEach(cp=>fillP(cp.poly, css("--c-"+cp.kind)||css("--surface"), 1));
     (lay.coreLines||[]).forEach(l=>{ if(l.arrow){ arrow(l.arrow[0],l.arrow[1],css("--ink"),1,5); return } const A=w2s(l[0]),B=w2s(l[1]); g.strokeStyle=css("--ink"); g.globalAlpha=0.55; g.lineWidth=0.7; g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); g.globalAlpha=1 });
     (lay.coreParts||[]).forEach(cp=>strokeP(cp.poly, css("--ink"), Math.max(1.2,Math.min(3,V.s*0.15))));
-    strokeP(lay.core, css("--ink"), Math.max(1.6,Math.min(4,V.s*0.22)));
+    if(lobby) (lay.coreReserva||[]).forEach(p=>fillP(p, css("--c-tec"), 1));   // atrás da escada rasa: reservado nos outros pavimentos
+    strokeP(lobby? lay.core : (lay.coreOut||lay.core), css("--ink"), Math.max(1.6,Math.min(4,V.s*0.22)));
     (lay.coreDoors||[]).forEach(d=>{ const A=w2s(d.a), B=w2s(d.b); g.strokeStyle=css(lobby?"--c-hall":"--surface"); g.lineWidth=Math.max(2,Math.min(5,V.s*0.3)); g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke();
       if(d.sw){ const r=Math.hypot(B[0]-A[0],B[1]-A[1]), ang=Math.atan2(B[1]-A[1],B[0]-A[0]); g.strokeStyle=css("--ink"); g.lineWidth=0.8; g.beginPath(); g.moveTo(...A); g.lineTo(A[0]+Math.cos(ang-Math.PI/2)*r, A[1]+Math.sin(ang-Math.PI/2)*r); g.stroke(); g.globalAlpha=0.6; g.beginPath(); g.arc(A[0],A[1],r,ang-Math.PI/2,ang); g.stroke(); g.globalAlpha=1 } });
-    if(V.s>7) (lay.coreParts||[]).forEach(cp=>{ if(["hall","tec","duto","pass"].includes(cp.kind)) return; const xs=cp.poly.map(q=>w2s(q)[0]), ys=cp.poly.map(q=>w2s(q)[1]), w_=Math.max(...xs)-Math.min(...xs), h_=Math.max(...ys)-Math.min(...ys); g.font="500 9px "+css("--f-mono"); const tw=g.measureText(cp.nome).width; if(Math.max(w_,h_)>tw+8 && Math.min(w_,h_)>12) label(cp.nome, w2s(G.centroid(cp.poly)), {size:9, bg:true}) });
+    if(V.s>7) (lay.coreParts||[]).forEach(cp=>{ if(["hall","tec","duto","pass"].includes(cp.kind)) return; const xs=cp.poly.map(q=>w2s(q)[0]), ys=cp.poly.map(q=>w2s(q)[1]), w_=Math.max(...xs)-Math.min(...xs), h_=Math.max(...ys)-Math.min(...ys); g.font="500 9px "+css("--f-mono"); const tw=g.measureText(cp.nome).width; if(w_>tw+8 && h_>12) label(cp.nome, w2s(G.centroid(cp.poly)), {size:9, bg:true}) });
   }
   function coresAll(lobby, only){ (m.coreSets||[]).forEach(cs=>{ if(only && !only(cs)) return; coreDraw(cs.lay, lobby) }) }
   function lzDraw(list){ (list||[]).forEach(({poly,item})=>{ const agua=/piscina/i.test(item.nome), col= item.desc? (agua? css("--lz-agua") : css("--lz-deck")) : css("--lz-c");
@@ -125,12 +148,15 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     if(!lay || onlyOutline){ strokeP(t.plate,css("--ink"),1.2,[5,4]); return }
     const pal=[css("--u1"),css("--u2"),css("--u3"),css("--u4"),css("--u5")], names=[...new Set(S.produto.mix.map(u=>u.nome))];
     lay.units.forEach(u=>{ fillP(u.poly, u.livre?css("--c-circ"):pal[names.indexOf(u.nome)%pal.length], u.livre?0.6:0.8); strokeP(u.poly,css("--ink"),1.4) });
-    lay.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length) return; fillP(u.sac.poly, css("--c-sac"), u.sac.tipo==="balanco"?0.9:0.75); strokeP(u.sac.poly, css("--ink"), 1, u.sac.tipo==="balanco"? null : [3,2]) });
+    // cômodos (src/ui/comodos.js): paredes, portas, janelas, mobiliário — a sacada embutida vira cômodo
+    const com = typeof comDraw==="function" && S.comodos && S.comodos.on && lay.units.some(u=>u.com);
+    lay.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length || (com && u.com && u.sac.tipo!=="balanco")) return; fillP(u.sac.poly, css("--c-sac"), u.sac.tipo==="balanco"?0.9:0.75); strokeP(u.sac.poly, css("--ink"), 1, u.sac.tipo==="balanco"? null : [3,2]) });
     fillP(lay.corridor,css("--surface"),1); strokeP(lay.corridor,css("--ink"),0.8);
     (lay.hallEnds||[]).forEach(h=>{ fillP(h,css("--surface"),1); strokeP(h,css("--ink"),0.6) });
+    if(com) comDraw(g, lay, {w2s, V, css, pal, names, ti, W, H, edit: mode==="tipo"});
     coreDraw(lay, false);
 
-    if(V.s>4) lay.units.forEach(u=>{ if(!u.poly.length) return; const c=w2s(G.centroid(u.poly)); if(u.livre){ label("livre",c,{size:10}); return }
+    if(V.s>4) lay.units.forEach(u=>{ if(!u.poly.length || (com && u.com)) return; const c=w2s(G.centroid(u.poly)); if(u.livre){ label("livre",c,{size:10}); return }
       label(u.nome, [c[0],c[1]-8], {w:"600",font:"--f-display",size:12,bg:false}); label(`${nf(u.alvo,1)} m² priv${u.sac?` · sacada ${nf(u.sac.area,1)}`:""}`, [c[0],c[1]+8], {size:10,bg:false}) });
   }
   function cobBody(ti){ const t=m.T[ti]; if(!t||!t.plate.length) return; const n=Math.max(1,S.produto.cob.qtd), ux=G.longestDir(t.plate);
@@ -151,16 +177,19 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     { const fT=m.vert&&m.vert.floors.ter; if(fT) rampsDraw(fT.ramps.filter(r=>!(m.gar&&m.gar.ter&&m.gar.ter.ramps.includes(r)))) }
     // rota de entrada: da rua até cada rampa e até a garagem do térreo
     if(T.drive0 && m.vert){ const lf=G.extent(S.lote.pts,T.fd)[0], P_=(l,d)=>[T.lat[0]*l+T.fd[0]*d, T.lat[1]*l+T.fd[1]*d];
-      (m.vert.strips||[]).filter(s_=>s_.id==="DA"||s_.id==="UA").forEach(s_=>{ if(S.estudo.rampa) return; const a=P_(s_.lc,lf-2), b=P_(s_.lc,s_.d0+1.5); g.strokeStyle=css("--mark"); g.lineWidth=3; g.beginPath(); g.moveTo(...w2s(a)); g.lineTo(...w2s(b)); g.stroke(); arrow(a,b,css("--mark"),3,10) });
+      if(m.vert.entradas) m.vert.entradas.forEach(e=>arrow(e.a,e.b,css("--mark"),3,10));
+      else (m.vert.strips||[]).filter(s_=>s_.id==="DA"||s_.id==="UA").forEach(s_=>{ if(S.estudo.rampa) return; const a=P_(s_.lc,lf-2), b=P_(s_.lc,s_.d0+1.5); g.strokeStyle=css("--mark"); g.lineWidth=3; g.beginPath(); g.moveTo(...w2s(a)); g.lineTo(...w2s(b)); g.stroke(); arrow(a,b,css("--mark"),3,10) });
       if(T.driveEnd && T.lanes){ const lc=(T.lanes[0]+T.lanes[1])/2, a=P_(lc,lf-2); arrow(a,T.driveEnd,css("--mark"),3,10) }
-      if(V.s>3){ const c=w2s(P_((T.drive0.dv[0]+T.drive0.dv[1])/2, (lf+(m.vert.strips[0]? m.vert.strips[0].d0 : lf+5))/2)); label("patamar ≥ 5 m", c, {size:9}) } }
+      // elevador de carros: vagas de espera antes do poço
+      if(m.vert.elev) m.vert.elev.espera.forEach((p,i)=>{ fillP(p,css("--m-gar"),0.35); strokeP(p,css("--ink"),1,[4,3]); if(V.s>5) label(`espera ${i+1}`, w2s(G.centroid(p)), {size:9}) });
+      if(V.s>3 && !m.vert.elev){ const c=w2s(P_((T.drive0.dv[0]+T.drive0.dv[1])/2, (lf+(m.vert.strips[0]? m.vert.strips[0].d0 : lf+5))/2)); label("patamar ≥ 5 m", c, {size:9}) } }
     lzDraw(m.lzLay&&m.lzLay.terreo);
     coresAll(true);
     m.T.forEach(t=>strokeP(t.plate,css("--muted"),1,[5,4]));
     if(V.s>2.5){
       (T.lojas||[]).forEach((p,i)=>{ const c=G.centroid(p); label(`loja ${i+1} · ${m2(G.area(p))}`, w2s(c), {size:10}) });
       const hb=(T.hallBand||[]).slice().sort((a,b)=>G.area(b)-G.area(a))[0]; if(hb){ const [l0]=G.extent(hb,T.lat); const c=[T.lat[0]*(l0+1)+T.fd[0]*(T.d1+1.3), T.lat[1]*(l0+1)+T.fd[1]*(T.d1+1.3)]; g.font="500 10px "+css("--f-mono"); const tx=`hall e lazer ${m2(m.hallA)}`, cc=w2s(c); label(tx,[cc[0]+g.measureText(tx).width/2+4,cc[1]],{size:10}) }
-      (T.drive||[]).forEach(p=>{ if(V.s>5) label("acesso de veículos", w2s(G.centroid(p)), {size:9}) });
+      (T.drive||[]).forEach(p=>{ if(V.s>5 && !(m.vert && (m.vert.elev || m.vert.helix))) label("acesso de veículos", w2s(G.centroid(p)), {size:9}) });
     }
     const fd=frontDir(S), ac=m.acesso; arrow([ac.ped[0]-fd[0]*8,ac.ped[1]-fd[1]*8],[ac.ped[0]+fd[0]*2,ac.ped[1]+fd[1]*2],css("--accent"),2.5,8); { const vv=T.veiReal||ac.vei; arrow([vv[0]-fd[0]*8,vv[1]-fd[1]*8],[vv[0]+fd[0]*2,vv[1]+fd[1]*2],css("--bad"),2.5,8) }
   }

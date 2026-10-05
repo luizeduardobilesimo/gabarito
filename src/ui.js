@@ -182,15 +182,29 @@ const ACT = {
 
 /* ================= atualização ================= */
 let saveT, fullT, lastGar=null;
-function save(){ clearTimeout(saveT); saveT=setTimeout(()=>LS.set("gabarito.v2",S),300) }
+/* save(): grava a cópia de trabalho e marca uma mudança para o desfazer (histTouch) e para o repositório de estudos */
+function save(){ clearTimeout(saveT); saveT=setTimeout(()=>LS.set("gabarito.v2",S),300); if(typeof histTouch==="function") histTouch() }
+/* cálculo barato (sem layouts de garagem; reaproveita os últimos) — tela principal */
+function calcBarato(){ const m=compute(S,{layouts:false, quick:true}); if(lastGar){ m.gar=lastGar.gar; m.vagasLay=lastGar.n+(m.vf?m.vf.count:0); if(S.estudo.usarLayout) m.vagas=m.vagasLay } return m }
+/* update(): o modo rápido (arraste) roda aqui; o cálculo completo vai para o Web Worker (src/ui/calcworker.js) e
+   substitui o resultado quando chega. Sem Worker, tudo roda aqui como antes. */
 function update(o={}){
   normalizeLote();
+  const bg = typeof calcOn==="function" && calcOn();
   let m;
-  if(o.fast){ const need=VIEW==="gar"||VIEW==="andar"; m=compute(S,{layouts:need, quick:need}); if(!need && lastGar){ m.gar=lastGar.gar; m.vagasLay=lastGar.n+(m.vf?m.vf.count:0); if(S.estudo.usarLayout) m.vagas=m.vagasLay } clearTimeout(fullT); fullT=setTimeout(()=>update(),160) }
-  else { m=compute(S); lastGar={gar:m.gar, n:m.vagasLay-(m.vf?m.vf.count:0)} }
+  if(o.fast){
+    if(bg){ m=calcBarato(); calcInvalida() }
+    else { const need=VIEW==="gar"||VIEW==="andar"; m=compute(S,{layouts:need, quick:need}); if(!need && lastGar){ m.gar=lastGar.gar; m.vagasLay=lastGar.n+(m.vf?m.vf.count:0); if(S.estudo.usarLayout) m.vagas=m.vagasLay } }
+    clearTimeout(fullT); fullT=setTimeout(()=>{ fullT=0; update() },160) }
+  else if(bg){ clearTimeout(fullT); fullT=0; m=calcBarato(); calcPedir() }
+  else { clearTimeout(fullT); fullT=0; m=compute(S); lastGar={gar:m.gar, n:m.vagasLay-(m.vf?m.vf.count:0)} }
+  showModel(m, !!o.fast || bg); save();
+}
+/* mostra um resultado (do cálculo daqui ou do Worker) em todas as partes vivas */
+function showModel(m, fast){
   const f=finance(S,m); window._last={m,f};
-  renderKPIs(m,f); railStatus(m,f); renderLive(m,f,!!o.fast);
-  if(VIEW!=="v3d") rebuild3d(m); redraw2d(); save(); viewbarSegs(m); if(typeof planLegend==="function") planLegend();
+  renderKPIs(m,f); railStatus(m,f); renderLive(m,f,!!fast);
+  if(VIEW!=="v3d") rebuild3d(m); redraw2d(); viewbarSegs(m); if(typeof planLegend==="function") planLegend();
 }
 const renderTabLive=(m,f)=>renderLive(m,f,false);
 function renderKPIs(m,f){
@@ -225,17 +239,23 @@ function saveScenario(nome, aprovado){
   l.unshift({nome,data:new Date().toLocaleDateString("pt-BR"),aprovado:!!aprovado,S:clone(S),k:{units:m.units,priv:m.priv,vagas:m.vagas,ca:m.CA,h:m.H,vgv:f.vgv,custo:f.custo,lucro:f.lucro,margem:f.margem,tir:f.tirA,exp:-f.exp}});
   LS.set("gabarito.cenarios2",l);
 }
+/* lote a partir de coordenadas: KML, GeoJSON (lon/lat ou UTM) ou "latitude, longitude" por linha.
+   A origem (0,0) do lote fica no centroide, em S.lote.lat/lon (7 casas: a topografia e o entorno usam essa referência). */
 function importCoords(raw){
-  let pairs=[];
-  const kml=raw.match(/<coordinates>([\s\S]*?)<\/coordinates>/i);
-  if(kml){ kml[1].trim().split(/\s+/).forEach(t=>{ const [lon,lat]=t.split(",").map(Number); if(isFinite(lat)&&isFinite(lon)) pairs.push([lat,lon]) }) }
-  else raw.split(/\n/).forEach(l=>{ const n=l.match(/-?\d+(?:\.\d+)?/g); if(n&&n.length>=2) pairs.push([+n[0],+n[1]]) });
-  if(pairs.length>2 && Math.abs(pairs[0][0]-pairs.at(-1)[0])<1e-9 && Math.abs(pairs[0][1]-pairs.at(-1)[1])<1e-9) pairs.pop();
-  if(pairs.length<3){ toast("Preciso de pelo menos 3 pontos"); return }
-  const lat0=pairs.reduce((s,p)=>s+p[0],0)/pairs.length, lon0=pairs.reduce((s,p)=>s+p[1],0)/pairs.length, R=6371008.8, k=Math.PI/180;
-  S.lote.pts=pairs.map(([la,lo])=>[(lo-lon0)*k*R*Math.cos(lat0*k), (la-lat0)*k*R]); S.lote.front=[]; S.lote.rec=S.lote.pts.map(()=>({})); normalizeLote(); S.lote.front=[0]; S.lote.principal=0;
-  S.lote.lat=+lat0.toFixed(4); S.lote.lon=+lon0.toFixed(4); S.lote.norte=0;
-  renderTab(); fit2d(); fit3d(); toast(`${pairs.length} pontos importados · ${m2(G.area(S.lote.pts))}`);
+  raw=String(raw||""); let pairs=[];
+  if(/^\s*[\[{]/.test(raw)){ const r=geoLerGeoJSON(raw,{lonRef:S.lote.lon, latRef:S.lote.lat}); if(r.erro){ toast(r.erro); return } pairs=r.pares }
+  else { const kml=raw.match(/<coordinates>([\s\S]*?)<\/coordinates>/i);
+    if(kml){ kml[1].trim().split(/\s+/).forEach(t=>{ const [lon,lat]=t.split(",").map(Number); if(isFinite(lat)&&isFinite(lon)) pairs.push([lat,lon]) }) }
+    else raw.split(/\n/).forEach(l=>{ const n=l.match(/-?\d+(?:\.\d+)?/g); if(n&&n.length>=2) pairs.push([+n[0],+n[1]]) }) }
+  aplicarLoteGeo(pairs, `${pairs.length} pontos importados`);
+}
+function aplicarLoteGeo(pairs, fonte){
+  const lp = pairs && pairs.length>=3 ? geoLoteDePares(pairs) : null;
+  if(!lp){ toast("Preciso de pelo menos 3 pontos"); return false }
+  S.lote.pts=lp.pts; S.lote.front=[]; S.lote.rec=S.lote.pts.map(()=>({})); normalizeLote(); S.lote.front=[0]; S.lote.principal=0;
+  S.lote.lat=lp.lat; S.lote.lon=lp.lon; S.lote.norte=0;
+  renderTab(); fit2d(); fit3d(); toast(`${fonte} · ${m2(G.area(S.lote.pts))}`);
+  return true;
 }
 function normalizeLote(){ const L=S.lote; if(L.pts.length<3) return; ensureRec();
   if(G.sArea(L.pts)<0){ const n=L.pts.length, mp=i=>((n-2-i)%n+n)%n; L.pts=L.pts.slice().reverse(); L.front=L.front.map(mp); L.principal=mp(L.principal); const r=L.rec.slice(); L.rec=r.map((_,i)=>r[mp(i)]) }
@@ -258,7 +278,8 @@ function cashSVG(f){
     <line x1="${sx(f.chaves)}" x2="${sx(f.chaves)}" y1="${pt}" y2="${H-pb}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${sx(f.chaves)-3}" y="${H-pb+12}" font-size="9" text-anchor="end" fill="var(--muted)">chaves</text>
     <path d="${ar}" fill="var(--accent)" fill-opacity=".12"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
     <circle cx="${sx(iMin)}" cy="${sy(cum[iMin])}" r="3" fill="var(--bad)"/><circle cx="${sx(n-1)}" cy="${sy(cum[n-1])}" r="3" fill="var(--accent)"/>
-    <text x="${sx(iMin)+5}" y="${sy(cum[iMin])+11}" font-size="9" fill="var(--bad)" font-family="IBM Plex Mono">exposição ${mi(cum[iMin])}</text>
+    <text x="${sx(iMin)>W*0.62? sx(iMin)-6 : sx(iMin)+5}" y="${sx(iMin)>W*0.62? sy(cum[iMin])-6 : sy(cum[iMin])+11}" ${sx(iMin)>W*0.62?'text-anchor="end"':""} font-size="9" fill="var(--bad)" font-family="IBM Plex Mono">exposição ${mi(cum[iMin])}</text>
+    ${f.distrato && f.distrato.M!=null && f.distrato.refund ? `<line x1="${sx(f.distrato.M)}" x2="${sx(f.distrato.M)}" y1="${pt}" y2="${H-pb}" stroke="var(--warn)" stroke-dasharray="2 2"/><text x="${sx(f.distrato.M)+3}" y="${pt+8}" font-size="9" fill="var(--warn)">distratos</text>` : ""}
   </svg>`;
 }
 /* rosa dos ventos clicável */
