@@ -1,0 +1,63 @@
+{
+ "nome": "Lote estreito 20×40",
+ "S": {
+  "lote": {
+   "pts": [
+    [
+     0,
+     0
+    ],
+    [
+     20,
+     0
+    ],
+    [
+     20,
+     40
+    ],
+    [
+     0,
+     40
+    ]
+   ],
+   "front": [
+    0
+   ],
+   "rec": [
+    {},
+    {},
+    {},
+    {}
+   ]
+  },
+  "produto": {
+   "torres": [
+    {
+     "pav": 10
+    }
+   ],
+   "subsolos": 2
+  }
+ },
+ "esperado": {
+  "units": 38,
+  "vagas": 24,
+  "vagasReq": 49,
+  "CA": 4.0574,
+  "H": 34.5,
+  "priv": 2950,
+  "vagasPorPav": {
+   "s2": 12,
+   "s1": 12
+  },
+  "vgv": 31621012,
+  "custo": 30483552,
+  "lucro": 4525936,
+  "margem": 0.12928
+ },
+ "tolerancia": {
+  "vagas": 0.03,
+  "CA": 0.002,
+  "lucro": 0.01
+ }
+}

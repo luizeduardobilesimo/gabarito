@@ -150,7 +150,7 @@ function renderTab(){
   const st=STEPS.find(s=>s.k===TAB), i=STEPS.indexOf(st), R=STEP_R[TAB]();
   document.getElementById("phead").innerHTML = `<div class="eb">Etapa ${i+1} de ${STEPS.length}</div><h1>${R.title||st.t}</h1><p>${R.desc||st.d}</p>${R.sub?`<div class="sub">${R.sub}</div>`:""}`;
   const keepScroll = TB.dataset.tab===TAB+(R.subKey||"") ? TB.scrollTop : 0;
-  TB.innerHTML = R.body; TB.dataset.tab=TAB+(R.subKey||"");
+  TB.innerHTML = R.body + cardsFor(TAB, curSub()).map(c=>c.html()).join(""); TB.dataset.tab=TAB+(R.subKey||"");
   const prev=STEPS[i-1], next=STEPS[i+1];
   document.getElementById("pfoot").innerHTML = `${prev?`<button class="btn ghost" data-act="go" data-k="${prev.k}">← ${prev.nome}</button>`:"<span></span>"}<span class="pill" id="footStat"></span>${next?`<button class="btn" data-act="go" data-k="${next.k}">${next.nome} →</button>`:"<span></span>"}`;
   restoreDetails();
@@ -158,6 +158,7 @@ function renderTab(){
   TB.scrollTop=keepScroll;
   update();
   if(R.after) R.after();
+  cardsFor(TAB, curSub()).forEach(c=>{ if(c.after) try{ c.after() }catch(e){ console.error("[card "+c.key+"]",e) } });
 }
 function railStatus(m,f){
   const s=status(m,S), worst=(...a)=> a.includes("bad")?"bad": a.includes("warn")?"warn":"ok";
@@ -206,7 +207,8 @@ function renderKPIs(m,f){
     k("TIR a.a.", f.tirA==null?"—":pct(f.tirA), `VPL ${mi(f.vpl)}`, f.tirA==null?"bad": f.tirA<S.fin.tma?"warn":"ok");
   const el=document.getElementById("kpis"); if(el.innerHTML!==h) el.innerHTML=h;
 }
-function renderLive(m,f,fast){ const fn=STEP_LIVE[TAB]; if(fn) fn(m,f,fast) }
+function renderLive(m,f,fast){ const fn=STEP_LIVE[TAB]; if(fn) fn(m,f,fast); cardsFor(TAB, curSub()).forEach(c=>{ if(c.live) try{ c.live(m,f,fast) }catch(e){ console.error("[card "+c.key+"]",e) } }) }
+const curSub=()=> TAB==="projeto"? PSUB : TAB==="clima"? CSUB : null;
 
 /* ================= utilidades compartilhadas ================= */
 function genNeighbors(){

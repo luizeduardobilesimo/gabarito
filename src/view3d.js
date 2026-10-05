@@ -125,6 +125,7 @@ function rebuild3d(m, force){
       const tex=new THREE.CanvasTexture(cv); tex.flipY=false; tex.needsUpdate=true; tex.encoding=THREE.sRGBEncoding;
       const mesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:0.85,side:THREE.DoubleSide,depthWrite:false})); mesh.renderOrder=2; grp.add(mesh) }
   }
+  runHooks("draw3d", grp, m);
   applySun(); render3();
 }
 function cutFloor(m, fl){

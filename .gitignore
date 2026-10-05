@@ -2,3 +2,7 @@ node_modules/
 shots/
 test.html
 __pycache__/
+.vite/
+dist/
+shots/
+test-results/

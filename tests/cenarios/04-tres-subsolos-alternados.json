@@ -1,0 +1,34 @@
+{
+ "nome": "3 subsolos, rampas alternadas",
+ "S": {
+  "produto": {
+   "subsolos": 3
+  },
+  "estudo": {
+   "rampaTipo": "alternada"
+  }
+ },
+ "esperado": {
+  "units": 76,
+  "vagas": 106,
+  "vagasReq": 98,
+  "CA": 3.7381,
+  "H": 40.5,
+  "priv": 6407,
+  "vagasPorPav": {
+   "s3": 33,
+   "s2": 28,
+   "s1": 36,
+   "ter": 9
+  },
+  "vgv": 68672369,
+  "custo": 67887892,
+  "lucro": 8143338,
+  "margem": 0.10711
+ },
+ "tolerancia": {
+  "vagas": 0.03,
+  "CA": 0.002,
+  "lucro": 0.01
+ }
+}

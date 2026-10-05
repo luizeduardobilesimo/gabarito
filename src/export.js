@@ -93,6 +93,7 @@ async function exportPDF(){
   if(imgs.vento){ const w=windStats(S); if(y>150){ doc.addPage(); head(S.nome) } h2(`Vento - de ${["N","NE","L","SE","S","SO","O","NO"][Math.round(S.clima.ventoDir/45)%8]}, ${nf(S.clima.ventoVel,1)} m/s a ${nf(S.clima.ventoAlt,1)} m`); img(imgs.vento,PW-2*M,(PW-2*M)*0.62);
     if(w) rows([["Velocidade máxima no lote",`${nf(w.max*S.clima.ventoVel,1)} m/s`],["Áreas com aceleração (>1,3x)",pct(w.hi,0)],["Áreas de calmaria (<0,35x)",pct(w.calm,0)]]) }
   doc.setFontSize(7.5); doc.setTextColor(...mut); if(y<280) doc.text(T("Sol: traçado de sombras. Vento: simulação 2D simplificada (Lattice Boltzmann) - uso comparativo."),M,Math.min(286,y+2));
+  await runHooksAsync("pdf", {doc,m,f,T,PW,M,head,h2,rows,img,ink,mut,acc,mark,ok,bad, y:()=>y, setY:v=>{y=v}, newPage:()=>{ doc.addPage(); head(S.nome) }});
   const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(...mut); doc.text(`${i}/${pages}`,PW-M,292,{align:"right"}) }
   await saveFile(slug(S.nome)+"-viabilidade.pdf", doc.output("blob"));
 }

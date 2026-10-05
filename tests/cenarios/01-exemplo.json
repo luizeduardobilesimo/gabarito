@@ -1,0 +1,26 @@
+{
+ "nome": "Exemplo padrão",
+ "S": {},
+ "esperado": {
+  "units": 76,
+  "vagas": 73,
+  "vagasReq": 97,
+  "CA": 3.7184,
+  "H": 40.5,
+  "priv": 6373,
+  "vagasPorPav": {
+   "s2": 36,
+   "s1": 33,
+   "ter": 4
+  },
+  "vgv": 68369631,
+  "custo": 63309715,
+  "lucro": 12386336,
+  "margem": 0.16363
+ },
+ "tolerancia": {
+  "vagas": 0.03,
+  "CA": 0.002,
+  "lucro": 0.01
+ }
+}

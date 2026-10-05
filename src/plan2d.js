@@ -226,5 +226,6 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     if(kind==="vento"){ [[0,"0"],[0.5,"1× (vento livre)"],[1,"2×"]].forEach(([t,l])=>{ g.textAlign=t===0?"left":t===1?"right":"center"; g.fillText(l,x+w*t,y-4) }); g.textAlign="left"; g.fillText(`velocidade relativa · ${nf(S.clima.ventoVel,0)} m/s = 1×`,x,y+h+12) }
     else { const mx=_sunCache?_sunCache.max:12; g.fillText("0 h",x,y-4); g.textAlign="right"; g.fillText(nf(mx,1)+" h",x+w,y-4); g.textAlign="left"; g.fillText("horas de sol no dia",x,y+h+12) } }
   function northArrow(){ const a=(S.lote.norte||0)*Math.PI/180, cx=W-34, cy=34; g.save(); g.translate(cx,cy); g.rotate(a); g.fillStyle=css("--ink"); g.beginPath(); g.moveTo(0,-15); g.lineTo(6,8); g.lineTo(0,4); g.lineTo(-6,8); g.closePath(); g.fill(); g.restore(); g.font="600 11px "+css("--f-display"); g.textAlign="center"; g.fillStyle=css("--ink"); g.fillText("N", cx+Math.sin(a)*24, cy-Math.cos(a)*24+4) }
+  runHooks("draw2d", g, {W,H,V,mode,m,opt,w2s,s2w});
   return {w2s,s2w};
 }

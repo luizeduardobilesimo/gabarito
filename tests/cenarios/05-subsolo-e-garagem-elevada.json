@@ -1,0 +1,30 @@
+{
+ "nome": "1 subsolo + 1 garagem elevada",
+ "S": {
+  "produto": {
+   "subsolos": 1,
+   "garAcima": 1
+  }
+ },
+ "esperado": {
+  "units": 76,
+  "vagas": 61,
+  "vagasReq": 97,
+  "CA": 3.7184,
+  "H": 43.5,
+  "priv": 6373,
+  "vagasPorPav": {
+   "s1": 32,
+   "g1": 29
+  },
+  "vgv": 68369290,
+  "custo": 63464595,
+  "lucro": 12231078,
+  "margem": 0.16158
+ },
+ "tolerancia": {
+  "vagas": 0.03,
+  "CA": 0.002,
+  "lucro": 0.01
+ }
+}

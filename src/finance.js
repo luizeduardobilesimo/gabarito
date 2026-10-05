@@ -3,9 +3,10 @@ function finance(st, m, adj={}){
   const F=st.fin, R=st.regras, P=st.produto, dp=adj.dp||0, dc=adj.dc||0;
   const eqA = m.tiposA + m.duplexA + m.hallA + m.lojaA + m.aticoA + (m.lzExtraA||0) + m.garA*F.eqGar + (m.sacBal||0)*0.5;
   const lazerC = (m.lzCusto||0)*(1+dc);
-  const obra = eqA*F.cub*F.fator*(1+dc) + lazerC;
+  const extraC = (m.custosExtra||[]).reduce((s,x)=>s+(+x.valor||0),0)*(1+dc);
+  const obra = eqA*F.cub*F.fator*(1+dc) + lazerC + extraC;
   // VGV de tabela (base)
-  const vRes = m.unitRows.reduce((s,u)=>s+u.area*u.preco,0) + m.cobArea*P.cob.preco;
+  const vRes = m.vgvUnidades!=null ? m.vgvUnidades : m.unitRows.reduce((s,u)=>s+u.area*u.preco,0) + m.cobArea*P.cob.preco;
   const vLoja = m.lojaPriv*F.precoLoja;
   const vgvB = (vRes+vLoja)*(1+dp), permV = vgvB*F.permuta, vgv = vgvB-permV;
   const terreno=F.terreno, itbi=terreno*F.itbi, outorga=m.outA*R.outorgaRS;
@@ -56,6 +57,8 @@ function finance(st, m, adj={}){
   let cum=0, minCum=0; const cumA=cf.map(v=>{ cum+=v; if(cum<minCum) minCum=cum; return cum });
   let pay=null; for(let i=cumA.length-1;i>=0;i--){ if(cumA[i]<0){ pay=i+1<cumA.length?i+1:null; break } if(i===0) pay=0 }
   const maxTerreno = terreno + (lucro - F.margemAlvo*S_.receita)/(1+F.itbi);
-  return {eqA,lazerC,obra,vgvB,permV,vgv,vRes,vLoja,terreno,itbi,outorga,terra,projetos,adm,conting,...S_,custo,lucro,margem,cf,cumA,c,tirA,vpl,exp:minCum,pay,maxTerreno,chaves,launch,lim};
+  const out = {eqA,lazerC,extraC,obra,vgvB,permV,vgv,vRes,vLoja,terreno,itbi,outorga,terra,projetos,adm,conting,...S_,custo,lucro,margem,cf,cumA,c,tirA,vpl,exp:minCum,pay,maxTerreno,chaves,launch,lim};
+  if(!adj.noHooks) runHooks("finance", out, st, m, adj);
+  return out;
 }
 function sensGrid(st,m){ return [-0.1,0,0.1].map(dp=>[-0.1,0,0.1].map(dc=>finance(st,m,{dp,dc}).margem)) }
