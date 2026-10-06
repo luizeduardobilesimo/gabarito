@@ -3,7 +3,7 @@ function prisms(st, m){
   const P=st.produto, out=[];
   if(m.emb.length) out.push({poly:m.emb, z0:0, z1:m.hEmb, own:true});
   m.T.forEach(t=>{ if(t.plate.length) out.push({poly:t.plate, z0:m.hEmb, z1:t.H, own:true}) });
-  (st.entorno||[]).forEach(e=>{ if(e.pts&&e.pts.length>2) out.push({poly:e.pts, z0:0, z1:+e.h||0, own:false}) });
+  (st.entorno||[]).forEach(e=>{ if(e.pts&&e.pts.length>2) out.push({poly:entPoly(e), z0:0, z1:+e.h||0, own:false}) });
   out.forEach(p=>{ const xs=p.poly.map(q=>q[0]), ys=p.poly.map(q=>q[1]); p.bb=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)] });
   return out;
 }

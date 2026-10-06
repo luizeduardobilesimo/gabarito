@@ -32,6 +32,7 @@ function fit2d(){ if(VIEW==="3d") return; const r=c2.getBoundingClientRect(); if
 function fitBG(){ if(!BG) return; const r=c2.getBoundingClientRect(); const w=BG.img.width*BG.mpp, h=BG.img.height*BG.mpp; const s=Math.min(r.width/w, r.height/h)*0.95; VS.impl={s, ox:r.width/2-(BG.x+w/2)*s, oy:r.height/2+(BG.y-h/2)*s}; redraw2d() }
 let T2=null;
 function redraw2d(){
+  if(typeof entBarRefresh==="function") entBarRefresh();
   if(c2.hidden || VIEW==="3d") return; const m=window._last&&window._last.m; if(!m) return;
   const r=c2.getBoundingClientRect(); const V=cur();
   const lay = VIEW==="gar" && m.gar ? m.gar[FLOOR] : null;
@@ -47,14 +48,15 @@ function redraw2d(){
 const w2s_=q=>{ const V=cur(); return [q[0]*V.s+V.ox, -q[1]*V.s+V.oy] }, s2w_=(px,py)=>{ const V=cur(); return [(px-V.ox)/V.s, -(py-V.oy)/V.s] };
 let drag=null; const ptrs=new Map(); let pinch=null;
 function pos(e){ const r=c2.getBoundingClientRect(); return [e.clientX-r.left, e.clientY-r.top] }
-function editables(){ const l=[{arr:S.lote.pts,kind:"lote"}]; ["emb","tor","sub"].forEach(k=>{ if(S.custom[k]&&S.custom[k].length) l.push({arr:S.custom[k],kind:"lim"}) }); (S.entorno||[]).forEach(e=>{ if(e.pts) l.push({arr:e.pts,kind:"entorno"}) }); return l }
-function hitVertex(px,py){ let best=null,bd=14; editables().forEach(ed=>ed.arr.forEach((q,i)=>{ const [x,y]=w2s_(q), d=Math.hypot(x-px,y-py); if(d<bd){ bd=d; best={arr:ed.arr,i,kind:ed.kind} } })); return best }
+function editables(){ const l=[{arr:S.lote.pts,kind:"lote"}]; ["emb","tor","sub"].forEach(k=>{ if(S.custom[k]&&S.custom[k].length) l.push({arr:S.custom[k],kind:"lim"}) }); (S.entorno||[]).forEach(e=>{ if(e.pts){ l.push({arr:e.pts,kind:"entorno",ent:e}); (e.vazios||[]).forEach(v=>l.push({arr:v,kind:"vazio",ent:e})) } }); return l }
+function hitVertex(px,py){ let best=null,bd=14; editables().forEach(ed=>ed.arr.forEach((q,i)=>{ const [x,y]=w2s_(q), d=Math.hypot(x-px,y-py); if(d<bd){ bd=d; best={arr:ed.arr,i,kind:ed.kind,ent:ed.ent} } })); return best }
 function hitMid(px,py){ const L=S.lote.pts; let best=-1,bd=12; L.forEach((a,i)=>{ const b=L[(i+1)%L.length], A=w2s_(a), B=w2s_(b), d=Math.hypot((A[0]+B[0])/2-px,(A[1]+B[1])/2-py); if(d<bd){ bd=d; best=i } }); return best }
 const HINTSEEN={};
 function finishDraw(){
   const pts=DRAW; DRAW=null;
   if(DRAWT==="lote"){ S.lote.pts=pts; S.lote.front=[]; S.lote.rec=pts.map(()=>({})); normalizeLote(); S.lote.front=[0]; S.lote.principal=0; toast("Terreno fechado. Marque as frentes e a frente principal na lista de lados.") }
-  else if(DRAWT==="entorno"){ S.entorno.push({pts, h:12, nome:"Vizinho "+(S.entorno.length+1)}); toast("Volume do entorno criado com 12 m. Ajuste a altura na etapa Clima.") }
+  else if(DRAWT==="entorno"){ const n={pts, h:12, nome:"Vizinho "+(S.entorno.length+1)}; S.entorno.push(n); if(typeof entSelecionar==="function") entSelecionar(n,"set"); toast("Volume do entorno criado com 12 m. Ajuste a altura na barra abaixo.") }
+  else if(DRAWT==="vazio"){ const alvo=entQualContem(S.entorno, G.centroid(pts)); if(alvo && entVazioOk(alvo,pts)){ (alvo.vazios=alvo.vazios||[]).push(pts); if(typeof entSelecionar==="function") entSelecionar(alvo,"set"); toast("Vazio criado") } else toast("O vazio precisa ficar inteiro dentro de uma edificação") }
   else { const k=DRAWT.split(":")[1]; S.custom[k]=pts; toast("Limite personalizado aplicado") }
   setTool("edit"); update(); fit3d(); if(TAB==="terreno"||TAB==="clima") renderTab();
 }
@@ -73,6 +75,7 @@ c2.addEventListener("pointerdown",e=>{
   if(TOOL==="draw"){ if(!DRAW) DRAW=[]; if(DRAW.length>=3){ const f=w2s_(DRAW[0]); if(Math.hypot(f[0]-px,f[1]-py)<14){ finishDraw(); return } } DRAW.push(w); redraw2d(); return }
   if(TOOL==="calib"){ if(!CAL||CAL.length>=2) CAL=[]; CAL.push(w); if(CAL.length===2){ document.getElementById("calibBox").hidden=false; document.getElementById("calibDist").focus() } redraw2d(); return }
   if(TOOL==="img"){ if(BG) drag={type:"img", start:w, bx:BG.x, by:BG.y}; return }
+  if(typeof entDown==="function"){ const d=entDown(e,px,py,w); if(d){ drag=d; return } }
   const v=hitVertex(px,py); if(v){ drag={type:"v",...v}; return }
   const mI=hitMid(px,py); if(mI>=0){ const L=S.lote.pts, a=L[mI], b=L[(mI+1)%L.length]; L.splice(mI+1,0,[(a[0]+b[0])/2,(a[1]+b[1])/2]); edgeInsert(mI); drag={type:"v",arr:L,i:mI+1,kind:"lote"}; update({fast:true}); return }
   drag={type:"pan", px,py, ox:cur().ox, oy:cur().oy};
@@ -85,10 +88,12 @@ c2.addEventListener("pointermove",e=>{
   if(drag.type==="com"){ comDragMove(drag, s2w_(px,py)); return }
   if(drag.type==="pan"){ if(Math.hypot(px-drag.px,py-drag.py)>4) drag.moved=true; const V=cur(); V.ox=drag.ox+px-drag.px; V.oy=drag.oy+py-drag.py; redraw2d() }
   if(drag.type==="v"){ drag.arr[drag.i]=s2w_(px,py); update({fast:true}) }
+  if(typeof entDrag==="function" && /^ent|^marq/.test(drag.type)){ entDrag(drag,px,py); return }
   if(drag.type==="ramp"){ const w=s2w_(px,py); S.estudo.rampa.x=drag.x+w[0]-drag.start[0]; S.estudo.rampa.y=drag.y+w[1]-drag.start[1]; update({fast:true}) }
   if(drag.type==="img"){ const w=s2w_(px,py); BG.x=drag.bx+w[0]-drag.start[0]; BG.y=drag.by+w[1]-drag.start[1]; redraw2d() }
 });
 const endPtr=e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null;
+  if(drag && typeof entUp==="function" && (/^ent|^marq/.test(drag.type) || (drag.type==="pan" && VIEW==="impl" && TOOL==="edit"))){ const r=entUp(drag); if(r) { drag=null; return } }
   if(drag && drag.type==="com"){ drag=null; comDragEnd(); return }
   if(drag && (VIEW==="gar"||VIEW==="andar") && drag.tap && !drag.moved && !RAMPMOVE) toggleVaga(drag.tap);
   if(drag&&(drag.type==="v"||drag.type==="ramp")){ update(); if(TAB==="terreno") renderTabLive(window._last.m, window._last.f) } drag=null };
@@ -111,8 +116,8 @@ document.getElementById("calibCancel").addEventListener("click",()=>{ CAL=null; 
 function setTool(t, target){ TOOL=t; if(target) DRAWT=target; else if(t==="draw" && !target) DRAWT = DRAWT||"lote"; if(t!=="draw") DRAW=null; if(t!=="calib"){ CAL=null; document.getElementById("calibBox").hidden=true }
   document.querySelectorAll("#toolSeg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.t===t && (!b.dataset.dt || b.dataset.dt===DRAWT))); hintFor(); redraw2d() }
 function hintFor(){ const h=document.getElementById("hint");
-  const nomes={lote:"do lote","entorno":"do volume vizinho","lim:emb":"do limite do embasamento","lim:tor":"do limite das torres","lim:sub":"do limite do subsolo"};
-  const msg = VIEW==="impl" ? {edit:"Arraste os vértices (lote, limites e entorno). Toque no ponto azul no meio de um lado do lote para criar um vértice.", draw:`Clique nos cantos ${nomes[DRAWT]||""}. Clique no primeiro ponto (amarelo) para fechar.`, img:"Arraste para posicionar a imagem de fundo.", calib:"Clique em dois pontos de distância conhecida (ex.: a régua de escala do mapa)."}[TOOL]
+  const nomes={lote:"do lote","entorno":"do volume vizinho","vazio":"do vazio (pátio) dentro da edificação","lim:emb":"do limite do embasamento","lim:tor":"do limite das torres","lim:sub":"do limite do subsolo"};
+  const msg = VIEW==="impl" ? {edit:"Clique numa edificação do entorno para selecionar (Shift soma; Shift + arrastar no vazio seleciona várias) e arraste para mover. Delete apaga. Vértices: arraste; clique duplo remove. Lote: o ponto no meio do lado cria um vértice.", draw:`Clique nos cantos ${nomes[DRAWT]||""}. Clique no primeiro ponto (amarelo) para fechar.`, img:"Arraste para posicionar a imagem de fundo.", calib:"Clique em dois pontos de distância conhecida (ex.: a régua de escala do mapa)."}[TOOL]
     : VIEW==="gar" ? (RAMPMOVE? "Arraste para mover a rampa. As vagas se reorganizam ao soltar." : "Cinza: onde o carro consegue circular. Linha amarela: rota desde a rampa. Hachura: patamar sem vagas. Toque numa vaga para tirá-la ou devolvê-la.")
     : VIEW==="tipo" ? (S.comodos&&S.comodos.on? "Arraste as divisões entre os cômodos (aparecem ao passar sobre uma unidade). Vale para todas as unidades da tipologia." : "Núcleo com escada enclausurada, antecâmara e elevadores. Ajuste tipo de escada e posição na etapa Projeto.")
     : VIEW==="clima" ? (S.clima.modo==="vento"? "Simulação 2D do vento numa fatia horizontal. Vermelho: aceleração; azul: calmaria/esteira." : "Horas de sol direto no chão para a data escolhida, com sombras do prédio e do entorno.") : "";
@@ -132,7 +137,7 @@ function setView(v){
   if(!is3){ size2d(); if(!VS[v] || prev!==v) fit2d(); else redraw2d() } else { size3d(); if(v==="3d"){ rebuild3d(window._last.m); if(prev==="v3d") fit3d() } }
   if(v==="v3d") cfdEnter();
   if(v==="clima") climaRun();
-  hintFor(); viewbarSegs(window._last&&window._last.m); if(typeof planLegend==="function") planLegend();
+  hintFor(); viewbarSegs(window._last&&window._last.m); if(typeof planLegend==="function") planLegend(); if(typeof entBarRefresh==="function") entBarRefresh();
 }
 function viewbarSegs(m){
   if(!m) return;

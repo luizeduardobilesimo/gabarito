@@ -5,7 +5,7 @@
    Sem internet ou com mapas externos bloqueados (artifact): mensagem clara; Coordenadas e Imagem + calibração seguem valendo. */
 extendDEF("mapa", { camada:"sat", raio:150 });
 const MAPA_CDN = { js:"https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js", css:"https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" };
-const MAPA_OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+const MAPA_OVERPASS = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
 const MAPA = { lib:null, map:null, pts:[], fechado:false, tilesOk:0, tilesErr:0, t0:0 };
 
 function mapaFormHTML(){
@@ -173,28 +173,47 @@ function mapaBusca(q){
     .catch(()=>mapaHint("A busca de endereços não respondeu. Navegue pelo mapa."));
 }
 
-/* ---- entorno automático (Overpass) ---- */
+/* ---- entorno automático (Overpass) ----
+   Os servidores públicos do Overpass oscilam (504, lentidão, fora do ar). Em vez de tentar um por vez, a consulta sai para o
+   primeiro servidor e, se ele não responder em 6 s (ou falhar), já dispara o próximo em paralelo; vale a primeira resposta boa. */
+function mapaOverpass(q, aoProgresso){
+  return new Promise((res, rej)=>{
+    const ctrls=[], lancado=new Set(); let fim=false, rodada=1, falhas=0, ult="sem conexão ou bloqueado", t0=performance.now();
+    const termina=(ok,v)=>{ if(fim) return; fim=true; clearTimeout(geral); clearInterval(tic); ctrls.forEach(c=>{ try{ c.abort() }catch(e){} }); ok? res(v) : rej(new Error(v)) };
+    const geral=setTimeout(()=>termina(false, ult==="sem conexão ou bloqueado"? "tempo esgotado" : ult), 80000);
+    const tic=setInterval(()=>{ if(aoProgresso) aoProgresso(Math.round((performance.now()-t0)/1000), lancado.size) }, 1000);
+    const lanca=i=>{
+      if(fim || i>=MAPA_OVERPASS.length || lancado.has(i+"/"+rodada)) return; lancado.add(i+"/"+rodada);
+      const ac=new AbortController(), meu=rodada; ctrls.push(ac);
+      fetch(MAPA_OVERPASS[i],{method:"POST", body:"data="+encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}, signal:ac.signal})
+        .then(r=>{ if(!r.ok) throw new Error("erro "+r.status); return r.json() })
+        .then(j=>{ if(j && /runtime error|timed out/i.test(String(j.remark||"")) && !(j.elements||[]).length) throw new Error("servidor sobrecarregado"); termina(true,j) })
+        .catch(e=>{ if(fim || e.name==="AbortError") return; ult=e.message||ult; falhas++; lanca(i+1);
+          if(meu===rodada && falhas>=MAPA_OVERPASS.length && rodada<2){ rodada++; falhas=0; setTimeout(()=>lanca(0), 2000) }
+          else if(falhas>=MAPA_OVERPASS.length*2) termina(false, ult) });
+      setTimeout(()=>lanca(i+1), 6000);
+    };
+    lanca(0);
+  });
+}
 async function mapaEntorno(){
   const lat=+S.lote.lat, lon=+S.lote.lon, raio=Math.max(30,Math.min(400,+S.mapa.raio||150));
   if(!isFinite(lat)||!isFinite(lon)){ toast("Informe a latitude e a longitude do lote"); return }
+  if(MAPA.busca) return; MAPA.busca=true;
   const q=geoOverpassQuery(lat, lon, raio), t0=performance.now();
-  mapaMsg("Buscando prédios no OpenStreetMap…"); mapaHint("Buscando prédios no OpenStreetMap…");
+  const msg=t=>{ mapaMsg(t); mapaHint(t) };
+  msg("Buscando prédios no OpenStreetMap…");
   let json=null, err="";
-  // o servidor público costuma responder 504/429 quando está cheio: tenta de novo e passa para o espelho
-  const tent=[MAPA_OVERPASS[0], MAPA_OVERPASS[0], MAPA_OVERPASS[1], MAPA_OVERPASS[0]];
-  for(let i=0;i<tent.length && !json;i++){
-    if(i) { mapaHint(`O OpenStreetMap está ocupado (${err}); tentando de novo…`); await new Promise(r=>setTimeout(r, 2500)) }
-    const ac=new AbortController(), to=setTimeout(()=>ac.abort(), 25000);
-    try{ const r=await fetch(tent[i],{method:"POST", body:"data="+encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}, signal:ac.signal}); clearTimeout(to);
-      if(!r.ok){ err="erro "+r.status; continue } json=await r.json() }
-    catch(e){ clearTimeout(to); err= e.name==="AbortError"? "tempo esgotado" : "sem conexão ou bloqueado"; if(err!=="tempo esgotado" && i>=1) break }
-  }
-  if(!json){ const t=`Não consegui consultar o OpenStreetMap (${err}). Desenhe os vizinhos à mão (Entorno, na implantação) ou use “Gerar genéricos” na etapa Clima.`; mapaMsg(t); mapaHint(t); toast("Entorno do OSM indisponível"); return }
+  try{ json=await mapaOverpass(q, (s,n)=>msg(`Buscando prédios no OpenStreetMap… ${s} s${n>1? ` (${n} servidores consultados)`:""}`)) }catch(e){ err=e.message }
+  MAPA.busca=false;
+  if(!json){ const t=`Não consegui consultar o OpenStreetMap (${err}). Tente de novo em instantes, desenhe os vizinhos à mão (ferramenta Entorno, na implantação) ou use “Gerar genéricos” na etapa Clima.`; msg(t); toast("Entorno do OSM indisponível"); return }
   const ent=geoEntornoDeOverpass(json, geoRef(lat,lon), S.lote.pts, {raio});
   S.entorno=[...(S.entorno||[]).filter(e=>!e.osm), ...ent];
-  const est=ent.filter(e=>e.est).length, s=(performance.now()-t0)/1000;
+  const est=ent.filter(e=>e.est).length, s=(performance.now()-t0)/1000, aberto=!!document.getElementById("mapaBox");
   update(); if(MAPA.map) mapaDesenha();
-  const t=`${ent.length} prédios do OSM em ${nf(raio,0)} m${est? ` (${est} com altura estimada em 6 m)`:""} · ${nf(s,1)} s.`;
-  mapaMsg(t); mapaHint(t); toast(ent.length? `Entorno: ${ent.length} prédios do OpenStreetMap` : "Nenhum prédio do OSM nesse raio");
+  const t=`${ent.length} prédios do OSM em ${nf(raio,0)} m${est? ` (${est} com altura estimada em 6 m)`:""} · ${nf(s,1)} s.${ent.length? (aberto? " Feche o mapa para editar (mover, apagar, redimensionar, criar vazios) na Implantação." : " Clique numa edificação para editá-la."):""}`;
+  msg(t); toast(ent.length? `Entorno: ${ent.length} prédios do OpenStreetMap` : "Nenhum prédio do OSM nesse raio");
+  if(ent.length && !aberto && typeof entEnquadrar==="function"){ setView("impl"); entEnquadrar() }
+  if(TAB==="terreno"||TAB==="clima") renderTab();
 }
 Object.assign(ACT,{ mapaAbrir: ()=>mapaAbrir(), mapaEntorno: ()=>mapaEntorno() });

@@ -19,7 +19,13 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
   const pathLine=(pts,dir,col)=>{ const A=w2s(pts[0]), B=w2s(pts[1]); g.strokeStyle=col; g.lineWidth=2; g.setLineDash([7,5]); g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); g.setLineDash([]);
     const L_=Math.hypot(B[0]-A[0],B[1]-A[1]); if(L_<20) return; const n=Math.max(1,Math.floor(L_/70)), ang=Math.atan2(B[1]-A[1],B[0]-A[0])+(dir<0?Math.PI:0); g.fillStyle=col;
     for(let k=1;k<=n;k++){ const t=k/(n+1), P=[A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t]; const h=6; g.beginPath(); if(dir===0){ [ang,ang+Math.PI].forEach(a=>{ g.moveTo(P[0]+Math.cos(a)*h*1.4,P[1]+Math.sin(a)*h*1.4); g.lineTo(P[0]+Math.cos(a)*h*0.2-Math.sin(a)*h*0.7,P[1]+Math.sin(a)*h*0.2+Math.cos(a)*h*0.7); g.lineTo(P[0]+Math.cos(a)*h*0.2+Math.sin(a)*h*0.7,P[1]+Math.sin(a)*h*0.2-Math.cos(a)*h*0.7); g.closePath() }) } else { g.moveTo(P[0]+Math.cos(ang)*h,P[1]+Math.sin(ang)*h); g.lineTo(P[0]-Math.cos(ang)*h-Math.sin(ang)*h*0.8,P[1]-Math.sin(ang)*h+Math.cos(ang)*h*0.8); g.lineTo(P[0]-Math.cos(ang)*h+Math.sin(ang)*h*0.8,P[1]-Math.sin(ang)*h-Math.cos(ang)*h*0.8); g.closePath() } g.fill() } };
-  const entorno=()=>{ (S.entorno||[]).forEach((e,i)=>{ if(!e.pts||e.pts.length<3) return; fillP(e.pts,css("--muted"),0.35); strokeP(e.pts,css("--ink"),1); if(V.s>1.5) label(`${e.nome||"E"+(i+1)} · ${nf(e.h,0)} m`, w2s(G.centroid(e.pts)), {size:10}) }) };
+  const entorno=()=>{ const sel=(typeof ENT!=="undefined"&&ENT.sel)||new Set();
+    (S.entorno||[]).forEach((e,i)=>{ if(!e.pts||e.pts.length<3) return; const vz=entVazios(e), on=sel.has(e.id);
+      if(vz.length){ g.save(); g.beginPath(); [e.pts,...vz].forEach(r=>{ r.forEach((q,k)=>{ const [x,y]=w2s(q); k?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath() }); g.globalAlpha=0.35; g.fillStyle=css("--muted"); g.fill("evenodd"); g.restore(); vz.forEach(v=>strokeP(v,css("--ink"),1)) }
+      else fillP(e.pts,css("--muted"),0.35);
+      strokeP(e.pts,css("--ink"),1);
+      if(on){ fillP(e.pts,css("--accent"),0.22); strokeP(e.pts,css("--accent"),2.4) }
+      if(V.s>1.5) label(`${e.nome||"E"+(i+1)} · ${nf(e.h,0)} m`, w2s(G.centroid(e.pts)), {size:10}) }) };
   const rampDraw=(rp,dir)=>{ if(!rp) return; fillP(rp,css("--mark"),0.35); strokeP(rp,css("--mark"),1.4); if(dir){ const c=G.centroid(rp), h=(Math.hypot(rp[1][0]-rp[0][0],rp[1][1]-rp[0][1]))/2-1; arrow([c[0]-dir[0]*h,c[1]-dir[1]*h],[c[0]+dir[0]*h,c[1]+dir[1]*h],css("--ink"),1.5,7) } if(V.s>3) label(`rampa ${pct(S.estudo.rampaInc,0)}`, w2s(G.centroid(rp)), {size:10}) };
   g.clearRect(0,0,W,H); g.fillStyle=css("--surface-2"); g.fillRect(0,0,W,H);
   if(mode==="impl" && BG && opt.bg!==false){ g.globalAlpha=BG.op; const [x,y]=w2s([BG.x,BG.y]); g.drawImage(BG.img,x,y,BG.img.width*BG.mpp*V.s,BG.img.height*BG.mpp*V.s); g.globalAlpha=1 }
@@ -38,7 +44,8 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     strokeP(m.torAll,css("--m-env"),1.1,[6,4]);
     entorno();
     const CU=S.custom||{}; [["emb","--m-ter"],["tor","--m-env"],["sub","--muted"]].forEach(([k,c])=>{ if(CU[k]&&CU[k].length>2){ strokeP(CU[k],css(c),2.2,[10,4]); if(opt.handles) CU[k].forEach(q=>{ const [x,y]=w2s(q); g.fillStyle=css(c); g.fillRect(x-3.5,y-3.5,7,7) }) } });
-    if(opt.handles) (S.entorno||[]).forEach(e=>(e.pts||[]).forEach(q=>{ const [x,y]=w2s(q); g.fillStyle=css("--muted"); g.fillRect(x-3.5,y-3.5,7,7) }));
+    if(opt.handles && typeof entHandles==="function") entHandles(g, w2s, V);
+    else if(opt.handles) (S.entorno||[]).forEach(e=>(e.pts||[]).forEach(q=>{ const [x,y]=w2s(q); g.fillStyle=css("--muted"); g.fillRect(x-3.5,y-3.5,7,7) }));
     if(m.ramp) { strokeP(m.ramp.poly,css("--mark"),1.4,[4,3]) }
     frontStallsDraw();
     m.T.forEach((t,i)=>{ fillP(t.plate,css("--m-tipo"),0.95); strokeP(t.plate,css("--ink"),1.3); if(t.plate.length) label(`T${i+1} · ${t.pav} pav`, w2s(G.centroid(t.plate)), {w:"600",font:"--f-display",size:12}) });

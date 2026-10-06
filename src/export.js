@@ -115,7 +115,7 @@ function DXF(){
   };
 }
 function dxfImpl(m){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("SUBSOLO",m.sub,8); d.poly("EMBASAMENTO",m.emb,5); (m.ter.lojas||[]).forEach(p=>d.poly("TERREO-LOJAS",p,30)); (m.ter.hall||[]).forEach(p=>d.poly("TERREO-HALL",p,4)); (m.ter.drive||[]).forEach(p=>d.poly("TERREO-ACESSO-VEICULOS",p,8)); d.poly("TERREO-GARAGEM",m.tGar,9); d.poly("ENVELOPE-TORRE",m.torAll,1);
-  (S.entorno||[]).forEach(e=>{ d.poly("ENTORNO",e.pts,8); if(e.pts&&e.pts.length) d.text("TEXTOS",G.centroid(e.pts),1,`${e.nome||"Entorno"} - ${nf(e.h,1)} m`) });
+  (S.entorno||[]).forEach(e=>{ d.poly("ENTORNO",e.pts,8); entVazios(e).forEach(v=>d.poly("ENTORNO_VAZIO",v,8)); if(e.pts&&e.pts.length) d.text("TEXTOS",G.centroid(e.pts),1,`${e.nome||"Entorno"} - ${nf(e.h,1)} m`) });
   if(m.ramp) d.poly("RAMPA",m.ramp.poly,2);
   ["emb","tor","sub"].forEach(k=>{ if(S.custom[k]&&S.custom[k].length) d.poly("LIMITE-"+k.toUpperCase(),S.custom[k],6) });
   m.T.forEach((t,i)=>{ d.poly("TORRES",t.plate,2); if(t.plate.length) d.text("TEXTOS",G.centroid(t.plate),1.2,`T${i+1} - ${t.pav} pav`) });

@@ -52,7 +52,7 @@ function otimSolProxy(st, m){
   const suns=otimSolVetores(st), P=st.produto, T=(m.T||[]).filter(t=>t.plate&&t.plate.length>2);
   if(!T.length || !suns.length) return 0;
   const box=p=>{ const xs=p.map(q=>q[0]), ys=p.map(q=>q[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)] };
-  const prs=[...T.map(t=>({poly:t.plate, z1:t.H, own:t.i})), ...(st.entorno||[]).filter(e=>e.pts&&e.pts.length>2).map(e=>({poly:e.pts, z1:+e.h||0, own:-1}))];
+  const prs=[...T.map(t=>({poly:t.plate, z1:t.H, own:t.i})), ...(st.entorno||[]).filter(e=>e.pts&&e.pts.length>2).map(e=>({poly:entPoly(e), z1:+e.h||0, own:-1}))];
   prs.forEach(p=>p.bb=box(p.poly));
   let sum=0, wsum=0;
   T.forEach(t=>{ const pl=t.plate, ccw=G.sArea(pl)>0, tipoH=Math.max(P.pe, t.pav*P.pe);

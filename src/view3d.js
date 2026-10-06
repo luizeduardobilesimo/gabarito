@@ -31,10 +31,11 @@ function fit3d(m){ if(!V3.R) return; const L=S.lote.pts, c=G.centroid(L); m=m||(
   V3.ctl.target.set(c[0], h*0.35, -c[1]); V3.cam.position.set(c[0]+d*0.75, h*0.55+d*0.6, -c[1]+d*0.85); V3.ctl.update(); render3() }
 // posição solar (aprox. NOAA simplificada) → vetor no referencial do desenho
 function sunVector(hora){ const v=sunVectorAt(S.sol.mes, S.sol.dia, hora??S.sol.hora); const lat=S.lote.lat*Math.PI/180; return v }
-function shapeOf(p){ const s=new THREE.Shape(); p.forEach((q,i)=> i? s.lineTo(q[0],q[1]) : s.moveTo(q[0],q[1])); s.closePath(); return s }
+function shapeOf(p, holes){ const s=new THREE.Shape(); p.forEach((q,i)=> i? s.lineTo(q[0],q[1]) : s.moveTo(q[0],q[1])); s.closePath();
+  (holes||[]).forEach(h=>{ const pa=new THREE.Path(); h.forEach((q,i)=> i? pa.lineTo(q[0],q[1]) : pa.moveTo(q[0],q[1])); pa.closePath(); s.holes.push(pa) }); return s }
 function slab(p, y0, h, color, o={}){
   if(!p || !p.length || h<=0) return;
-  const g=new THREE.ExtrudeGeometry(shapeOf(p),{depth:h,bevelEnabled:false}); g.rotateX(-Math.PI/2); g.translate(0,y0,0);
+  const g=new THREE.ExtrudeGeometry(shapeOf(p,o.holes),{depth:h,bevelEnabled:false}); g.rotateX(-Math.PI/2); g.translate(0,y0,0);
   const mat=new THREE.MeshStandardMaterial({color, roughness:o.rough??0.86, metalness:o.metal??0, transparent:!!o.op, opacity:o.op||1, clippingPlanes:o.noclip?[]:V3.clip, depthWrite:!(o.op&&o.op<0.6), emissive:o.emissive||0x000000});
   const mesh=new THREE.Mesh(g,mat); mesh.castShadow=!o.op||o.op>0.7; mesh.receiveShadow=true; V3.grp.add(mesh);
   if(o.eop!==0){ const e=new THREE.LineSegments(new THREE.EdgesGeometry(g,25), new THREE.LineBasicMaterial({color:o.edge||col3("--ink"), transparent:true, opacity:o.eop??0.28, clippingPlanes:o.noclip?[]:V3.clip})); V3.grp.add(e) }
@@ -136,7 +137,7 @@ function rebuild3d(m, force){
     const zTop=k=> zk(k)+(k===0? P.peTerreo : P.peGar), sH=(m.vert.strips||[]).find(s_=>s_.kind==="H");
     if(sH && sH.hole) slab(sH.hole, zk(-P.subsolos), zTop(P.garAcima)-zk(-P.subsolos)-0.2, col3("--m-gar"), {eop:0.3});
     if(m.vert.elev){ const E_=m.vert.elev; E_.shafts.forEach(p=>slab(p, zk(E_.kMin), zTop(E_.kMax)-zk(E_.kMin)-0.1, col3("--c-elev"), {op:0.55, eop:0.45})) } }
-  (S.entorno||[]).forEach(e=>{ if(e.pts&&e.pts.length>2&&e.h>0) slab(e.pts, 0, e.h, col3("--m-viz"), {eop:0.35, noclip:true, rough:0.95}) });
+  (S.entorno||[]).forEach(e=>{ if(e.pts&&e.pts.length>2&&e.h>0) slab(e.pts, 0, e.h, col3("--m-viz"), {eop:0.35, noclip:true, rough:0.95, holes:entVazios(e)}) });
   // andar cortado: planta do pavimento sobre a laje
   if(fl) cutFloor(m, fl);
   // mapa de clima sobre o terreno
