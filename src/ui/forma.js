@@ -1,11 +1,12 @@
 /* ================= 2.4 regras avançadas de forma — interface =================
-   Campos dentro do card "Recuos e afastamentos" (etapa Regras), linhas na conformidade e desenho do envelope
+   Campos na seção "Forma do edifício" (etapa Regras › Prefeitura), linhas na conformidade e desenho do envelope
    escalonado na implantação e dos terraços nos andares recuados. Cálculo em src/calc/forma.js + massing. */
 function formaRecuosHTML(){
   const F=S.forma; if(!F) return "";
-  let h = GRP("Forma do edifício") + `<div data-q="forma recuo progressivo escalonada aeródromo soleira embasamento">${SW("forma.on","Regras avançadas de forma",{rr:true})}</div>`;
-  if(!F.on) return h + `<p class="note">Recuos progressivos por altura, torres escalonadas, embasamento, soleira e aeródromo.</p>`;
-  h += `<div data-q="afastamento faixas altura progressivo">${SW("forma.prog","Afastamento por faixas de altura",{rr:true})}</div>`;
+  // seção "Forma do edifício" (etapa Regras › Prefeitura): desligada = só o interruptor
+  let h = `<div data-q="forma recuo progressivo escalonada aeródromo soleira embasamento">${SW("forma.on","Regras avançadas de forma",{rr:true})}</div>`;
+  if(!F.on) return h;
+  h += `<div class="row sb" data-q="afastamento faixas altura progressivo" style="flex-wrap:nowrap">${SW("forma.prog","Afastamento por faixas de altura",{rr:true})}${INFO("Recuo progressivo")}</div>`;
   if(F.prog){
     const n=F.faixas.length;
     h += `<div class="list" id="formaFx">` + `<div class="li" style="grid-template-columns:1fr 1fr 1fr 24px;font-size:10.5px;color:var(--muted)"><span>Até a cota</span><span>Mínimo</span><span>Ou H ÷</span><span></span></div>` +
@@ -20,8 +21,8 @@ function formaRecuosHTML(){
     h += `<div data-q="torre escalonada terraço recuo">${SW("forma.escalonar","Torres escalonadas (terraços nos recuos)",{rr:true})}</div>`;
     if(F.escalonar) h += KV(NUM("forma.rMin","Encolher unidades até","%",{pct:true,step:1,min:0.5,max:1,help:"Abaixo disso o andar recuado perde unidades (mix por faixa) em vez de encolher todas",q:"mix faixa"}));
   }
-  h += KV(NUM("forma.hEmbMax","Altura máx. embasamento","m",{step:0.5,zero:true,ph:"livre",q:"embasamento altura"})+NUM("forma.soleira","Cota de soleira","m",{step:0.1,q:"soleira nível"}));
-  h += `<div data-q="aeródromo plano proteção cone">${SW("forma.aero","Plano de proteção de aeródromo",{rr:true})}</div>`;
+  h += KV(NUM("forma.hEmbMax","Altura máx. embasamento","m",{step:0.5,zero:true,ph:"livre",q:"embasamento altura",help:"Embasamento"})+NUM("forma.soleira","Cota de soleira","m",{step:0.1,q:"soleira nível",help:"Soleira"}));
+  h += `<div class="row sb" data-q="aeródromo plano proteção cone" style="flex-wrap:nowrap">${SW("forma.aero","Plano de proteção de aeródromo",{rr:true})}${INFO("Aeródromo")}</div>`;
   if(F.aero) h += KV(NUM("forma.aeroCota","Cota do plano","m",{step:0.5,q:"aeródromo limite"}));
   h += `<div id="formaRes"></div>`;
   return h;

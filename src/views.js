@@ -95,7 +95,7 @@ c2.addEventListener("pointermove",e=>{
 const endPtr=e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null;
   if(drag && typeof entUp==="function" && (/^ent|^marq/.test(drag.type) || (drag.type==="pan" && VIEW==="impl" && TOOL==="edit"))){ const r=entUp(drag); if(r) { drag=null; return } }
   if(drag && drag.type==="com"){ drag=null; comDragEnd(); return }
-  if(drag && (VIEW==="gar"||VIEW==="andar") && drag.tap && !drag.moved && !RAMPMOVE) toggleVaga(drag.tap);
+  if(drag && (VIEW==="gar"||VIEW==="andar") && drag.tap && !drag.moved && !(RAMPMOVE && VIEW==="gar")) toggleVaga(drag.tap);
   if(drag&&(drag.type==="v"||drag.type==="ramp")){ update(); if(TAB==="terreno") renderTabLive(window._last.m, window._last.f) } drag=null };
 c2.addEventListener("pointerup",endPtr); c2.addEventListener("pointercancel",endPtr);
 c2.addEventListener("wheel",e=>{ e.preventDefault(); const [px,py]=pos(e); zoomAt(px,py, cur().s*Math.exp(-e.deltaY*0.0015)) },{passive:false});
@@ -117,22 +117,24 @@ function setTool(t, target){ TOOL=t; if(target) DRAWT=target; else if(t==="draw"
   document.querySelectorAll("#toolSeg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.t===t && (!b.dataset.dt || b.dataset.dt===DRAWT))); hintFor(); redraw2d() }
 function hintFor(){ const h=document.getElementById("hint");
   const nomes={lote:"do lote","entorno":"do volume vizinho","vazio":"do vazio (pátio) dentro da edificação","lim:emb":"do limite do embasamento","lim:tor":"do limite das torres","lim:sub":"do limite do subsolo"};
-  const msg = VIEW==="impl" ? {edit:"Clique numa edificação do entorno para selecionar (Shift soma; Shift + arrastar no vazio seleciona várias) e arraste para mover. Delete apaga. Vértices: arraste; clique duplo remove. Lote: o ponto no meio do lado cria um vértice.", draw:`Clique nos cantos ${nomes[DRAWT]||""}. Clique no primeiro ponto (amarelo) para fechar.`, img:"Arraste para posicionar a imagem de fundo.", calib:"Clique em dois pontos de distância conhecida (ex.: a régua de escala do mapa)."}[TOOL]
-    : VIEW==="gar" ? (RAMPMOVE? "Arraste para mover a rampa. As vagas se reorganizam ao soltar." : "Cinza: onde o carro consegue circular. Linha amarela: rota desde a rampa. Hachura: patamar sem vagas. Toque numa vaga para tirá-la ou devolvê-la.")
-    : VIEW==="tipo" ? (S.comodos&&S.comodos.on? "Arraste as divisões entre os cômodos (aparecem ao passar sobre uma unidade). Vale para todas as unidades da tipologia." : "Núcleo com escada enclausurada, antecâmara e elevadores. Ajuste tipo de escada e posição na etapa Projeto.")
-    : VIEW==="clima" ? (S.clima.modo==="vento"? "Simulação 2D do vento numa fatia horizontal. Vermelho: aceleração; azul: calmaria/esteira." : "Horas de sol direto no chão para a data escolhida, com sombras do prédio e do entorno.") : "";
-  h.textContent=msg; h.hidden = VIEW==="3d" || !msg || !!HINTSEEN[VIEW+TOOL] }
+  // dicas curtas (uma frase); somem no primeiro toque na planta ou depois de alguns segundos
+  const msg = VIEW==="impl" ? {edit:"Arraste vértices e prédios do entorno; o ponto no meio de um lado cria um vértice.", draw:`Clique nos cantos ${nomes[DRAWT]||""} e feche no primeiro ponto.`, img:"Arraste para posicionar a imagem de fundo.", calib:"Clique em dois pontos de distância conhecida."}[TOOL]
+    : VIEW==="gar" ? (RAMPMOVE? "Arraste a rampa; as vagas se refazem ao soltar." : ({n:"Toque numa vaga para torná-la comum.",pcd:"Toque numa vaga para marcá-la como PCD.",idoso:"Toque numa vaga para marcá-la para idoso."})[TAPMODE]||"Toque numa vaga para tirá-la ou devolvê-la.")
+    : VIEW==="tipo" ? (S.comodos&&S.comodos.on? "Arraste as divisões entre os cômodos." : "")
+    : VIEW==="clima" ? (S.clima.modo==="vento"? "Vermelho: vento acelerado; azul: calmaria." : "Horas de sol direto no chão na data escolhida.") : "";
+  h.textContent=msg; h.hidden = VIEW==="3d" || !msg || !!HINTSEEN[VIEW+TOOL];
+  clearTimeout(hintFor.t); if(!h.hidden){ const k=VIEW+TOOL; hintFor.t=setTimeout(()=>{ HINTSEEN[k]=1; if(VIEW+TOOL===k) h.hidden=true }, 9000) } }
 document.getElementById("toolSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; setTool(b.dataset.t, b.dataset.dt) });
 function setView(v){
   const prev=VIEW; VIEW=v; document.querySelectorAll("#viewSeg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.v===v));
   const c3=document.getElementById("c3d"), is3=v==="3d"||v==="v3d";
   if(prev==="v3d" && v!=="v3d") cfdLeave();
   c3.hidden = !is3 || !V3.R; c2.hidden = is3;
-  document.getElementById("toolSeg").hidden = v!=="impl"; document.getElementById("legend").hidden = v!=="3d";
+  document.getElementById("toolSeg").hidden = v!=="impl"; document.getElementById("legend").hidden = v!=="3d" || !LEGON;
   document.getElementById("floorSeg").hidden = v!=="gar"; document.getElementById("rampSeg").hidden = v!=="gar"; document.getElementById("towerSeg").hidden = v!=="tipo";
   document.getElementById("climaSeg").hidden = v!=="clima";
   document.getElementById("andarBox").hidden = v!=="andar"; document.getElementById("tapSeg").hidden = !(v==="gar"||v==="andar"); document.getElementById("corteBox").hidden = v!=="3d";
-  document.getElementById("legBtn").hidden = !(v==="impl"||v==="gar"||v==="tipo"||v==="andar");
+  document.getElementById("legBtn").hidden = !(v==="3d"||v==="impl"||v==="gar"||v==="tipo"||v==="andar");
   document.getElementById("sunBtn").hidden = v!=="3d"; document.getElementById("sunBox").hidden = v!=="3d" || !S.sol.on;
   if(!is3){ size2d(); if(!VS[v] || prev!==v) fit2d(); else redraw2d() } else { size3d(); if(v==="3d"){ rebuild3d(window._last.m); if(prev==="v3d") fit3d() } }
   if(v==="v3d") cfdEnter();
@@ -157,6 +159,7 @@ function viewbarSegs(m){
   const as=document.getElementById("andarSel"), ah=fl.map(f=>`<option value="${f.key}" ${f.key===ANDAR?"selected":""}>${f.nome}</option>`).join(""); if(as.innerHTML!==ah) as.innerHTML=ah; as.value=ANDAR;
   const cs=document.getElementById("corteSel"), ch=`<option value="">Prédio inteiro</option>`+fl.map(f=>`<option value="${f.key}" ${f.key===S.corte?"selected":""}>Cortar no ${f.nome.toLowerCase()}</option>`).join(""); if(cs.innerHTML!==ch) cs.innerHTML=ch; cs.value=S.corte||"";
   document.querySelectorAll("#tapSeg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.tm===TAPMODE));
+  document.querySelectorAll('#tabbody [data-act="tapm"]').forEach(b=>b.setAttribute("aria-pressed", b.dataset.v===TAPMODE));
   document.querySelectorAll("#climaSeg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.cm===S.clima.modo));
 }
 document.getElementById("floorSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; const fs=document.getElementById("floorSeg");
@@ -206,8 +209,8 @@ document.getElementById("andarDn").addEventListener("click",()=>{ const fl=floor
 document.getElementById("andar3d").addEventListener("click",()=>{ S.corte=ANDAR; save(); setView("3d") });
 document.getElementById("corteSel").addEventListener("change",e=>{ S.corte=e.target.value; save(); rebuild3d(window._last.m) });
 document.getElementById("tapSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; TAPMODE=b.dataset.tm; viewbarSegs(window._last.m); toast({off:"Toque numa vaga para tirar ou devolver",n:"Toque para tornar a vaga comum",pcd:"Toque para marcar PCD",idoso:"Toque para marcar idoso"}[TAPMODE]) });
-let LEGON = !matchMedia("(max-width:860px)").matches;
-document.getElementById("legBtn").addEventListener("click",()=>{ LEGON=!LEGON; planLegend() });
+let LEGON = !!LS.get("gabarito.leg");   // legenda recolhida por padrão; o botão "Legenda" abre e lembra
+document.getElementById("legBtn").addEventListener("click",()=>{ LEGON=!LEGON; LS.set("gabarito.leg",LEGON); planLegend() });
 function planLegend(){
   const el=document.getElementById("planLeg"), b=document.getElementById("legBtn"); if(!el) return;
   const sw=(c,l,o="")=>`<div><i style="background:${c};${o}"></i>${l}</div>`, ln=(c,l,dash)=>`<div><i style="background:none;border:0;border-top:2px ${dash?"dashed":"solid"} ${c};height:0;margin-top:5px"></i>${l}</div>`;
@@ -223,4 +226,5 @@ function planLegend(){
   else if(VIEW==="tipo" || (a&&a.tipo==="tipo")) h=tipoLeg()+sw("var(--m-cob)","coberturas")+(typeof comLeg==="function"? comLeg(sw) : "");
   else if(a) h=sw("var(--m-cob)","duplex / cobertura")+sw("var(--m-gar)","ático técnico")+sw("var(--c-circ)","laje do embasamento");
   el.innerHTML=`<b>Legenda</b>`+h; el.hidden = !h || !LEGON; if(b) b.setAttribute("aria-pressed",LEGON);
+  const lg=document.getElementById("legend"); if(lg) lg.hidden = VIEW!=="3d" || !LEGON;
 }

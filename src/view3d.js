@@ -95,7 +95,8 @@ function rebuild3d(m, force){
     if(Math.abs(dn)>0.05){ const pts=[]; L.forEach((q,i)=>{ const b=L[(i+1)%L.length], hq=dn*((q[0]*fd[0]+q[1]*fd[1])-fmn)/depth, hb=dn*((b[0]*fd[0]+b[1]*fd[1])-fmn)/depth; pts.push(new THREE.Vector3(q[0],hq,-q[1]),new THREE.Vector3(b[0],hb,-b[1]),new THREE.Vector3(q[0],0,-q[1]),new THREE.Vector3(q[0],hq,-q[1])) });
       grp.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({color:col3("--ink")}))) } }
   // rua
-  S.lote.front.forEach(i=>{ const a=L[i], b=L[(i+1)%L.length]; if(!a||!b) return; const dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1, nx=dy/l, ny=-dx/l, w=12, ex=dx/l*10, ey=dy/l*10;
+  const ctxA=k=>typeof ctx3dAssume==="function" && ctx3dAssume(k,m);   // contexto do OSM (src/ui/contexto.js) desenha ruas e vizinhos no lugar dos genéricos
+  if(!ctxA("ruas")) S.lote.front.forEach(i=>{ const a=L[i], b=L[(i+1)%L.length]; if(!a||!b) return; const dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1, nx=dy/l, ny=-dx/l, w=12, ex=dx/l*10, ey=dy/l*10;
     slab([[a[0]-ex,a[1]-ey],[b[0]+ex,b[1]+ey],[b[0]+ex+nx*w,b[1]+ey+ny*w],[a[0]-ex+nx*w,a[1]-ey+ny*w]],-0.06,0.04,new THREE.Color(0x5c656b),{eop:0,rough:0.95,noclip:true}) });
   (m.vf&&m.vf.vagas||[]).forEach(v=>flat(v.poly,0.07,col3("--m-loja"),0.8));
   const glass=new THREE.Color(0x9fc3d3), white=col3("--m-tipo");
@@ -137,7 +138,7 @@ function rebuild3d(m, force){
     const zTop=k=> zk(k)+(k===0? P.peTerreo : P.peGar), sH=(m.vert.strips||[]).find(s_=>s_.kind==="H");
     if(sH && sH.hole) slab(sH.hole, zk(-P.subsolos), zTop(P.garAcima)-zk(-P.subsolos)-0.2, col3("--m-gar"), {eop:0.3});
     if(m.vert.elev){ const E_=m.vert.elev; E_.shafts.forEach(p=>slab(p, zk(E_.kMin), zTop(E_.kMax)-zk(E_.kMin)-0.1, col3("--c-elev"), {op:0.55, eop:0.45})) } }
-  (S.entorno||[]).forEach(e=>{ if(e.pts&&e.pts.length>2&&e.h>0) slab(e.pts, 0, e.h, col3("--m-viz"), {eop:0.35, noclip:true, rough:0.95, holes:entVazios(e)}) });
+  if(!ctxA("predios")) (S.entorno||[]).forEach(e=>{ if(e.pts&&e.pts.length>2&&e.h>0) slab(e.pts, 0, e.h, col3("--m-viz"), {eop:0.35, noclip:true, rough:0.95, holes:entVazios(e)}) });
   // andar cortado: planta do pavimento sobre a laje
   if(fl) cutFloor(m, fl);
   // mapa de clima sobre o terreno

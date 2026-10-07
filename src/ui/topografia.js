@@ -2,40 +2,40 @@
    topoCardHTML()  → card "Topografia" (chamado por STEP_R.terreno) · topoLive(m) → números vivos · topoAfter() → liga o arquivo
    Desenho: HOOK.draw2d (curvas de nível e pontos na implantação) e HOOK.draw3d (terreno em relevo, ruas e entorno na cota certa). */
 const topoN=(v,d=2)=>nf(v,d);
+/* seção "Topografia" da etapa Terreno: fechada, com resumo; custos e desenho atrás de "Mais opções" */
+function topoSum(m){
+  const T=S.topo; if(!T.on) return `desnível ${nf(+S.lote.desnivel||0,1)} m`;
+  if(!T.pts.length) return "sem pontos importados";
+  const t=m&&m.topo; return `${T.pts.length} pontos${t? ` · térreo ${topoN(t.c)} m` : ""}`;
+}
 function topoCardHTML(){
-  const T=S.topo;
-  if(!T.on) return CARD("Topografia",
-    SW("topo.on","Usar levantamento topográfico",{rr:true}) +
-    `<p class="note">Desligado: vale o desnível simples entre a frente e os fundos. Ligado: pontos cotados ou curvas de nível (CSV, KML, DXF) dão o corte, o aterro e a contenção reais.</p>` +
-    KV(NUM("lote.desnivel","Desnível frente→fundos","m",{step:0.1})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1})) + `<div class="fsub" id="sub-terra"></div>`,
-    {details:false, key:"topografia"});
+  const T=S.topo, sec=b=>SEC("Topografia", b, {key:"topografia", sum:topoSum(window._last&&window._last.m)});
+  const sw=`<div class="row sb" style="flex-wrap:nowrap">${SW("topo.on","Usar levantamento topográfico",{rr:true})}${INFO("Desligado: vale o desnível simples entre a frente e os fundos. Ligado: pontos cotados ou curvas de nível (CSV, KML, DXF) dão o corte, o aterro e a contenção reais.")}</div>`;
+  if(!T.on) return sec(sw +
+    KV(NUM("lote.desnivel","Desnível","m",{step:0.1,q:"frente fundos",help:"Diferença de nível entre a frente e os fundos do lote. Entra no movimento de terra."})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1,help:"Corte e aterro"})) + `<div class="fsub" id="sub-terra"></div>`);
   const tipo=TOPO_CONT[T.contTipo]? T.contTipo : "cortina";
-  const imp = `<div class="row"><label class="btn sm${T.pts.length?"":" pri"}" for="topoFile" tabindex="0">Importar CSV, KML ou DXF</label><input type="file" id="topoFile" accept=".csv,.txt,.xyz,.kml,.dxf" hidden><button class="btn sm" data-act="topoEx">Terreno inclinado de exemplo</button>${T.pts.length?`<button class="btn sm ghost" data-act="topoLimpa">Limpar</button>`:""}</div>`;
-  if(!T.pts.length) return CARD("Topografia",
-    SW("topo.on","Usar levantamento topográfico",{rr:true}) + imp +
-    `<p class="note">CSV com x, y, z (metros ou UTM) ou latitude, longitude, cota · KML com altitude · DXF com pontos (POINT) ou curvas de nível (polilinhas com elevação). Coordenadas geográficas usam a origem do lote (latitude e longitude em Localização).</p>`,
-    {details:true, key:"topografia"});
-  return CARD("Topografia",
-    SW("topo.on","Usar levantamento topográfico",{rr:true}) + imp + `<div class="fsub" id="topoInfo"></div>` +
+  const imp = `<div class="row"><label class="btn sm${T.pts.length?"":" pri"}" for="topoFile" tabindex="0">Importar arquivo</label><input type="file" id="topoFile" accept=".csv,.txt,.xyz,.kml,.dxf" hidden><button class="btn sm" data-act="topoEx">Exemplo inclinado</button>${T.pts.length?`<button class="btn sm ghost" data-act="topoLimpa">Limpar</button>`:""}${INFO("CSV com x, y, z (metros ou UTM) ou latitude, longitude, cota · KML com altitude · DXF com pontos (POINT) ou curvas de nível (polilinhas com elevação). Coordenadas geográficas usam a origem do lote (Localização).")}</div>`;
+  if(!T.pts.length) return sec(sw + imp);
+  return sec(sw + imp + `<div class="fsub" id="topoInfo"></div>` +
     GRP("Cota do térreo") +
     SEG("topo.cotaModo",[["otima","Ótima","Minimiza corte + aterro respeitando a soleira"],["manual","Manual"]],{fx:"topoModo",full:true,label:"Cota do térreo"}) +
     KV(T.cotaModo==="manual"
       ? NUM("topo.cotaTerreo","Cota do térreo","m",{step:0.05,help:"Cota absoluta do piso do térreo, no mesmo referencial do levantamento"}) + NUM("topo.soleiraTol","Soleira × calçada","± m",{step:0.1,min:0,help:"Diferença máxima entre o piso do térreo e a calçada no acesso de pedestres (escadas/rampa)"})
       : NUM("topo.soleiraTol","Soleira × calçada","± m",{step:0.1,min:0,help:"Diferença máxima entre o piso do térreo e a calçada no acesso de pedestres (escadas/rampa)"}) + `<div class="fld"><span class="fl">Cota ótima</span><div class="fsub" id="topoCotaTxt" style="font-size:13px;color:var(--ink);padding-top:6px"></div></div>`) +
     `<div class="mets" id="topoMets"></div><table class="tbl" id="topoTbl"></table>` +
-    GRP("Contenção") +
-    SEG("topo.contTipo", Object.entries(TOPO_CONT).map(([k,v])=>[k,v.curto,v.nome]), {full:true,label:"Tipo de contenção"}) +
-    KV(NUM(`topo.contCustos.${tipo}`,"Contenção","R$/m²",{step:10,min:0,help:TOPO_CONT[tipo].nome+": custo por m² de parede (perímetro do subsolo × altura escavada)"}) + NUM("topo.arrimoCusto","Muro de arrimo","R$/m²",{step:10,min:0,help:"Desníveis do platô no perímetro do lote, fora da faixa do subsolo"})) +
-    GRP("Movimento de terra") +
-    KV(NUM("topo.custoCorte","Corte e bota-fora","R$/m³",{step:1,min:0}) + NUM("topo.custoAterro","Aterro compactado","R$/m³",{step:1,min:0})) +
-    GRP("Lençol freático") +
-    SW("topo.naOn","Nível d'água informado (sondagem)",{rr:true}) +
-    (T.naOn? KV(NUM("topo.naProf","Profundidade sob a calçada","m",{step:0.1,min:0}) + NUM("topo.rebaixCusto","Rebaixamento","R$/m³",{step:5,min:0,help:"Por m³ escavado abaixo do nível d'água"}) + NUM("topo.impermCusto","Impermeabilização","R$/m²",{step:5,min:0,help:"Laje de fundo + paredes até 0,5 m acima do nível d'água"})) : "") +
-    GRP("Desenho") +
-    `<div class="row sb">${SW("topo.curvas","Curvas de nível na implantação",{rr:true,fx:"topoDraw"})}${T.curvas? `<div class="inp" style="width:104px"><input type="number" step="0.25" min="0.25" data-p="topo.curvasInt" data-min="0.1" data-fx="topoDraw" value="${T.curvasInt}" aria-label="Intervalo das curvas"><em>m</em></div>`:""}</div>`,
-    {details:true, key:"topografia"});
+    `<div class="row sb" style="flex-wrap:nowrap">${SW("topo.curvas","Curvas de nível na implantação",{rr:true,fx:"topoDraw"})}${T.curvas? `<div class="inp" style="width:96px;flex:none"><input type="number" step="0.25" min="0.25" data-p="topo.curvasInt" data-min="0.1" data-fx="topoDraw" value="${T.curvasInt}" aria-label="Intervalo das curvas"><em>m</em></div>`:INFO("Curvas de nível")}</div>` +
+    ADV(GRP("Contenção") +
+      SEG("topo.contTipo", Object.entries(TOPO_CONT).map(([k,v])=>[k,v.curto,v.nome]), {full:true,label:"Tipo de contenção"}) +
+      KV(NUM(`topo.contCustos.${tipo}`,"Contenção","R$/m²",{step:10,min:0,help:TOPO_CONT[tipo].nome+": custo por m² de parede (perímetro do subsolo × altura escavada)"}) + NUM("topo.arrimoCusto","Muro de arrimo","R$/m²",{step:10,min:0,help:"Desníveis do platô no perímetro do lote, fora da faixa do subsolo"})) +
+      GRP("Movimento de terra") +
+      KV(NUM("topo.custoCorte","Corte e bota-fora","R$/m³",{step:1,min:0}) + NUM("topo.custoAterro","Aterro compactado","R$/m³",{step:1,min:0})) +
+      GRP("Lençol freático") +
+      `<div class="row sb" style="flex-wrap:nowrap">${SW("topo.naOn","Nível d'água (sondagem)",{rr:true})}${INFO("Lençol freático")}</div>` +
+      (T.naOn? KV(NUM("topo.naProf","Profundidade sob a calçada","m",{step:0.1,min:0}) + NUM("topo.rebaixCusto","Rebaixamento","R$/m³",{step:5,min:0,help:"Por m³ escavado abaixo do nível d'água"}) + NUM("topo.impermCusto","Impermeabilização","R$/m²",{step:5,min:0,help:"Laje de fundo + paredes até 0,5 m acima do nível d'água"})) : ""),
+      {key:"topo", label:"Contenção, custos e lençol"}));
 }
 function topoLive(m){
+  setSum("topografia", topoSum(m));
   if(!S.topo.on){ setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`); return }
   const t=m.topo, T=S.topo; if(!t) return;
   const sf=t.sf, n=sf.N;

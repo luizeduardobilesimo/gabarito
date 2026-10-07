@@ -82,6 +82,9 @@ const GLOSS_DATA = {
   "Monte Carlo": { t:"Simulação de Monte Carlo", d:"Roda o estudo centenas de vezes sorteando variações nas premissas. Mostra a faixa provável de resultados.", ex:"P10 = 10% de chance de ficar abaixo; P50 = mediana; P90 = só 10% de chance de ficar acima." },
   "Cenários": { t:"Cenários", d:"Versões pessimista, base e otimista do estudo, mudando preço, prazo de vendas, custo e juros ao mesmo tempo." },
   "DRE": { t:"Demonstrativo de resultado", d:"Resumo da receita, dos custos e do lucro do empreendimento." },
+  "Versão": { t:"Versão do estudo", d:"Uma foto do estudo num momento. O Gabarito salva sozinho a cada 5 minutos quando algo muda, e você pode salvar com nome. Restaurar volta exatamente àquele ponto." },
+  "DXF": { t:"DXF", d:"Formato de desenho aberto pelo AutoCAD e similares. O Gabarito exporta as plantas por camada (lote, torres, garagem, unidades)." },
+  "IFC": { t:"IFC", d:"Formato aberto de modelo BIM (Revit, ArchiCAD…). Leva o volume do prédio, os pavimentos e os ambientes." },
   "Ponto de indiferença": { t:"Ponto de indiferença", d:"Percentual de permuta que vale o mesmo que pagar o terreno em dinheiro. Abaixo dele, a permuta é melhor para o incorporador." },
   "Tabela de vendas": { t:"Tabela de vendas", d:"Preço de cada unidade, valorizado por andar, sol, orientação e vista." },
 
@@ -93,6 +96,9 @@ const GLOSS_DATA = {
   "EIV": { t:"Estudo de impacto de vizinhança", d:"Estudo exigido pela prefeitura para empreendimentos grandes: sombra, vento, trânsito, paisagem." },
   "Cp": { t:"Coeficiente de pressão", d:"Pressão do vento na fachada em relação ao vento livre. Positivo empurra, negativo suga." },
   "LBM": { t:"Lattice Boltzmann", d:"Método numérico que simula o vento. Aqui é usado para comparar opções, não para dimensionar estrutura." },
+  "Rugosidade": { t:"Rugosidade do entorno", d:"Quanto o terreno em volta freia o vento perto do chão. Campo aberto freia pouco; cidade com prédios freia mais, e o vento cresce mais devagar com a altura." },
+  "Lawson": { t:"Conforto do pedestre (Lawson)", d:"Critério que classifica o vento médio na altura do pedestre: bom para sentar, ficar em pé, caminhar, desconfortável ou perigoso. A opção “Conforto do pedestre” em “Colorir por” mostra essas faixas." },
+  "Barlavento": { t:"Barlavento e sotavento", d:"Barlavento é o lado de onde o vento vem; sotavento, o lado protegido, atrás do prédio, onde se forma a esteira." },
 
   /* --- normas --- */
   "IN 09": { t:"IN 09 do CBMSC", d:"Instrução normativa dos Bombeiros de Santa Catarina sobre saídas de emergência (escadas, larguras, distâncias)." },

@@ -26,13 +26,13 @@ function pfPontos(){
 function paretoCardHTML(){
   if(!OTIM || !OTIM.pareto || !OTIM.pareto.pts.length) return "";
   const O=S.otim, src=OTIM.solFonte==="unidades"? "média das unidades, com sombras (módulo Unidades)" : "horas de sol direto nas fachadas no inverno (aproximação)";
-  return CARD("Trocas entre critérios", `<p class="note">Cada ponto é uma combinação conferida com a garagem real. Em destaque, a <b>fronteira</b>: nenhuma outra opção é melhor em lucro, sol e vagas ao mesmo tempo. Toque num ponto para ver e aplicar.</p>
-    <div class="chips"><button type="button" class="chip" data-act="pfF" data-k="fVagas" aria-pressed="${!!O.fVagas}">Vagas ≥ exigidas</button><button type="button" class="chip" data-act="pfF" data-k="fSol" aria-pressed="${!!O.fSol}">Sol médio ≥ ${nf(+O.solMin||0,1)} h</button></div>
+  const info=`Cada ponto é uma combinação conferida com a garagem real. Em destaque, a fronteira: nenhuma outra opção é melhor em lucro, sol e vagas ao mesmo tempo. Toque num ponto para ver e aplicar. Sol médio: ${src}. ${OTIM.ventoOn?"Conforto ao vento: 1 − fração do lote com vento forte (vento 2D, aproximado). ":""}Vagas pelo layout rápido da garagem; na tela o layout completo pode achar mais algumas.`;
+  return SEC("Trocas entre critérios", `<div class="chips"><button type="button" class="chip" data-act="pfF" data-k="fVagas" aria-pressed="${!!O.fVagas}">Vagas ≥ exigidas</button><button type="button" class="chip" data-act="pfF" data-k="fSol" aria-pressed="${!!O.fSol}">Sol médio ≥ ${nf(+O.solMin||0,1)} h</button></div>
     ${O.fSol? KV(NUM("otim.solMin","Sol médio mínimo","h",{step:0.5,min:0,max:14,fx:"pf"})) : ""}
     <div class="pf-chart" id="pfChart"></div>
     <div class="pf-leg"><span><i style="background:var(--accent)"></i>fronteira</span><span><i style="border:1.5px solid var(--muted)"></i>outras</span><span><i style="border:2px solid var(--mark)"></i>estudo atual</span><span>tamanho = nº de vagas</span></div>
-    <div id="pfDet"></div><div class="list" id="pfFront"></div>
-    <p class="note">Sol médio: ${src}. ${OTIM.ventoOn?"Conforto ao vento: 1 − fração do lote com vento forte (vento 2D, aproximado). ":""}Vagas pelo layout rápido da garagem; na tela o layout completo pode achar mais algumas.</p>`, {id:"pfCard", aside:`<span id="pfPill"></span>`});
+    <p class="note" id="pfPill"></p><div id="pfDet"></div>
+    <details class="pr-more" id="pfMore" hidden><summary id="pfMoreT">Todas da fronteira</summary><div class="list" id="pfFront"></div></details>`, {id:"pfCard", key:"pr-pareto", open:true, info});
 }
 FX.pf = ()=>{ save(); paretoLive() };
 Object.assign(ACT, {
@@ -77,16 +77,18 @@ function paretoLive(){
         <circle class="m" cx="${x}" cy="${y}" r="${r}" fill="${o.front?"var(--accent)":"var(--surface)"}" stroke="${o.front?"var(--surface)":"var(--muted)"}" stroke-width="${o.front?2:1.5}"/>
         ${sel? `<circle cx="${x}" cy="${y}" r="${r+4}" fill="none" stroke="var(--ink)" stroke-width="1.5"/>` : ""}</g>` }).join("")}
   </svg><div class="pf-tip" id="pfTip" hidden></div>`;
-  const nF=frL.length, nP=L.filter(o=>o.passa).length, pill=document.getElementById("pfPill"); if(pill) pill.textContent=`${nF} na fronteira · ${nP} de ${L.length}`;
-  // detalhe do ponto escolhido
+  const nF=frL.length, nP=L.filter(o=>o.passa).length, pill=document.getElementById("pfPill"); // detalhe do ponto escolhido
   const s=PF_SEL!=null && L[PF_SEL]? L[PF_SEL] : null;
+  if(pill) pill.textContent=`${nF} na fronteira · ${nP} de ${L.length} nos filtros${s?"":" · toque num ponto"}`;
   const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button class="btn sm ${top?"pri":""}" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
     <div class="note">${pfDesc(p)}${o.passa?"":" · fora dos filtros"}</div>
     <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
     ${p.tir!=null?`<span>TIR<b>${pct(p.tir)}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
-  setHTML("pfDet", s? card(s,true) : "");
-  setHTML("pfFront", nF? `<div class="grp">Fronteira${S.otim.fVagas||S.otim.fSol?" (com os filtros)":""}</div>` + frL.slice().reverse().filter(o=>!s||o.i!==s.i).map(o=>card(o,false)).join("") :
-    `<p class="note">Nenhuma opção passa nos filtros. Afrouxe um deles.</p>`);
+  setHTML("pfDet", s? card(s,true) : nF? "" : `<p class="note">Nenhuma opção passa nos filtros. Afrouxe um deles.</p>`);
+  const resto=frL.slice().reverse().filter(o=>!s||o.i!==s.i), more=document.getElementById("pfMore"), mt=document.getElementById("pfMoreT");
+  if(more) more.hidden=!resto.length;
+  if(mt) mt.textContent=`${s?"Outras":"Todas"} da fronteira${S.otim.fVagas||S.otim.fSol?" (com os filtros)":""} · ${resto.length}`;
+  setHTML("pfFront", resto.map(o=>card(o,false)).join(""));
   // dica ao passar o mouse
   const tip=document.getElementById("pfTip");
   ch.querySelectorAll(".pt").forEach(el=>{ el.addEventListener("mouseenter",()=>{ const r=ch.getBoundingClientRect(), b=el.getBoundingClientRect(); tip.textContent=el.dataset.tip; tip.hidden=false;

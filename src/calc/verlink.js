@@ -5,6 +5,7 @@
    Com a nuvem (docs/BACKEND.md) o mesmo payload vira uma linha no banco e o link fica curto: #ver=<id>. */
 const VER_MAX_BYTES = 6*1024*1024;      // teto do JSON descomprimido (proteção contra link malicioso)
 const VER_LOGO_MAX = 9000;              // logo só entra no link se o data URL tiver até esse tamanho
+const VER_CTX_MAX = 40000;              // contexto do OSM só entra no link até ~40 kB de JSON (comprime para ~10 kB)
 const VER_ALFABETO = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 function verB64uEnc(bytes){
@@ -60,6 +61,8 @@ async function verDecode(tok){
 
 /** o que vai dentro do link: o estudo + (opcional) logo pequena */
 function verPayload(st, logo){
+  // contexto urbano do OSM (src/calc/contexto.js): grande demais para o link → vai sem as camadas do chão (as edificações ficam)
+  if(st && st.contexto && st.contexto.dados && JSON.stringify(st.contexto.dados).length>VER_CTX_MAX) st={...st, contexto:{...st.contexto, dados:null}};
   const p={ a:"gabarito", v:1, t:new Date().toISOString().slice(0,10), S:st };
   if(logo && typeof logo.url==="string" && logo.url.length<=VER_LOGO_MAX) p.logo={ url:logo.url, w:+logo.w||0, h:+logo.h||0, o:!!logo.opaca };
   return p;

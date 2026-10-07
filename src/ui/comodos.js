@@ -105,38 +105,36 @@ function comCardHTML(){
   let h=SW("comodos.on","Mostrar cômodos nas plantas",{rr:true});
   if(C.on){
     h+=SW("comodos.movel","Mobiliário",{fx:"comR"});
-    h+=`<div id="comRes"></div><p class="note">Arraste as divisões na planta (passe o cursor sobre uma unidade). O ajuste vale para todas as unidades da tipologia.</p>`;
+    h+=`<div id="comRes"></div>`;
     const nomes=[...new Set(S.produto.mix.map(u=>u.nome))];
-    h+=nomes.map(n=>{ const i=C.tipos.findIndex(t=>t.nome===n), t=C.tipos[i], vs=(C.variantes||[]).map((v,j)=>({...v,j})).filter(v=>v.tipo===n);
+    h+=`<div class="list">`+nomes.map(n=>{ const i=C.tipos.findIndex(t=>t.nome===n), t=C.tipos[i], vs=(C.variantes||[]).map((v,j)=>({...v,j})).filter(v=>v.tipo===n);
       const ajust=t && t.cortes && Object.keys(t.cortes).length;
-      return `<div class="fld wide" style="border-top:1px solid var(--line);padding-top:10px;margin-top:4px">
-        <div class="row sb"><b style="font-family:var(--f-display)">${esc(n)}</b><span class="pill" id="comSt-${i}"></span></div>
-        <div class="row sb" style="gap:8px;margin-top:6px"><span class="fl" style="flex:none">Modelo</span><select class="sel" data-p="comodos.tipos.${i}.modelo" data-t="s" data-rr="1" aria-label="Modelo de ${esc(n)}">
-          <option value="auto" ${t.modelo==="auto"?"selected":""}>automático</option>${Object.entries(COM_MODELOS).map(([k,M])=>`<option value="${k}" ${t.modelo===k?"selected":""}>${M.nome}</option>`).join("")}</select></div>
-        <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
-          <button class="btn sm" data-act="comSalvar" data-k="${esc(n)}">Salvar como variação</button>
-          ${ajust?`<button class="btn sm ghost" data-act="comAuto" data-k="${esc(n)}">Voltar ao automático</button>`:""}</div>
-        ${vs.length?`<div class="chips" style="margin-top:8px">${vs.map(v=>`<span class="chip" aria-pressed="${t.sel===v.j}" style="display:inline-flex;gap:6px;align-items:center"><button type="button" data-act="comUsar" data-i="${v.j}" style="all:unset;cursor:pointer">${esc(v.nome)}</button><button type="button" data-act="comDel" data-i="${v.j}" aria-label="Excluir ${esc(v.nome)}" style="all:unset;cursor:pointer;opacity:.6">×</button></span>`).join("")}</div>`:""}
-      </div>` }).join("");
-    h+=`<details class="card" style="margin-top:10px" data-key="comQuadro"><summary><span>Quadro de áreas por cômodo</span></summary><div class="cb" id="comQuadro"></div></details>`;
+      return `<div class="comT" style="display:grid;gap:6px;padding:8px 0;border-top:1px solid var(--line)">
+        <div class="row sb" style="flex-wrap:nowrap;gap:8px"><b style="font-family:var(--f-display);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n)}</b><span class="pill" id="comSt-${i}"></span></div>
+        <div class="row" style="flex-wrap:nowrap;gap:6px"><select class="sel" style="flex:1;min-width:0" data-p="comodos.tipos.${i}.modelo" data-t="s" data-rr="1" aria-label="Modelo de ${esc(n)}">
+          <option value="auto" ${t.modelo==="auto"?"selected":""}>modelo automático</option>${Object.entries(COM_MODELOS).map(([k,M])=>`<option value="${k}" ${t.modelo===k?"selected":""}>${M.nome}</option>`).join("")}</select>
+          <button class="btn sm" data-act="comSalvar" data-k="${esc(n)}" title="Salvar as divisões atuais como variação">Salvar variação</button>
+          ${ajust?`<button class="btn sm ghost" data-act="comAuto" data-k="${esc(n)}" title="Voltar às divisões automáticas">Automático</button>`:""}</div>
+        ${vs.length?`<div class="chips">${vs.map(v=>`<span class="chip" aria-pressed="${t.sel===v.j}" style="display:inline-flex;gap:6px;align-items:center"><button type="button" data-act="comUsar" data-i="${v.j}" style="all:unset;cursor:pointer" title="Usar ${esc(v.nome)}">${esc(v.nome)}</button><button type="button" data-act="comDel" data-i="${v.j}" aria-label="Excluir ${esc(v.nome)}" title="Excluir ${esc(v.nome)}" style="all:unset;cursor:pointer;opacity:.6">×</button></span>`).join("")}</div>`:""}
+      </div>` }).join("")+`</div>`;
     const M=C.min, rowM=(k,l)=>`<tr><td>${l}</td><td>${NUM(`comodos.min.${k}.a`,"","m²",{step:0.1})}</td><td>${NUM(`comodos.min.${k}.l`,"","m",{step:0.05})}</td></tr>`;
-    h+=`<details class="card" data-key="comMin"><summary><span>Mínimos do código de obras</span></summary><div class="cb">
-      <p class="note" style="color:var(--warn)">Referência genérica — conferir no código de obras do município.</p>
-      <table class="tbl comMin"><tr><th></th><th>Área</th><th>Menor lado</th></tr>${rowM("sala","Sala")+rowM("suite","Suíte / dorm. principal")+rowM("dorm","Dormitório")+rowM("cozinha","Cozinha")+rowM("serv","Área de serviço")+rowM("banho","Banheiro")}</table>
-      ${KV(NUM("comodos.jan.frac","Janela ≥ 1/n do piso","n",{step:1,int:true})+NUM("comodos.jan.h","Altura da janela","m",{step:0.05})+NUM("comodos.jan.hSala","Porta-janela (sala)","m",{step:0.05}),3)}</div></details>`;
+    h+=ADV(GRP("Quadro de áreas por cômodo")+`<div id="comQuadro"></div>`+
+      GRP(`Mínimos do código de obras${INFO("Referência genérica: confira no código de obras do município.","os mínimos")}`)+
+      `<table class="tbl comMin"><tr><th></th><th>Área</th><th>Menor lado</th></tr>${rowM("sala","Sala")+rowM("suite","Suíte / dorm. principal")+rowM("dorm","Dormitório")+rowM("cozinha","Cozinha")+rowM("serv","Área de serviço")+rowM("banho","Banheiro")}</table>
+      ${KV(NUM("comodos.jan.frac","Janela ≥ 1/n do piso","n",{step:1,int:true})+NUM("comodos.jan.h","Altura da janela","m",{step:0.05})+NUM("comodos.jan.hSala","Porta-janela (sala)","m",{step:0.05}),3)}`, {key:"comAdv"});
   }
-  return CARD("Cômodos das unidades", h, {aside: C.on? `<span id="comAside"></span>` : "desligado"});
+  return SEC("Cômodos das unidades", h, {key:"comodos", sum: C.on? "" : "desligado", info:"Divisão interna de cada tipologia: sala, dormitórios, cozinha, banheiros e serviço, conferida com os mínimos do código de obras. Arraste as divisões na planta tipo (passe o cursor sobre uma unidade): o ajuste vale para todas as unidades da tipologia e pode virar uma variação salva."});
 }
 function comLive(m){
-  const R=m&&m.comodos; if(!R) return;
-  const A=document.getElementById("comAside"); if(A) A.innerHTML = `<span style="color:${R.validas===R.unidades?"var(--ok)":"var(--warn)"}">${R.validas}/${R.unidades} válidas</span>`;
+  const R=m&&m.comodos; if(!R){ if(!S.comodos.on) setSum("comodos","desligado"); return }
+  setSum("comodos", `<span style="color:${R.validas===R.unidades?"var(--ok)":"var(--warn)"}">${R.validas}/${R.unidades} válidas</span>`);
   (S.comodos.tipos||[]).forEach((t,i)=>{ const el=document.getElementById("comSt-"+i), T=R.porTipo[t.nome]; if(!el) return;
     if(!T){ el.className="pill"; el.textContent="—"; return } const ok=T.validas===T.n; el.className="pill "+(ok?"ok":"warn"); el.textContent=`${COM_MODELOS[T.modelo]? COM_MODELOS[T.modelo].nome : T.modelo} · ${T.validas}/${T.n}` });
   // alertas por unidade
   const lis=[]; (m.tipo||[]).forEach((lay,ti)=>{ if(!lay) return; lay.units.forEach((u,ui)=>{ const c=u.com; if(!c) return; const al=c.alertas.filter(a=>a.nivel!=="nota"); if(!al.length) return;
     lis.push(`<div class="li"><span class="dot ${al.some(a=>a.nivel==="erro")?"bad":"warn"}"></span><span class="tt">Torre ${ti+1} · ${esc(u.nome)} (${nf(u.area,1)} m²)</span><span class="ss">${al.map(a=>esc(a.msg)).join(" · ")}</span></div>`) }) });
   const notas=new Set(); (m.tipo||[]).forEach(l=>l&&l.units.forEach(u=>u.com&&u.com.alertas.forEach(a=>{ if(a.nivel==="nota") notas.add(a.msg) })));
-  setHTML("comRes", (lis.length? `<div class="list">${lis.join("")}</div>` : `<p class="note" style="color:var(--ok)">Todas as unidades com cômodos dentro dos mínimos, janelas de 1/${S.comodos.jan.frac||6} do piso e acesso a todos os cômodos.</p>`) + [...notas].map(n=>`<p class="note">${esc(n.charAt(0).toUpperCase()+n.slice(1))}.</p>`).join(""));
+  setHTML("comRes", (lis.length? `<div class="list">${lis.join("")}</div>` : `<p class="note" style="color:var(--ok)">Todos os cômodos dentro dos mínimos, com janela de 1/${S.comodos.jan.frac||6} do piso.${notas.size?INFO([...notas].map(n=>n.charAt(0).toUpperCase()+n.slice(1)).join(". ")+".","as observações"):""}</p>`) + (lis.length&&notas.size? `<p class="note">${[...notas].length} observaç${notas.size>1?"ões":"ão"}${INFO([...notas].map(n=>n.charAt(0).toUpperCase()+n.slice(1)).join(". ")+".","as observações")}</p>` : ""));
   const Q=comQuadro(m);
   setHTML("comQuadro", Q.map(q=>`<p class="fl" style="margin:6px 0 4px"><b>${esc(q.nome)}</b> · ${esc(q.modelo)} · ${q.validas}/${q.n} válidas</p><table class="tbl">${q.rooms.map(r=>`<tr><td><span class="dot ${r.st}"></span> ${esc(r.nome)}</td><td>${nf(r.area,1)} m²</td></tr>`).join("")}<tr class="tot"><td>Unidade</td><td>${nf(q.soma,1)} m²</td></tr></table>`).join(""));
 }
@@ -148,6 +146,6 @@ ACT.comSalvar = b=>{ const n=b.dataset.k, t=comTipoEntry(n), C=S.comodos; C.vari
   C.variantes.push({tipo:n, nome:`Variação ${k}`, modelo: t.modelo && t.modelo!=="auto"? t.modelo : (u&&u.com? u.com.modelo : "auto"), cortes});
   t.sel=C.variantes.length-1; save(); renderTab(); toast(`Variação ${k} de ${n} salva`) };
 ACT.comUsar = b=>{ const C=S.comodos, v=C.variantes[+b.dataset.i]; if(!v) return; const t=comTipoEntry(v.tipo); t.modelo=v.modelo||"auto"; t.cortes={...(v.cortes||{})}; t.sel=+b.dataset.i; update(); renderTab(); toast(`${v.tipo}: usando ${v.nome}`) };
-ACT.comDel = b=>{ const C=S.comodos, i=+b.dataset.i, v=C.variantes[i]; if(!v) return; C.variantes.splice(i,1); (C.tipos||[]).forEach(t=>{ if(t.sel===i) t.sel=-1; else if(t.sel>i) t.sel-- }); save(); renderTab(); toast(`${v.nome} excluída`) };
+ACT.comDel = b=>{ const C=S.comodos, i=+b.dataset.i, v=C.variantes[i]; if(!v) return; if(!b.dataset.arm){ b.dataset.arm=1; b.textContent="excluir?"; b.style.opacity=1; b.style.color="var(--bad)"; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.arm; b.textContent="×"; b.style.opacity=".6"; b.style.color="" } },4000); return } C.variantes.splice(i,1); (C.tipos||[]).forEach(t=>{ if(t.sel===i) t.sel=-1; else if(t.sel>i) t.sel-- }); save(); renderTab(); toast(`${v.nome} excluída`) };
 ACT.comAuto = b=>{ const t=comTipoEntry(b.dataset.k); t.cortes={}; t.sel=-1; update(); renderTab(); toast(`${t.nome}: divisões automáticas`) };
 HOOK.pdf.push(ctx=>comPdf(ctx));

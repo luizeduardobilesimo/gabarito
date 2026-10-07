@@ -8,13 +8,15 @@ const MAPA_CDN = { js:"https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js",
 const MAPA_OVERPASS = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
 const MAPA = { lib:null, map:null, pts:[], fechado:false, tilesOk:0, tilesErr:0, t0:0 };
 
+/* método "Mapa" do contorno do lote (etapa Terreno) — só o lote; os prédios vizinhos ficam na seção Entorno (mapaEntornoHTML) */
 function mapaFormHTML(){
+  return `<div class="row"><button class="btn pri" data-act="mapaAbrir">Abrir mapa</button><label class="btn" for="geoFile" tabindex="0">GeoJSON da prefeitura</label><input type="file" id="geoFile" accept=".geojson,.json,application/geo+json,application/json" hidden>${INFO("Satélite (Esri) ou OpenStreetMap: ache o terreno e clique nos cantos do lote; latitude, longitude e norte vêm sozinhos. O GeoJSON da prefeitura (WGS84 ou UTM) também vira o contorno. Os prédios vizinhos ficam na seção Entorno.")}</div>`;
+}
+/* bloco "OpenStreetMap" da seção Entorno (src/ui/entorno.js, etapas Terreno e Clima) */
+function mapaEntornoHTML(){
   const ent=(S.entorno||[]).filter(e=>e.osm).length;
-  return `<p class="note">Satélite (Esri) ou OpenStreetMap: ache o terreno e clique nos cantos do lote. Latitude, longitude e norte vêm sozinhos.</p>
-    <div class="row"><button class="btn pri" data-act="mapaAbrir">Abrir mapa</button><label class="btn" for="geoFile" tabindex="0">GeoJSON da prefeitura</label><input type="file" id="geoFile" accept=".geojson,.json,application/geo+json,application/json" hidden></div>
-    ${GRP("Entorno do OpenStreetMap")}
-    <div class="row sb"><button class="btn sm" data-act="mapaEntorno">Buscar prédios vizinhos</button><div class="inp" style="width:118px"><input type="number" step="10" min="30" max="400" data-p="mapa.raio" data-min="30" data-max="400" data-fx="save" value="${S.mapa.raio}" aria-label="Raio da busca"><em>m de raio</em></div></div>
-    <p class="note" id="mapaMsg">${ent? `${ent} volumes do OSM no entorno (altura pela tag height ou pavimentos × 3 m).` : "Altura pela tag height ou pelo nº de pavimentos × 3 m; sem informação, 6 m (estimada)."}</p>`;
+  return `<div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-act="mapaEntorno" title="Prédios, ruas, calçadas, água e verde ao redor do lote">Buscar entorno do OSM</button><div class="inp" style="width:92px;flex:none"><input type="number" step="10" min="30" max="400" data-p="mapa.raio" data-min="30" data-max="400" data-fx="save" value="${S.mapa.raio}" aria-label="Raio da busca em metros" title="Raio da busca"><em>m</em></div>${INFO("Prédios do OpenStreetMap num raio ao redor do lote (precisa de latitude e longitude e de internet), com ruas, calçadas, água e verde. Altura pela tag height ou pelo nº de pavimentos × 3 m; sem informação, 6 m (estimada). Os desenhados à mão ficam.")}</div>
+    <p class="note" id="mapaMsg" ${ent?"":"hidden"}>${ent? `${ent} prédios do OSM no entorno` : ""}</p>${typeof ctxCamadasHTML==="function"? ctxCamadasHTML() : ""}`;
 }
 function mapaAfter(){
   const f=document.getElementById("geoFile"); if(!f) return;
@@ -23,7 +25,7 @@ function mapaAfter(){
     file.text().then(txt=>{ const r=geoLerGeoJSON(txt,{lonRef:S.lote.lon, latRef:S.lote.lat}); if(r.erro){ toast(r.erro); return }
       aplicarLoteGeo(r.pares, `GeoJSON ${r.utm? "UTM "+r.zona+"S":"WGS84"}${r.n>1? ` (maior de ${r.n} polígonos)`:""}`); if(MAPA.map) mapaDesenha() }).catch(()=>toast("Não consegui ler o arquivo")) };
 }
-function mapaMsg(t){ const e=document.getElementById("mapaMsg"); if(e) e.innerHTML=t }
+function mapaMsg(t){ const e=document.getElementById("mapaMsg"); if(e){ e.innerHTML=t; e.hidden=!t } }
 
 /* ---- carregamento sob demanda ---- */
 function mapaCarrega(){
@@ -200,14 +202,16 @@ async function mapaEntorno(){
   const lat=+S.lote.lat, lon=+S.lote.lon, raio=Math.max(30,Math.min(400,+S.mapa.raio||150));
   if(!isFinite(lat)||!isFinite(lon)){ toast("Informe a latitude e a longitude do lote"); return }
   if(MAPA.busca) return; MAPA.busca=true;
-  const q=geoOverpassQuery(lat, lon, raio), t0=performance.now();
+  const rc=Math.max(100,Math.min(1000,+(S.contexto&&S.contexto.raio)||350)), comCtx=typeof ctxOverpassQuery==="function";   // contexto urbano (src/calc/contexto.js): uma consulta só
+  const q=comCtx? ctxOverpassQuery(lat, lon, raio, rc) : geoOverpassQuery(lat, lon, raio), t0=performance.now();
   const msg=t=>{ mapaMsg(t); mapaHint(t) };
-  msg("Buscando prédios no OpenStreetMap…");
+  msg(comCtx? "Buscando o entorno no OpenStreetMap…" : "Buscando prédios no OpenStreetMap…");
   let json=null, err="";
-  try{ json=await mapaOverpass(q, (s,n)=>msg(`Buscando prédios no OpenStreetMap… ${s} s${n>1? ` (${n} servidores consultados)`:""}`)) }catch(e){ err=e.message }
+  try{ json=await mapaOverpass(q, (s,n)=>msg(`Buscando ${comCtx?"o entorno":"prédios"} no OpenStreetMap… ${s} s${n>1? ` (${n} servidores consultados)`:""}`)) }catch(e){ err=e.message }
   MAPA.busca=false;
   if(!json){ const t=`Não consegui consultar o OpenStreetMap (${err}). Tente de novo em instantes, desenhe os vizinhos à mão (ferramenta Entorno, na implantação) ou use “Gerar genéricos” na etapa Clima.`; msg(t); toast("Entorno do OSM indisponível"); return }
-  const ent=geoEntornoDeOverpass(json, geoRef(lat,lon), S.lote.pts, {raio});
+  const ref=geoRef(lat,lon), ent=comCtx? ctxEntornoOSM(json, ref, S.lote.pts, {raio, norte:S.lote.norte}) : geoEntornoDeOverpass(json, ref, S.lote.pts, {raio});
+  if(comCtx){ const d=ctxDeOverpass(json, ref, {raio:Math.max(rc,raio), norte:S.lote.norte}); S.contexto.dados=Object.assign(d, {lat, lon, raio:Math.max(rc,raio), quando:new Date().toISOString().slice(0,10)}) }
   S.entorno=[...(S.entorno||[]).filter(e=>!e.osm), ...ent];
   const est=ent.filter(e=>e.est).length, s=(performance.now()-t0)/1000, aberto=!!document.getElementById("mapaBox");
   update(); if(MAPA.map) mapaDesenha();

@@ -48,6 +48,7 @@ async function travamento(p, fn) {
   ok(igual.eq, 'números do Worker = números do cálculo na página', igual.eq ? igual.a : igual);
   // arrastar um slider: a página não trava
   await step(p, 'produto');
+  await p.evaluate(() => { SUBX.produto = 'prod'; renderTab(); const d = document.querySelector('#tabbody details[data-key="pr-emb"]'); if (d) d.open = true }); await p.waitForTimeout(200);   // o slider de lojas fica em "Embasamento e garagem"
   const sl = await p.$('#tabbody input[type=range][data-fx="upd"]');
   if (sl) {
     const box = await sl.boundingBox();
@@ -62,7 +63,8 @@ async function travamento(p, fn) {
   } else ok(false, 'slider encontrado na etapa Produto');
   ok(await p.evaluate(() => document.getElementById('kpis').classList.contains('busy')) === false, 'indicador "calculando…" some quando termina');
 
-  // otimizador: cancelar e rodar até o fim
+  // otimizador: cancelar e rodar até o fim (sub-aba Otimizar da etapa Produto)
+  await p.evaluate(() => { SUBX.produto = 'otim'; renderTab() }); await p.waitForTimeout(200);
   await p.click('#tabbody [data-act="otim"]');
   await p.waitForSelector('#tabbody [data-act="calcCancel"]', { timeout: 15000 });
   const tOt = await travamento(p, () => p.waitForTimeout(1500));
@@ -192,7 +194,7 @@ async function travamento(p, fn) {
   console.log('0.3 — volta para a página sem Worker');
   const q = await abrir(b, { init: () => { try { localStorage.setItem('gabarito.worker', 'false') } catch (e) {} } });
   ok(await q.evaluate(() => CALC.estado === 'falhou' && !!window._last.m.gar), 'sem Worker: cálculo completo na página', await q.evaluate(() => CALC.estado));
-  await q.evaluate(() => goStep('produto')); await q.waitForTimeout(300);
+  await q.evaluate(() => { SUBX.produto = 'otim'; goStep('produto') }); await q.waitForTimeout(300);
   await q.click('#tabbody [data-act="otim"]');
   await q.waitForFunction(() => !OTRUN && OTIM, null, { timeout: 240000 });
   ok(true, 'otimizador na página (sem Worker)');

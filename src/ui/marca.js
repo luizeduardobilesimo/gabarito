@@ -88,18 +88,22 @@ function marcaCardHTML(){
   const prev = on? `<div class="mk-prev" style="--mk:${verCorOk(M.cor)?M.cor:"#1c6878"};--mkt:${marcaLum(marcaRGB(M.cor))>0.62?"#1c2729":"#fff"}"><div class="mk-bar">${l?`<img src="${l.url}" alt="" class="${l.opaca?"op":""}">`:""}<b>${esc((M.nome||"").toUpperCase())}</b><span>Estudo de viabilidade</span></div>
     <div class="mk-cap"><i></i><b>${esc(M.titulo||S.nome)}</b><span>${esc(M.subtitulo||S.regras.cidade)}</span></div>${M.rodape?`<div class="mk-rod">${esc(M.rodape)}</div>`:""}</div>` : "";
   const campos = on? prev +
-    TXT("marca.nome","Nome da empresa",{ph:"Ex.: Construtora Exemplo"}) +
-    `<div class="fld wide"><span class="fl">Logo</span><div class="row" style="flex-wrap:nowrap;gap:8px"><label class="btn sm" for="mkLogoIn">${l?"Trocar logo":"Enviar logo"}</label><input type="file" id="mkLogoIn" accept="image/*" hidden>${l?`<button type="button" class="btn sm ghost" data-act="mkLogoDel">Remover</button><span class="note">${l.w}×${l.h} px</span>`:`<span class="note">PNG, JPG ou SVG; vira miniatura neste navegador.</span>`}</div></div>` +
+    TXT("marca.nome","Nome da empresa",{ph:"Ex.: Construtora Exemplo",fx:"marcaNome"}) +
+    `<div class="fld wide"><span class="fl">Logo</span><div class="row" style="flex-wrap:nowrap;gap:8px"><label class="btn sm" for="mkLogoIn">${l?"Trocar logo":"Enviar logo"}</label><input type="file" id="mkLogoIn" accept="image/*" hidden>${l?`<button type="button" class="btn sm ghost" data-act="mkLogoDel">Remover</button><span class="note">${l.w}×${l.h} px</span>`:`<span class="note">PNG, JPG ou SVG</span>`}</div></div>` +
     `<div class="fld wide"><span class="fl">Cor principal</span><div class="mk-cores">${MARCA_CORES.map(([c,n])=>`<button type="button" class="mk-sw" data-set="marca.cor" data-v='"${c}"' data-fx="save" data-rr="1" style="--c:${c}" aria-pressed="${M.cor.toLowerCase()===c}" aria-label="${n}" title="${n}"></button>`).join("")}<label class="mk-sw mk-pick" title="Outra cor"><input type="color" data-p="marca.cor" data-t="s" data-fx="save" data-rr="1" value="${verCorOk(M.cor)?M.cor:"#1c6878"}" aria-label="Escolher outra cor"></label></div></div>` +
     TXT("marca.rodape","Rodapé das páginas",{ph:"Ex.: Construtora Exemplo · CRECI 0000 · (48) 0000-0000"}) +
-    `<div class="grp">Capa</div>` + TXT("marca.titulo","Título",{ph:S.nome}) + TXT("marca.subtitulo","Subtítulo",{ph:S.regras.cidade}) + SW("marca.capa3d","Imagem 3D na capa",{fx:"save"})
-    : `<p class="note">Desligado: o relatório sai com a identidade do Gabarito.</p>`;
-  return CARD("Marca no relatório (PDF)", SW("marca.ativa","Usar a minha marca no PDF",{fx:"save",rr:true}) + campos, {aside: on? "ligada" : "", key:"marca", id:"cardMarca"});
+    ADV(TXT("marca.titulo","Título",{ph:S.nome}) + TXT("marca.subtitulo","Subtítulo",{ph:S.regras.cidade}) + SW("marca.capa3d","Imagem 3D na capa",{fx:"save"}), {key:"marcaCapa", label:"Capa do relatório"})
+    : "";
+  const nome=String(M.nome||"").trim();
+  return SEC("Marca no PDF", SW("marca.ativa","Usar a minha marca",{fx:"save",rr:true}) + campos,
+    {key:"marca", id:"cardMarca", sum: on? (nome? "ligada · "+esc(nome) : "ligada") : "desligada",
+     info:"Logo, cor, nome da empresa e rodapé no relatório PDF e na apresentação. Desligado, o relatório sai com a identidade do Gabarito. A logo fica só neste navegador."});
 }
-addCard("cen", { key:"marca", order:21, html:marcaCardHTML, after:()=>{
+addCard("cen", { key:"marca", order:21, sub:"entregar", html:marcaCardHTML, after:()=>{
   const inp=document.getElementById("mkLogoIn"); if(!inp) return;
   inp.addEventListener("change",async()=>{ const f=inp.files&&inp.files[0]; if(!f) return;
     try{ const r=await marcaRedimensionar(f,480,240); _marcaLogo=r; _logoMini=null; LS.set(MARCA_LS,r); toast("Logo atualizada"); renderTab() }
     catch(e){ toast("Não consegui usar essa imagem") } });
 } });
-ACT.mkLogoDel = ()=>{ _marcaLogo=null; _logoMini=null; LS.set(MARCA_LS,null); renderTab(); toast("Logo removida") };
+FX.marcaNome = ()=>{ save(); const n=String(S.marca.nome||"").trim(); setSum("marca", n? "ligada · "+esc(n) : "ligada") };
+ACT.mkLogoDel =()=>{ _marcaLogo=null; _logoMini=null; LS.set(MARCA_LS,null); renderTab(); toast("Logo removida") };

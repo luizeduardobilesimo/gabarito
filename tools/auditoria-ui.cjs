@@ -35,7 +35,8 @@ const ROOT = path.resolve(__dirname, '..'); const arg = (k, d) => { const i = pr
       TB.querySelectorAll('select').forEach(s => { if (s.scrollWidth > s.clientWidth + 2) cort.push('select cortado: ' + (s.options[s.selectedIndex]?.text || '').slice(0, 50)) });
       TB.querySelectorAll('.fl, label, .seg button, .btn').forEach(l => { if (l.scrollWidth > l.clientWidth + 2 && getComputedStyle(l).overflow !== 'visible') cort.push('texto cortado: ' + l.textContent.trim().slice(0, 50)) });
       TB.querySelectorAll('*').forEach(e => { const q = e.getBoundingClientRect(); if (q.width && q.right > pr.right + 1 && !e.closest('.seg.scroll')) cort.push('vaza do painel: ' + (e.className || e.tagName) + ' ' + (e.textContent || '').trim().slice(0, 30)) });
-      const vis = el => !!(el.offsetParent || el.getClientRects().length);
+      // dentro de <details> fechado não é visível (o Chrome mantém caixas para o conteúdo recolhido: content-visibility)
+      const vis = el => !el.closest('details:not([open])') && !el.closest('[hidden]') && !!(el.offsetParent || el.getClientRects().length);
       const tot = { visiveis: [...TB.querySelectorAll('input:not([type=hidden]):not([type=file]), select, textarea')].filter(vis).length, campos: TB.querySelectorAll('input:not([type=hidden]), select, textarea').length, botoes: TB.querySelectorAll('button').length, textoChars: [...TB.querySelectorAll('.note, p')].reduce((s, n) => s + n.textContent.trim().length, 0), alturaPx: TB.scrollHeight };
       return { cards, cort: [...new Set(cort)].slice(0, 25), tot, head: document.getElementById('phead').innerText.replace(/\s+/g, ' ').slice(0, 160) };
     });

@@ -212,12 +212,13 @@ ACT.apLink = async ()=>{
   try{
     const url=await verCriar(location.href, S, await marcaLogoMini());
     apEl("apLinkBox").hidden=false; const out=apEl("apLinkOut"); out.value=url; out.select();
-    apEl("apLinkInfo").textContent=`${nf(url.length)} caracteres. O estudo vai dentro do próprio link; nada é enviado a servidor.${url.length>7500?" Link longo: alguns aplicativos de mensagem podem cortá-lo.":""}`;
+    apEl("apLinkInfo").textContent=`Link copiado · ${nf(url.length)} caracteres.${url.length>7500?" Longo: alguns aplicativos podem cortá-lo.":""}`;
     const fb=()=>{ try{ out.focus(); out.select(); document.execCommand("copy"); toast("Link copiado") }catch(e){ toast("Selecione o link e copie") } };
     try{ navigator.clipboard.writeText(url).then(()=>toast("Link somente leitura copiado"),fb) }catch(e){ fb() }
   }catch(e){ console.error("[link]",e); toast("Não consegui gerar o link") }
 };
-addCard("cen", { key:"apresentacao", order:20, html:()=>CARD("Apresentar e compartilhar",
-  `<div class="row"><button type="button" class="btn pri" data-act="apStart">Apresentar</button><button type="button" class="btn" data-act="apLink">Copiar link somente leitura</button></div>
-   <div id="apLinkBox" hidden><div class="inp"><input class="t" id="apLinkOut" readonly aria-label="Link somente leitura"></div><p class="note" id="apLinkInfo" style="margin-top:6px"></p></div>
-   <p class="note">Apresentação guiada em tela cheia: maquete 3D, potencial, produto, vendas e números-chave. Quem abre o link vê o estudo como está agora, sem poder editar, e o estudo salvo no aparelho dele não é alterado.</p>`, {key:"apresentacao", id:"cardApres"}) });
+addCard("cen", { key:"apresentacao", order:20, sub:"entregar", html:()=>SEC("Apresentar e compartilhar",
+  `<div class="btngrid"><button type="button" class="btn pri" data-act="apStart">Apresentar</button><button type="button" class="btn" data-act="apLink">Copiar link</button></div>
+   <div id="apLinkBox" hidden><div class="inp"><input class="t" id="apLinkOut" readonly aria-label="Link somente leitura"></div><p class="note" id="apLinkInfo" style="margin-top:6px"></p></div>`,
+  {key:"apresentacao", id:"cardApres", open:true, sum:"tela cheia · link",
+   info:"Apresentar: passo a passo em tela cheia (maquete 3D, potencial, produto, vendas e números-chave). Copiar link: quem abre vê o estudo como está agora, sem poder editar; nada é enviado a servidor e o estudo salvo no aparelho dele não muda."}) });

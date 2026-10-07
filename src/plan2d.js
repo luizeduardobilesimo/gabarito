@@ -20,12 +20,14 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     const L_=Math.hypot(B[0]-A[0],B[1]-A[1]); if(L_<20) return; const n=Math.max(1,Math.floor(L_/70)), ang=Math.atan2(B[1]-A[1],B[0]-A[0])+(dir<0?Math.PI:0); g.fillStyle=col;
     for(let k=1;k<=n;k++){ const t=k/(n+1), P=[A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t]; const h=6; g.beginPath(); if(dir===0){ [ang,ang+Math.PI].forEach(a=>{ g.moveTo(P[0]+Math.cos(a)*h*1.4,P[1]+Math.sin(a)*h*1.4); g.lineTo(P[0]+Math.cos(a)*h*0.2-Math.sin(a)*h*0.7,P[1]+Math.sin(a)*h*0.2+Math.cos(a)*h*0.7); g.lineTo(P[0]+Math.cos(a)*h*0.2+Math.sin(a)*h*0.7,P[1]+Math.sin(a)*h*0.2-Math.cos(a)*h*0.7); g.closePath() }) } else { g.moveTo(P[0]+Math.cos(ang)*h,P[1]+Math.sin(ang)*h); g.lineTo(P[0]-Math.cos(ang)*h-Math.sin(ang)*h*0.8,P[1]-Math.sin(ang)*h+Math.cos(ang)*h*0.8); g.lineTo(P[0]-Math.cos(ang)*h+Math.sin(ang)*h*0.8,P[1]-Math.sin(ang)*h-Math.cos(ang)*h*0.8); g.closePath() } g.fill() } };
   const entorno=()=>{ const sel=(typeof ENT!=="undefined"&&ENT.sel)||new Set();
-    (S.entorno||[]).forEach((e,i)=>{ if(!e.pts||e.pts.length<3) return; const vz=entVazios(e), on=sel.has(e.id);
-      if(vz.length){ g.save(); g.beginPath(); [e.pts,...vz].forEach(r=>{ r.forEach((q,k)=>{ const [x,y]=w2s(q); k?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath() }); g.globalAlpha=0.35; g.fillStyle=css("--muted"); g.fill("evenodd"); g.restore(); vz.forEach(v=>strokeP(v,css("--ink"),1)) }
-      else fillP(e.pts,css("--muted"),0.35);
-      strokeP(e.pts,css("--ink"),1);
+    const nLbl=(S.entorno||[]).length>40? 3.5 : 1.5;   // muitos vizinhos (OSM): rótulos só de perto
+    (S.entorno||[]).forEach((e,i)=>{ if(!e.pts||e.pts.length<3) return; if(typeof ctxEntVisivel==="function" && !ctxEntVisivel(e)) return; const vz=entVazios(e), on=sel.has(e.id);
+      const cf=typeof ctxCorEnt==="function"? ctxCorEnt(e) : null, fc=cf||css("--muted"), fa=cf? 0.9 : 0.35;   // cor por tipo (src/ui/contexto.js)
+      if(vz.length){ g.save(); g.beginPath(); [e.pts,...vz].forEach(r=>{ r.forEach((q,k)=>{ const [x,y]=w2s(q); k?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath() }); g.globalAlpha=fa; g.fillStyle=fc; g.fill("evenodd"); g.restore(); vz.forEach(v=>strokeP(v,css("--ink"),1)) }
+      else fillP(e.pts,fc,fa);
+      strokeP(e.pts,css("--ink"),cf? 0.75 : 1);
       if(on){ fillP(e.pts,css("--accent"),0.22); strokeP(e.pts,css("--accent"),2.4) }
-      if(V.s>1.5) label(`${e.nome||"E"+(i+1)} · ${nf(e.h,0)} m`, w2s(G.centroid(e.pts)), {size:10}) }) };
+      if(V.s>nLbl) label(`${e.nome||"E"+(i+1)} · ${nf(e.h,0)} m`, w2s(G.centroid(e.pts)), {size:10}) }) };
   const rampDraw=(rp,dir)=>{ if(!rp) return; fillP(rp,css("--mark"),0.35); strokeP(rp,css("--mark"),1.4); if(dir){ const c=G.centroid(rp), h=(Math.hypot(rp[1][0]-rp[0][0],rp[1][1]-rp[0][1]))/2-1; arrow([c[0]-dir[0]*h,c[1]-dir[1]*h],[c[0]+dir[0]*h,c[1]+dir[1]*h],css("--ink"),1.5,7) } if(V.s>3) label(`rampa ${pct(S.estudo.rampaInc,0)}`, w2s(G.centroid(rp)), {size:10}) };
   g.clearRect(0,0,W,H); g.fillStyle=css("--surface-2"); g.fillRect(0,0,W,H);
   if(mode==="impl" && BG && opt.bg!==false){ g.globalAlpha=BG.op; const [x,y]=w2s([BG.x,BG.y]); g.drawImage(BG.img,x,y,BG.img.width*BG.mpp*V.s,BG.img.height*BG.mpp*V.s); g.globalAlpha=1 }
@@ -35,6 +37,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
   for(let gx=Math.floor(x0/step)*step; gx<=x1; gx+=step){ const X=w2s([gx,0])[0]; g.globalAlpha=gx%(step*5)===0?0.9:0.4; g.beginPath(); g.moveTo(X,0); g.lineTo(X,H); g.stroke() }
   for(let gy=Math.floor(y0/step)*step; gy<=y1; gy+=step){ const Y=w2s([0,gy])[1]; g.globalAlpha=gy%(step*5)===0?0.9:0.4; g.beginPath(); g.moveTo(0,Y); g.lineTo(W,Y); g.stroke() }
   g.globalAlpha=1;
+  if(mode==="impl"||mode==="clima") runHooks("draw2dBase", g, {W,H,V,mode,m,opt,w2s,s2w});   // contexto urbano (src/ui/contexto.js) por baixo de tudo
   const L=S.lote.pts;
   if(mode==="impl"){
     fillP(L,css("--m-lote"),BG?0.25:0.55); strokeP(L,css("--ink"),1.6);
@@ -261,7 +264,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     g.font="500 10px "+css("--f-mono"); g.fillStyle=css("--ink"); g.textAlign="left"; g.textBaseline="alphabetic";
     if(kind==="vento"){ [[0,"0"],[0.5,"1× (vento livre)"],[1,"2×"]].forEach(([t,l])=>{ g.textAlign=t===0?"left":t===1?"right":"center"; g.fillText(l,x+w*t,y-4) }); g.textAlign="left"; g.fillText(`velocidade relativa · ${nf(S.clima.ventoVel,0)} m/s = 1×`,x,y+h+12) }
     else { const mx=_sunCache?_sunCache.max:12; g.fillText("0 h",x,y-4); g.textAlign="right"; g.fillText(nf(mx,1)+" h",x+w,y-4); g.textAlign="left"; g.fillText("horas de sol no dia",x,y+h+12) } }
-  function northArrow(){ const a=(S.lote.norte||0)*Math.PI/180, cx=W-34, cy=34; g.save(); g.translate(cx,cy); g.rotate(a); g.fillStyle=css("--ink"); g.beginPath(); g.moveTo(0,-15); g.lineTo(6,8); g.lineTo(0,4); g.lineTo(-6,8); g.closePath(); g.fill(); g.restore(); g.font="600 11px "+css("--f-display"); g.textAlign="center"; g.fillStyle=css("--ink"); g.fillText("N", cx+Math.sin(a)*24, cy-Math.cos(a)*24+4) }
+  function northArrow(){ const a=(S.lote.norte||0)*Math.PI/180, cx=W-34, cy=(typeof g2!=="undefined" && g===g2 && typeof VBH==="number")? VBH+30 : 34; /* no palco: abaixo da barra de vistas (src/ui/palco.js) */ g.save(); g.translate(cx,cy); g.rotate(a); g.fillStyle=css("--ink"); g.beginPath(); g.moveTo(0,-15); g.lineTo(6,8); g.lineTo(0,4); g.lineTo(-6,8); g.closePath(); g.fill(); g.restore(); g.font="600 11px "+css("--f-display"); g.textAlign="center"; g.fillStyle=css("--ink"); g.fillText("N", cx+Math.sin(a)*24, cy-Math.cos(a)*24+4) }
   runHooks("draw2d", g, {W,H,V,mode,m,opt,w2s,s2w});
   return {w2s,s2w};
 }

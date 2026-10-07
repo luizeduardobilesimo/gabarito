@@ -26,7 +26,7 @@ function cidadesCardHTML(){
   lista.forEach(c=>{ (grupos[c.fonteNome]=grupos[c.fonteNome]||[]).push(c) });
   const sel=`<select class="sel" id="cidLib" aria-label="Aplicar regras de uma cidade" style="flex:1;min-width:0"><option value="">Aplicar regras de…</option>${Object.entries(grupos).map(([g,l])=>`<optgroup label="${esc(g)}">${l.map(c=>`<option value="${esc(c.id)}">${esc(cidadeRotulo(c))}</option>`).join("")}</optgroup>`).join("")}</select>`;
   const info = ref.id? `<div class="cid-ref"><span class="note"><b style="color:var(--ink)">${esc(S.regras.cidade)}</b>${ref.lei?` · ${esc(ref.lei)}`:""}${ref.data&&ref.data!=="—"?` · ${esc(ref.data)}`:""}</span>
-      ${ref.ilustrativo? `<span class="note" style="color:var(--warn)">${esc(CIDADES_AVISO)}</span>` : `<span class="note">Regras da sua biblioteca — confira se continuam vigentes.</span>`}</div>` : "";
+      ${ref.ilustrativo? `<span class="note" style="color:var(--warn)">Valores ilustrativos ${INFO(CIDADES_AVISO)}</span>` : `<span class="note">Da sua biblioteca ${INFO("Regras salvas neste navegador. Confira se continuam vigentes.")}</span>`}</div>` : "";
   return TXT("regras.cidade","Cidade / zona") +
     `<div class="row" style="flex-wrap:nowrap">${sel}<button class="btn" data-act="cidSave" title="Guardar as regras atuais na biblioteca deste navegador">Salvar</button></div>` + info +
     (CID_UNDO? `<div class="row sb" style="flex-wrap:nowrap"><span class="note">Antes: ${esc(CID_UNDO.regras.cidade||"regras anteriores")}</span><button class="btn sm" data-act="cidUndo">Desfazer</button></div>` : "");
@@ -46,13 +46,16 @@ Object.assign(ACT, {
 
 /* ---------- checklist de normas ---------- */
 const NRM_ST = {ok:"atende", warn:"atenção", bad:"não atende", na:"não se aplica"};
+/* sub-aba Normas da etapa Regras: resultado no topo, itens verificados abertos, opções fechadas com resumo */
+const nrmOpcSum = ()=>{ const N=S.normas||{}; return `${N.chuveiros? "com chuveiros" : "sem chuveiros"} · rota ${N.rotaFuga? "visível" : "oculta"}` };
 function normasCardHTML(){
-  return CARD("Normas", `<p class="nrm-aviso"><b>Preliminar.</b> Tabelas de saídas de emergência (IN 09 CBMSC, com referência na NBR 9077) e de acessibilidade (NBR 9050, LBI) em revisão — conferir com a norma vigente e com o projetista antes de usar.</p>
-    ${SW("normas.chuveiros","Edificação com chuveiros automáticos")}${SW("normas.rotaFuga","Mostrar a rota até a escada no pavimento tipo",{fx:"r3n"})}
-    <div class="nrm-res" id="nrmRes"></div><div id="nrmList"><p class="note">Calculando…</p></div>`, {aside:`<span id="nrmPill"></span>`});
+  return RES("Normas", `<div class="nrm-res" id="nrmRes"></div><p class="nrm-aviso"><b>Preliminar.</b> Confira com a norma vigente e o projetista ${INFO("Tabelas de saídas de emergência (IN 09 do CBMSC, com referência na NBR 9077) e de acessibilidade (NBR 9050, LBI) em revisão. É um checklist de estudo: não substitui o projeto de prevenção e o de acessibilidade.")}</p>`, {aside:`<span id="nrmPill"></span>`}) +
+    SEC("Itens verificados", `<div id="nrmList"><p class="note">Calculando…</p></div>`, {key:"nrmList", open:true, info:"Saídas de emergência (IN 09) e acessibilidade (NBR 9050) conferidas no estudo atual. Toque num item para ver o exigido, o porquê e a fonte."}) +
+    SEC("Opções", `<div data-q="chuveiros sprinklers automáticos">${SW("normas.chuveiros","Edificação com chuveiros automáticos")}</div><div data-q="rota fuga escada pavimento tipo">${SW("normas.rotaFuga","Rota até a escada no pavimento tipo",{fx:"r3n"})}</div>`, {key:"nrmOpc", sum:nrmOpcSum()});
 }
-FX.r3n = ()=>{ save(); redraw2d() };
+FX.r3n = ()=>{ save(); redraw2d(); setSum("nrmOpc", nrmOpcSum()) };
 function normasLive(m, fast){
+  setSum("nrmOpc", nrmOpcSum());
   if(fast && document.querySelector("#nrmList .nrm-it")) return; // arrastando: mantém o último (o completo vem logo depois)
   let v; try{ v=normasAvaliar(S, m) }catch(e){ console.error("[normas]", e); setHTML("nrmList", `<p class="note">Não foi possível avaliar as normas neste estudo.</p>`); return }
   const c=normasResumo(v.itens);

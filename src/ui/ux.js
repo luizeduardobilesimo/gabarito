@@ -11,7 +11,7 @@
 /* ---------- seções ---------- */
 function SEC(title, body, o={}){
   const key=o.key||title;
-  return `<details class="card sec${o.cls?" "+o.cls:""}" data-key="${esc(key)}" ${o.open?"open":""} ${o.id?`id="${o.id}"`:""}><summary><span class="st">${title}</span>${o.info?INFO(o.info):""}<span class="sum" id="sum-${esc(key)}">${o.sum||""}</span></summary><div class="cb">${body}</div></details>`;
+  return `<details class="card sec${o.cls?" "+o.cls:""}" data-key="${esc(key)}" ${o.open?"open":""} ${o.id?`id="${o.id}"`:""} ${o.hidden?"hidden":""}><summary><span class="st">${title}</span>${o.info?INFO(o.info):""}<span class="sum" id="sum-${esc(key)}">${o.sum||""}</span></summary><div class="cb">${body}</div></details>`;
 }
 function RES(title, body, o={}){
   return `<section class="card res${o.cls?" "+o.cls:""}" ${o.id?`id="${o.id}"`:""}><div class="ch"><h2>${title}</h2>${o.aside!=null?`<span class="aside" ${o.asideId?`id="${o.asideId}"`:""}>${o.aside}</span>`:""}</div><div class="cb">${body}</div></section>`;
@@ -22,7 +22,7 @@ function setSum(key, html){ const e=document.getElementById("sum-"+key); if(e &&
 const UXADV = LS.get("gabarito.adv") || {};
 function ADV(body, o={}){
   const k=(typeof TAB!=="undefined"?TAB:"")+":"+(o.key||"adv"), aberto=!!UXADV[k];
-  return `<div class="adv" data-adv="${esc(k)}"><button type="button" class="advbtn" data-act="advTog" aria-expanded="${aberto}">${aberto? (o.fechar||"Menos opções") : (o.label||"Mais opções")}</button><div class="advb" ${aberto?"":"hidden"}>${body}</div></div>`;
+  return `<div class="adv" data-adv="${esc(k)}" ${o.label?`data-l="${esc(o.label)}"`:""} ${o.fechar?`data-lf="${esc(o.fechar)}"`:""}><button type="button" class="advbtn" data-act="advTog" aria-expanded="${aberto}">${aberto? (o.fechar||(o.label?o.label:"Menos opções")) : (o.label||"Mais opções")}</button><div class="advb" ${aberto?"":"hidden"}>${body}</div></div>`;
 }
 
 /* ---------- ajuda ---------- */
@@ -92,7 +92,7 @@ function SUBTABS(step, opts){
 }
 
 Object.assign(ACT, {
-  advTog: b=>{ const w=b.closest(".adv"), k=w.dataset.adv, d=w.querySelector(".advb"), on=d.hidden; d.hidden=!on; b.setAttribute("aria-expanded",on); b.textContent=on? "Menos opções" : "Mais opções"; UXADV[k]=on; LS.set("gabarito.adv",UXADV);
+  advTog: b=>{ const w=b.closest(".adv"), k=w.dataset.adv, d=w.querySelector(".advb"), on=d.hidden; d.hidden=!on; b.setAttribute("aria-expanded",on); b.textContent=on? (w.dataset.lf||w.dataset.l||"Menos opções") : (w.dataset.l||"Mais opções"); UXADV[k]=on; LS.set("gabarito.adv",UXADV);
     if(on) d.querySelectorAll('input[type=range]').forEach(r=>{ if(typeof paintRange==="function") paintRange(r) }) },
   subx: b=>{ SUBX[b.dataset.s]=b.dataset.v; LS.set("gabarito.subx",SUBX); renderTab(); TB.scrollTop=0; const w=stepView(); if(w && w!==VIEW) setView(w) },
   gloss: ()=>abreGlossario(),

@@ -4,7 +4,7 @@
      arrastar a edificação = move (toda a seleção) · quadrado no canto = redimensiona · setas = ajuste fino · Delete = apaga · Esc = limpa
      vértice: arraste (clique duplo remove) · ponto no meio do lado da edificação selecionada cria vértice
    Barra flutuante (#entBar) com nome/altura, aumentar/reduzir, girar, pátio, desenhar vazio, duplicar e apagar.
-   Card "Edificações do entorno" nas etapas Terreno e Clima: criar caixa, selecionar todas, apagar as do OSM, enquadrar.
+   Seção "Entorno" nas etapas Terreno e Clima: criar caixa, desenhar, enquadrar, selecionar todas, apagar; busca no OSM (mapaEntornoHTML).
    Cálculo puro em src/calc/entorno.js. A seleção guarda ids (sobrevive a desfazer/refazer) e não é salva no estudo. */
 const ENT = { sel:new Set(), marq:null, sig:"" };
 
@@ -42,7 +42,8 @@ function entHandles(g, w2s, V){
 /* ---------- ponteiro ---------- */
 function entHitEscala(px,py){ const sel=entSelList(); if(sel.length!==1) return false; const [x,y]=w2s_(entEscalaPos(sel[0])); return Math.hypot(x-px,y-py)<11 }
 function entHitMeio(px,py){ let best=null, bd=10; entSelList().forEach(e=>e.pts.forEach((a,i)=>{ const b=e.pts[(i+1)%e.pts.length], A=w2s_(a), B=w2s_(b), d=Math.hypot((A[0]+B[0])/2-px,(A[1]+B[1])/2-py); if(d<bd){ bd=d; best={e,i} } })); return best }
-function entCorpo(w){ const acha=f=>{ let best=null, ba=Infinity; entLista().forEach(e=>{ if(f(e)){ const a=Math.abs(G.sArea(e.pts)); if(a<ba){ ba=a; best=e } } }); return best };
+const entVisiveis = () => entLista().filter(e=>typeof ctxEntVisivel!=="function" || ctxEntVisivel(e));   // camadas Casas/Prédios desligadas não pegam clique
+function entCorpo(w){ const acha=f=>{ let best=null, ba=Infinity; entVisiveis().forEach(e=>{ if(f(e)){ const a=Math.abs(G.sArea(e.pts)); if(a<ba){ ba=a; best=e } } }); return best };
   return acha(e=>entHit(e,w)) || acha(e=>G.pip(w,e.pts)) }   // primeiro a parte construída; depois o vazio (pátio) também agarra a edificação
 const entCopia = e => JSON.parse(JSON.stringify({pts:e.pts, vazios:e.vazios||[]}));
 
@@ -76,7 +77,7 @@ function entUp(d){
   if(d.type==="pan"){ if(!d.moved && ENT.sel.size) entLimpaSel(); return false }
   if(d.type==="entmove"){ if(d.moved){ update(); entCardRefresh() } return true }
   if(d.type==="entscale"){ update(); entCardRefresh(); return true }
-  if(d.type==="marq"){ const r=ENT.marq; ENT.marq=null; if(r && d.moved){ entNoRetangulo(entLista(), [r[0][0],r[0][1],r[1][0],r[1][1]]).forEach(e=>ENT.sel.add(entId(e))) } redraw2d(); entCardRefresh(); return true }
+  if(d.type==="marq"){ const r=ENT.marq; ENT.marq=null; if(r && d.moved){ entNoRetangulo(entVisiveis(), [r[0][0],r[0][1],r[1][0],r[1][1]]).forEach(e=>ENT.sel.add(entId(e))) } redraw2d(); entCardRefresh(); return true }
   if(d.type==="entnone") return true;
   return false;
 }
@@ -176,15 +177,17 @@ function entBarRefresh(){
 }
 
 /* ---------- card no inspetor (Terreno e Clima) ---------- */
+/* seção "Entorno" (fechada, com resumo): criar, enquadrar, selecionar e apagar; a edição fina é na implantação (ⓘ) */
+function entSum(){ const L=entLista(), n=L.length, osm=L.filter(e=>e.osm).length; return n? `${n} edificaç${n>1?"ões":"ão"}${osm? ` · ${osm} do OSM`:""}` : "nenhuma" }
 function entCardInner(){
   const L=entLista(), n=L.length, osm=L.filter(e=>e.osm).length, sel=ENT.sel.size;
-  const sp=n? `${n} edificaç${n>1?"ões":"ão"}${osm? ` · ${osm} do OSM`:""}${sel? ` · ${sel} selecionada${sel>1?"s":""}`:""}` : "nenhuma ainda";
-  return `<p class="note">Na Implantação, clique numa edificação para selecionar e arrastar. <b>Shift</b> soma; <b>Shift + arrastar</b> no vazio seleciona várias; <b>Delete</b> apaga. Com uma selecionada, a barra na base muda altura, tamanho, giro, pátios e vazios.</p>
-    <div class="row"><button class="btn sm pri" data-act="entNova">Nova caixa</button><button class="btn sm" data-act="entEnq" ${n?"":"disabled"}>Ver entorno</button><button class="btn sm" data-act="entTodas" ${n?"":"disabled"}>Selecionar todas</button>${sel?`<button class="btn sm ghost" data-act="entNenhuma">Soltar</button><button class="btn sm ghost" data-act="entApagaSel">Apagar selecionadas</button>`:""}</div>
-    ${osm? `<div class="row"><button class="btn sm ghost" data-act="entApagaOsm">Apagar as do OSM</button>${n>osm?`<button class="btn sm ghost" data-act="entApagaTodas">Apagar todas</button>`:""}</div>` : (n? `<div class="row"><button class="btn sm ghost" data-act="entApagaTodas">Apagar todas</button></div>` : "")}
-    <p class="note" id="entResumo">${sp}</p>`;
+  return `<div class="row"><button class="btn sm pri" data-act="entNova" title="Caixa de 20 × 20 m e 24 m no centro da vista">Nova caixa</button><button class="btn sm" data-act="entDesenha" title="Clique os cantos do vizinho na implantação">Desenhar</button><button class="btn sm" data-act="entEnq" ${n?"":"disabled"}>Enquadrar</button><button class="btn sm" data-act="entTodas" ${n?"":"disabled"}>Selecionar todas</button></div>
+    ${sel? `<div class="row"><span class="note">${sel} selecionada${sel>1?"s":""}</span><button class="btn sm ghost" data-act="entNenhuma">Soltar</button><button class="btn sm ghost" data-act="entApagaSel">Apagar ${sel>1?"selecionadas":"selecionada"}</button></div>` : ""}
+    ${n? `<div class="row">${osm?`<button class="btn sm ghost" data-act="entApagaOsm">Apagar as do OSM</button>`:""}${!osm||n>osm?`<button class="btn sm ghost" data-act="entApagaTodas">Apagar todas</button>`:""}</div>` : ""}`;
 }
-const entCardHTML = () => CARD("Edificações do entorno", `<div id="entCardBody">${entCardInner()}</div>`, {details:true, key:"entedit", aside:`<span id="entAside">${entLista().length}</span>`});
-function entCardRefresh(){ const b=document.getElementById("entCardBody"); if(b && !typing(b)){ const h=entCardInner(); if(b.innerHTML!==h) b.innerHTML=h } const a=document.getElementById("entAside"); if(a) a.textContent=entLista().length }
+const entCardHTML = () => SEC("Entorno", `<div id="entCardBody">${entCardInner()}</div>` + (typeof mapaEntornoHTML==="function"? GRP("OpenStreetMap") + mapaEntornoHTML() : ""),
+  {key:"entedit", sum:entSum(), info:"Prédios vizinhos: fazem sombra e mudam o vento. Na implantação, clique numa edificação para selecionar e arraste para mover; Shift soma; Shift + arrastar no vazio seleciona várias; setas ajustam; Delete apaga. O quadrado do canto redimensiona e a barra na base muda altura, giro, pátios e vazios. Ctrl+Z desfaz."});
+function entCardRefresh(){ const b=document.getElementById("entCardBody"); if(b && !typing(b)){ const h=entCardInner(); if(b.innerHTML!==h) b.innerHTML=h } setSum("entedit", entSum()) }
+ACT.entDesenha = ()=>{ if(VIEW!=="impl") setView("impl"); DRAW=[]; setTool("draw","entorno"); toast("Clique nos cantos do vizinho e feche no primeiro ponto") };
 addCard("terreno",{ key:"entedit", order:55, html:entCardHTML });
 addCard("clima",{ key:"entedit", order:55, html:entCardHTML });

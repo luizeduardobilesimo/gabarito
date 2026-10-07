@@ -6,14 +6,15 @@ const estrSig = ()=> JSON.stringify([S.lote, S.regras, S.produto, S.estudo, S.cu
 function estrCardHTML(){
   const ES=S.estrutura;
   let h = SW("estrutura.on","Malha estrutural coordenada",{rr:true});
-  if(!ES.on) return CARD("Malha estrutural", h + `<p class="note">Pilares da torre nas paredes entre unidades e no núcleo, casados com o módulo da garagem. O que não alinha vira viga de transição, com custo.</p>`);
+  const INF="Pilares da torre nas paredes entre unidades e no núcleo, casados com o módulo da garagem. O que não alinha vira viga de transição, com custo.";
+  if(!ES.on) return SEC("Malha estrutural", h, {key:"estrutura", sum:"desligada", info:INF});
   h += SEG("estrutura.malha",[["casada","Casada com a garagem","Ajusta cada pilar (até a tolerância) para cair entre as vagas"],["paredes","Só nas paredes","Pilares exatamente nos encontros das paredes, sem coordenação"]],{full:true, label:"Malha"});
-  h += KV((ES.malha==="casada"? NUM("estrutura.tol","Ajuste máx. do pilar","m",{step:0.1,min:0,max:2,help:"Quanto um pilar pode sair do encontro das paredes para descer entre as vagas"}) : "") + NUM("estrutura.vaoMax","Vão máximo","m",{step:0.5,min:3,max:15}));
   h += `<div id="estrMet" class="kv" style="margin-top:4px"></div>`;
-  h += `<div data-q="custo transição">${SW("estrutura.custo","Somar as transições ao custo da obra",{rr:true})}</div>`;
-  if(ES.custo) h += KV(NUM("estrutura.custoM","Viga de transição","R$/m",{step:250,min:0,help:"Custo por metro de viga; multiplicado pelo vão e por um fator de carga (0,5 + pavimentos ÷ 20)"}));
   h += `<div class="row"><button type="button" class="btn sm" data-act="estrComparar" id="estrCmpBtn">Comparar malhas</button><span class="note" id="estrCmpTxt"></span></div><div id="estrCmp"></div>`;
-  return CARD("Malha estrutural", h, {aside:"pilares e transições"});
+  h += ADV(KV((ES.malha==="casada"? NUM("estrutura.tol","Ajuste máx. do pilar","m",{step:0.1,min:0,max:2,help:"Quanto um pilar pode sair do encontro das paredes para descer entre as vagas"}) : "") + NUM("estrutura.vaoMax","Vão máximo","m",{step:0.5,min:3,max:15}))+
+    `<div data-q="custo transição">${SW("estrutura.custo","Somar as transições ao custo da obra",{rr:true})}</div>`+
+    (ES.custo? KV(NUM("estrutura.custoM","Viga de transição","R$/m",{step:250,min:0,help:"Custo por metro de viga; multiplicado pelo vão e por um fator de carga (0,5 + pavimentos ÷ 20)"})) : ""), {key:"estrAdv"});
+  return SEC("Malha estrutural", h, {key:"estrutura", sum:"pilares e transições", info:INF});
 }
 function estrMetHTML(m){
   const e=m && m.estr; if(!e) return `<p class="note">${S.estrutura.on? "Calculando os pilares…" : ""}</p>`;
@@ -31,8 +32,8 @@ function estrCmpHTML(){
       ${on? `<span class="pill ok">em uso</span>` : `<button type="button" class="btn sm ghost" data-act="estrAplicar" data-i="${i}" style="margin-top:4px">Usar esta</button>`}</td><td>${r.nTrans}<div class="note">${r.nTrans? brl(r.custo) : "—"}</div></td></tr>` }).join("") + `</table>` +
     `<p class="note">O módulo alternativo refaz a garagem em modo rápido; as vagas são estimadas pela diferença.</p>`;
 }
-addCard("projeto", {key:"estrutura", order:70, html:()=>estrCardHTML(),
-  live:m=>{ setHTML("estrMet", estrMetHTML(m)); if(!m.estr) document.querySelectorAll("#planLeg .estrLeg").forEach(x=>x.remove()); else estrLegenda(); const C=ESTR_CMP; if(C && C.sig!==estrSig() && !C.rodando){ ESTR_CMP=null; setHTML("estrCmp",""); const t=document.getElementById("estrCmpTxt"); if(t) t.textContent="" } },
+addCard("projeto", {key:"estrutura", order:70, sub:"gar", html:()=>estrCardHTML(),
+  live:m=>{ setHTML("estrMet", estrMetHTML(m)); if(S.estrutura.on && m.estr) setSum("estrutura", `${nf(m.estr.nPil,0)} pilares · <b>${nf(m.estr.nTrans,0)}</b> transiç${m.estr.nTrans===1?"ão":"ões"}`); if(!m.estr) document.querySelectorAll("#planLeg .estrLeg").forEach(x=>x.remove()); else estrLegenda(); const C=ESTR_CMP; if(C && C.sig!==estrSig() && !C.rodando){ ESTR_CMP=null; setHTML("estrCmp",""); const t=document.getElementById("estrCmpTxt"); if(t) t.textContent="" } },
   after:()=>{ const m=window._last&&window._last.m; setHTML("estrMet", estrMetHTML(m)); if(ESTR_CMP && ESTR_CMP.sig===estrSig()) setHTML("estrCmp", estrCmpHTML()) }});
 /* comparação: Worker próprio com o código de cálculo (compute + estruturaMalhas); sem Worker, roda na página */
 function estrCmpWorker(st, m){

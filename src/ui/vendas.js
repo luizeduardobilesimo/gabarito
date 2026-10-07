@@ -44,28 +44,26 @@ const vdFmtEsc = (e,v)=> e.kind==="sol"? nf(v,1)+" h" : "R$ "+nf(v/1000,1)+" mil
 const vdGrad = e=> `linear-gradient(90deg,${e.stops.map(([t,c])=>`rgb(${c}) ${t*100}%`).join(",")})`;
 
 /* ---------- card na etapa Viabilidade ---------- */
-addCard("viab", { key:"vendas", order:40,
+addCard("viab", { key:"vendas", sub:"vendas", order:40,
   html: ()=>{
     const V=S.venda;
-    return CARD("Tabela de vendas",
-      ROW("VGV residencial", SEG("venda.modo",[["medio","preço médio"],["unidade","por unidade"]],{label:"Como calcular o VGV"})) +
-      `<div id="vdSum"></div>` +
-      ROW("Cores no 3D e na planta", SEG("venda.cor",[["nada","sem cor"],["preco","preço/m²"],["sol","sol"]],{fx:"vendaCor",rr:false,label:"Colorir unidades"})) +
-      `<div class="row sb" style="flex-wrap:nowrap;gap:6px"><select class="sel" id="vdFT" aria-label="Filtrar por torre" style="flex:1"></select><select class="sel" id="vdFA" aria-label="Filtrar por andar" style="flex:1"></select></div>
-       <div id="vdTab" style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:0 6px"></div>
-       <div id="vdUni"></div>
-       <div class="row"><button class="btn sm" data-act="vendaCSV">CSV</button><button class="btn sm" data-act="vendaXLSX">Planilha XLSX</button><span class="note" id="vdN"></span></div>`,
-      {key:"vendas", aside:V.modo==="unidade"?"VGV = soma das unidades":"VGV pelo preço médio"}) +
-    CARD("Valorização por unidade",
-      KV(NUM("venda.andarPct","Por andar acima do 1º","%",{pct:true,step:0.1})+NUM("venda.andarTeto","Teto do andar","%",{pct:true,step:0.5})+
-        NUM("venda.solPct","Sol: por hora acima da mediana","%",{pct:true,step:0.1,help:"Horas de sol direto por dia (média de inverno, equinócios e verão) comparadas com a mediana do prédio."})+NUM("venda.vistaPct","Vista: até","± %",{pct:true,step:0.5,help:"Fração de céu visível em leque diante das fachadas, contra o entorno, mais a altura do andar. 0,25 acima da mediana dá o máximo."})+
-        NUM("venda.solPiso","Sol: piso","%",{pct:true,step:0.5})+NUM("venda.solTeto","Sol: teto","%",{pct:true,step:0.5})+NUM("venda.cobPct","Coberturas","%",{pct:true,step:0.5})) +
-      `<div class="fl" style="margin-top:4px">Orientação da melhor fachada (%)</div>` +
-      `<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">${UNI_DIRS.map(d=>NUM("venda.orient."+d,d,"",{pct:true,step:0.5})).join("")}</div>` +
-      `<div class="row"><button class="btn sm" data-act="vendaHem" data-v="sul">Padrão hemisfério sul</button><button class="btn sm" data-act="vendaHem" data-v="norte">Padrão hemisfério norte</button></div>` +
-      SW("venda.manterMedia","Manter o total do preço médio (só redistribui)") +
-      `<p class="note">Preço = área × preço/m² da tipologia (mix) × (1 + prêmios). Sol: pontos a cada 1,5 m nas fachadas, raios a cada 15 min em 21/jun, 21/set e 21/dez contra o próprio prédio, as outras torres e o entorno.</p>`,
-      {details:false, key:"vendaPrem"});
+    return RES("Tabela de vendas", `<div id="vdSum"></div>`, {aside:`<span id="vdModo">${V.modo==="unidade"?"VGV = soma das unidades":"VGV pelo preço médio"}</span>`}) +
+      SEC("Unidades", `<div class="fld wide"><span class="fl">VGV residencial ${INFO("VGV")}</span>${SEG("venda.modo",[["medio","Preço médio do mix"],["unidade","Soma por unidade"]],{full:true,label:"Como calcular o VGV"})}</div>` +
+        ROW("Cores no 3D", SEG("venda.cor",[["nada","sem cor"],["preco","preço/m²"],["sol","sol"]],{fx:"vendaCor",rr:false,label:"Colorir unidades"})) +
+        `<div class="row sb" style="flex-wrap:nowrap;gap:6px"><select class="sel" id="vdFT" aria-label="Filtrar por torre" style="flex:1;min-width:0"></select><select class="sel" id="vdFA" aria-label="Filtrar por andar" style="flex:1;min-width:0"></select></div>
+         <div id="vdTab" style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:0 6px"></div>
+         <div id="vdUni"></div>
+         <div class="row sb"><span class="row" style="gap:6px"><button type="button" class="btn sm" data-act="vendaCSV">CSV</button><button type="button" class="btn sm" data-act="vendaXLSX">Planilha XLSX</button></span><span class="note" id="vdN"></span></div>`,
+        {key:"vendas", open:true, info:"Tabela de vendas", sum:""}) +
+      SEC("Valorização por unidade",
+        KV(NUM("venda.andarPct","Por andar acima do 1º","%",{pct:true,step:0.1})+NUM("venda.solPct","Sol: por hora","%",{pct:true,step:0.1,help:"Prêmio por hora de sol direto por dia (média de inverno, equinócios e verão) acima da mediana do prédio."})+
+          NUM("venda.vistaPct","Vista: até","± %",{pct:true,step:0.5,help:"Fração de céu visível em leque diante das fachadas, contra o entorno, mais a altura do andar. 0,25 acima da mediana dá o máximo."})+NUM("venda.cobPct","Coberturas","%",{pct:true,step:0.5})) +
+        ADV(KV(NUM("venda.andarTeto","Teto do andar","%",{pct:true,step:0.5})+NUM("venda.solPiso","Sol: piso","%",{pct:true,step:0.5})+NUM("venda.solTeto","Sol: teto","%",{pct:true,step:0.5})) +
+          GRP("Orientação da melhor fachada (%)") +
+          `<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">${UNI_DIRS.map(d=>NUM("venda.orient."+d,d,"",{pct:true,step:0.5})).join("")}</div>` +
+          `<div class="row"><button type="button" class="btn sm" data-act="vendaHem" data-v="sul">Padrão hemisfério sul</button><button type="button" class="btn sm" data-act="vendaHem" data-v="norte">Padrão hemisfério norte</button></div>` +
+          SW("venda.manterMedia","Manter o total do preço médio (só redistribui)"), {key:"vendaPrem"}),
+        {key:"vendaPrem", info:"Preço = área × preço/m² da tipologia (mix) × (1 + prêmios). Sol: pontos a cada 1,5 m nas fachadas, raios a cada 15 min em 21/jun, 21/set e 21/dez contra o próprio prédio, as outras torres e o entorno.", sum:""});
   },
   after: ()=>{
     ["vdFT","vdFA"].forEach(id=>{ const e=document.getElementById(id); if(e) e.addEventListener("change",()=>{ VD.ft=document.getElementById("vdFT").value; VD.fa=document.getElementById("vdFA").value; vendaTabela(vdLast()) }) });
@@ -79,7 +77,10 @@ function vendaLive(m,f){
   setHTML("vdSum", `<div class="mets"><div class="met big"><div class="l">Soma da tabela${m.unidadesRascunho?" · prévia":""}</div><div class="v">${mi(tab)}</div><div class="s">preço médio do mix ${mi(base)} · ${vdPct(d)}</div></div>
     <div class="met"><div class="l">Faixa de preço</div><div class="v">${nf(Math.min(...pm)/1000,1)}–${nf(Math.max(...pm)/1000,1)}</div><div class="s">mil R$/m²</div></div>
     <div class="met"><div class="l">Sol médio</div><div class="v">${sols.length? nf(sols.reduce((a,b)=>a+b,0)/sols.length,1)+" h" : "—"}</div><div class="s">por dia, na fachada</div></div></div>
-    ${V.modo==="medio"? `<p class="note" style="margin-top:6px">O VGV usa o preço médio do mix. Escolha “por unidade” para usar a soma da tabela (${vdPct(d)}).</p>`:""}`);
+    ${V.modo==="medio"? `<p class="note" style="margin-top:6px">O VGV ainda usa o preço médio do mix (a tabela daria ${vdPct(d)}).</p>`:""}`);
+  { const e=document.getElementById("vdModo"), h=V.modo==="unidade"?"VGV = soma das unidades":"VGV pelo preço médio"; if(e && e.textContent!==h) e.textContent=h }
+  setSum("vendas", `<b>${U.length}</b> unidades · ${mi(tab)}`);
+  setSum("vendaPrem", `andar ${vdPct(V.andarPct)} · sol ${vdPct(V.solPct)}/h`);
   // filtros
   const torres=[...new Set(U.map(u=>u.torre))], andares=[...new Set(U.map(u=>u.andar))].sort((a,b)=>a-b);
   const ft=document.getElementById("vdFT"), fa=document.getElementById("vdFA");
@@ -99,7 +100,7 @@ function vendaTabela(m){
     L.map(u=>`<tr data-act="vendaUni" data-id="${esc(u.id)}"${VD.sel===u.id?' class="on"':""}><td>${esc(u.id)}</td><td title="${esc(u.tipologia)}">${esc(u.tipologia)}</td><td>${nf(u.area,1)}</td><td>${u.sol? nf(u.sol.media,1) : "—"}</td><td style="color:${u.premios.total<-0.0005?"var(--bad)":u.premios.total>0.0005?"var(--ok)":"var(--muted)"}">${vdPct(u.premios.total)}</td><td>${vdMi(u.preco)}</td></tr>`).join("")+
     `</tbody><tfoot><tr class="tot"><td>${L.length} un.</td><td></td><td>${nf(L.reduce((s,u)=>s+u.area,0),0)}</td><td></td><td></td><td>${vdMi(L.reduce((s,u)=>s+u.preco,0))}</td></tr></tfoot></table>`;
   if(el.innerHTML!==h) el.innerHTML=h;
-  const n=document.getElementById("vdN"); if(n) n.textContent=`${m.unidades.length} unidades · cálculo ${nf(m.unidadesMs||0,0)} ms`;
+  const n=document.getElementById("vdN"); if(n) n.textContent=`${L.length===m.unidades.length? m.unidades.length : L.length+" de "+m.unidades.length} unidades`;
   vendaUniCard(m);
 }
 /* cartão de uma unidade (no card e no 3D) */

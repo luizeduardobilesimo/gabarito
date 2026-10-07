@@ -10,7 +10,7 @@
    - HOOK.pdf.push(async ctx=>…)     → páginas extras no PDF (ctx: {doc,m,f,T,PW,M,head,h2,rows,img,y(),setY(v),newPage()})
    - addCard(etapa,{key,order,sub,when,html,live}) → card extra no inspetor da etapa
    - ACT.nome = el=>…  ·  FX.nome = live=>…        → ações (data-act) e efeitos (data-fx) novos */
-const HOOK = { compute: [], finance: [], draw2d: [], draw3d: [], pdf: [] };
+const HOOK = { compute: [], finance: [], draw2d: [], draw2dBase: [], draw3d: [], pdf: [] };   // draw2dBase: por baixo do lote (implantação e clima), mesmo ctx do draw2d
 function runHooks(name, ...a){ for(const fn of HOOK[name]) try{ fn(...a) }catch(e){ console.error("[hook "+name+"]", e) } }
 async function runHooksAsync(name, ...a){ for(const fn of HOOK[name]) try{ await fn(...a) }catch(e){ console.error("[hook "+name+"]", e) } }
 function extendDEF(key, obj){

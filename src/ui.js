@@ -107,12 +107,12 @@ const IC = {
   cen:'<path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12.2 8.5 4.5 8.5-4.5M3.5 16.2l8.5 4.5 8.5-4.5"/>'
 };
 const STEPS = [
-  {k:"terreno", nome:"Terreno", t:"Terreno", d:"Desenhe o lote, marque as frentes e os acessos."},
-  {k:"regras", nome:"Regras", t:"Regras e padrões", d:"Tudo o que a prefeitura limita e os padrões do seu projeto, numa única ficha."},
-  {k:"produto", nome:"Produto", t:"Produto", d:"Veja o potencial do terreno e deixe o Gabarito buscar a melhor combinação."},
-  {k:"viab", nome:"Viabilidade", t:"Viabilidade", d:"Resultado, fluxo de caixa e todas as premissas financeiras."},
-  {k:"projeto", nome:"Projeto", t:"Projeto", d:"Garagem, pavimento tipo e cada andar do edifício."},
-  {k:"clima", nome:"Clima", t:"Sol e vento", d:"Insolação, vento no pedestre e túnel de vento 3D."},
+  {k:"terreno", nome:"Terreno", t:"Terreno", d:"Desenhe o lote e marque frentes e acessos."},
+  {k:"regras", nome:"Regras", t:"Regras", d:"Limites da prefeitura e padrões do projeto."},
+  {k:"produto", nome:"Produto", t:"Produto", d:"Potencial do terreno e a melhor combinação."},
+  {k:"viab", nome:"Viabilidade", t:"Viabilidade", d:"Resultado, fluxo de caixa e premissas."},
+  {k:"projeto", nome:"Projeto", t:"Projeto", d:"Garagem, pavimento tipo e andares."},
+  {k:"clima", nome:"Clima", t:"Sol e vento", d:"Insolação, vento no chão e túnel de vento."},
   {k:"cen", nome:"Cenários", t:"Cenários e entrega", d:"Salve, compare e exporte o estudo."}
 ];
 let TAB = LS.get("gabarito.step") || "produto"; if(!STEPS.some(s=>s.k===TAB)) TAB="produto";
@@ -209,16 +209,18 @@ function showModel(m, fast){
 const renderTabLive=(m,f)=>renderLive(m,f,false);
 function renderKPIs(m,f){
   const s=status(m,S), mg=f.margem<0?"bad":f.margem<S.fin.margemAlvo?"warn":"ok";
-  const k=(l,v,sub,st)=>`<div class="kpi"><div class="l">${st?`<span class="dot ${st}"></span>`:""}${l}</div><div class="v">${v}</div><div class="s">${sub||"&nbsp;"}</div></div>`;
+  // régua: rótulo (siglas abrem a explicação), valor e uma linha curta; o detalhe completo fica no title
+  const k=(l,v,sub,st,tt)=>`<div class="kpi"${tt?` title="${esc(tt)}"`:""}><div class="l">${st?`<span class="dot ${st}"></span>`:""}${l}</div><div class="v">${v}</div><div class="s">${sub||"&nbsp;"}</div></div>`;
+  const mic=v=>nf(v/1e6,1)+" mi", tor=`${m.T.length} torre${m.T.length>1?"s":""}`;
   const h =
-    k("Terreno", m2(m.A), `perm. ${pct(m.perm,0)}`, s.perm) +
-    k("Unidades", m.units, `${m.T.length} torre${m.T.length>1?"s":""}${m.lojaA?" + lojas":""}`, s.apto==="bad"||s.tor!=="ok"? (s.apto==="bad"?"bad":s.tor) : "ok") +
-    k("Vagas", `${m.vagas}/${m.vagasReq}`, S.estudo.usarLayout?"layout / exigidas":"estim. / exigidas", s.vg) +
-    k("CA", nf(m.CA,2), `básico ${nf(S.regras.caBas,1)} · máx ${nf(S.regras.caMax,1)}`, s.ca) +
+    k("Terreno", m2(m.A), `perm. ${pct(m.perm,0)}`, s.perm, `Área do terreno · permeável ${pct(m.perm,0)}`) +
+    k("Unidades", m.units, tor, s.apto==="bad"||s.tor!=="ok"? (s.apto==="bad"?"bad":s.tor) : "ok", `${m.units} unidades · ${tor}${m.lojaA?" + lojas":""}`) +
+    k("Vagas", `${m.vagas}/${m.vagasReq}`, S.estudo.usarLayout?"pelo layout":"estimadas", s.vg, `${m.vagas} vagas ${S.estudo.usarLayout?"no layout":"estimadas"} · ${m.vagasReq} exigidas`) +
+    k(TERMO("CA"), nf(m.CA,2), `máx ${nf(S.regras.caMax,1)}`, s.ca, `Coeficiente de aproveitamento · básico ${nf(S.regras.caBas,1)} · máximo ${nf(S.regras.caMax,1)}`) +
     k("Altura", nf(m.H,1)+" m", `máx ${nf(S.regras.hMax,0)} m`, s.h) +
-    k("VGV", mi(f.vgv), `${mi(f.vgv/Math.max(1,m.units))}/un`) +
-    k("Margem", pct(f.margem), `lucro ${mi(f.lucro)}`, mg) +
-    k("TIR a.a.", f.tirA==null?"—":pct(f.tirA), `VPL ${mi(f.vpl)}`, f.tirA==null?"bad": f.tirA<S.fin.tma?"warn":"ok");
+    k(TERMO("VGV"), mi(f.vgv), `${mi(f.vgv/Math.max(1,m.units))}/un`, null, `Valor geral de vendas · ${mi(f.vgv/Math.max(1,m.units))} por unidade`) +
+    k(TERMO("Margem"), pct(f.margem), `lucro ${mic(f.lucro)}`, mg, `Lucro ${mi(f.lucro)} · meta ${pct(S.fin.margemAlvo,0)}`) +
+    k(TERMO("TIR","TIR a.a."), f.tirA==null?"—":pct(f.tirA), `VPL ${mic(f.vpl)}`, f.tirA==null?"bad": f.tirA<S.fin.tma?"warn":"ok", `TIR ao ano · VPL ${mi(f.vpl)} · TMA ${pct(S.fin.tma,0)}`);
   const el=document.getElementById("kpis"); if(el.innerHTML!==h) el.innerHTML=h;
 }
 function renderLive(m,f,fast){ const fn=STEP_LIVE[TAB]; if(fn) fn(m,f,fast); cardsFor(TAB, curSub()).forEach(c=>{ if(c.live) try{ c.live(m,f,fast) }catch(e){ console.error("[card "+c.key+"]",e) } }) }
@@ -267,19 +269,21 @@ function resumo(){
   return `${S.nome}\n${S.regras.cidade}\n\nTerreno: ${m2(m.A)}\nTorres: ${m.T.map((t,i)=>`T${i+1} ${t.pav} pav`).join(", ")}\nUnidades: ${m.units} (${m.unitRows.map(u=>`${u.n}× ${u.nome}`).join(", ")}${m.cobN?`, ${m.cobN} coberturas`:""})${m.lojaA?`\nLojas: ${m2(m.lojaPriv)}`:""}\nVagas: ${m.vagas} (exigidas ${m.vagasReq})\nAltura ${nf(m.H,1)} m | CA ${nf(m.CA,2)} | TO ${pct(m.TO,0)}\nÁrea construída ${m2(m.constr)} | Privativa ${m2(m.priv)}\n\nVGV (tabela): ${brl(f.vgv)}\nReceita nominal: ${brl(f.receita)}\nCusto total: ${brl(f.custo)}\nLucro: ${brl(f.lucro)} (margem ${pct(f.margem)})\nTIR: ${f.tirA==null?"—":pct(f.tirA)} a.a. | VPL: ${brl(f.vpl)}\nExposição máxima: ${brl(-f.exp)}\nTerreno máximo p/ margem ${pct(S.fin.margemAlvo,0)}: ${brl(f.maxTerreno)}`;
 }
 function cashSVG(f){
-  const W=360,H=150,pl=44,pr=8,pt=10,pb=22, cum=f.cumA, n=cum.length;
-  const mn=Math.min(0,...cum), mx=Math.max(0,...cum), sx=i=>pl+(W-pl-pr)*i/(n-1), sy=v=>pt+(H-pt-pb)*(mx-v)/((mx-mn)||1);
+  /* rótulos dos marcos (lançamento, chaves) no topo; exposição sob o ponto mais baixo, em valor absoluto — nada se sobrepõe à curva */
+  const W=360,H=158,pl=44,pr=8,pt=18,pb=24, cum=f.cumA, n=cum.length;
+  const mn=Math.min(0,...cum), mx=Math.max(0,...cum), sx=i=>pl+(W-pl-pr)*i/Math.max(1,n-1), sy=v=>pt+(H-pt-pb)*(mx-v)/((mx-mn)||1);
   const path=cum.map((v,i)=>(i?"L":"M")+sx(i).toFixed(1)+","+sy(v).toFixed(1)).join("");
   const ar=`M${sx(0)},${sy(0)} `+cum.map((v,i)=>"L"+sx(i).toFixed(1)+","+sy(v).toFixed(1)).join("")+` L${sx(n-1)},${sy(0)} Z`;
   const ticks=[mn,0,mx].filter((v,i,a)=>a.indexOf(v)===i), iMin=cum.indexOf(Math.min(...cum));
+  const xL=sx(f.launch), xC=sx(f.chaves), perto=xC-xL<92, xE=Math.min(W-pr-52, Math.max(pl+52, sx(iMin)));
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Fluxo de caixa acumulado">
     ${ticks.map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)" ${v===0?'stroke-width="1.2"':'stroke-dasharray="2 3"'}/><text x="${pl-4}" y="${sy(v)+3}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${v===0?"0":nf(v/1e6,1)+"mi"}</text>`).join("")}
-    <line x1="${sx(f.launch)}" x2="${sx(f.launch)}" y1="${pt}" y2="${H-pb}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${sx(f.launch)+3}" y="${H-pb+12}" font-size="9" fill="var(--muted)">lançamento</text>
-    <line x1="${sx(f.chaves)}" x2="${sx(f.chaves)}" y1="${pt}" y2="${H-pb}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${sx(f.chaves)-3}" y="${H-pb+12}" font-size="9" text-anchor="end" fill="var(--muted)">chaves</text>
+    <line x1="${xL}" x2="${xL}" y1="${pt}" y2="${H-pb}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${xL+3}" y="${pt-6}" font-size="9" fill="var(--muted)">lançamento</text>
+    <line x1="${xC}" x2="${xC}" y1="${pt}" y2="${H-pb}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${perto? xC+3 : xC-3}" y="${perto? pt+6 : pt-6}" font-size="9" ${perto?"":'text-anchor="end"'} fill="var(--muted)">chaves</text>
     <path d="${ar}" fill="var(--accent)" fill-opacity=".12"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
     <circle cx="${sx(iMin)}" cy="${sy(cum[iMin])}" r="3" fill="var(--bad)"/><circle cx="${sx(n-1)}" cy="${sy(cum[n-1])}" r="3" fill="var(--accent)"/>
-    <text x="${sx(iMin)>W*0.62? sx(iMin)-6 : sx(iMin)+5}" y="${sx(iMin)>W*0.62? sy(cum[iMin])-6 : sy(cum[iMin])+11}" ${sx(iMin)>W*0.62?'text-anchor="end"':""} font-size="9" fill="var(--bad)" font-family="IBM Plex Mono">exposição ${mi(cum[iMin])}</text>
-    ${f.distrato && f.distrato.M!=null && f.distrato.refund ? `<line x1="${sx(f.distrato.M)}" x2="${sx(f.distrato.M)}" y1="${pt}" y2="${H-pb}" stroke="var(--warn)" stroke-dasharray="2 2"/><text x="${sx(f.distrato.M)+3}" y="${pt+8}" font-size="9" fill="var(--warn)">distratos</text>` : ""}
+    <text x="${xE}" y="${sy(cum[iMin])+14}" text-anchor="middle" font-size="9" fill="var(--bad)" font-family="IBM Plex Mono">exposição ${mi(-cum[iMin])}</text>
+    ${f.distrato && f.distrato.M!=null && f.distrato.refund ? `<line x1="${sx(f.distrato.M)}" x2="${sx(f.distrato.M)}" y1="${pt}" y2="${H-pb}" stroke="var(--warn)" stroke-dasharray="2 2"/><text x="${sx(f.distrato.M)+3}" y="${pt+16}" font-size="9" fill="var(--warn)">distratos</text>` : ""}
   </svg>`;
 }
 /* rosa dos ventos clicável */

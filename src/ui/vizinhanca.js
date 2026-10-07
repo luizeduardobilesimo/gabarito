@@ -9,18 +9,19 @@ function vzR(m){ if(m && m.viz){ VZ.ultimo=m.viz; return m.viz } return vzOn()? 
 addCard("clima", { key:"viz", sub:"sol", order:45,
   html: ()=>{
     const V=S.vizinhanca, has=(S.entorno||[]).some(e=>e.pts&&e.pts.length>2&&+e.h>0);
-    const body = SW("vizinhanca.on","Calcular o sol que o prédio tira dos vizinhos",{rr:true}) + (!V.on ? `<p class="note">Horas de sol nas fachadas e coberturas do entorno, com e sem o empreendimento, no dia 21 de cada mês.</p>`
-      : !has ? `<p class="note">Sem entorno. Gere vizinhos genéricos ou desenhe volumes no card Entorno.</p>`
+    const body = SW("vizinhanca.on","Calcular o sol tirado dos vizinhos",{rr:true}) + (!V.on ? ""
+      : !has ? `<p class="note">Sem entorno: use “Gerar genéricos” em Volumes e alturas.</p>`
       : `<div id="vzSum"></div><div id="vzTab"></div><div id="vzMeses"></div>`+
         SLD("vizinhanca.mes","Mapa do dia 21 de",1,12,1,"",{fmt:"mes"})+SW("vizinhanca.mapa","Mapa de horas perdidas na planta e no 3D",{fx:"vzMapa"})+
         `<div class="row"><button class="btn sm pri" data-act="vzAnim" id="vzAnimBtn">${VZ.anim?"❚❚ Pausar":"▶ Animar a sombra no ano"}</button></div>`);
-    return CARD("Impacto de vizinhança", body, {key:"viz"});
+    return SEC("Impacto de vizinhança", body, {key:"viz", sum: !V.on? "desligado" : !has? "sem entorno" : (VZ.ultimo? `perda média <b>${nf(VZ.ultimo.perdaInv,1)} h</b>/dia` : "calculando…"), info:"Horas de sol nas fachadas e coberturas do entorno, com e sem o empreendimento, no dia 21 de cada mês. Ajuda a antecipar o EIV (estudo de impacto de vizinhança)."});
   },
   live: m=>vzLive(m)
 });
 function vzLive(m){
   const r=vzR(m); if(!r||!document.getElementById("vzSum")) return;
   const inv=VZ_MESES[r.inverno-1], vv=r.vizinhos, worst=vv.reduce((a,v)=>!a||v.perdaInv>a.perdaInv? v : a, null);
+  setSum("viz", `perda média <b>${nf(r.perdaInv,1)} h</b>/dia`);
   setHTML("vzSum", `<div class="mets"><div class="met big"><div class="l">Perda média nas fachadas vizinhas · 21/${inv}${r.stale?" · prévia":""}</div><div class="v">${nf(r.perdaInv,1)} h/dia</div><div class="s">${worst? `maior: ${esc(worst.nome)} (${nf(worst.perdaInv,1)} h, até ${nf(worst.perdaMax,1)} h)` : "sem vizinhos"}</div></div>
     <div class="met"><div class="l">Fachadas com perda &gt; 2 h</div><div class="v">${m2(r.areaAfetada)}</div><div class="s">no inverno</div></div>
     <div class="met"><div class="l">Cálculo</div><div class="v">${nf(r.ms,0)} ms</div><div class="s">12 dias · raios a cada ${nf(r.dt*60,0)} min</div></div></div>`);
@@ -29,7 +30,7 @@ function vzLive(m){
   // perda média por mês (barras)
   const W=320, H=86, pb=16, mx=Math.max(0.5,...r.meses), bw=W/12;
   setHTML("vzMeses", `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Perda média de sol nas fachadas vizinhas, por mês">${r.meses.map((v,k)=>{ const h=(H-pb-12)*v/mx, x=k*bw+3;
-    return `<rect x="${x}" y="${H-pb-h}" width="${bw-6}" height="${Math.max(0.5,h)}" rx="2" fill="${k+1===r.mes?"var(--bad)":"var(--accent)"}" fill-opacity="${k+1===r.mes?0.9:0.55}"/><text x="${x+(bw-6)/2}" y="${H-4}" font-size="8.5" text-anchor="middle" fill="var(--muted)" font-family="IBM Plex Mono">${VZ_MESES[k]}</text>${v>0.05?`<text x="${x+(bw-6)/2}" y="${H-pb-h-3}" font-size="8" text-anchor="middle" fill="var(--muted)" font-family="IBM Plex Mono">${nf(v,1)}</text>`:""}`}).join("")}</svg><p class="note">Horas de sol perdidas por dia, em média nas fachadas do entorno (dia 21 de cada mês).</p>`);
+    return `<rect x="${x}" y="${H-pb-h}" width="${bw-6}" height="${Math.max(0.5,h)}" rx="2" fill="${k+1===r.mes?"var(--bad)":"var(--accent)"}" fill-opacity="${k+1===r.mes?0.9:0.55}"/><text x="${x+(bw-6)/2}" y="${H-4}" font-size="8.5" text-anchor="middle" fill="var(--muted)" font-family="IBM Plex Mono">${VZ_MESES[k]}</text>${v>0.05?`<text x="${x+(bw-6)/2}" y="${H-pb-h-3}" font-size="8" text-anchor="middle" fill="var(--muted)" font-family="IBM Plex Mono">${nf(v,1)}</text>`:""}`}).join("")}</svg><p class="note">Perda média de sol por dia nas fachadas vizinhas (dia 21 de cada mês).</p>`);
 }
 FX.vzMapa = ()=>{ save(); const m=window._last&&window._last.m; if(m){ rebuild3d(m); redraw2d() } };
 
