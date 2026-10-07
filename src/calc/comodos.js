@@ -189,7 +189,8 @@ function comGera(P, U, mk, prm, ctx, st){
     const sn = fn===pv? nx : pv, t2=(iy-K[1])/((sn[1]-K[1])||1e-9), cxx = t2>0 && t2<=1+1e-9? K[0]+(sn[0]-K[0])*t2 : cx;   // parede lateral também pode ser inclinada
     const a=F.w(ix, K[1]+(fn[1]-K[1])*t), b=F.w(ix,iy), c=F.w(cxx,iy); return [...poly.slice(0,k), ...(fn===pv? [a,b,c] : [c,b,a]), ...poly.slice(k+1)] };
   let sala=null, sacR=null;
-  if(sacD>0 && sacW<salaX1-1e-6){ sala=add("sala",0,salaX1,0,yW); const np=sala && notchLoc(sala.poly,0,0,sacW,sacD); if(np){ sala.poly=comLimpa(np); sala.area=G.area(sala.poly); sacR=add("sacada",0,sacW,0,sacD) } else { sacW=salaX1; if(sala) R.pop(); sala=null } }
+  if(sacD>0 && sacW<salaX1-1e-6){ sala=add("sala",0,salaX1,0,yW); const np=sala && notchLoc(sala.poly,0,0,sacW,sacD), lp=np && comLimpa(np);   // recorte degenerado (área ~0) → sacada na largura toda
+    if(lp && lp.length>=3 && G.area(lp)>0.15){ sala.poly=lp; sala.area=G.area(lp); sacR=add("sacada",0,sacW,0,sacD) } else { sacW=salaX1; if(sala) R.pop(); sala=null } }
   if(!sala){ sala=add("sala",0,salaX1,sacD,yW); if(sacD>0) sacR=add("sacada",0,salaX1,0,sacD) }
   let di=0; for(let i=1;i<fr.length;i++){ const k=fr[i].k; if(k==="dorm"){ di++; add("dorm",xF[i],xF[i+1],0,dF,{n:di}) } else if(k==="suite") add("suite",xF[i],xF[i+1],0,yW); else add("bsuite",xF[i],xF[i+1],0,dF) }
   if(hasCirc && suiteX0-salaX1>0.05) add("circ",salaX1,suiteX0,dF,yW);
@@ -238,7 +239,7 @@ function comGera(P, U, mk, prm, ctx, st){
   // bordas de cada cômodo (classe do vizinho) e porta de entrada no corredor
   rooms.forEach(r=>{ r.bordas = r.poly.length? comBordas(r.poly, P, ctx) : [] });
   let entrada=null;
-  { const cands=(prm.fr==="l"? [sala, coz, circ] : [coz, sala, circ]).filter(Boolean);
+  { const cands=(prm.fr==="l"? [sala, coz, circ] : [coz, sala, circ]).filter(r=>r && r.bordas);
     for(const r of cands){ const segs=r.bordas.filter(b=>b.c==="corredor" && b.len>=1.1).sort((a,b)=>b.len-a.len); if(!segs.length) continue;
       const s=segs[0], w=0.9, L=s.len, tA=(L-w)/L; // perto da ponta mais distante da parede externa da zona social
       const la=F.loc(s.a)[0], lb=F.loc(s.b)[0], far = la>lb? 0 : 1, t0 = far===0? 0.12/L : tA-0.12/L;

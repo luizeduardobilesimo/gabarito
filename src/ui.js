@@ -176,7 +176,7 @@ function railStatus(m,f){
 const ACT = {
   go: b=>goStep(b.dataset.k),
   psub: b=>{ PSUB=b.dataset.v; renderTab(); const w=stepView(); if(w) setView(w) },
-  csub: b=>{ CSUB=b.dataset.v; if(CSUB!=="v3d") S.clima.modo=CSUB; renderTab(); const w=stepView(); if(w) setView(w); else if(VIEW==="clima"){ viewbarSegs(window._last.m); climaRun() } },
+  csub: b=>{ CSUB=b.dataset.v; if(CSUB!=="v3d") S.clima.modo=CSUB; renderTab(); const w=stepView(); if(w) setView(w); else if(VIEW==="clima"){ viewbarSegs(window._last.m); climaRun(); hintFor() } },
   view: b=>setView(b.dataset.v),
 };
 

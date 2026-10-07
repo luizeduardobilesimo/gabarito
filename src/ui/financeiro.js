@@ -49,8 +49,8 @@ function finTopHTML(m, f){
   const tot=parts.reduce((s,p)=>s+p[1],0)||1;
   return `<div class="mets"><div class="met big"><div class="l">Lucro</div><div class="v" style="color:${f.lucro<0?"var(--bad)":"var(--ink)"}">${mi(f.lucro)}</div><div class="s">${TERMO("VGV")} ${mi(f.vgv)} · custo ${mi(f.custo)}</div></div>
     <div class="met"><div class="l">Margem${INFO("Margem")}</div><div class="v" style="color:${finSCol(f.margem)}">${pct(f.margem)}</div><div class="s">meta ${pct(F.margemAlvo,0)}</div></div>
-    <div class="met"><div class="l">TIR a.a.${INFO("TIR")}</div><div class="v" style="color:${f.tirA==null?"var(--bad)":f.tirA<F.tma?"var(--warn)":"var(--ink)"}">${finTir(f.tirA)}</div><div class="s">TMA ${pct(F.tma,0)}</div></div>
-    <div class="met"><div class="l">VPL${INFO("VPL")}</div><div class="v" style="color:${f.vpl<0?"var(--bad)":"var(--ink)"}">${mi(f.vpl)}</div><div class="s">à TMA de ${pct(F.tma,0)}</div></div>
+    <div class="met"><div class="l">TIR a.a.${INFO("TIR")}</div><div class="v" style="color:${f.tirA==null?"var(--bad)":f.tirA<F.tma?"var(--warn)":"var(--ink)"}">${finTir(f.tirA)}</div><div class="s">${TERMO("TMA")} ${pct(F.tma,0)}</div></div>
+    <div class="met"><div class="l">VPL${INFO("VPL")}</div><div class="v" style="color:${f.vpl<0?"var(--bad)":"var(--ink)"}">${mi(f.vpl)}</div><div class="s">à ${TERMO("TMA")} de ${pct(F.tma,0)}</div></div>
     <div class="met"><div class="l">Exposição máx.${INFO("Exposição")}</div><div class="v">${mi(-f.exp)}</div><div class="s">payback ${f.pay==null?"—":"mês "+f.pay}</div></div></div>
     <div class="stack" role="img" aria-label="Composição da receita">${parts.map(p=>`<span style="width:${p[1]/tot*100}%;background:${p[2]}"></span>`).join("")}</div>
     <div class="stackleg">${parts.map(p=>`<span><i style="background:${p[2]}"></i>${p[0]} ${pct(p[1]/tot,0)}</span>`).join("")}</div>`;

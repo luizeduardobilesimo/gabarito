@@ -53,7 +53,7 @@ button{cursor:pointer}
 .brand svg{width:22px;height:22px}
 .top .sep{width:1px;height:22px;background:var(--line)}
 .top .proj{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
-.top .proj input{border:1px solid transparent;background:transparent;border-radius:8px;padding:6px 8px;font-weight:500;min-width:0;width:min(320px,100%);transition:background .15s,border-color .15s}
+.top .proj input{border:1px solid transparent;background:transparent;border-radius:8px;padding:6px 8px;font-weight:500;min-width:0;width:min(320px,100%);text-overflow:ellipsis;transition:background .15s,border-color .15s}
 .top .proj input:hover{background:var(--surface-2)}
 .top .proj input:focus{background:var(--surface-2);border-color:var(--accent);outline:none}
 .top .acts{display:flex;gap:8px;align-items:center}
@@ -565,7 +565,12 @@ details.card>summary:hover{background:color-mix(in srgb,var(--surface-2) 60%,tra
   .app{padding-bottom:calc(74px + env(safe-area-inset-bottom,0px))}
   /* alvos pequenos ganham área de toque invisível (≥ 40 px) sem mudar o desenho */
   .info,.tag,.x{position:relative}.info::before{content:"";position:absolute;inset:-12px}.tag::before{content:"";position:absolute;inset:-9px -4px}.x::before{content:"";position:absolute;inset:-8px}
-  .edge .xp{position:relative}.edge .xp::before{content:"";position:absolute;inset:-9px}
+  .edge .xp{position:relative}.edge .xp::before{content:"";position:absolute;inset:-9px -5px}
+  .termo{position:relative}.termo::before{content:"";position:absolute;inset:-12px -11px}
+  .edge .ops{gap:8px}
+  .seg:not(.full) button{min-width:40px;flex-shrink:0}
+  .stp button{min-width:40px}
+  .pr-ic{min-width:40px;height:40px}
   .advbtn{min-height:44px;padding:0}
   details.card>summary{min-height:48px}
   .rail button{min-height:54px}
@@ -579,16 +584,23 @@ details.card>summary:hover{background:color-mix(in srgb,var(--surface-2) 60%,tra
   .viewbar .grow{display:none}
   .vacts .btn .lb{display:none}
   .vacts .btn{width:44px;height:44px;min-height:44px;padding:0}
-  .vtools{top:auto;left:8px;right:8px;bottom:8px;flex-direction:row;max-height:none;overflow-x:auto}
-  .vtools .seg{flex-direction:row}
+  /* ferramentas empilhadas (uma faixa por grupo): nenhuma opção fica escondida sob a borda */
+  .vtools{top:auto;left:8px;right:8px;bottom:8px;flex-direction:column;align-items:flex-start;max-height:none;overflow:visible}
+  .vtools .seg{flex-direction:row;max-width:100%;overflow-x:auto;scrollbar-width:none}
   .hint{left:8px;right:8px;bottom:8px;max-width:none}
   .view:has(#vtools>:not([hidden])) .hint{bottom:66px}
+  .view:has(#vtools>:not([hidden])~:not([hidden])) .hint{bottom:122px}
   .legend{display:grid}
   .legend,.planleg{left:8px;right:8px;bottom:8px;max-width:none;max-height:55%;z-index:6}
   .sunbox,.cfdlegend{top:auto}
   .cfdbar:not(#vdBar){top:calc(var(--vbh,52px) + 6px)}
   #viewSeg{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 22px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 22px),transparent)}
   .kpi .s{font-size:9.5px}
+}
+/* celular estreito: o nome do estudo ganha o espaço da marca e do atalho do PDF (o PDF continua em Cenários › Entregar) */
+@media (max-width:520px){
+  .top .brand,#pdfTop{display:none}
+  .top .proj input{font-size:13.5px;padding:6px 3px}
 }
 /* seções fechadas não ocupam espaço nem contam como visíveis (vale para todas as etapas) */
 details.card:not([open])>.cb{display:none}

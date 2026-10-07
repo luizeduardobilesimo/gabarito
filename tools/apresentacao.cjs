@@ -54,12 +54,15 @@ async function fase1(b) {
     g.fillStyle = '#7a2e3b'; g.font = '700 46px sans-serif'; g.fillText('AURORA', 128, 72); g.font = '500 20px sans-serif'; g.fillText('INCORPORADORA', 130, 100); return c.toDataURL('image/png') });
   fs.writeFileSync(arquivo('logo-teste.png'), Buffer.from(dataUrl.split(',')[1], 'base64'));
   await A.click('#rail [data-step=cen]'); await A.waitForTimeout(600);
+  await A.click('#phead [data-act=subx][data-v=entregar]'); await A.waitForTimeout(600);   // apresentação e marca ficam na sub-aba Entregar
   ok(await A.locator('#cardApres').count() === 1, 'card "Apresentar e compartilhar" na etapa Cenários');
   ok(await A.locator('#cardMarca').count() === 1, 'card "Marca no relatório (PDF)" na etapa Cenários');
   ok(await A.locator('#cardMarca input[data-p="marca.nome"]').count() === 0, 'com a marca desligada o card mostra só o interruptor');
+  await A.evaluate(() => { document.getElementById('cardMarca').open = true }); await A.waitForTimeout(200);   // seção recolhida por padrão
   await A.locator('label.sw:has(input[data-p="marca.ativa"])').click(); await A.waitForTimeout(300);
   await A.fill('#f-marca-nome', 'Aurora Incorporadora'); await A.keyboard.press('Tab');
   await A.fill('#f-marca-rodape', 'Aurora Incorporadora · CRECI 00000-J · (48) 3000-0000'); await A.keyboard.press('Tab');
+  await A.evaluate(() => { const a = document.querySelector('#cardMarca .advb'); if (a && a.hidden) document.querySelector('#cardMarca .advbtn').click() });   // título e subtítulo em "Mais opções"
   await A.fill('#f-marca-titulo', 'Torre Aurora — estudo de viabilidade'); await A.keyboard.press('Tab');
   await A.fill('#f-marca-subtitulo', 'Lançamento Criciúma · 2027'); await A.keyboard.press('Tab');
   await A.setInputFiles('#mkLogoIn', arquivo('logo-teste.png')); await A.waitForTimeout(900);
@@ -177,7 +180,7 @@ async function fase3(b) {
   for (const mobile of [false, true]) for (const tema of ['light', 'dark']) {
     const ce = await novoContexto(b, { mobile, tema });
     const E = await abrir(ce, URL0, 'editor-cap'); await E.waitForTimeout(1500);
-    await E.evaluate(([lg]) => { S.marca.ativa = true; S.marca.nome = 'Aurora Incorporadora'; S.marca.cor = '#7a2e3b'; S.marca.rodape = 'CRECI 00000-J · (48) 3000-0000'; LS.set('gabarito.marca.logo', { url: lg, w: 360, h: 120, opaca: false }); LS.set('gabarito.step', 'cen'); LS.set('gabarito.v2', S) }, [logo]);
+    await E.evaluate(([lg]) => { S.marca.ativa = true; S.marca.nome = 'Aurora Incorporadora'; S.marca.cor = '#7a2e3b'; S.marca.rodape = 'CRECI 00000-J · (48) 3000-0000'; LS.set('gabarito.marca.logo', { url: lg, w: 360, h: 120, opaca: false }); LS.set('gabarito.step', 'cen'); LS.set('gabarito.subx', { cen: 'entregar' }); LS.set('gabarito.v2', S) }, [logo]);
     await E.reload({ waitUntil: 'domcontentloaded' }); await E.waitForSelector('#cardMarca'); await E.waitForTimeout(1200);
     await E.locator('#cardApres').scrollIntoViewIfNeeded(); await E.screenshot({ path: arquivo(`${mobile ? 'm' : 'd'}-${tema}-cenarios.png`) });
     await E.screenshot({ path: arquivo(`${mobile ? 'm' : 'd'}-${tema}-topo.png`), clip: { x: 0, y: 0, width: mobile ? 400 : 1440, height: 70 } });

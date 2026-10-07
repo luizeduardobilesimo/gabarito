@@ -93,6 +93,8 @@ async function travamento(p, fn) {
   // em todas as etapas: muda o primeiro campo numérico e desfaz
   for (const k of ['terreno', 'regras', 'produto', 'viab', 'projeto', 'clima']) {
     await step(p, k);
+    // interface v2: campos ficam em sub-abas e seções recolhidas — vai à sub-aba de premissas e abre as seções
+    await p.evaluate(k => { if (k === 'viab') { SUBX.viab = 'prem'; renderTab() } document.querySelectorAll('#tabbody details.sec').forEach(d => d.open = true) }, k); await p.waitForTimeout(200);
     const antes = await p.evaluate(() => { histCommit(); return JSON.stringify(S) }), n0 = await p.evaluate(() => HIST.undo.length);
     const campo = p.locator('#tabbody input[type=number][data-p]:not([disabled]):visible').first();
     const faixa = p.locator('#tabbody input[type=range][data-p]:visible').first();
@@ -144,7 +146,7 @@ async function travamento(p, fn) {
   await ocioso(p);
 
   console.log('0.4 / 4.1 — versões e estudos');
-  await step(p, 'cen');
+  await p.evaluate(() => { SUBX.cen = 'estudos' }); await step(p, 'cen');
   await p.waitForFunction(() => EST.pronto, null, { timeout: 15000 });
   ok(await p.evaluate(() => EST.lista.length >= 1 && !!LS.get('gabarito.v2')), 'estudo atual migrado para o repositório (gabarito.v2 mantido)', await p.evaluate(() => ({ estudos: EST.lista.length, modo: Repo.modo() })));
   await p.fill('#vsNome', 'Base do teste'); await p.click('[data-act="vsSalvar"]');
@@ -168,8 +170,9 @@ async function travamento(p, fn) {
   await p.waitForFunction(n => EST.versoes.length > n, nAntes, { timeout: 30000 });
   ok(true, 'versão automática criada');
   // comparar
-  await p.click(`label:has([data-vcmp="${vBase.id}"]) .tg`); await p.waitForTimeout(200);
-  ok(await p.evaluate(() => /Comparar versões/.test(document.getElementById('vsBox').textContent)), 'comparar versão com o atual');
+  await p.click(`#vsBox [data-act="vsCmp"][data-id="${vBase.id}"]`); await p.waitForTimeout(300);
+  ok(await p.evaluate(() => !document.getElementById('cmpSec').hidden && document.querySelectorAll('#cmpBox th').length === 3), 'comparar versão com o atual');
+  await p.click('[data-act="cmpLimpa"]'); await p.waitForTimeout(200);
   if (OUT) { fs.mkdirSync(OUT, { recursive: true }); await p.screenshot({ path: path.join(OUT, 'plataforma-cen.png') }) }
   // estudos: novo, duplicar, abrir, excluir
   const id0 = await p.evaluate(() => EST.id), nome0 = await p.evaluate(() => S.nome);
@@ -178,7 +181,7 @@ async function travamento(p, fn) {
   await p.click(`[data-act="estAbrir"][data-id="${id0}"]`); await p.waitForFunction(id => EST.id === id, id0, { timeout: 15000 }); await ocioso(p);
   ok(await p.evaluate(n => S.nome === n, nome0) && JSON.stringify(await nums(p)) === JSON.stringify(kRest), 'reabrir o primeiro estudo devolve o estado e os números');
   const n1 = await p.evaluate(() => EST.lista.length);
-  await p.click(`.res.top1 [data-act="estDup"]`); await p.waitForFunction(n => EST.lista.length === n + 1, n1, { timeout: 15000 });
+  await p.click(`#estBox .lrow.on [data-act="estDup"]`); await p.waitForFunction(n => EST.lista.length === n + 1, n1, { timeout: 15000 });
   ok(true, 'estudo duplicado');
   const outro = await p.evaluate(() => EST.lista.find(e => e.id !== EST.id && e.nome === 'Novo estudo').id);
   await p.click(`[data-act="estDel"][data-id="${outro}"]`); await p.click(`[data-act="estDel"][data-id="${outro}"]`);

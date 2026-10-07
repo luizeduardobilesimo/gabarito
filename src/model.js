@@ -147,7 +147,7 @@ function compute(st, opt={}){
   // avisos do térreo e da circulação de veículos
   const T=m.ter; m.avisos=[...(T.warn||[]), ...m.vert.warn];
   if(m.gar) Object.entries(m.gar).forEach(([k,l])=>{ if(l && l.ok===false) m.avisos.push(`No ${nomePav(k)}, os carros não conseguem ir da rampa até a circulação — mude o acesso ou o tipo de rampa (use “Encontrar o melhor acesso”).`) });
-  if(m.gar && m.gar.ter && m.gTer>150 && m.gar.ter.count < m.gTer/st.regras.m2Vaga*0.4) m.avisos.push(`A garagem do térreo rende pouco (${m.gar.ter.count} vagas em ${nf(m.gTer,0)} m²): o hall que leva aos núcleos divide a área. Experimente mudar a posição do núcleo (Pavimento tipo) ou desligar a garagem no térreo.`);
+  if(m.gar && m.gar.ter && m.gTer>150 && m.gar.ter.count < m.gTer/st.regras.m2Vaga*0.4) m.avisos.push(`Térreo rende pouco: ${m.gar.ter.count} vagas em ${nf(m.gTer,0)} m². Mova o núcleo ou tire a garagem do térreo.`);
   if(m.lzLay.miss.length) m.avisos.push(`Não couberam: ${m.lzLay.miss.map(x=>x.nome).join(", ")}.`);
   m.custosExtra = m.custosExtra || [];
   runHooks("compute", m, st, opt);

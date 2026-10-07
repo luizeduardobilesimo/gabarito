@@ -101,7 +101,7 @@ Object.assign(ACT,{
   rmVert: ()=>{ if(S.lote.pts.length>3){ const n=S.lote.pts.length; S.lote.pts.pop(); S.lote.front=S.lote.front.filter(i=>i<n-1); S.lote.rec.length=n-1; if(!S.lote.front.length) S.lote.front=[0]; LADOAB.clear(); update(); if(S.lote.pts.length<=3) renderTab(); toast("Vértice removido") } else toast("O lote precisa de pelo menos 3 vértices") },
   rect: ()=>{ const f=Math.max(1,+document.getElementById("rf").value||20), p=Math.max(1,+document.getElementById("rp").value||40); S.lote.pts=[[0,0],[f,0],[f,p],[0,p]]; S.lote.front=[0]; S.lote.principal=0; S.lote.rec=[{},{},{},{}]; LADOAB.clear(); update(); fit2d(); fit3d(); toast(`Lote ${nf(f,1)} × ${nf(p,1)} m criado`) },
   bgCal: ()=>{ setView("impl"); setTool("calib"); toast("Clique em dois pontos de distância conhecida") },
-  bgX: ()=>{ BG=null; if(TOOL==="img"||TOOL==="calib") setTool("edit"); redraw2d(); renderTab(); toast("Imagem removida") },
+  bgX: ()=>{ BG=null; if(TOOL==="img"||TOOL==="calib") setTool("edit"); toolSegSync(); redraw2d(); renderTab(); toast("Imagem removida") },
   coords: ()=>importCoords(document.getElementById("coords").value),
   front: b=>{ const i=+b.dataset.i; const on=!S.lote.front.includes(i); S.lote.front = on? [...new Set([...S.lote.front,i])] : S.lote.front.filter(x=>x!==i); if(!S.lote.front.length){ S.lote.front=[i]; toast("O lote precisa de pelo menos uma frente") } update() },
   princ: b=>{ S.lote.principal=+b.dataset.i; update() },
@@ -451,12 +451,10 @@ STEP_R.clima = ()=>{
           grupos+GRP("Aparência")+ROW("Fundo",SEG("cfd.fundo",[["claro","claro"],["escuro","escuro"]],{fx:"cfdLook",rr:false}))+SW("cfd.vidro","Prédios em vidro (ver através)",{fx:"cfdLook"})+SLD("cfd.animVel","Velocidade da animação",0.1,4,0.1,"×",{fx:"save"}), {key:"cVer"}),
         {open:true, key:"cVer", sum:climaSum("ver"), info:"Toque num ponto do 3D para medir com a sonda: dali dá para soltar fumaça ou linhas de corrente."});
   }
-  return { sub, subKey:CSUB, body, after:()=>{ if(CSUB!=="v3d") climaInfo(); else if(typeof cfdStatus==="function") cfdStatus() } };
+  return { sub, subKey:CSUB, body, after:()=>{ if(CSUB==="sol" && window._last) try{ sunHours(S, window._last.m) }catch(e){}   // resultado do sol também quando a vista é o 3D
+    if(CSUB!=="v3d") climaInfo(); else if(typeof cfdStatus==="function") cfdStatus() } };
 };
-/* volumes do entorno: gerar vizinhos genéricos e ajustar nome/altura — logo antes da seção "Entorno" (src/ui/entorno.js: criar, desenhar, selecionar, apagar) */
-addCard("clima", { key:"ent", order:50, html:()=>SEC("Volumes e alturas", `<div class="row"><button class="btn sm" data-act="entGen">Gerar genéricos</button></div>
-    <div class="list">${S.entorno.map((e,i)=>`<div class="li" style="grid-template-columns:minmax(0,1fr) 92px 28px"><div class="inp"><input class="t" data-p="entorno.${i}.nome" data-t="s" data-fx="save" value="${esc(e.nome||"")}" aria-label="Nome do volume ${i+1}"></div><div class="inp"><input type="number" data-p="entorno.${i}.h" data-min="0" step="0.5" value="${e.h}" aria-label="Altura do volume ${i+1}"><em>m</em></div><button type="button" class="x" data-act="entX" data-i="${i}" aria-label="Remover ${esc(e.nome||"volume")}" title="Remover">×</button></div>`).join("")}</div>`,
-  {key:"ent", sum:`${S.entorno.length} volume${S.entorno.length!==1?"s":""}`, info:"Volumes vizinhos fazem sombra e desviam o vento. “Gerar genéricos” cria um vizinho em cada divisa (substitui os atuais); aqui você ajusta nome e altura de cada um."}) });
+/* entorno do Clima: a mesma seção "Entorno" do Terreno (src/ui/entorno.js: criar, desenhar, gerar genéricos, nomes e alturas, OSM) */
 function climaSum(k){
   const C=S.clima, c=S.cfd, dir=["N","NE","L","SE","S","SO","O","NO"][Math.round((C.ventoDir||0)/45)%8];
   if(k==="sol") return `21/${MESES[S.sol.mes-1]} · ${hhmm(S.sol.hora)}${S.sol.on?" · sombras no 3D":""}`;

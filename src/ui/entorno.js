@@ -182,9 +182,16 @@ function entBarRefresh(){
 function entSum(){ const L=entLista(), n=L.length, osm=L.filter(e=>e.osm).length; return n? `${n} edificaç${n>1?"ões":"ão"}${osm? ` · ${osm} do OSM`:""}` : "nenhuma" }
 function entCardInner(){
   const L=entLista(), n=L.length, osm=L.filter(e=>e.osm).length, sel=ENT.sel.size;
-  return `<div class="row"><button class="btn sm pri" data-act="entNova" title="Caixa de 20 × 20 m e 24 m no centro da vista">Nova caixa</button><button class="btn sm" data-act="entDesenha" title="Clique os cantos do vizinho na implantação">Desenhar</button><button class="btn sm" data-act="entEnq" ${n?"":"disabled"}>Enquadrar</button><button class="btn sm" data-act="entTodas" ${n?"":"disabled"}>Selecionar todas</button></div>
+  return `<div class="row"><button class="btn sm pri" data-act="entNova" title="Caixa de 20 × 20 m e 24 m no centro da vista">Nova caixa</button><button class="btn sm" data-act="entDesenha" title="Clique os cantos do vizinho na implantação">Desenhar</button><button class="btn sm" data-act="entGen" title="Um vizinho genérico em cada divisa (substitui os atuais)">Gerar genéricos</button><button class="btn sm" data-act="entEnq" ${n?"":"disabled"}>Enquadrar</button><button class="btn sm" data-act="entTodas" ${n?"":"disabled"}>Selecionar todas</button></div>
     ${sel? `<div class="row"><span class="note">${sel} selecionada${sel>1?"s":""}</span><button class="btn sm ghost" data-act="entNenhuma">Soltar</button><button class="btn sm ghost" data-act="entApagaSel">Apagar ${sel>1?"selecionadas":"selecionada"}</button></div>` : ""}
-    ${n? `<div class="row">${osm?`<button class="btn sm ghost" data-act="entApagaOsm">Apagar as do OSM</button>`:""}${!osm||n>osm?`<button class="btn sm ghost" data-act="entApagaTodas">Apagar todas</button>`:""}</div>` : ""}`;
+    ${n? `<div class="row">${osm?`<button class="btn sm ghost" data-act="entApagaOsm">Apagar as do OSM</button>`:""}${!osm||n>osm?`<button class="btn sm ghost" data-act="entApagaTodas">Apagar todas</button>`:""}</div>` : ""}
+    ${entNomesHTML()}`;
+}
+/* nomes e alturas das edificações desenhadas ou geradas (as do OSM se ajustam pela barra da implantação) — em "Mais opções" */
+function entNomesHTML(){
+  const L=(S.entorno||[]).map((e,i)=>[e,i]).filter(([e])=>e && !e.osm); if(!L.length) return "";
+  return ADV(`<div class="list">${L.map(([e,i])=>`<div class="li" style="grid-template-columns:minmax(0,1fr) 92px 28px"><div class="inp"><input class="t" data-p="entorno.${i}.nome" data-t="s" data-fx="save" value="${esc(e.nome||"")}" aria-label="Nome do volume ${i+1}"></div><div class="inp"><input type="number" data-p="entorno.${i}.h" data-min="0" step="0.5" value="${e.h}" aria-label="Altura do volume ${i+1}"><em>m</em></div><button type="button" class="x" data-act="entX" data-i="${i}" aria-label="Remover ${esc(e.nome||"volume")}" title="Remover">×</button></div>`).join("")}</div>`,
+    {key:"entNomes", label:"Nomes e alturas", fechar:"Fechar nomes e alturas"});
 }
 const entCardHTML = () => SEC("Entorno", `<div id="entCardBody">${entCardInner()}</div>` + (typeof mapaEntornoHTML==="function"? GRP("OpenStreetMap") + mapaEntornoHTML() : ""),
   {key:"entedit", sum:entSum(), info:"Prédios vizinhos: fazem sombra e mudam o vento. Na implantação, clique numa edificação para selecionar e arraste para mover; Shift soma; Shift + arrastar no vazio seleciona várias; setas ajustam; Delete apaga. O quadrado do canto redimensiona e a barra na base muda altura, giro, pátios e vazios. Ctrl+Z desfaz."});

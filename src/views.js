@@ -114,7 +114,9 @@ function toggleVaga(w){
 document.getElementById("calibOk").addEventListener("click",()=>{ const d=+document.getElementById("calibDist").value; if(BG && CAL && CAL.length===2 && d>0){ const meas=Math.hypot(CAL[1][0]-CAL[0][0],CAL[1][1]-CAL[0][1]); const k=d/meas, A=CAL[0]; BG.mpp*=k; BG.x=A[0]+(BG.x-A[0])*k; BG.y=A[1]+(BG.y-A[1])*k; toast("Escala calibrada. Agora desenhe o lote."); fitBG(); DRAWT="lote"; setTool("draw"); DRAW=[] } else if(!BG) toast("Envie uma imagem primeiro"); CAL=null; document.getElementById("calibBox").hidden=true; redraw2d() });
 document.getElementById("calibCancel").addEventListener("click",()=>{ CAL=null; document.getElementById("calibBox").hidden=true; setTool("edit") });
 function setTool(t, target){ TOOL=t; if(target) DRAWT=target; else if(t==="draw" && !target) DRAWT = DRAWT||"lote"; if(t!=="draw") DRAW=null; if(t!=="calib"){ CAL=null; document.getElementById("calibBox").hidden=true }
-  document.querySelectorAll("#toolSeg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.t===t && (!b.dataset.dt || b.dataset.dt===DRAWT))); hintFor(); redraw2d() }
+  toolSegSync(); hintFor(); redraw2d() }
+/* ferramentas da implantação: "Mover imagem" e "Calibrar" só existem com imagem de fundo */
+function toolSegSync(){ document.querySelectorAll("#toolSeg button").forEach(b=>{ b.setAttribute("aria-pressed", b.dataset.t===TOOL && (!b.dataset.dt || b.dataset.dt===DRAWT)); if(b.dataset.t==="img"||b.dataset.t==="calib") b.hidden=!BG }) }
 function hintFor(){ const h=document.getElementById("hint");
   const nomes={lote:"do lote","entorno":"do volume vizinho","vazio":"do vazio (pátio) dentro da edificação","lim:emb":"do limite do embasamento","lim:tor":"do limite das torres","lim:sub":"do limite do subsolo"};
   // dicas curtas (uma frase); somem no primeiro toque na planta ou depois de alguns segundos
@@ -131,7 +133,7 @@ function setView(v){
   const c3=document.getElementById("c3d"), is3=v==="3d"||v==="v3d";
   if(prev==="v3d" && v!=="v3d") cfdLeave();
   c3.hidden = !is3 || !V3.R; c2.hidden = is3;
-  document.getElementById("toolSeg").hidden = v!=="impl"; document.querySelectorAll("#toolSeg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.t===TOOL && (!b.dataset.dt || b.dataset.dt===DRAWT)));
+  document.getElementById("toolSeg").hidden = v!=="impl"; toolSegSync();
 document.getElementById("legend").hidden = v!=="3d" || !LEGON;
   document.getElementById("floorSeg").hidden = v!=="gar"; document.getElementById("rampSeg").hidden = v!=="gar"; document.getElementById("towerSeg").hidden = v!=="tipo";
   document.getElementById("climaSeg").hidden = v!=="clima";

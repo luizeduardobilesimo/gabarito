@@ -10,7 +10,7 @@ addCard("clima", { key:"viz", sub:"sol", order:45,
   html: ()=>{
     const V=S.vizinhanca, has=(S.entorno||[]).some(e=>e.pts&&e.pts.length>2&&+e.h>0);
     const body = SW("vizinhanca.on","Calcular o sol tirado dos vizinhos",{rr:true}) + (!V.on ? ""
-      : !has ? `<p class="note">Sem entorno: use “Gerar genéricos” em Volumes e alturas.</p>`
+      : !has ? `<p class="note">Sem entorno: use “Gerar genéricos” na seção Entorno.</p>`
       : `<div id="vzSum"></div><div id="vzTab"></div><div id="vzMeses"></div>`+
         SLD("vizinhanca.mes","Mapa do dia 21 de",1,12,1,"",{fmt:"mes"})+SW("vizinhanca.mapa","Mapa de horas perdidas na planta e no 3D",{fx:"vzMapa"})+
         `<div class="row"><button class="btn sm pri" data-act="vzAnim" id="vzAnimBtn">${VZ.anim?"❚❚ Pausar":"▶ Animar a sombra no ano"}</button></div>`);

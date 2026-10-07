@@ -28,13 +28,15 @@ const STEPS = ['terreno', 'regras', 'produto', 'viab', 'projeto', 'clima', 'cen'
     const errs = []; p.on('pageerror', e => errs.push('PE ' + e.message)); p.on('console', m => { if (m.type() === 'error') errs.push('CE ' + m.text()) });
     await p.goto('file://' + html.split(path.sep).join('/')); await p.waitForTimeout(2500);
     for (const s of steps) {
-      await p.click(`#rail [data-step=${s}]`); await p.waitForTimeout(900);
-      await p.screenshot({ path: path.join(out, `${md}-${th}-${s}.png`), fullPage: md === 'm' });
-      // sub-abas
+      await p.click(`#rail [data-step=${s}]`); await p.waitForTimeout(1500);
+      // sub-abas: a captura da etapa é sempre a 1ª sub-aba (a última visitada fica guardada no navegador)
       const subs = await p.$$eval('#phead .sub [data-act]', els => els.map(e => [e.dataset.act, e.dataset.v || e.dataset.k || ''])).catch(() => []);
+      const subSel = (act, v) => `#phead .sub [data-act="${act}"]` + (v ? `[data-v="${v}"],#phead .sub [data-act="${act}"][data-k="${v}"]` : '');
+      if (subs.length && await p.$eval(subSel(...subs[0]), e => e.getAttribute('aria-pressed') !== 'true').catch(() => false)) { await p.click(subSel(...subs[0])); await p.waitForTimeout(2200) }
+      await p.screenshot({ path: path.join(out, `${md}-${th}-${s}.png`), fullPage: md === 'm' });
       for (const [act, v] of subs.slice(1)) {
-        const sel = `#phead .sub [data-act="${act}"]` + (v ? `[data-v="${v}"],#phead .sub [data-act="${act}"][data-k="${v}"]` : '');
-        try { await p.click(sel, { timeout: 2000 }); await p.waitForTimeout(900); await p.screenshot({ path: path.join(out, `${md}-${th}-${s}-${v || act}.png`), fullPage: md === 'm' }) } catch (e) {}
+        // o 3D por software (swiftshader) leva 1–2 s para montar a vista da sub-aba
+        try { await p.click(subSel(act, v), { timeout: 20000 }); await p.waitForTimeout(2200); await p.screenshot({ path: path.join(out, `${md}-${th}-${s}-${v || act}.png`), fullPage: md === 'm' }) } catch (e) { errs.push(`sem captura de ${s}/${v || act}: ${e.message.split('\n')[0]}`) }
       }
     }
     console.log(`[${md}/${th}]`, errs.length ? '\n  ' + errs.join('\n  ') : 'sem erros');

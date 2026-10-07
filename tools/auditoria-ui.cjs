@@ -50,7 +50,7 @@ const ROOT = path.resolve(__dirname, '..'); const arg = (k, d) => { const i = pr
   }
   fs.writeFileSync(path.join(out, 'auditoria.json'), JSON.stringify(rel, null, 1));
   for (const r of rel) {
-    console.log(`\n## ${r.tela} — ${r.tot.campos} campos, ${r.tot.botoes} botões, ${r.tot.textoChars} caracteres de texto, painel ${r.tot.alturaPx}px`);
+    console.log(`\n## ${r.tela} — ${r.tot.visiveis} campos visíveis de ${r.tot.campos} · ${r.tot.botoes} botões · ${r.tot.textoChars} caracteres de texto · painel ${r.tot.alturaPx}px`);
     r.cards.forEach(c => console.log(`  - [${c.tipo}${c.tipo === 'recolhe' ? (c.aberto ? ' aberto' : ' fechado') : ''}] ${c.t}: ${c.campos} campos, ${c.botoes} botões, ${c.textoChars} chars/${c.notas} textos`));
     if (r.cort.length) console.log('  CORTES: ' + r.cort.join(' | '));
   }
