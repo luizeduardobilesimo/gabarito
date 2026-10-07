@@ -432,6 +432,57 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.15)}
   .cfdprobe{left:8px;right:8px;width:auto;bottom:8px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ===== UX v2: seções com resumo, ajuda ⓘ, mais opções, sub-abas (ver docs/UX.md) ===== */
+.app{grid-template-columns:76px clamp(360px,28vw,440px) minmax(0,1fr)}
+.kv{grid-template-columns:repeat(auto-fill,minmax(min(100%,138px),1fr))}
+.kv.three{grid-template-columns:repeat(auto-fill,minmax(min(100%,100px),1fr))}
+.fl{align-items:flex-start;line-height:1.3}
+.fl .info{margin-top:-1px}
+/* seção padrão: sempre recolhível, com resumo do que está dentro */
+details.card>summary{justify-content:flex-start;gap:8px;min-height:44px}
+details.card>summary>.st{flex:none;max-width:62%}
+details.card>summary>.sum{flex:1;min-width:0;text-align:right;font-family:var(--f-body);font-variation-settings:normal;font-weight:400;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+details.card>summary>.sum b{color:var(--ink-2);font-weight:600}
+details.card>summary .info{flex:none}
+details.card[open]>summary>.sum{visibility:hidden}
+details.card>summary:hover{background:color-mix(in srgb,var(--surface-2) 60%,transparent)}
+.card.res{border-color:color-mix(in srgb,var(--accent) 22%,var(--line))}
+.card.res>.ch h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-variation-settings:"wdth" 118}
+/* ajuda */
+.info{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1px solid var(--line-2);background:var(--surface);color:var(--muted);font:600 10px/1 var(--f-display);padding:0;cursor:pointer;flex:none;transition:color .15s,border-color .15s,background .15s}
+.info:hover,.info[aria-expanded="true"]{color:var(--accent);border-color:var(--accent);background:var(--accent-2)}
+.termo{text-decoration:underline dotted color-mix(in srgb,var(--muted) 70%,transparent);text-underline-offset:3px;cursor:help;border:0;background:none;padding:0;font:inherit;color:inherit}
+.termo:hover{color:var(--accent)}
+.pop{position:fixed;z-index:60;max-width:min(340px,calc(100vw - 24px));background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px 14px;font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.pop[hidden]{display:none}
+.pop h4{margin:0 0 4px;font-family:var(--f-display);font-variation-settings:"wdth" 110;font-size:13.5px;font-weight:620;color:var(--ink)}
+.pop .f{margin-top:8px;padding:6px 8px;border-radius:8px;background:var(--surface-2);font-family:var(--f-mono);font-size:11.5px;color:var(--ink)}
+.pop .ex{margin-top:6px;font-size:11.5px;color:var(--muted)}
+.pop .x{position:absolute;top:6px;right:6px;border:0;background:none;color:var(--muted);font-size:16px;line-height:1;padding:4px 6px;cursor:pointer}
+/* mais opções */
+.adv{display:grid;gap:10px}
+.advbtn{display:flex;align-items:center;gap:6px;border:0;background:none;padding:6px 0 2px;color:var(--accent);font-size:12px;font-weight:500;cursor:pointer;justify-self:start}
+.advbtn::after{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .18s}
+.advbtn[aria-expanded="true"]::after{transform:rotate(-135deg) translateY(-1px)}
+.advb{display:grid;gap:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.advb[hidden]{display:none}
+/* sub-abas de uma etapa */
+.subtabs{margin-top:2px}
+/* glossário */
+.gloss{position:fixed;inset:0;z-index:70;display:grid;place-items:center;background:color-mix(in srgb,var(--ink) 28%,transparent);padding:16px}
+.gloss[hidden]{display:none}
+.gloss .gb{width:min(620px,100%);max-height:min(80vh,720px);display:grid;grid-template-rows:auto auto minmax(0,1fr);background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.gloss .gh{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px}
+.gloss .gh h3{margin:0;font-family:var(--f-display);font-variation-settings:"wdth" 110;font-size:15px;font-weight:620}
+.gloss .gs{padding:0 16px 10px}
+.gloss .gl{overflow:auto;padding:0 16px 16px;display:grid;gap:2px}
+.gloss .gi{padding:9px 10px;border-radius:10px}
+.gloss .gi:hover{background:var(--surface-2)}
+.gloss .gi b{font-family:var(--f-display);font-weight:620;color:var(--ink)}
+.gloss .gi p{margin:2px 0 0;color:var(--ink-2);font-size:12.5px;line-height:1.5}
+.note.short{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media (max-width:900px){.app{grid-template-columns:minmax(0,1fr)}.pop{left:12px!important;right:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px));top:auto!important;max-width:none}}
 </style>
 
 <div class="app">

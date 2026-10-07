@@ -432,6 +432,57 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.15)}
   .cfdprobe{left:8px;right:8px;width:auto;bottom:8px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ===== UX v2: seções com resumo, ajuda ⓘ, mais opções, sub-abas (ver docs/UX.md) ===== */
+.app{grid-template-columns:76px clamp(360px,28vw,440px) minmax(0,1fr)}
+.kv{grid-template-columns:repeat(auto-fill,minmax(min(100%,138px),1fr))}
+.kv.three{grid-template-columns:repeat(auto-fill,minmax(min(100%,100px),1fr))}
+.fl{align-items:flex-start;line-height:1.3}
+.fl .info{margin-top:-1px}
+/* seção padrão: sempre recolhível, com resumo do que está dentro */
+details.card>summary{justify-content:flex-start;gap:8px;min-height:44px}
+details.card>summary>.st{flex:none;max-width:62%}
+details.card>summary>.sum{flex:1;min-width:0;text-align:right;font-family:var(--f-body);font-variation-settings:normal;font-weight:400;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+details.card>summary>.sum b{color:var(--ink-2);font-weight:600}
+details.card>summary .info{flex:none}
+details.card[open]>summary>.sum{visibility:hidden}
+details.card>summary:hover{background:color-mix(in srgb,var(--surface-2) 60%,transparent)}
+.card.res{border-color:color-mix(in srgb,var(--accent) 22%,var(--line))}
+.card.res>.ch h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-variation-settings:"wdth" 118}
+/* ajuda */
+.info{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1px solid var(--line-2);background:var(--surface);color:var(--muted);font:600 10px/1 var(--f-display);padding:0;cursor:pointer;flex:none;transition:color .15s,border-color .15s,background .15s}
+.info:hover,.info[aria-expanded="true"]{color:var(--accent);border-color:var(--accent);background:var(--accent-2)}
+.termo{text-decoration:underline dotted color-mix(in srgb,var(--muted) 70%,transparent);text-underline-offset:3px;cursor:help;border:0;background:none;padding:0;font:inherit;color:inherit}
+.termo:hover{color:var(--accent)}
+.pop{position:fixed;z-index:60;max-width:min(340px,calc(100vw - 24px));background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px 14px;font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.pop[hidden]{display:none}
+.pop h4{margin:0 0 4px;font-family:var(--f-display);font-variation-settings:"wdth" 110;font-size:13.5px;font-weight:620;color:var(--ink)}
+.pop .f{margin-top:8px;padding:6px 8px;border-radius:8px;background:var(--surface-2);font-family:var(--f-mono);font-size:11.5px;color:var(--ink)}
+.pop .ex{margin-top:6px;font-size:11.5px;color:var(--muted)}
+.pop .x{position:absolute;top:6px;right:6px;border:0;background:none;color:var(--muted);font-size:16px;line-height:1;padding:4px 6px;cursor:pointer}
+/* mais opções */
+.adv{display:grid;gap:10px}
+.advbtn{display:flex;align-items:center;gap:6px;border:0;background:none;padding:6px 0 2px;color:var(--accent);font-size:12px;font-weight:500;cursor:pointer;justify-self:start}
+.advbtn::after{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .18s}
+.advbtn[aria-expanded="true"]::after{transform:rotate(-135deg) translateY(-1px)}
+.advb{display:grid;gap:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.advb[hidden]{display:none}
+/* sub-abas de uma etapa */
+.subtabs{margin-top:2px}
+/* glossário */
+.gloss{position:fixed;inset:0;z-index:70;display:grid;place-items:center;background:color-mix(in srgb,var(--ink) 28%,transparent);padding:16px}
+.gloss[hidden]{display:none}
+.gloss .gb{width:min(620px,100%);max-height:min(80vh,720px);display:grid;grid-template-rows:auto auto minmax(0,1fr);background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.gloss .gh{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px}
+.gloss .gh h3{margin:0;font-family:var(--f-display);font-variation-settings:"wdth" 110;font-size:15px;font-weight:620}
+.gloss .gs{padding:0 16px 10px}
+.gloss .gl{overflow:auto;padding:0 16px 16px;display:grid;gap:2px}
+.gloss .gi{padding:9px 10px;border-radius:10px}
+.gloss .gi:hover{background:var(--surface-2)}
+.gloss .gi b{font-family:var(--f-display);font-weight:620;color:var(--ink)}
+.gloss .gi p{margin:2px 0 0;color:var(--ink-2);font-size:12.5px;line-height:1.5}
+.note.short{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media (max-width:900px){.app{grid-template-columns:minmax(0,1fr)}.pop{left:12px!important;right:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px));top:auto!important;max-width:none}}
 </style>
 
 <div class="app">
@@ -9548,7 +9599,7 @@ function applySun(){
 const getP=(o,p)=>p.split(".").reduce((a,k)=>a==null?a:a[k],o);
 function setP(o,p,v){ const ks=p.split("."); const last=ks.pop(); const t=ks.reduce((a,k)=>a[k],o); t[last]=v }
 const fmtIn=(v,pc,dec)=>{ if(v==null||v==="") return ""; const x=pc? v*100 : v; return +(+x).toFixed(dec??(pc?2:3)) };
-const hlp=t=> t? `<i class="hlp" title="${esc(t)}">?</i>` : "";
+const hlp=t=> t? INFO(t) : "";   // ajuda: botão ⓘ com explicação (termo do glossário ou texto) — src/ui/ux.js
 /* número compacto */
 function NUM(p,label,unit="",o={}){
   const v=getP(S,p), id="f-"+p.replace(/\./g,"-");
@@ -9766,7 +9817,7 @@ function renderKPIs(m,f){
   const el=document.getElementById("kpis"); if(el.innerHTML!==h) el.innerHTML=h;
 }
 function renderLive(m,f,fast){ const fn=STEP_LIVE[TAB]; if(fn) fn(m,f,fast); cardsFor(TAB, curSub()).forEach(c=>{ if(c.live) try{ c.live(m,f,fast) }catch(e){ console.error("[card "+c.key+"]",e) } }) }
-const curSub=()=> TAB==="projeto"? PSUB : TAB==="clima"? CSUB : null;
+const curSub=()=> TAB==="projeto"? PSUB : TAB==="clima"? CSUB : (typeof subAtual==="function"? subAtual(TAB) : null);
 
 /* ================= utilidades compartilhadas ================= */
 function genNeighbors(){
@@ -12597,6 +12648,108 @@ HOOK.pdf.push(async ctx=>{ const m=ctx.m, F=S.forma; if(!m || !m.forma || !F) re
     ...(F.aero? [["Plano do aeródromo", `limite ${nf(m.hLim,1)} m acima da soleira`, m.H>m.hLim+1e-6? "bad" : "ok"]] : [])]);
 });
 
+/* ================= glossário: siglas e termos explicados no botão ⓘ e no painel "Glossário" =================
+   Chave = sigla ou termo usado em INFO("…") / TERMO("…"). t = nome por extenso, d = explicação curta (1–3 frases),
+   f = fórmula ou referência (opcional), ex = exemplo (opcional). Mantenha a linguagem simples: quem lê não é especialista. */
+const GLOSS_DATA = {
+  /* --- urbanismo e regras --- */
+  "CA": { t:"Coeficiente de aproveitamento", d:"Quanto se pode construir em relação ao tamanho do terreno. O <b>básico</b> é gratuito; até o <b>máximo</b>, paga-se outorga onerosa.", f:"área computável ÷ área do terreno", ex:"Terreno de 1.000 m² com CA 4 → até 4.000 m² computáveis." },
+  "CA básico": { t:"CA básico", d:"Coeficiente que se constrói sem pagar contrapartida à prefeitura." },
+  "CA máximo": { t:"CA máximo", d:"Limite do coeficiente. A área entre o básico e o máximo é comprada da prefeitura (outorga onerosa)." },
+  "TO": { t:"Taxa de ocupação", d:"Parte do terreno que a projeção do prédio pode cobrir. Costuma ser maior no embasamento e menor nas torres.", f:"projeção ÷ área do terreno" },
+  "Permeabilidade": { t:"Taxa de permeabilidade", d:"Parte do terreno que precisa ficar livre e permeável (solo, jardim) para a água da chuva infiltrar." },
+  "Outorga": { t:"Outorga onerosa do direito de construir", d:"Valor pago à prefeitura para construir acima do CA básico, até o CA máximo.", f:"área acima do básico × R$/m² da outorga" },
+  "Recuo": { t:"Recuo", d:"Distância mínima entre a construção e a divisa do terreno com a rua (frontal)." },
+  "Afastamento": { t:"Afastamento", d:"Distância mínima entre a torre e as divisas laterais e de fundos. Pode crescer com a altura (H/n).", ex:"H/6 num prédio de 60 m → 10 m de afastamento." },
+  "H/n": { t:"Afastamento proporcional à altura", d:"Regra em que o afastamento é a altura do prédio dividida por um número (n). Quanto mais alto, mais longe da divisa." },
+  "Recuo progressivo": { t:"Recuo progressivo", d:"Afastamento que muda por faixa de altura: o prédio vai se afastando da divisa à medida que sobe (torre escalonada)." },
+  "Gabarito": { t:"Gabarito (altura máxima)", d:"Altura máxima permitida pela prefeitura ou por restrições como cone de aeroporto." },
+  "Embasamento": { t:"Embasamento", d:"Parte baixa do prédio, mais larga que a torre: garagens, térreo, lojas e lazer. Costuma ter recuos e TO próprios." },
+  "Não computável": { t:"Área não computável", d:"Área que não entra na conta do CA (ex.: garagens, áreas técnicas, parte das sacadas, conforme a lei local)." },
+  "Área computável": { t:"Área computável", d:"Área construída que conta para o coeficiente de aproveitamento." },
+  "Soleira": { t:"Cota de soleira", d:"Altura do piso do térreo em relação à calçada. Serve de referência para medir a altura do prédio." },
+  "Aeródromo": { t:"Plano de proteção de aeródromo", d:"Superfície imaginária perto de aeroportos que limita a altura das construções (regras do DECEA/COMAER)." },
+  "Plano diretor": { t:"Plano diretor", d:"Lei municipal que define zonas e regras de construção (CA, TO, recuos, alturas, usos)." },
+
+  /* --- produto e áreas --- */
+  "Área privativa": { t:"Área privativa", d:"Área de uso exclusivo da unidade (o que o cliente compra), sem as áreas comuns." },
+  "Eficiência": { t:"Eficiência do andar", d:"Quanto do andar vira área vendável. O resto é circulação, núcleo e paredes.", f:"área privativa ÷ área do andar", ex:"80% num andar de 400 m² → 320 m² privativos." },
+  "Andar tipo": { t:"Pavimento tipo", d:"Andar que se repete na torre, com as unidades residenciais." },
+  "Mix": { t:"Mix de tipologias", d:"Combinação de tipos de unidade em cada andar (ex.: 2 de 2 dormitórios + 2 de 3 dormitórios)." },
+  "Tipologia": { t:"Tipologia", d:"Tipo de unidade: studio, 1, 2, 3 dormitórios, com ou sem suíte." },
+  "Ático": { t:"Ático técnico", d:"Pavimento no topo para casa de máquinas, reservatórios e equipamentos. Em geral não é computável." },
+  "Duplex": { t:"Cobertura duplex", d:"Unidade no último andar com dois pavimentos (o de cima com terraço/lazer privativo)." },
+  "Sacada": { t:"Sacada", d:"Varanda da unidade. Algumas cidades não contam parte dela no CA." },
+  "Núcleo": { t:"Núcleo de circulação", d:"Bloco com escadas, elevadores, antecâmara, dutos e shafts, que se repete em todos os andares." },
+  "Antecâmara": { t:"Antecâmara", d:"Pequeno ambiente entre o hall e a escada de emergência que segura a fumaça (exigida em prédios altos)." },
+  "Escada PF": { t:"Escada à prova de fumaça", d:"Escada enclausurada com antecâmara ventilada. Exigida pelos bombeiros acima de certa altura." },
+  "Pé-direito": { t:"Pé-direito", d:"Altura de piso a piso de um andar. Define a altura total do prédio." },
+  "Lazer": { t:"Áreas comuns e lazer", d:"Salão, academia, piscina etc. Podem ficar no térreo, na laje do embasamento, num andar de lazer ou no rooftop." },
+
+  /* --- garagem --- */
+  "Vaga PCD": { t:"Vaga para pessoa com deficiência", d:"Vaga mais larga, com faixa de circulação, próxima dos acessos (NBR 9050). Percentual mínimo por lei." },
+  "Vaga idoso": { t:"Vaga para idoso", d:"Vaga reservada para pessoas idosas, próxima dos acessos. Percentual mínimo por lei." },
+  "Vaga presa": { t:"Vaga presa (gaveta)", d:"Vaga atrás de outra: para sair, o carro da frente precisa ser movido. Em geral vinculada à mesma unidade." },
+  "Rampa reta": { t:"Rampas retas empilhadas", d:"Rampas na mesma projeção, uma sobre a outra. Simples e econômicas." },
+  "Rampa alternada": { t:"Rampas alternadas (tesoura)", d:"Duas faixas lado a lado em sentidos opostos; o carro faz o retorno em U em cada pavimento." },
+  "Rampa helicoidal": { t:"Rampa helicoidal (caracol)", d:"Rampa circular que dá uma volta por pavimento. Ocupa menos comprimento; exige raios mínimos." },
+  "Elevador de carros": { t:"Elevador de carros", d:"Alternativa à rampa em lotes estreitos. Tem fila nos horários de pico: o sistema estima o tempo de espera." },
+  "Patamar": { t:"Patamar", d:"Trecho plano no começo e no fim da rampa, sem vagas, para o carro acomodar antes de entrar ou sair." },
+  "EV": { t:"Recarga de carro elétrico", d:"Vagas com ponto de recarga, posicionadas perto do quadro elétrico. Custo por ponto entra no orçamento." },
+
+  /* --- estrutura, terreno --- */
+  "Malha estrutural": { t:"Malha estrutural", d:"Posição dos pilares. Precisa servir à torre e à garagem ao mesmo tempo." },
+  "Transição": { t:"Transição estrutural", d:"Viga reforçada que recebe um pilar da torre que não pode descer reto (cairia numa vaga ou corredor). Encarece a estrutura." },
+  "Corte e aterro": { t:"Corte e aterro", d:"Terra retirada (corte) ou colocada (aterro) para nivelar o terreno nas cotas do projeto." },
+  "Contenção": { t:"Contenção", d:"Estrutura que segura o solo ao redor do subsolo (cortina, estaca prancha, parede diafragma)." },
+  "Lençol freático": { t:"Lençol freático", d:"Nível da água no solo. Escavar abaixo dele exige rebaixamento e impermeabilização, o que encarece a obra." },
+  "Curvas de nível": { t:"Curvas de nível", d:"Linhas que unem pontos de mesma altitude. Mostram a inclinação do terreno." },
+
+  /* --- financeiro --- */
+  "VGV": { t:"Valor geral de vendas", d:"Soma do preço de todas as unidades à venda. É a receita bruta potencial do empreendimento." },
+  "TIR": { t:"Taxa interna de retorno", d:"Rentabilidade anual do dinheiro investido, considerando quando cada valor entra e sai. Compare com a TMA.", ex:"TIR 25% a.a. com TMA 12% → o projeto rende mais que o mínimo exigido." },
+  "VPL": { t:"Valor presente líquido", d:"Lucro do projeto trazido para hoje, descontado pela TMA. Positivo = cria valor acima do mínimo exigido." },
+  "TMA": { t:"Taxa mínima de atratividade", d:"Rentabilidade mínima que o investidor exige para topar o projeto. Usada para calcular o VPL." },
+  "Margem": { t:"Margem", d:"Lucro em relação à receita.", f:"lucro ÷ receita" },
+  "Exposição": { t:"Exposição máxima de caixa", d:"Maior valor que o incorporador precisa ter colocado no projeto ao mesmo tempo (pior ponto do caixa acumulado)." },
+  "Payback": { t:"Payback", d:"Mês em que o caixa acumulado volta a ficar positivo (o dinheiro investido retorna)." },
+  "Terreno máximo": { t:"Valor máximo do terreno", d:"Quanto se poderia pagar pelo terreno mantendo a margem alvo." },
+  "CUB": { t:"Custo unitário básico", d:"Custo de referência por m² de construção, publicado todo mês pelos Sinduscons de cada estado (NBR 12721), por padrão de acabamento." },
+  "Custo ÷ CUB": { t:"Fator sobre o CUB", d:"Quanto o custo real da obra fica acima do CUB (fundações, elevadores, projetos e itens que o CUB não inclui)." },
+  "Área equivalente": { t:"Área equivalente", d:"Áreas mais baratas (garagem, áreas descobertas) convertidas em m² de custo padrão para aplicar o CUB (NBR 12721).", f:"área × coeficiente (ex.: garagem 0,55)" },
+  "INCC": { t:"Índice Nacional de Custo da Construção", d:"Índice que corrige custos de obra e as parcelas pagas pelo cliente até a entrega das chaves." },
+  "IPCA": { t:"Índice de preços ao consumidor amplo", d:"Inflação oficial. Costuma corrigir as parcelas depois da entrega das chaves." },
+  "ITBI": { t:"Imposto de transmissão de bens imóveis", d:"Imposto municipal pago na compra do terreno, somado às custas de escritura e registro." },
+  "RET": { t:"Regime especial de tributação", d:"Tributação simplificada para incorporações com patrimônio de afetação: alíquota única sobre a receita (em geral 4%)." },
+  "Permuta física": { t:"Permuta física", d:"O dono do terreno recebe unidades prontas do prédio em vez de dinheiro." },
+  "Permuta financeira": { t:"Permuta financeira", d:"O dono do terreno recebe um percentual da receita das vendas em vez de dinheiro na compra." },
+  "SPE": { t:"Sociedade de propósito específico", d:"Empresa criada só para o empreendimento. O dono do terreno pode entrar como sócio." },
+  "Plano empresário": { t:"Financiamento à produção (plano empresário)", d:"Empréstimo do banco para a obra, liberado conforme o andamento, quitado na entrega com os repasses dos clientes." },
+  "Repasse": { t:"Repasse", d:"Parte do preço que o cliente paga na entrega das chaves com financiamento bancário." },
+  "Distrato": { t:"Distrato", d:"Cancelamento da compra pelo cliente. Parte do valor pago fica retida; a unidade volta ao estoque." },
+  "Curva S": { t:"Curva S de obra", d:"Ritmo típico de gastos da obra: começa devagar, acelera no meio e desacelera no fim." },
+  "Sensibilidade": { t:"Análise de sensibilidade", d:"Mostra quanto a margem ou a TIR mudam quando uma premissa varia (preço, custo, prazo…). A barra maior é o risco maior." },
+  "Monte Carlo": { t:"Simulação de Monte Carlo", d:"Roda o estudo centenas de vezes sorteando variações nas premissas. Mostra a faixa provável de resultados.", ex:"P10 = 10% de chance de ficar abaixo; P50 = mediana; P90 = só 10% de chance de ficar acima." },
+  "Cenários": { t:"Cenários", d:"Versões pessimista, base e otimista do estudo, mudando preço, prazo de vendas, custo e juros ao mesmo tempo." },
+  "DRE": { t:"Demonstrativo de resultado", d:"Resumo da receita, dos custos e do lucro do empreendimento." },
+  "Ponto de indiferença": { t:"Ponto de indiferença", d:"Percentual de permuta que vale o mesmo que pagar o terreno em dinheiro. Abaixo dele, a permuta é melhor para o incorporador." },
+  "Tabela de vendas": { t:"Tabela de vendas", d:"Preço de cada unidade, valorizado por andar, sol, orientação e vista." },
+
+  /* --- clima e entorno --- */
+  "Entorno": { t:"Entorno", d:"Prédios e construções vizinhos. Fazem sombra e mudam o vento no terreno." },
+  "OSM": { t:"OpenStreetMap", d:"Mapa colaborativo e gratuito. O Gabarito busca nele prédios, ruas, calçadas, rios e áreas verdes ao redor do lote." },
+  "Horas de sol": { t:"Horas de sol direto", d:"Tempo em que um ponto recebe sol sem sombra de nenhum prédio, no dia escolhido." },
+  "Impacto de vizinhança": { t:"Impacto de vizinhança", d:"Quanto sol o novo prédio tira dos vizinhos. Usado em estudos de impacto (EIV)." },
+  "EIV": { t:"Estudo de impacto de vizinhança", d:"Estudo exigido pela prefeitura para empreendimentos grandes: sombra, vento, trânsito, paisagem." },
+  "Cp": { t:"Coeficiente de pressão", d:"Pressão do vento na fachada em relação ao vento livre. Positivo empurra, negativo suga." },
+  "LBM": { t:"Lattice Boltzmann", d:"Método numérico que simula o vento. Aqui é usado para comparar opções, não para dimensionar estrutura." },
+
+  /* --- normas --- */
+  "IN 09": { t:"IN 09 do CBMSC", d:"Instrução normativa dos Bombeiros de Santa Catarina sobre saídas de emergência (escadas, larguras, distâncias)." },
+  "NBR 9050": { t:"NBR 9050", d:"Norma de acessibilidade: rotas acessíveis, vagas, rampas, sanitários e unidades adaptáveis." },
+  "Distância a percorrer": { t:"Distância máxima a percorrer", d:"Caminho mais longo de uma porta de unidade até a escada de emergência. Tem limite em norma." },
+};
+
 /* ================= desfazer / refazer =================
    Pilha de diferenças JSON sobre S (histDiff/histPatch em src/calc/histdiff.js), até 200 passos.
    Um passo por mudança confirmada: save() chama histTouch(); o passo é fechado 500 ms depois da última mudança
@@ -13390,6 +13543,106 @@ HOOK.draw3d.push((grp, m)=>{
       const p=o.geometry.attributes.position; let zmin=Infinity; for(let k=0;k<p.count;k+=Math.max(1,Math.floor(p.count/24))) zmin=Math.min(zmin, topoZ(sf, p.getX(k), -p.getZ(k)));
       const dy=zmin-t.c; o.position.y+=dy; const nx_=kids[i+1]; if(nx_ && nx_.type==="LineSegments") nx_.position.y+=dy }
   });
+});
+
+/* ================= UX v2: componentes compartilhados do inspetor (ver docs/UX.md) =================
+   SEC(título, corpo, {key, open, sum, info, id, cls})  → seção recolhível padrão, com resumo do conteúdo no cabeçalho
+   RES(título, corpo, {id, aside})                       → bloco de resultado (fixo, sem campos), sempre no topo da etapa
+   ADV(corpo, {key, label})                              → "Mais opções": campos avançados escondidos até o usuário pedir
+   INFO(termo|texto)                                     → botão ⓘ que abre a explicação (glossário GLOSS ou o texto passado)
+   TERMO(sigla, rótulo?)                                 → sigla sublinhada no texto que abre a explicação ao clicar
+   SUBTABS(etapa, [[k,rótulo]…])                         → sub-abas de uma etapa (vão em R.sub); subAtual(etapa) → aba ativa
+   setSum(key, html)                                     → atualiza o resumo de uma seção sem recriar o painel
+   Glossário completo: botão "Glossário" no topo (abreGlossario()). */
+
+/* ---------- seções ---------- */
+function SEC(title, body, o={}){
+  const key=o.key||title;
+  return `<details class="card sec${o.cls?" "+o.cls:""}" data-key="${esc(key)}" ${o.open?"open":""} ${o.id?`id="${o.id}"`:""}><summary><span class="st">${title}</span>${o.info?INFO(o.info):""}<span class="sum" id="sum-${esc(key)}">${o.sum||""}</span></summary><div class="cb">${body}</div></details>`;
+}
+function RES(title, body, o={}){
+  return `<section class="card res${o.cls?" "+o.cls:""}" ${o.id?`id="${o.id}"`:""}><div class="ch"><h2>${title}</h2>${o.aside!=null?`<span class="aside" ${o.asideId?`id="${o.asideId}"`:""}>${o.aside}</span>`:""}</div><div class="cb">${body}</div></section>`;
+}
+function setSum(key, html){ const e=document.getElementById("sum-"+key); if(e && e.innerHTML!==html) e.innerHTML=html }
+
+/* ---------- mais opções ---------- */
+const UXADV = LS.get("gabarito.adv") || {};
+function ADV(body, o={}){
+  const k=(typeof TAB!=="undefined"?TAB:"")+":"+(o.key||"adv"), aberto=!!UXADV[k];
+  return `<div class="adv" data-adv="${esc(k)}"><button type="button" class="advbtn" data-act="advTog" aria-expanded="${aberto}">${aberto? (o.fechar||"Menos opções") : (o.label||"Mais opções")}</button><div class="advb" ${aberto?"":"hidden"}>${body}</div></div>`;
+}
+
+/* ---------- ajuda ---------- */
+const GLOSS = (typeof GLOSS_DATA!=="undefined")? GLOSS_DATA : {};
+function glossKey(t){ if(t==null) return null; const s=String(t); if(GLOSS[s]) return s; const u=s.toUpperCase(); return GLOSS[u]? u : null }
+function INFO(t, rot){
+  if(!t) return "";
+  const k=glossKey(t), nome = k? (GLOSS[k].t||k) : (rot||"esta opção");
+  return `<button type="button" class="info" data-info="${esc(k||t)}" aria-label="O que é ${esc(nome)}?" aria-expanded="false">i</button>`;
+}
+function TERMO(sigla, rot){ return `<button type="button" class="termo" data-info="${esc(sigla)}">${rot||sigla}</button>` }
+
+let POP=null, POPDE=null;
+function popFecha(){ if(POP) POP.hidden=true; if(POPDE){ POPDE.setAttribute("aria-expanded","false"); POPDE=null } }
+function popAbre(el){
+  if(!POP){ POP=document.createElement("div"); POP.className="pop"; POP.id="uxPop"; POP.setAttribute("role","dialog"); POP.hidden=true; document.body.appendChild(POP) }
+  if(POPDE===el){ popFecha(); return }
+  popFecha();
+  const raw=el.dataset.info, k=glossKey(raw), g=k? GLOSS[k] : null;
+  POP.innerHTML = `<button type="button" class="x" aria-label="Fechar">×</button>` + (g
+    ? `<h4>${esc(g.t||k)}</h4><div>${g.d}</div>${g.f?`<div class="f">${g.f}</div>`:""}${g.ex?`<div class="ex">${g.ex}</div>`:""}`
+    : `<div>${esc(raw)}</div>`);
+  POP.hidden=false; POPDE=el; el.setAttribute("aria-expanded","true");
+  if(matchMedia("(max-width:900px)").matches){ POP.style.left=""; POP.style.top=""; return }
+  const r=el.getBoundingClientRect(), pw=POP.offsetWidth, ph=POP.offsetHeight;
+  let x=Math.min(innerWidth-pw-12, Math.max(12, r.left-12)), y=r.bottom+8; if(y+ph>innerHeight-12) y=Math.max(12, r.top-ph-8);
+  POP.style.left=x+"px"; POP.style.top=y+"px";
+}
+document.addEventListener("click", e=>{
+  const i=e.target.closest("[data-info]");
+  if(i){ e.preventDefault(); e.stopPropagation(); popAbre(i); return }
+  if(POP && !POP.hidden && (!POP.contains(e.target) || e.target.closest(".x"))) popFecha();
+}, true);
+document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ popFecha(); const g=document.getElementById("uxGloss"); if(g && !g.hidden) g.hidden=true } });
+document.addEventListener("scroll", ()=>popFecha(), true);
+
+/* ---------- glossário completo ---------- */
+function abreGlossario(q=""){
+  let g=document.getElementById("uxGloss");
+  if(!g){ g=document.createElement("div"); g.className="gloss"; g.id="uxGloss"; g.hidden=true;
+    g.innerHTML=`<div class="gb" role="dialog" aria-modal="true" aria-labelledby="glossT"><div class="gh"><h3 id="glossT">Glossário</h3><button type="button" class="btn ghost sm" data-gx>Fechar</button></div>
+      <div class="gs"><div class="inp"><input class="t" id="glossQ" placeholder="Buscar termo — CA, VGV, recuo, CUB…" aria-label="Buscar termo" autocomplete="off"></div></div><div class="gl" id="glossL"></div></div>`;
+    document.body.appendChild(g);
+    g.addEventListener("click", e=>{ if(e.target===g || e.target.closest("[data-gx]")) g.hidden=true });
+    g.querySelector("#glossQ").addEventListener("input", e=>glossLista(e.target.value)); }
+  g.hidden=false; const inp=g.querySelector("#glossQ"); inp.value=q; glossLista(q); setTimeout(()=>inp.focus(),30);
+}
+function glossLista(q){
+  const n=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,""), qq=n(q);
+  const l=Object.entries(GLOSS).filter(([k,g])=>!qq || n(k+" "+g.t+" "+g.d).includes(qq)).sort((a,b)=>n(a[1].t||a[0]).localeCompare(n(b[1].t||b[0])));
+  document.getElementById("glossL").innerHTML = l.length? l.map(([k,g])=>`<div class="gi"><b>${esc(g.t||k)}</b>${g.t&&g.t!==k?` <span class="pill">${esc(k)}</span>`:""}<p>${g.d}</p>${g.f?`<div class="note" style="font-family:var(--f-mono)">${g.f}</div>`:""}</div>`).join("") : `<p class="note">Nada encontrado.</p>`;
+}
+(function botaoGlossario(){
+  const acts=document.querySelector(".top .acts"); if(!acts || document.getElementById("glossBtn")) return;
+  const b=document.createElement("button"); b.className="btn ghost"; b.id="glossBtn"; b.type="button"; b.title="Glossário de termos e siglas";
+  b.innerHTML=`<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg><span class="tl">Glossário</span>`;
+  b.addEventListener("click",()=>abreGlossario()); acts.insertBefore(b, acts.firstChild);
+})();
+
+/* ---------- sub-abas genéricas ---------- */
+const SUBX = LS.get("gabarito.subx") || {};
+const SUBDEF = {};
+function subAtual(step){ const o=SUBDEF[step]; if(!o) return null; const v=SUBX[step]; return o.some(x=>x[0]===v)? v : o[0][0] }
+function SUBTABS(step, opts){
+  SUBDEF[step]=opts; const cur=subAtual(step);
+  return `<div class="seg full subtabs" role="tablist" aria-label="Seções da etapa">${opts.map(([k,l])=>`<button type="button" role="tab" data-act="subx" data-s="${step}" data-v="${k}" aria-pressed="${cur===k}" aria-selected="${cur===k}">${l}</button>`).join("")}</div>`;
+}
+
+Object.assign(ACT, {
+  advTog: b=>{ const w=b.closest(".adv"), k=w.dataset.adv, d=w.querySelector(".advb"), on=d.hidden; d.hidden=!on; b.setAttribute("aria-expanded",on); b.textContent=on? "Menos opções" : "Mais opções"; UXADV[k]=on; LS.set("gabarito.adv",UXADV);
+    if(on) d.querySelectorAll('input[type=range]').forEach(r=>{ if(typeof paintRange==="function") paintRange(r) }) },
+  subx: b=>{ SUBX[b.dataset.s]=b.dataset.v; LS.set("gabarito.subx",SUBX); renderTab(); TB.scrollTop=0; const w=stepView(); if(w && w!==VIEW) setView(w) },
+  gloss: ()=>abreGlossario(),
 });
 
 /* ================= 1.1 tabela de vendas: card na Viabilidade, cores no 3D e na planta tipo, CSV/XLSX e PDF ================= */

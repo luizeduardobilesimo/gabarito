@@ -4,7 +4,7 @@
 const getP=(o,p)=>p.split(".").reduce((a,k)=>a==null?a:a[k],o);
 function setP(o,p,v){ const ks=p.split("."); const last=ks.pop(); const t=ks.reduce((a,k)=>a[k],o); t[last]=v }
 const fmtIn=(v,pc,dec)=>{ if(v==null||v==="") return ""; const x=pc? v*100 : v; return +(+x).toFixed(dec??(pc?2:3)) };
-const hlp=t=> t? `<i class="hlp" title="${esc(t)}">?</i>` : "";
+const hlp=t=> t? INFO(t) : "";   // ajuda: botão ⓘ com explicação (termo do glossário ou texto) — src/ui/ux.js
 /* número compacto */
 function NUM(p,label,unit="",o={}){
   const v=getP(S,p), id="f-"+p.replace(/\./g,"-");
@@ -222,7 +222,7 @@ function renderKPIs(m,f){
   const el=document.getElementById("kpis"); if(el.innerHTML!==h) el.innerHTML=h;
 }
 function renderLive(m,f,fast){ const fn=STEP_LIVE[TAB]; if(fn) fn(m,f,fast); cardsFor(TAB, curSub()).forEach(c=>{ if(c.live) try{ c.live(m,f,fast) }catch(e){ console.error("[card "+c.key+"]",e) } }) }
-const curSub=()=> TAB==="projeto"? PSUB : TAB==="clima"? CSUB : null;
+const curSub=()=> TAB==="projeto"? PSUB : TAB==="clima"? CSUB : (typeof subAtual==="function"? subAtual(TAB) : null);
 
 /* ================= utilidades compartilhadas ================= */
 function genNeighbors(){
