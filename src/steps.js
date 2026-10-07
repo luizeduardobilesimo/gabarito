@@ -333,9 +333,10 @@ STEP_LIVE.projeto = (m)=>{
   if(PSUB==="gar" && m.gar){
     const flo=Object.keys(m.gar).sort((a,b)=>{ const o=k=>k==="ter"?0:k[0]==="s"? -(+k.slice(1)) : +k.slice(1); return o(a)-o(b) });
     const ok=m.vagas>=m.vagasReq, gs=document.getElementById("garStat"); if(gs) gs.innerHTML = `<span class="pill ${ok?"ok":"bad"}">${ok?"atende":"faltam "+(m.vagasReq-m.vagas)}</span>`;
-    const q=m.quadroVagas, quadro = q? garQuadroRows(m).filter(([l])=>!/^Total/.test(l)) : [];
-    setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${nf(m.vagas/Math.max(1,m.units),2)} por unidade · estimativa ${m.vagasEst}</div></div></div>
-      ${quadro.length>1? `<table class="tbl">${quadro.map(([l,v])=>`<tr><td>${esc(l)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
+    const q=m.quadroVagas, quadro = q? garQuadroRows(m).filter(([l])=>!/^Total/.test(l)) : [], simples=quadro.every(([l])=>/^(Comuns|PCD|Idosos)$/.test(l));
+    const tipos = q? [q.comum!=null?`${q.comum} comuns`:"", q.pcd?`${q.pcd} PCD`:"", q.idoso?`${q.idoso} idosos`:""].filter(Boolean).join(" · ") : "";
+    setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${tipos? tipos+" · " : ""}${nf(m.vagas/Math.max(1,m.units),2)} por unidade · estimativa ${m.vagasEst}</div></div></div>
+      ${quadro.length>1 && !simples? `<table class="tbl">${quadro.map(([l,v])=>`<tr><td>${esc(l)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
       <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="Ver este pavimento"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).map(a=>`<p class="note" style="color:var(--warn)">${esc(a)}</p>`).join("")}`);
     const ri=document.getElementById("rampInfo"); if(ri && m.vert){ const V_=m.vert, s0=V_.strips[0], pend=V_.ok?"":" · verifique os avisos";
       ri.textContent = !s0? "" : V_.helix? `helicoidal Ø ${nf(2*V_.helix.Re,1)} m · faixa ${nf(V_.helix.faixa,2)} m · ${nf(V_.helix.incl*100,1)}% no eixo${pend}`
@@ -440,7 +441,7 @@ STEP_R.clima = ()=>{
       (c.emissor && on("fumaca")? `<div class="row sb"><span class="pill">fumaça no ponto da sonda</span><button class="btn sm ghost" data-act="emX">Voltar a barlavento</button></div>` : "");
     body =
       SEC("Simular", `<div class="row" style="flex-wrap:nowrap"><button class="btn pri" data-act="cfdPlay" style="flex:1">${typeof CFD!=="undefined"&&CFD.running?"Pausar":"Simular"}</button><button class="btn" data-act="cfdReset">Reiniciar</button></div><span class="cfstat note" id="cfdStat2"></span>
-        <div style="display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px;align-items:center">${compassSVG(C.ventoDir)}${SLD("clima.ventoVel","Velocidade a 10 m",1,20,0.5,"m/s",{fx:"cfdStart"})}</div>`+
+        <div style="display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px;align-items:center">${compassSVG(C.ventoDir)}${SLD("clima.ventoVel","Velocidade a 10 m",1,20,0.5,"m/s",{fx:"cfdStart",wide:false})}</div>`+
         ADV(ROW(`Entorno${INFO("Rugosidade")}`,SEG("cfd.rug",[["aberto","aberto"],["suburbano","subúrbio"],["urbano","urbano"]],{fx:"cfdStart",rr:false}))+
           ROW(`Precisão${INFO("“Alta” mostra melhor esteiras e cantos, mas leva minutos.","a precisão")}`,SEG("cfd.res",Object.entries(CFD_RES).map(([k,v])=>[k,v[1]]),{fx:"cfdStart",rr:false})), {key:"cSim"}),
         {open:true, key:"cSim", sum:climaSum("v3d"), info:"LBM"}) +

@@ -164,7 +164,7 @@ function ctxFade(mat, c, R){
   mat.transparent=true;
   mat.onBeforeCompile=sh=>{ sh.uniforms.ctxC={value:new THREE.Vector2(c[0], -c[1])}; sh.uniforms.ctxR={value:R};
     sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vCtxW;").replace("#include <begin_vertex>","#include <begin_vertex>\nvCtxW=(modelMatrix*vec4(transformed,1.0)).xyz;");
-    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vCtxW; uniform vec2 ctxC; uniform float ctxR;").replace("#include <dithering_fragment>","#include <dithering_fragment>\ngl_FragColor.a*=1.0-smoothstep(ctxR*0.7, ctxR, distance(vCtxW.xz, ctxC));") };
+    sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vCtxW; uniform vec2 ctxC; uniform float ctxR;").replace("#include <dithering_fragment>","#include <dithering_fragment>\ngl_FragColor.a*=1.0-smoothstep(ctxR*0.82, ctxR, distance(vCtxW.xz, ctxC));") };
   return mat;
 }
 HOOK.draw3d.push((grp, m)=>{
@@ -208,8 +208,8 @@ function ctxCamadasHTML(){
   if(!ctxDados() && !tem.length) return "";
   return `<div class="chips" id="ctxChips" role="group" aria-label="Camadas do entorno" style="margin-top:8px">${tem.map(([k,r])=>`<button type="button" class="chip" data-act="ctxCam" data-k="${k}" aria-pressed="${ctxCam(k)}" title="Mostrar ou esconder: ${r.toLowerCase()}">${r}</button>`).join("")}</div>
     ${ctxDados()? `<p class="note" id="ctxRes">${esc(ctxResumo())}</p>` : ""}
-    <div class="row" style="flex-wrap:nowrap;align-items:center">${ctxDados()||(S.entorno||[]).some(e=>e.osm)? `<button class="btn sm ghost" data-act="ctxApaga" title="Tira ruas, água, verde e as edificações do OSM (as desenhadas à mão ficam)">Apagar contexto</button>` : ""}
-      <div class="inp" style="width:92px;flex:none;margin-left:auto"><input type="number" step="50" min="100" max="1000" data-p="contexto.raio" data-min="100" data-max="1000" data-fx="save" value="${S.contexto.raio}" aria-label="Raio do contexto (ruas, água, verde) em metros" title="Raio do contexto: ruas, água e verde"><em>m</em></div>${INFO("Ruas, calçadas, ciclovias, rios, lagos, mar, praia, verde, praças e estacionamentos do OpenStreetMap, no raio ao lado (as edificações usam o raio da busca de prédios). Os chips só ligam e desligam o desenho na implantação e no 3D: as edificações continuam valendo para sol e vento; água, ruas e verde não fazem sombra. Com a topografia ligada, o 3D mostra só as edificações.")}</div>`;
+    <div class="row" style="flex-wrap:wrap;align-items:center;gap:8px">${ctxDados()||(S.entorno||[]).some(e=>e.osm)? `<button class="btn sm ghost" data-act="ctxApaga" title="Tira ruas, água, verde e as edificações do OSM (as desenhadas à mão ficam)">Apagar contexto</button>` : ""}
+      <span class="note" style="margin:0 0 0 auto;white-space:nowrap">Raio das ruas e água</span><div class="inp" style="width:92px;flex:none"><input type="number" step="50" min="100" max="1000" data-p="contexto.raio" data-min="100" data-max="1000" data-fx="save" value="${S.contexto.raio}" aria-label="Raio do contexto (ruas, água, verde) em metros" title="Raio do contexto: ruas, água e verde"><em>m</em></div>${INFO("Ruas, calçadas, ciclovias, rios, lagos, mar, praia, verde, praças e estacionamentos do OpenStreetMap, no raio ao lado (as edificações usam o raio da busca de prédios). Os chips só ligam e desligam o desenho na implantação e no 3D: as edificações continuam valendo para sol e vento; água, ruas e verde não fazem sombra. Com a topografia ligada, o 3D mostra só as edificações.")}</div>`;
 }
 Object.assign(ACT,{
   ctxCam: b=>{ const k=b.dataset.k; S.contexto.camadas[k]=!ctxCam(k); b.setAttribute("aria-pressed", ctxCam(k)); save(); redraw2d(); if(window._last && typeof rebuild3d==="function") rebuild3d(window._last.m) },

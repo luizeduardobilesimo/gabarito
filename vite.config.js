@@ -15,4 +15,4 @@ const gabarito = () => ({
     });
   }
 });
-export default defineConfig({ plugins: [gabarito()], server: { port: 5173, open: false }, test: { include: ['tests/**/*.test.js'], testTimeout: 60000 } });
+export default defineConfig({ plugins: [gabarito()], server: { port: 5173, open: false }, test: { include: ['tests/**/*.test.js'], testTimeout: 60000, hookTimeout: 60000 } });

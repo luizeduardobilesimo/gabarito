@@ -74,6 +74,7 @@ async function travamento(p, fn) {
   await p.click('#tabbody [data-act="otim"]');
   await p.waitForFunction(() => !OTRUN && OTIM, null, { timeout: 240000 });
   ok(await p.evaluate(() => Array.isArray(OTIM.res)), 'otimizador terminou no Worker', await p.evaluate(() => ({ opcoes: OTIM.res.length, testadas: OTIM.testadas, s: Math.round(OTIM.ms / 1000) })));
+  await p.evaluate(() => { SUBX.produto = 'prod'; LS.set('gabarito.subx', SUBX) });   // volta à sub-aba Produto (a de campos) para os testes seguintes
 
   // melhor acesso: cancelar e rodar até o fim
   await p.evaluate(() => goStep('projeto', 'gar')); await p.waitForTimeout(400); await ocioso(p);

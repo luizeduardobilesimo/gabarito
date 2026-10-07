@@ -27,7 +27,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       else fillP(e.pts,fc,fa);
       strokeP(e.pts,css("--ink"),cf? 0.75 : 1);
       if(on){ fillP(e.pts,css("--accent"),0.22); strokeP(e.pts,css("--accent"),2.4) }
-      if(V.s>nLbl) label(`${e.nome||"E"+(i+1)} · ${nf(e.h,0)} m`, w2s(G.centroid(e.pts)), {size:10}) }) };
+      if(V.s>nLbl) label(e.osm && V.s<9? `${nf(e.h,0)} m` : `${e.nome||"E"+(i+1)} · ${nf(e.h,0)} m`, w2s(G.centroid(e.pts)), {size:10}) }) };   // OSM: só a altura até chegar bem perto
   const rampDraw=(rp,dir)=>{ if(!rp) return; fillP(rp,css("--mark"),0.35); strokeP(rp,css("--mark"),1.4); if(dir){ const c=G.centroid(rp), h=(Math.hypot(rp[1][0]-rp[0][0],rp[1][1]-rp[0][1]))/2-1; arrow([c[0]-dir[0]*h,c[1]-dir[1]*h],[c[0]+dir[0]*h,c[1]+dir[1]*h],css("--ink"),1.5,7) } if(V.s>3) label(`rampa ${pct(S.estudo.rampaInc,0)}`, w2s(G.centroid(rp)), {size:10}) };
   g.clearRect(0,0,W,H); g.fillStyle=css("--surface-2"); g.fillRect(0,0,W,H);
   if(mode==="impl" && BG && opt.bg!==false){ g.globalAlpha=BG.op; const [x,y]=w2s([BG.x,BG.y]); g.drawImage(BG.img,x,y,BG.img.width*BG.mpp*V.s,BG.img.height*BG.mpp*V.s); g.globalAlpha=1 }

@@ -42,7 +42,7 @@ function finViabHTML(k){ return k==="prem"? finPremHTML() : k==="risco"? finRisc
 function finResHTML(){
   return RES("Resultado", `<div id="finTop"></div>`, {cls:"fres", aside:"", asideId:"vStat"}) +
     SEC("Fluxo de caixa acumulado", `<div id="cash"></div>`, {key:"cash", open:true, info:"Entradas menos saídas, mês a mês. O ponto mais baixo é a exposição máxima; o payback é quando a curva volta a zero."}) +
-    SEC("DRE do empreendimento", `<table class="tbl" id="dre"></table>`, {key:"dre", info:"DRE"});
+    SEC("DRE", `<table class="tbl" id="dre"></table>`, {key:"dre", info:"DRE"});
 }
 function finTopHTML(m, f){
   const F=S.fin, parts=[["Terreno e outorga",f.terreno+f.outorga,"var(--m-sub)"],["Obra e indiretos",f.obraTot+f.projetos+f.terra,"var(--m-ter)"],["Vendas, impostos, juros",f.corret+f.mkt+f.imp+f.permFin+f.juros,"var(--mark)"],["Lucro",Math.max(0,f.lucro),"var(--ok)"]];

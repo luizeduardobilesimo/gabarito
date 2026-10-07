@@ -25,7 +25,8 @@ function entApos(msg){ entPoda(); update(); if(msg) toast(msg); entCardRefresh()
 function entEscalaPos(e){ const b=entBBox(e); return [b[2], b[1]] }
 function entHandles(g, w2s, V){
   const sel=entSelList(), css_=n=>css(n);
-  entLista().forEach(e=>{ const on=ENT.sel.has(e.id); if(!on && V.s<1.2) return;
+  const nMin = entLista().length>40? 6 : 1.2;   // muitos vizinhos (OSM): vértices só de perto ou da selecionada
+  entLista().forEach(e=>{ const on=ENT.sel.has(e.id); if(!on && V.s<nMin) return;
     e.pts.forEach(q=>{ const [x,y]=w2s(q); g.fillStyle= on? css_("--accent") : css_("--muted"); const r=on?4:2.6; g.fillRect(x-r,y-r,2*r,2*r) }) });
   sel.forEach(e=>{
     (e.vazios||[]).forEach(v=>{ const ok=entVazioOk(e,v); g.strokeStyle= ok? css_("--accent") : css_("--bad"); g.setLineDash([5,4]); g.lineWidth=1.6; g.beginPath(); v.forEach((q,i)=>{ const [x,y]=w2s(q); i?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath(); g.stroke(); g.setLineDash([]);

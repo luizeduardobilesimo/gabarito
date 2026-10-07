@@ -127,10 +127,12 @@ function hintFor(){ const h=document.getElementById("hint");
 document.getElementById("toolSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; setTool(b.dataset.t, b.dataset.dt) });
 function setView(v){
   const prev=VIEW; VIEW=v; document.querySelectorAll("#viewSeg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.v===v));
+  { const vb=document.querySelector(`#viewSeg [data-v="${v}"]`), sg=vb&&vb.parentElement; if(sg && sg.scrollWidth>sg.clientWidth+2) sg.scrollLeft=Math.max(0, vb.offsetLeft-sg.offsetLeft-(sg.clientWidth-vb.offsetWidth)/2) }   // celular: a vista ativa fica à vista na faixa
   const c3=document.getElementById("c3d"), is3=v==="3d"||v==="v3d";
   if(prev==="v3d" && v!=="v3d") cfdLeave();
   c3.hidden = !is3 || !V3.R; c2.hidden = is3;
-  document.getElementById("toolSeg").hidden = v!=="impl"; document.getElementById("legend").hidden = v!=="3d" || !LEGON;
+  document.getElementById("toolSeg").hidden = v!=="impl"; document.querySelectorAll("#toolSeg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.t===TOOL && (!b.dataset.dt || b.dataset.dt===DRAWT)));
+document.getElementById("legend").hidden = v!=="3d" || !LEGON;
   document.getElementById("floorSeg").hidden = v!=="gar"; document.getElementById("rampSeg").hidden = v!=="gar"; document.getElementById("towerSeg").hidden = v!=="tipo";
   document.getElementById("climaSeg").hidden = v!=="clima";
   document.getElementById("andarBox").hidden = v!=="andar"; document.getElementById("tapSeg").hidden = !(v==="gar"||v==="andar"); document.getElementById("corteBox").hidden = v!=="3d";

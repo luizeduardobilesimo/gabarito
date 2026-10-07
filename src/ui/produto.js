@@ -174,7 +174,7 @@ function prLazerLive(m){
     + GRP("Outro") + `<button type="button" class="pr-mi" role="menuitem" data-act="lzAdd" data-i="-1">Ambiente em branco<span>30 m² · Térreo</span></button>`);
   const tot=hall+lz.c+lz.d;
   const pill=document.getElementById("lzPill"); if(pill) pill.innerHTML = miss.size? `<span style="color:var(--bad)">${miss.size} não coube${miss.size>1?"ram":""}</span>` : `${lz.n} ambiente${lz.n!==1?"s":""}`;
-  setHTML("lzMets", `<div class="met"><div class="l">Total do programa</div><div class="v">${m2(tot)}</div><div class="s">hall ${m2(hall)} · descoberto ${m2(lz.d)}</div></div>
+  setHTML("lzMets", `<div class="met"><div class="l">Total do programa</div><div class="v">${m2(tot)}</div><div class="s">com hall de ${m2(hall)}</div></div>
     <div class="met"><div class="l">Equipamentos</div><div class="v">≈ ${mi(m.lzCusto)}</div><div class="s">acabamento e mobiliário</div></div>`);
   const T=m.ter||{}, roofFree=Math.max(1,m.embA-m.T.reduce((s,t)=>s+t.A,0)), plate=m.T[0]?m.T[0].A:1;
   const cap=[["Térreo", T.HT||0, P.garTerOn? (T.HT||0)+m.gTer : T.hallDisp||1], ["Laje do emb.", lz.emb.c+lz.emb.d, roofFree], ["Pav. de lazer", lz.pav.c+lz.pav.d, plate*0.8], ["Rooftop", lz.cob.c+lz.cob.d, plate*0.85]].filter(r=>r[1]>0);

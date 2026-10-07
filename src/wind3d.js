@@ -379,11 +379,12 @@ function cfdEnter(){
   document.getElementById("cfdBar").hidden=false; document.getElementById("cfdLegend").hidden=false;
   cfdBarUI(); cfdStatus(); if(!CFD.raf) CFD.raf=requestAnimationFrame(cfdLoop);
 }
-function cfdLeave(){ if(V3.R) V3.R.toneMappingExposure=0.92; if(CFD.grp) CFD.grp.visible=false; if(V3.grp) V3.grp.visible=true; if(CFD.raf){ cancelAnimationFrame(CFD.raf); CFD.raf=null } document.getElementById("cfdBar").hidden=true; document.getElementById("cfdLegend").hidden=true; document.getElementById("cfdProbe").hidden=true; if(CFD.running) cfdPause(); applySun() }
+function cfdLeave(){ if(V3.R) V3.R.toneMappingExposure=0.92; if(CFD.grp) CFD.grp.visible=false; if(V3.grp) V3.grp.visible=true; if(CFD.raf){ cancelAnimationFrame(CFD.raf); CFD.raf=null } document.getElementById("cfdBar").hidden=true; document.getElementById("cfdLegend").hidden=true; document.getElementById("cfdProbe").hidden=true; document.getElementById("cfdProbe").dataset.k=""; if(CFD.running) cfdPause(); applySun() }
 function cfdStatus(msg){
   const el=document.getElementById("cfdStat"), el2=document.getElementById("cfdStat2"); const F=CFD.field, d=CFD.dom;
   const txt = msg || (!F? "Preparando a malha…" : `${CFD.running?"Simulando":"Pausado"} · passo ${nf(F.step,0)} · ${F.navg>2? "médias com "+nf(F.navg,0)+" amostras" : pct(Math.min(1,F.step/(1.2*d.nx/0.085)),0)+" até o regime"} · ${d.nx}×${d.ny}×${d.nz} células de ${nf(d.dx,1)} m`);
   if(el) el.textContent=txt; if(el2) el2.textContent=txt;
+  const pb=document.querySelector('#tabbody [data-act="cfdPlay"]'), lb=CFD.running?"Pausar":"Simular"; if(pb && pb.textContent!==lb) pb.textContent=lb;   // o painel acompanha o estado real
 }
 function cfdLegend(){
   const el=document.getElementById("cfdLegend"); if(!el) return; const v=S.cfd.var, [a,b]=cfdRange(v);
@@ -410,16 +411,21 @@ function cfdProbeAt(pt){
   const d=CFD.dom, wx=v[0]*d.f[0]+v[1]*d.pp[0], wy=v[0]*d.f[1]+v[1]*d.pp[1]; const th=(S.lote.norte||0)*Math.PI/180, north=[Math.sin(th),Math.cos(th)], east=[Math.cos(th),-Math.sin(th)];
   const az=(Math.atan2(wx*east[0]+wy*east[1], wx*north[0]+wy*north[1])*180/Math.PI+360)%360, rosa=["N","NE","L","SE","S","SO","O","NO"][Math.round(az/45)%8];
   const lw = smean!=null? LAWSON.find(l=>smean<l[0]) : null;
-  const el=document.getElementById("cfdProbe"); el.hidden=false;
-  el.innerHTML=`<div class="hd"><b>Sonda · ${nf(z,1)} m de altura</b><button class="btn sm" id="pbX" aria-label="Fechar">×</button></div>
-    <table class="tbl"><tr><td>Velocidade agora</td><td>${nf(sp,1)} m/s (${nf(sp/U,2)}×)</td></tr>${smean!=null?`<tr><td>Velocidade média</td><td>${nf(smean,1)} m/s</td></tr>`:""}
+  /* a sonda é atualizada a cada campo novo enquanto simula: o esqueleto (botões) só é refeito quando o ponto muda,
+     senão o clique em "Soltar fumaça aqui" se perdia porque o botão era recriado no meio do clique */
+  const el=document.getElementById("cfdProbe"); el.hidden=false; const key=pt.map(q=>q.toFixed(2)).join(",");
+  const tab=`<tr><td>Velocidade agora</td><td>${nf(sp,1)} m/s (${nf(sp/U,2)}×)</td></tr>${smean!=null?`<tr><td>Velocidade média</td><td>${nf(smean,1)} m/s</td></tr>`:""}
     <tr><td>Indo para</td><td>${rosa} · ${nf(az,0)}°</td></tr><tr><td>Componente vertical</td><td>${nf(v[2],2)} m/s</td></tr>
-    ${ti!=null?`<tr><td>Turbulência</td><td>${pct(ti,0)}</td></tr>`:""}<tr><td>Pressão (Cp)</td><td>${nf(cp,2)}</td></tr>${lw?`<tr><td>Conforto (Lawson aprox.)</td><td>${lw[2]}</td></tr>`:""}</table>
+    ${ti!=null?`<tr><td>Turbulência</td><td>${pct(ti,0)}</td></tr>`:""}<tr><td>Pressão (Cp)</td><td>${nf(cp,2)}</td></tr>${lw?`<tr><td>Conforto (Lawson aprox.)</td><td>${lw[2]}</td></tr>`:""}`;
+  if(el.dataset.k===key && el.querySelector(".tbl")){ const t=el.querySelector(".tbl"); if(t.innerHTML!==tab) t.innerHTML=tab; return }
+  el.dataset.k=key;
+  el.innerHTML=`<div class="hd"><b>Sonda · ${nf(z,1)} m de altura</b><button class="btn sm" id="pbX" aria-label="Fechar a sonda" title="Fechar">×</button></div>
+    <table class="tbl">${tab}</table>
     <div class="row" style="margin:6px 0 0"><button class="btn sm" id="pbSmoke">Soltar fumaça aqui</button><button class="btn sm" id="pbSeed">Linhas a partir daqui</button></div>`;
   const toW=()=>[x*d.f[0]+y*d.pp[0], x*d.f[1]+y*d.pp[1], z];
-  document.getElementById("pbX").onclick=()=>{ el.hidden=true; CFD.probe=null; disposeObj(CFD.probeMk); CFD.probeMk=null; render3() };
+  document.getElementById("pbX").onclick=()=>{ el.hidden=true; el.dataset.k=""; CFD.probe=null; disposeObj(CFD.probeMk); CFD.probeMk=null; render3() };
   document.getElementById("pbSmoke").onclick=()=>{ S.cfd.emissor=toW(); S.cfd.viz.fumaca=true; save(); cfdParticlesInit(); cfdBarUI(); if(TAB==="clima") renderTab(); toast("Fumaça solta neste ponto") };
-  document.getElementById("pbSeed").onclick=()=>{ S.cfd.semente=toW(); S.cfd.viz.linhas=true; save(); cfdLines(); cfdBarUI(); render3(); toast("Linhas de corrente passando por este ponto") };
+  document.getElementById("pbSeed").onclick=()=>{ S.cfd.semente=toW(); S.cfd.viz.linhas=true; save(); cfdLines(); cfdBarUI(); render3(); if(TAB==="clima") renderTab(); toast("Linhas de corrente passando por este ponto") };
   disposeObj(CFD.probeMk); const mk=new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.4,d.dx*0.35),12,10), new THREE.MeshBasicMaterial({color:0x111111})); mk.position.copy(LV(x,y,z)); CFD.probeMk=mk; CFD.grp.add(mk); render3();
 }
 /* ---------- barra flutuante ---------- */
