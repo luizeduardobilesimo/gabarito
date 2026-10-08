@@ -334,3 +334,7 @@ Execução de 05/10/2026 (protótipo local, 9 agentes em paralelo sobre a funda�
 - [x] 4.3 Mapa real e entorno automático — `calc/geo.js`, `ui/mapa.js` (Overpass só com o app servido por http).
 - [x] Cidades com regras pré-cadastradas — `calc/cidades.js` (7 cidades, valores ilustrativos a conferir).
 - [x] Escada mais rasa com núcleo na fachada — `layout.js` (vagas mantidas; ver nota no relatório sobre usar o contorno real nas garagens).
+
+## Próxima etapa — Evolução v2 (08/10/2026)
+
+Diagnóstico contra a colinha de viabilidade, relevo e ruas automáticos e construção personalizada por blocos: ver `docs/EVOLUCAO.md` (fases A–E, ordem e decisões pendentes do Luiz).
