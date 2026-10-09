@@ -4,6 +4,7 @@
    ctxOverpassQuery(lat,lon,raioPred,raioCtx) → texto da consulta (uma só)
    ctxDeOverpass(json, ref, o)  → dados do contexto {vias, calcadas, ciclovias, rios, agua, mar, areia, verde, pracas, estac, n}
        o.raio (m, recorte em círculo) · o.norte (graus, gira junto com a planta)
+   ctxBuscaResiliente(o) → busca completa → consulta leve (vias e prédios, raio menor) → vias do tile vetorial (OpenFreeMap), com tudo injetado (testável sem rede)
    ctxEntornoOSM(json, ref, lote, o) → edificações para S.entorno, classificadas (tipo: casa | residencial | comercial | outro)
    ctxFaixa(pts, w) / ctxFaixaLR(pts, w) → linha com largura vira polígono (ou bordas esquerda/direita para o 3D)
    Estado: S.contexto = {camadas:{ruas,calcadas,agua,verde,casas,predios}, raio, dados}. As edificações continuam em S.entorno
@@ -250,7 +251,7 @@ function ctxDeOverpass(json, ref, o={}){
       corrida(seq).forEach(c=>ctxClipLinha(c,Rc).forEach(p=>{ const q=ctxDP(p.pts); if(q.length<2) return;
         (ciclo? out.ciclovias : out.calcadas).push(Object.assign({p:ctxR1(q.map(gi)), w:+w.toFixed(1)}, !ciclo && t.footway!=="sidewalk"? {k:"cam"} : {})) }));
       return }
-    const w=larg.get(e.id), v={w:+w.toFixed(1), t:hw}; if(nome) v.n=nome; if(t.oneway==="yes"||t.oneway==="1"||t.oneway==="-1"||t.junction==="roundabout") v.um=1;
+    const w=larg.get(e.id), v={w:+w.toFixed(1), t:hw}; if(nome) v.n=nome; if(ctxNum(t.width)>1 && ctxNum(t.width)<60) v.m=1;   /* m = largura medida (tag width); sem ela, estimada pela classe */ if(t.oneway==="yes"||t.oneway==="1"||t.oneway==="-1"||t.junction==="roundabout") v.um=1;
     corrida(seq).forEach(c=>ctxClipLinha(c,Rc).forEach(p=>{ const q=ctxDP(p.pts); if(q.length>1) out.vias.push(Object.assign({p:ctxR1(q.map(gi))}, v)) }));
     // calçadas dos dois lados, abertas nos cruzamentos (só do lado em que a outra via chega)
     const [cl, cr]=ctxLadosCalcada(t); if(!(cl||cr)) return;
@@ -301,3 +302,58 @@ function ctxDeOverpass(json, ref, o={}){
 }
 /* tamanho aproximado (bytes de JSON) — o link somente leitura deixa o contexto de fora quando é grande */
 const ctxTamanho = d => d ? JSON.stringify(d).length : 0;
+
+/* ================= busca resiliente =================
+   Os espelhos públicos do Overpass oscilam. A busca desce degraus, e nenhuma falha apaga o que já está no estudo:
+   1) completa  2) leve: só vias e prédios num raio menor  3) reserva: vias com nome e classe do tile vetorial (sem largura medida). */
+function ctxOverpassQueryLeve(lat, lon, raioPred=100, raioVias=200){
+  const rb=Math.round(raioPred), rv=Math.round(Math.max(raioVias, raioPred)), b=ctxBBox(lat,lon,rv), BB=`(${b.s.toFixed(6)},${b.w.toFixed(6)},${b.n.toFixed(6)},${b.e.toFixed(6)})`;
+  return `[out:json][timeout:25];(way["building"](around:${rb},${lat},${lon});way["highway"](around:${rv},${lat},${lon}););out geom${BB};`;
+}
+/* "2026-10-05" → "05/10/2026" */
+function ctxQuandoBR(q){ const m=String(q||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m? `${m[3]}/${m[2]}/${m[1]}` : "" }
+/* o contexto guardado vale para este lote? (mesma origem e mesmo norte) */
+function ctxDadosValem(d, lat, lon, norte){
+  if(!d || !Array.isArray(d.vias) || !isFinite(d.lat) || !isFinite(d.lon)) return false;
+  const r=geoRef(lat,lon), p=geoParaLocal(d.lat, d.lon, r);
+  return Math.hypot(p[0],p[1])<5 && Math.abs((+d.norte||0)-(+norte||0))<0.5;
+}
+/* tiles (z/x/y) que cobrem o quadrado de lado 2·raio em volta do ponto */
+function ctxTileDe(lat, lon, z){ const n=Math.pow(2,z), s=Math.sin(lat*Math.PI/180); return { x:(lon+180)/360*n, y:(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*n } }
+function ctxTilesCobrindo(lat, lon, raio, z=14){
+  const r=geoRef(lat,lon), [s,w]=geoDeLocal(-raio,-raio,r), [n,e]=geoDeLocal(raio,raio,r), a=ctxTileDe(n,w,z), b=ctxTileDe(s,e,z), out=[];
+  for(let x=Math.floor(a.x); x<=Math.floor(b.x); x++) for(let y=Math.floor(a.y); y<=Math.floor(b.y); y++) out.push({z,x,y});
+  return out;
+}
+function ctxTilePonto(t, px, py, ext){ const n=Math.pow(2,t.z); return [ Math.atan(Math.sinh(Math.PI*(1-2*(t.y+py/ext)/n)))*180/Math.PI, (t.x+px/ext)/n*360-180 ] }
+const CTX_TILE_CLASSE = { motorway:"motorway", trunk:"trunk", primary:"primary", secondary:"secondary", tertiary:"tertiary", minor:"residential", service:"service", busway:"busway" };
+/* camadas decodificadas de um ou mais tiles ([{z,x,y,camadas:{transportation_name:{extent,feats}}}]) → dados do contexto (só vias) */
+function ctxDadosDeTiles(tiles, ref, o={}){
+  const R=o.raio||200, Rc=R*1.02, gi=ctxGira(o.norte), out={ vias:[], calcadas:[], ciclovias:[], rios:[], agua:[], mar:[], areia:[], verde:[], pracas:[], estac:[] };
+  tiles.forEach(t=>{ const L=t.camadas && t.camadas.transportation_name; if(!L) return; const ext=L.extent||4096;
+    L.feats.forEach(ft=>{ if(ft.tipo!==2) return; const hw=CTX_TILE_CLASSE[ft.props.class]; if(!hw) return;
+      const nome=ft.props.name? String(ft.props.name).slice(0,48) : undefined;
+      ft.geom.forEach(parte=>{ if(parte.length<2) return;
+        const pts=parte.map(q=>{ const [la,lo]=ctxTilePonto(t,q[0],q[1],ext); return geoParaLocal(la,lo,ref) });
+        ctxClipLinha(pts,Rc).forEach(c=>{ const q=ctxDP(c.pts); if(q.length<2) return; const v={p:ctxR1(q.map(gi)), w:CTX_VIA_W[hw], t:hw}; if(nome) v.n=nome; out.vias.push(v) }) }) }) });
+  if(out.vias.length>1500) out.vias.length=1500;
+  out.n=Object.fromEntries(Object.keys({vias:1,calcadas:1,ciclovias:1,rios:1,agua:1,mar:1,areia:1,verde:1,pracas:1,estac:1}).map(k=>[k,out[k].length]));
+  return out;
+}
+/* orquestra os degraus. Tudo injetado: fetchJson(consulta,{limite}) → json do Overpass · fetchTile(z,x,y) → Uint8Array · aoEstagio(nivel).
+   Devolve {nivel:"completa"|"leve", json, raioPred, raioCtx} | {nivel:"tile", dados, raioCtx} | {erro, falhas} — nunca lança. */
+async function ctxBuscaResiliente(o){
+  const lat=+o.lat, lon=+o.lon, raio=Math.max(30,Math.min(400,+o.raio||150)), rc=Math.max(raio,Math.min(1000,+o.raioCtx||350)), falhas=[], est=n=>{ if(o.aoEstagio) try{ o.aoEstagio(n) }catch(e){} };
+  const tenta=async(nivel, q, raioPred, raioCtx, limite)=>{ est(nivel); try{ const json=await o.fetchJson(q,{limite}); if(json) return {nivel, json, raioPred, raioCtx} }catch(e){ falhas.push(nivel+": "+((e&&e.message)||e)) } return null };
+  let r=await tenta("completa", ctxOverpassQuery(lat,lon,raio,rc), raio, rc, 80000); if(r) return r;
+  const rl=Math.round(Math.min(rc,200)), rp=Math.round(Math.min(raio,100));
+  r=await tenta("leve", ctxOverpassQueryLeve(lat,lon,rp,rl), rp, rl, 30000); if(r) return r;
+  if(o.fetchTile){
+    est("tile");
+    try{ const ts=ctxTilesCobrindo(lat,lon,rl,14).slice(0,4);
+      const got=(await Promise.all(ts.map(t=>Promise.resolve().then(()=>o.fetchTile(t.z,t.x,t.y)).then(b=>b? {...t, camadas:mvtLer(b,{camadas:["transportation_name"]})} : null).catch(e=>{ falhas.push("tile: "+((e&&e.message)||e)); return null })))).filter(Boolean);
+      if(got.length){ const dados=ctxDadosDeTiles(got, geoRef(lat,lon), {raio:rl, norte:o.norte}); if(dados.vias.length) return {nivel:"tile", dados, raioPred:0, raioCtx:rl} }
+    }catch(e){ falhas.push("tile: "+((e&&e.message)||e)) }
+  }
+  return { erro: falhas.length? falhas[falhas.length-1].replace(/^[a-z]+: /,"") : "sem conexão ou bloqueado", falhas };
+}

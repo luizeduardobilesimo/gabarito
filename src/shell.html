@@ -296,7 +296,7 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.15)}
 .cfdbar .pill{font-family:var(--f-body)}
 
 /* régua de indicadores */
-.kpis{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));background:var(--surface);border-top:1px solid var(--line)}
+.kpis{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));background:var(--surface);border-top:1px solid var(--line)}
 .kpi{padding:10px 14px;border-right:1px solid var(--line);min-width:0}
 .kpi:last-child{border-right:0}
 .kpi .l{font-family:var(--f-display);font-variation-settings:"wdth" 115;font-size:9.5px;font-weight:650;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px}
@@ -421,7 +421,7 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.15)}
   .rail button{padding:6px 4px;font-size:10px;min-width:50px}
   .rail button[aria-current="page"]::before{left:14px;right:14px;top:-6px;bottom:auto;width:auto;height:3px;border-radius:0 0 3px 3px}
   .rail .st{right:10px;top:4px}
-  .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
   .kpi{padding:7px 9px;border-bottom:1px solid var(--line)}
   .kpi .v{font-size:14px}
   .kpi .s{font-size:9.5px}
@@ -524,6 +524,7 @@ details.card>summary:hover{background:color-mix(in srgb,var(--surface-2) 60%,tra
 .kpi .l .termo{letter-spacing:inherit;text-transform:inherit;font-weight:inherit;color:inherit;text-decoration-color:color-mix(in srgb,var(--muted) 55%,transparent)}
 .kpi .l .termo:hover{color:var(--accent)}
 .kpi .s{font-size:10px}
+@media (min-width:901px) and (max-width:1400px){ .kpi{padding:8px 8px} .kpi .l{letter-spacing:.04em;font-size:9px;gap:4px} .kpi .v{font-size:14.5px} .kpi .s{font-size:9.5px} }
 /* listas compactas (estudos, versões, cenários): marcar para comparar · nome e números · ações */
 #estBox,#vsBox,#cenBox,#cmpBox{display:grid;gap:8px}
 .lrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 6px 8px 10px;border-radius:11px;background:var(--surface-2);border:1px solid transparent}

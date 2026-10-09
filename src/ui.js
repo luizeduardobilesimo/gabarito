@@ -166,7 +166,7 @@ function railStatus(m,f){
     terreno: m.A>10? "ok":"bad",
     regras: worst(s.ca==="warn"?"ok":s.ca, s.h, s.perm),
     produto: worst(s.tor, s.apto, s.vg),
-    viab: f.margem<0?"bad": f.margem<S.fin.margemAlvo?"warn":"ok",
+    viab: f.margemVGV<0||f.margemVGV<S.metas.margem.min?"bad": f.margemVGV<S.fin.margemAlvo?"warn":"ok",   // margem s/ VGV · metas em S.metas
   };
   Object.entries(map).forEach(([k,v])=>{ const e=document.getElementById("st-"+k); if(e){ e.hidden=false; e.className="st "+v } });
   const fs=document.getElementById("footStat"); if(fs){ const v=map[TAB]; if(v){ fs.className="pill "+v; fs.textContent={ok:"em conformidade",warn:"atenção",bad:"ajustar"}[v] } else { fs.className="pill"; fs.textContent=TAB==="cen"? `${(LS.get("gabarito.cenarios2")||[]).length} salvos` : "estudo" } }
@@ -208,7 +208,7 @@ function showModel(m, fast){
 }
 const renderTabLive=(m,f)=>renderLive(m,f,false);
 function renderKPIs(m,f){
-  const s=status(m,S), mg=f.margem<0?"bad":f.margem<S.fin.margemAlvo?"warn":"ok";
+  const s=status(m,S), sd=f.saude||saudeNegocio(S,m,f), sc=n=>({ruim:"bad",atencao:"warn",ok:"ok",otimo:"ok"})[n], mg=sc(sd.nivel.margem);
   // régua: rótulo (siglas abrem a explicação), valor e uma linha curta; o detalhe completo fica no title
   const k=(l,v,sub,st,tt)=>`<div class="kpi"${tt?` title="${esc(tt)}"`:""}><div class="l">${st?`<span class="dot ${st}"></span>`:""}${l}</div><div class="v">${v}</div><div class="s">${sub||"&nbsp;"}</div></div>`;
   const mic=v=>nf(v/1e6,1)+" mi", tor=`${m.T.length} torre${m.T.length>1?"s":""}`;
@@ -219,8 +219,9 @@ function renderKPIs(m,f){
     k(TERMO("CA"), nf(m.CA,2), `máx ${nf(S.regras.caMax,1)}`, s.ca, `Coeficiente de aproveitamento · básico ${nf(S.regras.caBas,1)} · máximo ${nf(S.regras.caMax,1)}`) +
     k("Altura", nf(m.H,1)+" m", `máx ${nf(S.regras.hMax,0)} m`, s.h) +
     k(TERMO("VGV"), mi(f.vgv), `${mi(f.vgv/Math.max(1,m.units))}/un`, null, `Valor geral de vendas · ${mi(f.vgv/Math.max(1,m.units))} por unidade`) +
-    k(TERMO("Margem"), pct(f.margem), `lucro ${mic(f.lucro)}`, mg, `Lucro ${mi(f.lucro)} · meta ${pct(S.fin.margemAlvo,0)}`) +
-    k(TERMO("TIR","TIR a.a."), f.tirA==null?"—":pct(f.tirA), `VPL ${mic(f.vpl)}`, f.tirA==null?"bad": f.tirA<S.fin.tma?"warn":"ok", `TIR ao ano · VPL ${mi(f.vpl)} · TMA ${pct(S.fin.tma,0)}`);
+    k(TERMO("Eficiência global","Eficiência"), pct(sd.eficGlobal,0), `${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)}`, sc(sd.nivel.efic), `Área privativa ÷ construída · referência ${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)} (${sd.tipologiaNome})`) +
+    k(TERMO("Margem s/ VGV","Margem"), pct(sd.margemVGV), `lucro ${mic(f.lucro)}`, mg, `Lucro ${mi(f.lucro)} · margem s/ VGV · meta ${pct(S.fin.margemAlvo,0)} · s/ receita ${pct(f.margem)}`) +
+    k(TERMO("TIR","TIR a.a."), f.tirA==null?"—":pct(f.tirA), `VPL ${mic(f.vpl)}`, sc(sd.nivel.tir), `TIR ao ano · VPL ${mi(f.vpl)} · alvo ${pct(S.metas.tir.alvo,0)} · TMA ${pct(S.fin.tma,0)}`);
   const el=document.getElementById("kpis"); if(el.innerHTML!==h) el.innerHTML=h;
 }
 function renderLive(m,f,fast){ const fn=STEP_LIVE[TAB]; if(fn) fn(m,f,fast); cardsFor(TAB, curSub()).forEach(c=>{ if(c.live) try{ c.live(m,f,fast) }catch(e){ console.error("[card "+c.key+"]",e) } }) }
@@ -255,7 +256,7 @@ function aplicarLoteGeo(pairs, fonte){
   const lp = pairs && pairs.length>=3 ? geoLoteDePares(pairs) : null;
   if(!lp){ toast("Preciso de pelo menos 3 pontos"); return false }
   S.lote.pts=lp.pts; S.lote.front=[]; S.lote.rec=S.lote.pts.map(()=>({})); normalizeLote(); S.lote.front=[0]; S.lote.principal=0;
-  S.lote.lat=lp.lat; S.lote.lon=lp.lon; S.lote.norte=0;
+  S.lote.lat=lp.lat; S.lote.lon=lp.lon; S.lote.norte=0; S.lote.geo=true;   // posicionado de verdade: as buscas do OSM e do relevo passam a valer
   renderTab(); fit2d(); fit3d(); toast(`${fonte} · ${m2(G.area(S.lote.pts))}`);
   return true;
 }

@@ -61,6 +61,7 @@ Campos:
    Para reduzir tráfego, `S` pode ir comprimido (gzip + base64) num campo `estado_gz` quando passar de ~200 kB.
 7. **Compartilhamento**: tabela `compartilhamentos (estudo_id, usuario_id, papel)` com papéis `leitor` e `editor`; o RLS de
    `estudos` e `versoes` libera leitura para leitores e escrita para editores. Link público de leitura opcional (`publico = true`).
+   - **Metas da empresa** (Fase A, `S.metas` + `S.fin.tma/margemAlvo`): hoje o "padrão da empresa" é `localStorage "gabarito.metas.padrao"` (`saudePadraoEmpresa()` / `saudeSalvarPadrao()` em `src/calc/saude.js`). Com o Supabase, trocar essas duas funções por leitura/gravação de uma linha por empresa (ex.: tabela `metas_empresa (empresa_id, metas jsonb, tma, margem_alvo)` ou o `Repo.regras` com `cidade = '*'`); a interface (`src/ui/saude.js`) não muda.
 8. **Biblioteca de regras**: a leitura do plano diretor com IA (`ai.js`) grava em `cidades_regras` com `status = 'rascunho'` e
    `autor = auth.uid()`. Só revisores (`perfis.revisor = true`) mudam para `publicada`; publicadas são legíveis por todos.
    Regras de Criciúma e Florianópolis entram como seed publicada.

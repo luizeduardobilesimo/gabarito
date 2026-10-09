@@ -202,7 +202,7 @@ function ctxConta(){
 const CTX_ROT = [["ruas","Ruas"],["calcadas","Calçadas"],["agua","Água"],["verde","Verde"],["casas","Casas"],["predios","Prédios"]];
 function ctxResumo(){ const d=ctxDados(); if(!d) return ""; const n=d.n||{}, p=[];
   if(n.vias) p.push(`${n.vias} trechos de via`); const ag=[n.mar?"mar":"", n.areia?"praia":"", n.agua? (n.agua>1? n.agua+" lagos":"lago") : "", n.rios? "rio":""].filter(Boolean); if(ag.length) p.push(ag.join(", "));
-  if(n.verde) p.push(`${n.verde} áreas verdes`); return p.join(" · ") + ` · raio ${nf(d.raio||0,0)} m`; }
+  if(n.verde) p.push(`${n.verde} áreas verdes`); return p.join(" · ") + ` · raio ${nf(d.raio||0,0)} m` + (d.nivel? " (reduzido)":"") + (d.quando? ` · busca de ${ctxQuandoBR(d.quando)}` : ""); }
 function ctxCamadasHTML(){
   const c=ctxConta(), tem=CTX_ROT.filter(([k])=>c[k]>0);
   if(!ctxDados() && !tem.length) return "";

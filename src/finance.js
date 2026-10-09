@@ -57,14 +57,16 @@ function finance(st, m, adj={}){
   const S_={receita:sum(c.receb), terreno:sum(c.terreno), outorga:sum(c.outorga), projetos:sum(c.projetos), obraTot:sum(c.obra), terra:sum(c.terra), mkt:sum(c.mkt), corret:sum(c.corret), imp:sum(c.imp), permFin:sum(c.permFin), juros:sum(c.juros)};
   const custo = S_.terreno+S_.outorga+S_.projetos+S_.obraTot+S_.terra+S_.mkt+S_.corret+S_.imp+S_.permFin+S_.juros;
   const lucro = S_.receita - custo, margem = S_.receita? lucro/S_.receita : 0;
+  const margemVGV = vgv>0? lucro/vgv : 0;   // convenção do mercado: lucro ÷ VGV (a margem s/ receita nominal fica em `margem`)
   const npv = r => cf.reduce((s,v,i)=>s+v/Math.pow(1+r,i),0);
   let tirM=null; { let lo=-0.5, hi=1; const a=npv(lo), b=npv(hi); if(a*b<0){ for(let i=0;i<100;i++){ const mid=(lo+hi)/2; (npv(lo)*npv(mid)<=0)? hi=mid : lo=mid } tirM=(lo+hi)/2 } }
   const tirA = tirM===null? null : Math.pow(1+tirM,12)-1;
   const rm=Math.pow(1+F.tma,1/12)-1, vpl=npv(rm);
   let cum=0, minCum=0; const cumA=cf.map(v=>{ cum+=v; if(cum<minCum) minCum=cum; return cum });
   let pay=null; for(let i=cumA.length-1;i>=0;i--){ if(cumA[i]<0){ pay=i+1<cumA.length?i+1:null; break } if(i===0) pay=0 }
-  const maxTerreno = terreno + (lucro - F.margemAlvo*S_.receita)/(1+F.itbi);
-  const out = {eqA,lazerC,extraC,obra,vgvB,permV,vgv,vRes,vLoja,terreno,itbi,outorga,terra,projetos,adm,conting,...S_,custo,lucro,margem,cf,cumA,c,tirA,vpl,exp:minCum,pay,maxTerreno,chaves,launch,lim,
+  const maxTerreno = terreno + (lucro - F.margemAlvo*vgv)/(1+F.itbi);   // a margem alvo é sobre o VGV
+  // `terreno` (abaixo, vindo de S_) = preço + ITBI desembolsados; terrenoPreco e terrenoITBI separam os dois
+  const out = {eqA,lazerC,extraC,obra,vgvB,permV,vgv,vRes,vLoja,terreno,itbi,outorga,terra,projetos,adm,conting,...S_,terrenoPreco:terreno,terrenoITBI:itbi,finOn:!!F.finOn,custo,lucro,margem,margemReceita:margem,margemVGV,cf,cumA,c,tirA,vpl,exp:minCum,pay,maxTerreno,chaves,launch,lim,
     orc, distratoV: dist? dist.loss : 0, distrato: dist, recebModo: RD? "det" : "simples", curvaModo: curva? st.flx.curva.modo : "sen"};
   if(!adj.noHooks) runHooks("finance", out, st, m, adj);
   return out;

@@ -96,11 +96,11 @@ describe('padrão = números atuais', () => {
 });
 
 describe('3.1 orçamento paramétrico', () => {
-  it('paramétrico a ±10% do método atual (todos os estudos de referência)', async () => {
+  it('paramétrico a ±12% do método atual (todos os estudos de referência)', async () => {   // era ±10% com garagem 0,55; com eqGar 0,8 (Fase A) o CUB × fator sobe nos estudos com mais subsolo
     for (const c of cenarios()) {
       const { B, s, mm } = await ref(c);
       const atual = B.finance(s, mm).obra, sp = estado(B, { ...c.S, orc: { modo: 'param' } }), par = B.finance(sp, mm).obra;
-      expect(Math.abs(par / atual - 1), c.nome).toBeLessThan(0.10);
+      expect(Math.abs(par / atual - 1), c.nome).toBeLessThan(0.12);
     }
   });
   it('cada coeficiente é editável e mexe no total', () => {

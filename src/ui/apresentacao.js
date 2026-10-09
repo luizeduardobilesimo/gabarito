@@ -68,10 +68,10 @@ function apHtmlVendas(m,f){
     <tr class="tot"><td>Total</td><td class="n">${m.units}</td><td class="n">${m2(m.priv)}</td><td class="n">${brl(m.priv?f.vgv/m.priv:0)}</td><td class="n">${mi(f.vgv)}</td></tr></table></div>${apAviso}</div>`;
 }
 function apHtmlNumeros(m,f){
-  const F=S.fin, mg=f.margem<0?"bad":f.margem<F.margemAlvo?"warn":"ok", ti=f.tirA==null?"bad":f.tirA<F.tma?"warn":"ok";
+  const F=S.fin, sd=f.saude||saudeNegocio(S,m,f), sc=n=>({ruim:"bad",atencao:"warn",ok:"ok",otimo:"ok"})[n], mg=sc(sd.nivel.margem), ti=sc(sd.nivel.tir), ef=sc(sd.nivel.efic);   // semáforos lidos de S.metas
   return `<div class="aps aps-split aps-num"><div class="aps-col"><div><div class="eb">Números-chave</div><h2>Resultado do empreendimento</h2></div>
     <div class="aps-tiles two">${apTile("VGV",mi(f.vgv),`${mi(f.vgv/Math.max(1,m.units))} por unidade`,"",true)}${apTile("Custo total",mi(f.custo),`${brl(f.custo/Math.max(1,m.constr))}/m² construído`)}${apTile("Lucro",mi(f.lucro),`sobre receita de ${mi(f.receita)}`,f.lucro<0?"bad":"")}
-    ${apTile("Margem",pct(f.margem),`meta ${pct(F.margemAlvo,0)}`,mg)}${apTile("TIR a.a.",f.tirA==null?"—":pct(f.tirA),`TMA ${pct(F.tma,0)} · VPL ${mi(f.vpl)}`,ti)}${apTile("Exposição máxima",mi(-f.exp),"pico de caixa negativo")}</div>
+    ${apTile("Margem s/ VGV",pct(sd.margemVGV),`meta ${pct(F.margemAlvo,0)} · s/ receita ${pct(f.margem)}`,mg)}${apTile("TIR a.a.",f.tirA==null?"—":pct(f.tirA),`alvo ${pct(S.metas.tir.alvo,0)} · VPL ${mi(f.vpl)}`,ti)}${apTile("Eficiência",pct(sd.eficGlobal),`${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)} · ${sd.tipologiaNome}`,ef)}${apTile("Exposição máxima",mi(-f.exp),"pico de caixa negativo")}</div>
     ${apAviso}</div><div class="aps-col"><div class="aps-card"><h3>Fluxo de caixa acumulado</h3>${cashSVG(f)}</div></div></div>`;
 }
 const AP_PASSOS = [

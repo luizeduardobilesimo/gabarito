@@ -9,7 +9,7 @@ function topoSum(m){
   const t=m&&m.topo; return `${T.pts.length} pontos${t? ` · térreo ${topoN(t.c)} m` : ""}`;
 }
 function topoCardHTML(){
-  const T=S.topo, sec=b=>SEC("Topografia", b, {key:"topografia", sum:topoSum(window._last&&window._last.m)});
+  const T=S.topo, sec=b=>SEC("Topografia", (typeof relevoBlocoHTML==="function"?relevoBlocoHTML():"")+b, {key:"topografia", sum:topoSum(window._last&&window._last.m)});
   const sw=`<div class="row sb" style="flex-wrap:nowrap">${SW("topo.on","Usar levantamento topográfico",{rr:true})}${INFO("Desligado: vale o desnível simples entre a frente e os fundos. Ligado: pontos cotados ou curvas de nível (CSV, KML, DXF) dão o corte, o aterro e a contenção reais.")}</div>`;
   if(!T.on) return sec(sw +
     KV(NUM("lote.desnivel","Desnível","m",{step:0.1,q:"frente fundos",help:"Diferença de nível entre a frente e os fundos do lote. Entra no movimento de terra."})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1,help:"Corte e aterro"})) + `<div class="fsub" id="sub-terra"></div>`);

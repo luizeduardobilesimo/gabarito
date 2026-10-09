@@ -179,3 +179,115 @@ describe('estado, link e clima', () => {
     expect(viz.length).toBe(st.entorno.length);
   });
 });
+
+/* ---------- busca resiliente (sem rede: tudo injetado) ---------- */
+describe('vector tile (MVT)', () => {
+  it('codifica e decodifica linhas, polígonos, textos e números', () => {
+    const buf = A.mvtCodifica({ transportation_name: { feats: [
+      { tipo: 2, props: { name: 'Rua Ä', class: 'minor', n: 5, f: 1.5 }, geom: [[[10, 10], [20, -5], [100, 300]]] },
+      { tipo: 3, props: {}, geom: [[[0, 0], [10, 0], [10, 10], [0, 0]]] }] }, outra: { feats: [{ tipo: 1, props: { a: 'b' }, geom: [[[7, 8]]] }] } });
+    const r = A.mvtLer(buf);
+    expect(Object.keys(r).sort()).toEqual(['outra', 'transportation_name']);
+    expect(r.transportation_name.extent).toBe(4096);
+    expect(r.transportation_name.feats[0]).toEqual({ tipo: 2, props: { name: 'Rua Ä', class: 'minor', n: 5, f: 1.5 }, geom: [[[10, 10], [20, -5], [100, 300]]] });
+    expect(r.transportation_name.feats[1].geom).toEqual([[[0, 0], [10, 0], [10, 10], [0, 0]]]);
+    expect(r.outra.feats[0].geom).toEqual([[[7, 8]]]);
+    expect(Object.keys(A.mvtLer(buf, { camadas: ['outra'] }))).toEqual(['outra']);
+  });
+  it('tile truncado lança erro (a busca resiliente captura)', () => {
+    const buf = A.mvtCodifica({ a: { feats: [{ tipo: 2, props: {}, geom: [[[1, 1], [50, 50]]] }] } });
+    expect(() => A.mvtLer(buf.slice(0, buf.length - 3))).toThrow();
+  });
+});
+
+describe('contexto: último resultado, consulta leve e tile', () => {
+  const lat = -29.335, lon = -49.727, ref = A.geoRef(lat, lon);
+  it('consulta leve: só vias e prédios, raio menor, tempo curto', () => {
+    const q = A.ctxOverpassQueryLeve(lat, lon, 100, 200);
+    expect(q).toMatch(/^\[out:json\]\[timeout:25\];/);
+    expect(q).toMatch(/way\["building"\]\(around:100,/); expect(q).toMatch(/way\["highway"\]\(around:200,/);
+    expect(q).not.toMatch(/waterway|natural|leisure|relation/);
+    expect(q.length).toBeLessThan(A.ctxOverpassQuery(lat, lon, 150, 350).length / 2);
+  });
+  it('data em português e validade do contexto guardado', () => {
+    expect(A.ctxQuandoBR('2026-10-05')).toBe('05/10/2026'); expect(A.ctxQuandoBR(undefined)).toBe('');
+    const d = { vias: [], lat, lon, norte: 10 };
+    expect(A.ctxDadosValem(d, lat, lon, 10)).toBe(true);
+    expect(A.ctxDadosValem(d, lat + 0.001, lon, 10)).toBe(false);      // lote levado para outro lugar
+    expect(A.ctxDadosValem(d, lat, lon, 40)).toBe(false);              // planta girada: as vias não casam mais
+    expect(A.ctxDadosValem(null, lat, lon, 0)).toBe(false); expect(A.ctxDadosValem({ vias: [] }, lat, lon, 0)).toBe(false);
+  });
+  it('largura medida (tag width) é marcada; sem ela a largura é estimada', () => {
+    const j = { elements: [way([[-100, 0], [100, 0]], { highway: 'residential', name: 'Rua M', width: '9' }), way([[0, -100], [0, 100]], { highway: 'residential', name: 'Rua E' })] };
+    const d = A.ctxDeOverpass(j, ref0, { raio: 150 });
+    expect(d.vias.find(v => v.n === 'Rua M')).toMatchObject({ w: 9, m: 1 });
+    expect(d.vias.find(v => v.n === 'Rua E').m).toBeUndefined();
+  });
+  it('tiles que cobrem o lote e conversão das vias do tile para o sistema local', () => {
+    const ts = A.ctxTilesCobrindo(lat, lon, 200, 14);
+    expect(ts.length).toBeGreaterThanOrEqual(1); expect(ts.length).toBeLessThanOrEqual(4);
+    expect(ts).toContainEqual({ z: 14, x: 5928, y: 9589 });
+    // uma rua leste-oeste passando pelo ponto, no tile 5928/9589 (extent 4096)
+    const p = A.ctxTileDe(lat, lon, 14), px = (p.x - 5928) * 4096, py = (p.y - 9589) * 4096;
+    const mPorUn = 40075016.686 * Math.cos(lat * Math.PI / 180) / Math.pow(2, 14) / 4096;
+    const tile = { z: 14, x: 5928, y: 9589, camadas: A.mvtLer(A.mvtCodifica({ transportation_name: { feats: [
+      { tipo: 2, props: { name: 'Rua do Teste', class: 'minor' }, geom: [[[Math.round(px - 150 / mPorUn), Math.round(py)], [Math.round(px + 150 / mPorUn), Math.round(py)]]] },
+      { tipo: 2, props: { name: 'Trilha', class: 'path' }, geom: [[[100, 100], [200, 200]]] }] } })) };
+    const d = A.ctxDadosDeTiles([tile], ref, { raio: 200 });
+    expect(d.vias.length).toBe(1);                                      // trilha ignorada
+    const v = d.vias[0];
+    expect(v.n).toBe('Rua do Teste'); expect(v.t).toBe('residential'); expect(v.w).toBe(7); expect(v.m).toBeUndefined();
+    expect(Math.abs(v.p[0][1])).toBeLessThan(2); expect(Math.abs(v.p[1][1])).toBeLessThan(2);   // passa pela origem, a menos de 2 m
+    expect(Math.abs(v.p[0][0] - v.p[1][0])).toBeGreaterThan(190);
+    expect(d.n.vias).toBe(1);
+  });
+});
+
+describe('ctxBuscaResiliente (completa → leve → tile → erro)', () => {
+  const lat = -29.335, lon = -49.727;
+  const jsonOk = { elements: [way([[-100, 0], [100, 0]], { highway: 'residential', name: 'Rua OK' })] };
+  const p = A.ctxTileDe(lat, lon, 14);
+  const tileBuf = A.mvtCodifica({ transportation_name: { feats: [{ tipo: 2, props: { name: 'Rua do Tile', class: 'tertiary' }, geom: [[[Math.round((p.x - 5928) * 4096) - 300, Math.round((p.y - 9589) * 4096)], [Math.round((p.x - 5928) * 4096) + 300, Math.round((p.y - 9589) * 4096)]]] }] } });
+  const base = { lat, lon, raio: 150, raioCtx: 350, norte: 0 };
+  const rodar = async (fj, ft) => { const est = [], q = []; const r = await A.ctxBuscaResiliente({ ...base, fetchJson: async (qq, o) => { q.push([qq, o && o.limite]); return fj(qq, q.length) }, fetchTile: ft, aoEstagio: n => est.push(n) }); return { r, est, q } };
+  it('a completa funcionou: não tenta mais nada', async () => {
+    const { r, est, q } = await rodar(() => jsonOk);
+    expect(r.nivel).toBe('completa'); expect(r.json).toBe(jsonOk); expect(r.raioPred).toBe(150); expect(r.raioCtx).toBe(350);
+    expect(est).toEqual(['completa']); expect(q.length).toBe(1); expect(q[0][0]).toMatch(/relation\["building"\]/);
+  });
+  it('a completa falha em todos os espelhos: tenta a leve, de raio menor', async () => {
+    const { r, est, q } = await rodar((qq, n) => { if (n === 1) throw new Error('erro 504'); return jsonOk });
+    expect(r.nivel).toBe('leve'); expect(r.raioPred).toBe(100); expect(r.raioCtx).toBe(200);
+    expect(est).toEqual(['completa', 'leve']);
+    expect(q[1][0]).toBe(A.ctxOverpassQueryLeve(lat, lon, 100, 200)); expect(q[1][1]).toBeLessThan(q[0][1]);
+  });
+  it('raios já pequenos não crescem na consulta leve', async () => {
+    const r = await A.ctxBuscaResiliente({ ...base, raio: 60, raioCtx: 120, fetchJson: async (q) => { if (/relation/.test(q)) throw new Error('x'); return jsonOk } });
+    expect(r.nivel).toBe('leve'); expect(r.raioPred).toBe(60); expect(r.raioCtx).toBe(120);
+  });
+  it('as duas falham: vias do tile vetorial (sem prédios e sem largura medida)', async () => {
+    const { r, est } = await rodar(() => { throw new Error('sem conexão') }, async () => tileBuf);
+    expect(est).toEqual(['completa', 'leve', 'tile']);
+    expect(r.nivel).toBe('tile'); expect(r.dados.vias[0]).toMatchObject({ n: 'Rua do Tile', t: 'tertiary', w: 8 });
+    expect(r.dados.vias[0].m).toBeUndefined(); expect(r.dados.n.vias).toBe(1);
+  });
+  it('tudo falha: devolve o erro (sem lançar) e a lista de falhas', async () => {
+    const { r } = await rodar(() => { throw new Error('erro 504') }, async () => { throw new Error('tile fora do ar') });
+    expect(r.erro).toBeTruthy(); expect(r.nivel).toBeUndefined(); expect(r.falhas.length).toBeGreaterThanOrEqual(3);
+    expect(r.falhas[0]).toMatch(/^completa: /);
+  });
+  it('tile corrompido ou vazio não quebra a busca', async () => {
+    const r1 = await rodar(() => { throw new Error('x') }, async () => new Uint8Array([1, 2, 3]));
+    expect(r1.r.erro).toBeTruthy();
+    const r2 = await rodar(() => { throw new Error('x') }, async () => A.mvtCodifica({ transportation_name: { feats: [] } }));
+    expect(r2.r.erro).toBeTruthy();
+  });
+  it('sem função de tile: o erro vem depois da leve', async () => {
+    const r = await rodar(() => { throw new Error('erro 429') });
+    expect(r.r.erro).toBe('erro 429'); expect(r.est).toEqual(['completa', 'leve']);
+  });
+  it('a resposta vazia de um espelho (null) conta como falha e desce o degrau', async () => {
+    const { r } = await rodar((q, n) => n === 1 ? null : jsonOk);
+    expect(r.nivel).toBe('leve');
+  });
+});

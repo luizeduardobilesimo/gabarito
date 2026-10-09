@@ -271,7 +271,7 @@ async function tEntorno(b) {
   ok(await desfazAte('S.entorno', ent0, 30), 'Ctrl+Z volta ao entorno inicial');
 
   // contexto do OpenStreetMap (Overpass respondido pelo fixture)
-  await ev(() => { S.lote.lat = -29.3362; S.lote.lon = -49.7222; S.mapa.raio = 160; S.contexto.raio = 320; S.entorno = []; save(); goStep('terreno') }); await W(600); await h.fim();
+  await ev(() => { S.lote.lat = -29.3362; S.lote.lon = -49.7222; S.lote.geo = true; S.mapa.raio = 160; S.contexto.raio = 320; S.entorno = []; save(); goStep('terreno') }); await W(600); await h.fim();
   await abre('entedit'); await p.click('#tabbody [data-act="mapaEntorno"]');
   ok(await espera(() => !!(S.contexto && S.contexto.dados) && S.entorno.length > 20, 60000), 'buscar entorno do OSM (fixture) traz contexto e edificações', await ev(() => ({ ent: S.entorno.length, osm: S.entorno.filter(e => e.osm).length })));
   await fim();
@@ -291,6 +291,22 @@ async function tEntorno(b) {
   await p.click('#tabbody [data-act="ctxApaga"]'); await fim();
   ok(await ev(() => S.contexto.dados === null && !S.entorno.some(e => e.osm)), 'apagar contexto tira camadas e prédios do OSM');
   await undo(); ok(await ev(() => !!S.contexto.dados && S.entorno.some(e => e.osm)), '  Ctrl+Z traz o contexto de volta');
+  // ruas → frentes (fixture: lote de esquina Avenida Beira-Mar × Rua Leonardo Truda, georreferenciado)
+  await ev(() => { S.lote.pts = [[55.43, 99.92], [68.23, 117.82], [42.71, 129.35], [29.92, 111.46]]; S.lote.front = [2]; S.lote.principal = 2; S.lote.rec = S.lote.pts.map(() => ({})); S.lote.acessoVei = 0.85; S.frentes.sug = null; update(); renderTab() }); await W(500); await h.fim();
+  const fr0 = await ev(() => JSON.stringify([S.lote.front, S.lote.principal, S.lote.acessoVei]));
+  await p.click('#tabbody [data-act="frDetectar"]');
+  ok(await espera(() => !!S.frentes.sug, 60000), 'detectar frentes pelas ruas (contexto do OSM já carregado)');
+  ok(await ev(a => JSON.stringify([S.lote.front, S.lote.principal, S.lote.acessoVei]) === a, fr0), '  nada muda antes de confirmar');
+  ok(await ev(() => S.frentes.sug.tipo === 'esquina' && S.frentes.sug.lados.some(l => l.nome === 'Avenida Beira-Mar')), '  esquina com a Avenida Beira-Mar');
+  await p.click('#tabbody [data-act="frAplicar"]'); await fim();
+  ok(await ev(() => S.lote.front.length === 2 && S.lote.principal === 0), 'aplicar sugestão marca as frentes e a principal');
+  await undo(); ok(await ev(a => JSON.stringify([S.lote.front, S.lote.principal, S.lote.acessoVei]) === a, fr0), '  Ctrl+Z desfaz a sugestão');
+  // sem georreferência a busca do OSM não roda e o card Localização se destaca
+  await ev(() => { S.lote.geo = false; S.contexto.dados = null; S.frentes.sug = null; update(); renderTab() }); await W(300);
+  await p.click('#tabbody [data-act="frDetectar"]'); await W(400);
+  ok(await ev(() => S.contexto.dados === null && /Posicione o lote no mapa/.test(document.getElementById('frBox').textContent)), 'sem georreferência: não busca e pede para posicionar');
+  ok(await ev(() => !!document.querySelector('details[data-key="local"]').open), '  card Localização abre');
+  await ev(() => { S.lote.geo = true; update(); renderTab() });
   await p.screenshot({ path: path.join(OUT, 'entorno-osm.png') });
   semErros(p, 'entorno'); await ctx.close();
 }

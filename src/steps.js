@@ -25,6 +25,9 @@ let LADOAB = new Set();   // lados abertos na lista para editar comprimento e re
 .edge .ed{grid-column:1/-1;padding-top:2px}
 .edge .ed .inp{max-width:none}
 .mets.m3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card.geoFoco{outline:2px solid var(--mark);outline-offset:2px}
+.geoNote{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.geoNote .note{margin:0}
 .mets.m3 .v{font-size:17px}
 .slh label{display:inline-flex;align-items:center;gap:6px}
 #compl .ur{grid-template-columns:100px 1fr 94px}
@@ -34,7 +37,7 @@ const TERRENO_LIM=[["emb","Embasamento"],["tor","Torres"],["sub","Subsolo"]];
 const terrenoSum = {
   contorno: ()=>`${S.lote.pts.length} vértices · ${m2(G.area(S.lote.pts))}`,
   lados: ()=>{ const n=S.lote.front.length; return `frente L${S.lote.principal+1}${n>1? ` · ${n} lados na rua`:""}` },
-  local: ()=>`${nf(+S.lote.lat||0,4)}, ${nf(+S.lote.lon||0,4)} · norte ${nf(+S.lote.norte||0,0)}°`,
+  local: ()=>S.lote.geo? `${nf(+S.lote.lat||0,4)}, ${nf(+S.lote.lon||0,4)} · norte ${nf(+S.lote.norte||0,0)}°` : `sem posição no mapa · norte ${nf(+S.lote.norte||0,0)}°`,
   lim: ()=>{ const l=TERRENO_LIM.filter(([k])=>S.custom[k]&&S.custom[k].length).map(([,n])=>n.toLowerCase()); return l.length? l.join(" · ") : "nenhum" },
 };
 STEP_R.terreno = ()=>{
@@ -52,11 +55,11 @@ STEP_R.terreno = ()=>{
     RES("Lote", `<div class="mets m3" id="loteRes"></div>`) +
     SEC("Contorno do lote", `<div class="seg full" role="group" aria-label="Como informar o lote">${metodos.map(([k,l,t])=>`<button type="button" data-act="tmeth" data-v="${k}" aria-pressed="${TMETH===k}" title="${t}" style="padding:5px 4px">${l}</button>`).join("")}</div>${forms[TMETH]}`,
       {key:"contorno", open:true, sum:terrenoSum.contorno(), info:"Escolha como informar o lote: desenhando os cantos na implantação, por frente × fundo, colando coordenadas, sobre uma imagem calibrada ou no mapa de satélite. Depois, ajuste arrastando os vértices."}) +
-    SEC("Lados e frentes", `<div class="list" id="edges"></div>` + GRP("Acessos na frente principal") +
+    SEC("Lados e frentes", `<div class="list" id="edges"></div>` + (typeof frHTML==="function" ? `<div id="frBox">${frHTML()}</div>` : "") + GRP("Acessos na frente principal") +
       SLD("lote.acessoPed","Pedestres",0.05,0.95,0.01,"%",{pct:true,help:"Posição da entrada de pedestres ao longo da frente principal: 0% é o início do lado e 100% o fim."}) +
       SLD("lote.acessoVei","Veículos",0.05,0.95,0.01,"%",{pct:true,sub:"",help:"Posição da entrada de veículos (rampas e faixa da garagem) ao longo da frente principal. Se cair sobre um núcleo, o acesso é deslocado."}),
       {key:"lados", open:true, sum:terrenoSum.lados(), info:"Marque os lados que dão para a rua e a frente principal (amarela): ela recebe lojas, hall e acessos. A seta de cada lado abre o comprimento e os recuos próprios daquele lado."}) +
-    SEC("Localização", KV(NUM("lote.lat","Latitude","°",{step:0.0001,help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas e serve ao sol, ao entorno do OpenStreetMap e aos levantamentos em lat/lon ou UTM."})+NUM("lote.lon","Longitude","°",{step:0.0001,help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas."})+NUM("lote.norte","Norte","°",{step:1,help:"Rotação do norte em relação ao topo da planta."})),
+    SEC("Localização", `<div class="geoNote" id="geoNote" ${S.lote.geo?"hidden":""}><span class="note">Lote sem posição no mapa.</span><button class="btn sm pri" data-act="geoMapa">Posicionar no mapa</button></div>` + KV(NUM("lote.lat","Latitude","°",{step:0.0001,fx:"geo",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas e serve ao sol, ao entorno do OpenStreetMap e aos levantamentos em lat/lon ou UTM."})+NUM("lote.lon","Longitude","°",{step:0.0001,fx:"geo",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas."})+NUM("lote.norte","Norte","°",{step:1,help:"Rotação do norte em relação ao topo da planta."})),
       {key:"local", sum:terrenoSum.local()}) +
     (typeof topoCardHTML==="function" ? topoCardHTML() : SEC("Topografia", KV(NUM("lote.desnivel","Desnível frente→fundos","m",{step:0.1})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1}))+`<div class="fsub" id="sub-terra"></div>`, {key:"topografia"})) +
     SEC("Limites especiais", `<div class="list">${TERRENO_LIM.map(([k,l])=>{ const has=S.custom[k]&&S.custom[k].length; return `<div class="li"><span class="dot ${has?"ok":""}"></span><span class="tt">${l}</span><span class="row" style="gap:4px"><button class="btn sm" data-act="lim" data-k="${k}">${has?"Redesenhar":"Desenhar"}</button>${has?`<button class="btn sm ghost" data-act="limx" data-k="${k}">Limpar</button>`:""}</span></div>` }).join("")}</div>`,
@@ -71,11 +74,11 @@ function terrenoAfter(){
 function terrenoLado(i, m){
   const Lt=S.lote, fr=Lt.front.includes(i), pr=Lt.principal===i, ab=LADOAB.has(i), r=Lt.rec[i]||{}, own=r.e!=null||r.t!=null, len=G.edgeLen(Lt.pts,i), ult=(i+1)%Lt.pts.length===0;
   const fld=(id,lab,inp)=>`<div class="fld"><label class="fl" for="${id}">${lab}</label>${inp}</div>`;
-  return `<div class="edge${pr?" front":""}${ab?" open":""}"><b data-act="ladoAb" data-i="${i}">L${i+1}</b><span class="lv" data-act="ladoAb" data-i="${i}">${nf(len,2)} m${own?`<i>recuo próprio</i>`:""}</span>
+  return `<div class="edge${pr?" front":""}${ab?" open":""}"><b data-act="ladoAb" data-i="${i}">L${i+1}</b><span class="lv" data-act="ladoAb" data-i="${i}">${nf(len,2)} m${own?`<i>recuo próprio</i>`:""}${typeof frLadoTag==="function"? frLadoTag(i) : ""}</span>
     <span class="ops"><button type="button" class="tag alt" data-act="front" data-i="${i}" aria-pressed="${fr}" title="${fr?"Lado na rua — clique para tirar":"Marcar como lado na rua"}">rua</button>${fr?`<button type="button" class="tag" data-act="princ" data-i="${i}" aria-pressed="${pr}" title="Frente principal: lojas, hall e acessos">principal</button>`:""}<button type="button" class="xp" data-act="ladoAb" data-i="${i}" aria-expanded="${ab}" aria-label="${ab?"Fechar":"Editar"} o lado L${i+1}" title="Comprimento e recuos do lado"></button></span>
     ${ab? `<div class="ed kv three">${fld("lado-len-"+i,"Comprimento",`<div class="inp"><input id="lado-len-${i}" type="number" step="0.01" min="0.1" data-len="${i}" value="${len.toFixed(2)}" ${ult?`disabled title="O último lado fecha o contorno: ajuste os outros"`:""}><em>m</em></div>`)}
       ${fld("lado-re-"+i,`Recuo emb.${INFO("Recuo do embasamento só neste lado. Vazio = regra geral (recuo frontal nas frentes; lateral/fundos nas divisas).")}`,`<div class="inp"><input id="lado-re-${i}" type="number" step="0.25" min="0" data-rec="${i}" data-rk="e" value="${r.e??""}" placeholder="${nf(fr?S.regras.recFrente:S.regras.recEmb,2)}"><em>m</em></div>`)}
-      ${fld("lado-rt-"+i,"Recuo torre",`<div class="inp"><input id="lado-rt-${i}" type="number" step="0.25" min="0" data-rec="${i}" data-rk="t" value="${r.t??""}" placeholder="${nf(fr?S.regras.recFrente:m.afast,2)}"><em>m</em></div>`)}</div>` : ""}</div>`;
+      ${fld("lado-rt-"+i,"Recuo torre",`<div class="inp"><input id="lado-rt-${i}" type="number" step="0.25" min="0" data-rec="${i}" data-rk="t" value="${r.t??""}" placeholder="${nf(fr?S.regras.recFrente:m.afast,2)}"><em>m</em></div>`)}${typeof frLadoCampo==="function"? frLadoCampo(i) : ""}</div>` : ""}</div>`;
 }
 /* lado aberto na lista fica destacado na implantação */
 HOOK.draw2d.push((g, c)=>{
@@ -88,9 +91,11 @@ STEP_LIVE.terreno = (m)=>{
   ensureRec(); const L=S.lote.pts, n=L.length, nfr=S.lote.front.length, pr=S.lote.principal;
   [...LADOAB].forEach(i=>{ if(i>=n) LADOAB.delete(i) });
   setHTML("edges", L.map((_,i)=>terrenoLado(i, m)).join(""));
+  if(typeof frHTML==="function") setHTML("frBox", frHTML());
   const met=(l,v,s)=>`<div class="met"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
   setHTML("loteRes", met("Área", m2(m.A), `${n} lados`) + met("Perímetro", nf(G.perimeter(L),1)+" m", `${nfr} lado${nfr>1?"s":""} na rua`) + met("Frente principal", `L${pr+1}`, `${nf(G.edgeLen(L,pr),1)} m`));
   Object.entries(terrenoSum).forEach(([k,f])=>setSum(k, f()));
+  { const gn=document.getElementById("geoNote"); if(gn) gn.hidden=!!S.lote.geo }
   { const T=m.ter||{}; setSub("lote.acessoVei", T.drive0? `${T.drive0.dv? nf(T.drive0.dv[1]-T.drive0.dv[0],1)+" m de largura (rampas"+(T.lanes?" + faixa da garagem":"")+")" : ""}${T.veiShift? " · ajustado "+nf(Math.abs(T.veiShift),1)+" m para não passar pelos núcleos":""}` : "") }
   if(typeof topoLive==="function") topoLive(m); else setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`);
 };
@@ -131,7 +136,7 @@ const rgSum = {
   forma: ()=>{ const F=S.forma||{}; if(!F.on) return "desligada"; const l=[F.prog&&"faixas de altura", F.escalonar&&"escalonada", +F.hEmbMax>0&&"embasamento", F.aero&&"aeródromo"].filter(Boolean); return l.length? l.join(" · ") : "ligada" },
   vagas: ()=>{ const R=S.regras; return `${nfx(R.vagasApto)} vaga/unidade · mín. ${nfx(R.aptoMin)} m²` },
   pes: ()=>{ const P=S.produto; return `térreo ${nfx(P.peTerreo)} · garagem ${nfx(P.peGar)} · tipo ${nfx(P.pe)} m` },
-  ptipo: ()=>`eficiência ${pct(S.produto.efic,0)} · corredor ${nfx(S.estudo.corrTipo)} m`,
+  ptipo: ()=>`eficiência do andar ${pct(S.produto.efic,0)} · corredor ${nfx(S.estudo.corrTipo)} m`,
   vaga: ()=>{ const E=S.estudo; return `${nfx(E.vagaL)} × ${nfx(E.vagaC)} m · corredor ${nfx(E.corredor)} m` },
   rampa: ()=>{ const E=S.estudo; return `${pct(E.rampaInc,0)} · PCD ${pct(E.pcd,0)} · idoso ${pct(E.idoso,0)}` },
 };
@@ -171,7 +176,7 @@ function rgProj(){
   return RES("No estudo", `<div class="mets m3" id="rgpRes"></div>`) +
     SEC("Pés-direitos", KV(NUM("produto.peTerreo","Térreo","m",{step:0.1,q:"pé-direito"})+NUM("produto.peGar","Garagem","m",{step:0.05,q:"pé-direito"})+NUM("produto.pe","Tipo","m",{step:0.05,q:"pé-direito"}),3),
       {key:"pes", open:true, sum:rgSum.pes(), info:"Pé-direito"}) +
-    SEC("Pavimento tipo", KV(NUM("produto.efic","Eficiência","%",{pct:true,step:1,q:"privativa",help:"Eficiência"})+NUM("estudo.corrTipo","Corredor / hall","m",{step:0.05})+NUM("estudo.profMin","Prof. mín. unidade","m",{step:0.25,q:"profundidade"})+NUM("produto.sacProf","Prof. da sacada","m",{step:0.1,help:"Sacada"})),
+    SEC("Pavimento tipo", KV(NUM("produto.efic","Eficiência do andar","%",{pct:true,step:1,q:"privativa eficiência",help:"Eficiência"})+NUM("estudo.corrTipo","Corredor / hall","m",{step:0.05})+NUM("estudo.profMin","Prof. mín. unidade","m",{step:0.25,q:"profundidade"})+NUM("produto.sacProf","Prof. da sacada","m",{step:0.1,help:"Sacada"})),
       {key:"ptipo", open:true, sum:rgSum.ptipo()}) +
     SEC("Vaga e circulação", KV(NUM("estudo.vagaL","Largura vaga","m",{step:0.05})+NUM("estudo.vagaC","Compr. vaga","m",{step:0.05,q:"comprimento"})+NUM("estudo.corredor","Corredor 90°","m",{step:0.1,q:"manobra"}),3) +
       ADV(KV(NUM("estudo.porModulo","Vagas entre pilares","vg",{step:1,int:true,q:"módulo"})+NUM("estudo.pilar","Pilar","m",{step:0.05})+NUM("estudo.rampaL","Largura rampa","m",{step:0.05}),3), {key:"vaga"}),
@@ -357,8 +362,8 @@ STEP_LIVE.projeto = (m)=>{
     if(ts) ts.innerHTML = !ok.length? "" : `<span class="pill ${baixo?"warn":"ok"}">${baixo? baixo+" abaixo do alvo" : "áreas no alvo"}</span>`;
     const met=(l,v,s)=>`<div class="met"><div class="l">${l}</div><div class="v">${v}</div>${s?`<div class="s">${s}</div>`:""}</div>`;
     setHTML("tipoRes", !ok.length? `<p class="note">Sem andar tipo no produto atual.</p>`
-      : ok.length===1? `<div class="mets">${met("Unidades por andar", ok[0].us.length, ok[0].l.dbl?"corredor central":"corredor lateral")+met(`Eficiência${INFO("Eficiência")}`, pct(ok[0].ef,0), "unidades ÷ andar")+met("Núcleo", m2(ok[0].l.coreA))}</div>`
-      : `<table class="tbl"><tr><th>Torre</th><th>Un./andar</th><th>Eficiência${INFO("Eficiência")}</th><th>Núcleo</th></tr>${R.map((r,i)=>r? `<tr><td>Torre ${i+1}</td><td>${r.us.length}</td><td>${pct(r.ef,0)}</td><td>${m2(r.l.coreA)}</td></tr>` : `<tr><td>Torre ${i+1}</td><td colspan="3">sem andar tipo</td></tr>`).join("")}</table>`);
+      : ok.length===1? `<div class="mets">${met("Unidades por andar", ok[0].us.length, ok[0].l.dbl?"corredor central":"corredor lateral")+met(`Eficiência do andar${INFO("Eficiência")}`, pct(ok[0].ef,0), "unidades ÷ andar")+met("Núcleo", m2(ok[0].l.coreA))}</div>`
+      : `<table class="tbl"><tr><th>Torre</th><th>Un./andar</th><th>Efic. do andar${INFO("Eficiência")}</th><th>Núcleo</th></tr>${R.map((r,i)=>r? `<tr><td>Torre ${i+1}</td><td>${r.us.length}</td><td>${pct(r.ef,0)}</td><td>${m2(r.l.coreA)}</td></tr>` : `<tr><td>Torre ${i+1}</td><td colspan="3">sem andar tipo</td></tr>`).join("")}</table>`);
     setHTML("tipoDet", ok.map(({i,t,l,us})=>{ const K=l.coreKinds||{};
       return `${ok.length>1?`<p class="fl" style="margin:4px 0"><b>Torre ${i+1}</b></p>`:""}
         <div class="stack">${Object.entries(K).filter(([k,a])=>a>0.3).map(([k,a])=>`<span title="${nomes[k]||k}" style="width:${a/l.coreA*100}%;background:var(--c-${k})"></span>`).join("")}</div>

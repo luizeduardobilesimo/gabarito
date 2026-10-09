@@ -16,7 +16,7 @@ function mapaFormHTML(){
 function mapaEntornoHTML(){
   const ent=(S.entorno||[]).filter(e=>e.osm).length;
   return `<div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-act="mapaEntorno" title="Prédios, ruas, calçadas, água e verde ao redor do lote">Buscar entorno do OSM</button><div class="inp" style="width:92px;flex:none"><input type="number" step="10" min="30" max="400" data-p="mapa.raio" data-min="30" data-max="400" data-fx="save" value="${S.mapa.raio}" aria-label="Raio da busca em metros" title="Raio da busca"><em>m</em></div>${INFO("Prédios do OpenStreetMap num raio ao redor do lote (precisa de latitude e longitude e de internet), com ruas, calçadas, água e verde. Altura pela tag height ou pelo nº de pavimentos × 3 m; sem informação, 6 m (estimada). Os desenhados à mão ficam.")}</div>
-    <p class="note" id="mapaMsg" ${ent?"":"hidden"}>${ent? `${ent} prédios do OSM no entorno` : ""}</p>${typeof ctxCamadasHTML==="function"? ctxCamadasHTML() : ""}`;
+    ${(()=>{ const av=MAPA.aviso && !(MAPA.avisoGeo && S.lote.geo)? MAPA.aviso : ""; return `<p class="note" id="mapaMsg" ${av||ent?"":"hidden"}>${av || (ent? `${ent} prédios do OSM no entorno` : "")}</p>` })()}${typeof ctxCamadasHTML==="function"? ctxCamadasHTML() : ""}`;
 }
 function mapaAfter(){
   const f=document.getElementById("geoFile"); if(!f) return;
@@ -25,7 +25,7 @@ function mapaAfter(){
     file.text().then(txt=>{ const r=geoLerGeoJSON(txt,{lonRef:S.lote.lon, latRef:S.lote.lat}); if(r.erro){ toast(r.erro); return }
       aplicarLoteGeo(r.pares, `GeoJSON ${r.utm? "UTM "+r.zona+"S":"WGS84"}${r.n>1? ` (maior de ${r.n} polígonos)`:""}`); if(MAPA.map) mapaDesenha() }).catch(()=>toast("Não consegui ler o arquivo")) };
 }
-function mapaMsg(t){ const e=document.getElementById("mapaMsg"); if(e){ e.innerHTML=t; e.hidden=!t } }
+function mapaMsg(t){ const e=document.getElementById("mapaMsg"); if(e){ e.innerHTML=t; e.hidden=!t } if(typeof FR!=="undefined" && FR.busy && typeof frProg==="function") frProg(t) }
 
 /* ---- carregamento sob demanda ---- */
 function mapaCarrega(){
@@ -177,12 +177,14 @@ function mapaBusca(q){
 
 /* ---- entorno automático (Overpass) ----
    Os servidores públicos do Overpass oscilam (504, lentidão, fora do ar). Em vez de tentar um por vez, a consulta sai para o
-   primeiro servidor e, se ele não responder em 6 s (ou falhar), já dispara o próximo em paralelo; vale a primeira resposta boa. */
-function mapaOverpass(q, aoProgresso){
+   primeiro servidor e, se ele não responder em 6 s (ou falhar), já dispara o próximo em paralelo; vale a primeira resposta boa.
+   Se a consulta completa falha em todos, ctxBuscaResiliente (src/calc/contexto.js) desce degraus: consulta leve (vias e prédios, raio menor)
+   e, por último, as vias do tile vetorial do OpenFreeMap. Falha nunca apaga o que já está no estudo. */
+function mapaOverpass(q, aoProgresso, limite=80000){
   return new Promise((res, rej)=>{
     const ctrls=[], lancado=new Set(); let fim=false, rodada=1, falhas=0, ult="sem conexão ou bloqueado", t0=performance.now();
     const termina=(ok,v)=>{ if(fim) return; fim=true; clearTimeout(geral); clearInterval(tic); ctrls.forEach(c=>{ try{ c.abort() }catch(e){} }); ok? res(v) : rej(new Error(v)) };
-    const geral=setTimeout(()=>termina(false, ult==="sem conexão ou bloqueado"? "tempo esgotado" : ult), 80000);
+    const geral=setTimeout(()=>termina(false, ult==="sem conexão ou bloqueado"? "tempo esgotado" : ult), limite);
     const tic=setInterval(()=>{ if(aoProgresso) aoProgresso(Math.round((performance.now()-t0)/1000), lancado.size) }, 1000);
     const lanca=i=>{
       if(fim || i>=MAPA_OVERPASS.length || lancado.has(i+"/"+rodada)) return; lancado.add(i+"/"+rodada);
@@ -191,33 +193,84 @@ function mapaOverpass(q, aoProgresso){
         .then(r=>{ if(!r.ok) throw new Error("erro "+r.status); return r.json() })
         .then(j=>{ if(j && /runtime error|timed out/i.test(String(j.remark||"")) && !(j.elements||[]).length) throw new Error("servidor sobrecarregado"); termina(true,j) })
         .catch(e=>{ if(fim || e.name==="AbortError") return; ult=e.message||ult; falhas++; lanca(i+1);
-          if(meu===rodada && falhas>=MAPA_OVERPASS.length && rodada<2){ rodada++; falhas=0; setTimeout(()=>lanca(0), 2000) }
-          else if(falhas>=MAPA_OVERPASS.length*2) termina(false, ult) });
+          if(falhas>=MAPA_OVERPASS.length){ if(meu===rodada && rodada<2){ rodada++; falhas=0; setTimeout(()=>lanca(0), 2000) } else termina(false, ult) } });   // 2 rodadas; falhou tudo na 2ª → desiste (antes esperava o limite de 80 s)
       setTimeout(()=>lanca(i+1), 6000);
     };
     lanca(0);
   });
 }
-async function mapaEntorno(){
-  const lat=+S.lote.lat, lon=+S.lote.lon, raio=Math.max(30,Math.min(400,+S.mapa.raio||150));
-  if(!isFinite(lat)||!isFinite(lon)){ toast("Informe a latitude e a longitude do lote"); return }
-  if(MAPA.busca) return; MAPA.busca=true;
-  const rc=Math.max(100,Math.min(1000,+(S.contexto&&S.contexto.raio)||350)), comCtx=typeof ctxOverpassQuery==="function";   // contexto urbano (src/calc/contexto.js): uma consulta só
-  const q=comCtx? ctxOverpassQuery(lat, lon, raio, rc) : geoOverpassQuery(lat, lon, raio), t0=performance.now();
-  const msg=t=>{ mapaMsg(t); mapaHint(t) };
-  msg(comCtx? "Buscando o entorno no OpenStreetMap…" : "Buscando prédios no OpenStreetMap…");
-  let json=null, err="";
-  try{ json=await mapaOverpass(q, (s,n)=>msg(`Buscando ${comCtx?"o entorno":"prédios"} no OpenStreetMap… ${s} s${n>1? ` (${n} servidores consultados)`:""}`)) }catch(e){ err=e.message }
-  MAPA.busca=false;
-  if(!json){ const t=`Não consegui consultar o OpenStreetMap (${err}). Tente de novo em instantes, desenhe os vizinhos à mão (ferramenta Entorno, na implantação) ou use “Gerar genéricos” na etapa Clima.`; msg(t); toast("Entorno do OSM indisponível"); return }
-  const ref=geoRef(lat,lon), ent=comCtx? ctxEntornoOSM(json, ref, S.lote.pts, {raio, norte:S.lote.norte}) : geoEntornoDeOverpass(json, ref, S.lote.pts, {raio});
-  if(comCtx){ const d=ctxDeOverpass(json, ref, {raio:Math.max(rc,raio), norte:S.lote.norte}); S.contexto.dados=Object.assign(d, {lat, lon, raio:Math.max(rc,raio), quando:new Date().toISOString().slice(0,10)}) }
-  S.entorno=[...(S.entorno||[]).filter(e=>!e.osm), ...ent];
-  const est=ent.filter(e=>e.est).length, s=(performance.now()-t0)/1000, aberto=!!document.getElementById("mapaBox");
-  update(); if(MAPA.map) mapaDesenha();
-  const t=`${ent.length} prédios do OSM em ${nf(raio,0)} m${est? ` (${est} com altura estimada em 6 m)`:""} · ${nf(s,1)} s.${ent.length? (aberto? " Feche o mapa para editar (mover, apagar, redimensionar, criar vazios) na Implantação." : " Clique numa edificação para editá-la."):""}`;
-  msg(t); toast(ent.length? `Entorno: ${ent.length} prédios do OpenStreetMap` : "Nenhum prédio do OSM nesse raio");
-  if(ent.length && !aberto && typeof entEnquadrar==="function"){ setView("impl"); entEnquadrar() }
-  if(TAB==="terreno"||TAB==="clima") renderTab();
+/* reserva: tile vetorial do OpenFreeMap (sem chave, com CORS); a versão do tileset vem do TileJSON */
+const MAPA_TILEJSON = "https://tiles.openfreemap.org/planet";
+let MAPA_TILEURL = null;
+function mapaFetchTempo(url, ms){ const ac=new AbortController(), t=setTimeout(()=>ac.abort(), ms); return fetch(url,{signal:ac.signal}).finally(()=>clearTimeout(t)) }
+async function mapaTile(z, x, y){
+  if(!MAPA_TILEURL){ const r=await mapaFetchTempo(MAPA_TILEJSON, 8000); if(!r.ok) throw new Error("erro "+r.status); const j=await r.json(); MAPA_TILEURL=(j.tiles||[])[0]; if(!MAPA_TILEURL) throw new Error("tileset indisponível") }
+  const r=await mapaFetchTempo(MAPA_TILEURL.replace("{z}",z).replace("{x}",x).replace("{y}",y), 15000); if(!r.ok) throw new Error("erro "+r.status);
+  let b=new Uint8Array(await r.arrayBuffer());
+  if(b[0]===0x1f && b[1]===0x8b && typeof DecompressionStream==="function") b=new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+  return b;
 }
-Object.assign(ACT,{ mapaAbrir: ()=>mapaAbrir(), mapaEntorno: ()=>mapaEntorno() });
+/* sem georreferência o lote está na origem padrão (Criciúma): a busca rodaria no lugar errado */
+function mapaSemGeo(){
+  const t=`Posicione o lote no mapa para buscar o entorno. <button class="btn sm" data-act="geoMapa">Abrir mapa</button> <button class="btn sm ghost" data-act="geoIr">Localização</button>`;
+  MAPA.aviso=t; MAPA.avisoGeo=true; mapaMsg(t); mapaHint("Posicione o lote no mapa para buscar o entorno");
+  if(typeof geoFoco==="function" && TAB==="terreno") geoFoco();
+  toast("Posicione o lote no mapa para buscar o entorno");
+}
+/* abre e destaca o card Localização da etapa Terreno */
+function geoFoco(){
+  const d=TB.querySelector('details[data-key="local"]'); if(!d) return;
+  d.open=true; d.classList.add("geoFoco"); try{ d.scrollIntoView({block:"nearest",behavior:"smooth"}) }catch(e){}
+  clearTimeout(geoFoco.t); geoFoco.t=setTimeout(()=>d.classList.remove("geoFoco"), 3000);
+}
+const mapaForaDoLocal = () => !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname||"") || location.protocol==="file:";
+/* entorno do OSM (prédios + ruas, água e verde). Devolve true se há contexto utilizável ao final (novo ou o da busca anterior). */
+async function mapaEntorno(){
+  if(!S.lote.geo){ mapaSemGeo(); return false }
+  const lat=+S.lote.lat, lon=+S.lote.lon, raio=Math.max(30,Math.min(400,+S.mapa.raio||150));
+  if(!isFinite(lat)||!isFinite(lon)){ toast("Informe a latitude e a longitude do lote"); return false }
+  if(MAPA.busca) return false; MAPA.busca=true; MAPA.aviso=""; MAPA.avisoGeo=false;
+  const rc=Math.max(100,Math.min(1000,+(S.contexto&&S.contexto.raio)||350)), t0=performance.now(), norte=S.lote.norte;
+  const msg=t=>{ mapaMsg(t); mapaHint(t.replace(/<button[^]*?<\/button>/g,"").replace(/<br>/g," ").replace(/<[^>]*>/g,"").replace(/&amp;/g,"&")) };
+  let estagio="completa"; msg("Buscando o entorno no OpenStreetMap…");
+  const prog=(s,n)=>{ if(estagio==="completa") msg(`Buscando o entorno no OpenStreetMap… ${s} s${n>1? ` (${n} servidores consultados)`:""}`); else msg(`Tentando de novo só com vias e prédios… ${s} s`) };
+  const r=await ctxBuscaResiliente({ lat, lon, raio, raioCtx:rc, norte,
+    fetchJson:(q,o)=>mapaOverpass(q, prog, o&&o.limite), fetchTile:mapaTile,
+    aoEstagio:n=>{ estagio=n; if(n==="leve") msg("A busca completa falhou. Tentando só vias e prédios, num raio menor…"); else if(n==="tile") msg("Servidores do Overpass fora do ar. Lendo as vias do mapa vetorial…") } });
+  MAPA.busca=false;
+  const ant=S.contexto.dados, antOk=ctxDadosValem(ant, lat, lon, norte);
+  if(r.erro){
+    const quando=antOk? ctxQuandoBR(ant.quando) : "", fora=mapaForaDoLocal();
+    const t=`OpenStreetMap indisponível agora (${esc(r.erro)}).${quando? ` Usando a última busca de ${quando}.`:""} <button class="btn sm" data-act="mapaEntorno">Tentar de novo</button>${fora? `<br>No artifact do claude.ai as buscas externas são bloqueadas: abra em http://localhost:5173.` : ""}`;
+    MAPA.aviso=t; msg(t); toast("Entorno do OSM indisponível"); if(TAB==="terreno"||TAB==="clima") renderTab(); return antOk;
+  }
+  const ref=geoRef(lat,lon), hoje=new Date().toISOString().slice(0,10);
+  let novo, ent=null, s=(performance.now()-t0)/1000, aviso="";
+  if(r.nivel==="tile"){ novo=Object.assign(r.dados, {lat, lon, norte, raio:r.raioCtx, quando:hoje, nivel:"tile"}) }
+  else{ ent=ctxEntornoOSM(r.json, ref, S.lote.pts, {raio:r.raioPred, norte});
+    novo=Object.assign(ctxDeOverpass(r.json, ref, {raio:Math.max(r.raioCtx,r.raioPred), norte}), {lat, lon, norte, raio:Math.max(r.raioCtx,r.raioPred), quando:hoje}); if(r.nivel==="leve") novo.nivel="leve" }
+  // a busca reduzida não troca um contexto completo (água, verde, calçadas) que já está no estudo
+  const mantem = r.nivel!=="completa" && antOk && ant.nivel!=="tile" && (ant.raio||0)>=(novo.raio||0) && (r.nivel==="tile" || ant.nivel!=="leve");
+  if(!mantem) S.contexto.dados=novo;
+  if(ent) S.entorno=[...(S.entorno||[]).filter(e=>!e.osm), ...ent];
+  if(r.nivel==="leve") aviso=`Busca reduzida: só vias e prédios em ${nf(novo.raio,0)} m${mantem? `; mantive o restante da busca de ${ctxQuandoBR(ant.quando)}`:""}.`;
+  else if(r.nivel==="tile") aviso=`Vias pelo mapa vetorial (sem prédios e sem largura medida)${mantem? `; mantive a busca de ${ctxQuandoBR(ant.quando)}`:""}.`;
+  const aberto=!!document.getElementById("mapaBox");
+  update(); if(MAPA.map) mapaDesenha();
+  let t, toastT;
+  if(ent){ const est=ent.filter(e=>e.est).length;
+    t=`${ent.length} prédios do OSM em ${nf(r.raioPred,0)} m${est? ` (${est} com altura estimada em 6 m)`:""} · ${nf(s,1)} s.${ent.length? (aberto? " Feche o mapa para editar (mover, apagar, redimensionar, criar vazios) na Implantação." : " Clique numa edificação para editá-la."):""}`;
+    toastT=ent.length? `Entorno: ${ent.length} prédios do OpenStreetMap` : "Nenhum prédio do OSM nesse raio" }
+  else { t=`${nf(novo.n.vias,0)} trechos de via encontrados.`; toastT="Ruas carregadas (reserva)" }
+  if(aviso){ t=aviso+" "+t; MAPA.aviso=aviso+` <button class="btn sm ghost" data-act="mapaEntorno">Tentar a busca completa</button>` }
+  msg(t); toast(aviso? "Busca reduzida do OSM" : toastT);
+  if(ent && ent.length && !aberto && typeof entEnquadrar==="function"){ setView("impl"); entEnquadrar() }
+  if(TAB==="terreno"||TAB==="clima") renderTab();
+  return true;
+}
+/* atalhos da mensagem "posicione o lote no mapa" */
+Object.assign(ACT,{ mapaAbrir: ()=>mapaAbrir(), mapaEntorno: ()=>mapaEntorno(),
+  geoMapa: ()=>{ if(TAB!=="terreno") goStep("terreno"); TMETH="mapa"; renderTab(); mapaAbrir() },
+  geoIr: ()=>{ if(TAB!=="terreno") goStep("terreno"); geoFoco() } });
+/* digitar latitude/longitude à mão também posiciona o lote */
+FX.geo = live=>{ S.lote.geo=true; update(live?{fast:true}:{}); const gn=document.getElementById("geoNote"); if(gn) gn.hidden=true };

@@ -23,7 +23,7 @@ const GLOSS_DATA = {
 
   /* --- produto e áreas --- */
   "Área privativa": { t:"Área privativa", d:"Área de uso exclusivo da unidade (o que o cliente compra), sem as áreas comuns." },
-  "Eficiência": { t:"Eficiência do andar", d:"Quanto do andar vira área vendável. O resto é circulação, núcleo e paredes.", f:"área privativa ÷ área do andar", ex:"80% num andar de 400 m² → 320 m² privativos." },
+  "Eficiência": { t:"Eficiência do andar", d:"Quanto do andar-tipo vira área vendável. O resto é circulação, núcleo e paredes. Não confundir com a <b>eficiência global</b> (que conta também subsolos e térreo).", f:"área privativa ÷ área do andar", ex:"80% num andar de 400 m² → 320 m² privativos." },
   "Andar tipo": { t:"Pavimento tipo", d:"Andar que se repete na torre, com as unidades residenciais." },
   "Mix": { t:"Mix de tipologias", d:"Combinação de tipos de unidade em cada andar (ex.: 2 de 2 dormitórios + 2 de 3 dormitórios)." },
   "Tipologia": { t:"Tipologia", d:"Tipo de unidade: studio, 1, 2, 3 dormitórios, com ou sem suíte." },
@@ -57,16 +57,24 @@ const GLOSS_DATA = {
 
   /* --- financeiro --- */
   "VGV": { t:"Valor geral de vendas", d:"Soma do preço de todas as unidades à venda. É a receita bruta potencial do empreendimento." },
-  "TIR": { t:"Taxa interna de retorno", d:"Rentabilidade anual do dinheiro investido, considerando quando cada valor entra e sai. Compare com a TMA.", ex:"TIR 25% a.a. com TMA 12% → o projeto rende mais que o mínimo exigido." },
+  "TIR": { t:"Taxa interna de retorno", d:"Rentabilidade anual do dinheiro investido, considerando quando cada valor entra e sai. Compare com a <b>TIR alvo</b>; a TMA só serve para o VPL.", ex:"TIR 25% a.a. com alvo de 25% → o projeto atinge a meta de retorno." },
   "VPL": { t:"Valor presente líquido", d:"Lucro do projeto trazido para hoje, descontado pela TMA. Positivo = cria valor acima do mínimo exigido." },
   "TMA": { t:"Taxa mínima de atratividade", d:"Rentabilidade mínima que o investidor exige para topar o projeto. Usada para calcular o VPL." },
-  "Margem": { t:"Margem", d:"Lucro em relação à receita.", f:"lucro ÷ receita" },
+  "Margem": { t:"Margem", d:"Lucro em relação ao VGV (padrão do mercado). A margem sobre a receita nominal, com INCC e reajuste, aparece como segunda linha.", f:"lucro ÷ VGV" },
+  "Eficiência global": { t:"Eficiência global", d:"Quanto da área construída vira área vendável, contando subsolos, térreo e áreas comuns. É a principal medida de quão bem o prédio aproveita o que custa construir.", f:"APV ÷ ATC", ex:"6.400 m² privativos ÷ 13.000 m² construídos → 49%. Subsolos pesam: a faixa esperada muda com o tipo de garagem." },
+  "APV": { t:"Área privativa vendável", d:"Soma das áreas privativas das unidades (e lojas) à venda. É o que gera receita.", f:"soma das áreas privativas" },
+  "ATC": { t:"Área total construída", d:"Toda a área que será construída: pavimentos das torres, térreo, subsolos, garagens e lazer coberto. É a base do custo de obra.", f:"subsolos + térreo + garagem elevada + pavimentos" },
+  "V/C": { t:"Relação venda/custo (V/C)", d:"Quantas vezes o preço de venda por m² privativo cobre o custo de construção de referência. Abaixo de 2,5 é arriscado; de 2,5 a 3,5 é saudável; acima de 3,5 é excelente (faixas editáveis em Metas).", f:"preço médio R$/m² privativo ÷ (CUB × fator)", ex:"R$ 12.000 ÷ R$ 3.800 → V/C 3,2. Contra o CUB puro o número fica mais alto." },
+  "Soft costs": { t:"Custos indiretos (soft costs)", d:"Tudo que não é terreno nem obra direta: projetos, administração, contingência, corretagem, marketing, impostos (RET), ITBI, outorga e juros. Costuma ficar entre 18% e 22% do VGV.", f:"indiretos ÷ VGV" },
+  "Margem s/ VGV": { t:"Margem sobre o VGV", d:"Lucro dividido pelo valor geral de vendas, a conta que o mercado usa. A colinha de viabilidade diz: abaixo de 20% não toque; a meta é 25%.", f:"lucro ÷ VGV" },
+  "TIR alvo": { t:"TIR alvo", d:"Rentabilidade anual que o empreendimento precisa atingir para valer o risco (a colinha usa 25% a 30% a.a.). Diferente da TMA, que é o mínimo usado para descontar o VPL.", f:"definida em Metas" },
+  "Metas": { t:"Metas e referências", d:"Os números que dão cor aos semáforos: margem alvo e mínima, TIR alvo, TMA, faixas de V/C, terreno, indiretos e eficiência. O Gabarito traz sugestões da colinha de viabilidade; você muda tudo, restaura as sugeridas ou salva como padrão da sua empresa para os próximos estudos." },
   "Exposição": { t:"Exposição máxima de caixa", d:"Maior valor que o incorporador precisa ter colocado no projeto ao mesmo tempo (pior ponto do caixa acumulado)." },
   "Payback": { t:"Payback", d:"Mês em que o caixa acumulado volta a ficar positivo (o dinheiro investido retorna)." },
   "Terreno máximo": { t:"Valor máximo do terreno", d:"Quanto se poderia pagar pelo terreno mantendo a margem alvo." },
   "CUB": { t:"Custo unitário básico", d:"Custo de referência por m² de construção, publicado todo mês pelos Sinduscons de cada estado (NBR 12721), por padrão de acabamento." },
-  "Custo ÷ CUB": { t:"Fator sobre o CUB", d:"Quanto o custo real da obra fica acima do CUB (fundações, elevadores, projetos e itens que o CUB não inclui)." },
-  "Área equivalente": { t:"Área equivalente", d:"Áreas mais baratas (garagem, áreas descobertas) convertidas em m² de custo padrão para aplicar o CUB (NBR 12721).", f:"área × coeficiente (ex.: garagem 0,55)" },
+  "Custo ÷ CUB": { t:"Fator sobre o CUB", d:"Quanto o custo real da obra fica acima do CUB (fundações, elevadores e itens que o CUB não inclui). Os projetos são cobrados à parte, como % da obra: não os conte aqui também." },
+  "Área equivalente": { t:"Área equivalente", d:"Áreas mais baratas (garagem, áreas descobertas) convertidas em m² de custo padrão para aplicar o CUB (NBR 12721).", f:"área × coeficiente (ex.: garagem 0,80)" },
   "INCC": { t:"Índice Nacional de Custo da Construção", d:"Índice que corrige custos de obra e as parcelas pagas pelo cliente até a entrega das chaves." },
   "IPCA": { t:"Índice de preços ao consumidor amplo", d:"Inflação oficial. Costuma corrigir as parcelas depois da entrega das chaves." },
   "ITBI": { t:"Imposto de transmissão de bens imóveis", d:"Imposto municipal pago na compra do terreno, somado às custas de escritura e registro." },
@@ -104,4 +112,12 @@ const GLOSS_DATA = {
   "IN 09": { t:"IN 09 do CBMSC", d:"Instrução normativa dos Bombeiros de Santa Catarina sobre saídas de emergência (escadas, larguras, distâncias)." },
   "NBR 9050": { t:"NBR 9050", d:"Norma de acessibilidade: rotas acessíveis, vagas, rampas, sanitários e unidades adaptáveis." },
   "Distância a percorrer": { t:"Distância máxima a percorrer", d:"Caminho mais longo de uma porta de unidade até a escada de emergência. Tem limite em norma." },
+
+  /* --- relevo --- */
+  "Relevo": { t:"Relevo (DEM / SRTM)", d:"Forma do terreno: onde sobe e onde desce. O sistema lê um modelo digital de elevação (DEM), como o SRTM da NASA, com um ponto a cada ~30 m. Esse modelo é de superfície: inclui prédios e árvores e erra alguns metros, então serve de primeira leitura e não substitui o levantamento topográfico." },
+  "DEM": { t:"Modelo digital de elevação (DEM)", d:"Mapa em que cada ponto tem uma altitude. O SRTM, da NASA, cobre o mundo todo com ~30 m entre pontos. Mede a superfície, com prédios e árvores." },
+  "SRTM": { t:"SRTM", d:"Missão da NASA que mediu a altitude da Terra por radar. É a base dos mapas de relevo gratuitos, com ~30 m entre pontos e erro de alguns metros." },
+  "Inclinação": { t:"Inclinação do terreno", d:"Quantos metros o terreno sobe ou desce a cada 100 m na horizontal. 10% é subir 10 m em 100 m. Abaixo de ~2% o modelo não consegue distinguir da imprecisão, e o terreno é tratado como plano.", f:"inclinação = desnível ÷ distância" },
+  "Cota": { t:"Cota (altitude)", d:"Altura de um ponto acima do nível do mar, em metros. A cota do térreo e as cotas dos cantos do lote ficam no mesmo referencial." },
+  "Plano ajustado": { t:"Plano ajustado", d:"Superfície reta que melhor representa o terreno em volta do lote. É calculada por mínimos quadrados, descartando pontos muito fora (prédios, árvores). Dá a inclinação e a direção da descida." },
 };

@@ -120,9 +120,10 @@ Objetivo: abrir a Viabilidade e ver em 5 segundos se o negócio fecha, na lingua
 ### Fase B — "Ler o local": georreferência, relevo e ruas que entram no estudo — **M/G**
 Objetivo: um botão na etapa Terreno, **"Ler o local"**, que traz relevo e ruas e **propõe** (o usuário confirma) a frente, o desnível e o acesso.
 
-1. **Georreferência obrigatória para buscas** — **P**
+1. **Georreferência obrigatória para buscas** — **P** — **FEITO** (08/10/2026)
    - Criar `S.lote.geo`, verdadeiro quando o lote vem de Mapa, Coordenadas ou GeoJSON.
    - Sem ela, as buscas pedem "posicione o lote no mapa" em vez de buscar em Criciúma.
+   - Feito: `S.lote.geo` (estudo antigo só conta como posicionado se já tinha lat/lon próprios, contexto ou prédios do OSM); `aplicarLoteGeo` e a digitação de lat/lon marcam; sem ela, "Buscar entorno do OSM", "Detectar frentes" e qualquer outra busca externa por coordenadas (ex.: relevo) devem checar `S.lote.geo`. A mensagem tem atalhos para o mapa e para o card Localização (`geoFoco()`).
 2. **Relevo** — **M**
    - `src/calc/relevo.js` (puro, testado):
      - decodificar o Terrarium;
@@ -135,17 +136,20 @@ Objetivo: um botão na etapa Terreno, **"Ler o local"**, que traz relevo e ruas 
    - Resultado em uma linha: "inclinação 17% · desce para SO · confiança média".
    - Em "Mais opções", **cotas dos cantos do lote editáveis**, para quando o Luiz tiver levantamento ou Google Earth. É simples e exato.
    - Depois: importar GeoTIFF ANADEM.
-3. **Ruas → frentes** — **M**
+3. **Ruas → frentes** — **M** — **FEITO** (08/10/2026)
    - `src/calc/frente.js` (puro):
      - para cada lado do lote, achar a via paralela e próxima (nome, classe, largura estimada);
      - sugerir as frentes, a principal, a esquina e o acesso de veículos pela via de menor hierarquia.
    - A largura fica editável por lado.
    - Opcional, desligado: regras dependentes da largura da via, com "conferir na lei".
-4. **Busca mais resiliente** — **P/M**
+   - Feito: `ruasDoLote`, `sugereFrentes`, `sugereAcesso`, `regraPorLargura`, `frenteDetectar/Aplicar` + `ui/frente.js` (botão "Detectar frentes pelas ruas", sugestão confirmada pelo usuário, largura editável no lado, tabela por largura em "Mais opções"). Limitação do modelo: o acesso de veículos fica sempre na frente principal; por isso o usuário escolhe qual das frentes é a principal (a sugestão traz a de maior hierarquia como principal e indica a de menor para o carro).
+4. **Busca mais resiliente** — **P/M** — **FEITO** (08/10/2026)
    - guardar o último resultado bom do estudo;
    - consulta leve só de vias quando a completa falhar;
    - reserva por tile vetorial (OpenFreeMap) se todos os espelhos falharem;
    - mensagem clara quando o app está no artifact do claude.ai (onde buscas externas são bloqueadas).
+   - Feito: `ctxBuscaResiliente` (completa → leve → tile), decodificador `calc/mvt.js`, "usando a última busca de <data>", "Tentar de novo" e a dica do `localhost:5173`. Corrigido também o limite do `mapaOverpass`: na falha total ele esperava 80 s; agora desiste ao falhar os 4 espelhos nas 2 rodadas. Testado com mocks (`tests/contexto.test.js`) e, na rede real, o tile de Torres (z14, ~190 KB) vira 16 vias com nome em 1,4 s.
+   - Pendências: o tile traz só vias com nome/classe (sem largura nem prédios); a reserva usa 1 a 4 tiles z14 e não guarda cache entre sessões.
 
 ### Fase C — Construção personalizada (desenhar os pavimentos) — **G**
 Princípio: **um conceito só, o "bloco"**.

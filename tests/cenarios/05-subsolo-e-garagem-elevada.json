@@ -8,19 +8,20 @@
  },
  "esperado": {
   "units": 76,
-  "vagas": 61,
-  "vagasReq": 97,
-  "CA": 3.7184,
+  "vagas": 68,
+  "vagasReq": 78,
+  "CA": 3.7188,
   "H": 43.5,
-  "priv": 6373,
+  "priv": 6374,
   "vagasPorPav": {
-   "s1": 32,
-   "g1": 29
+   "s1": 35,
+   "g1": 22,
+   "ter": 5
   },
-  "vgv": 68369290,
-  "custo": 63464595,
-  "lucro": 12231078,
-  "margem": 0.16158
+  "vgv": 91748226,
+  "custo": 80805257,
+  "lucro": 20774616,
+  "margem": 0.20452
  },
  "tolerancia": {
   "vagas": 0.03,
