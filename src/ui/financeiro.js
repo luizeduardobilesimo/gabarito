@@ -48,7 +48,7 @@ function finResHTML(){
 function finTopHTML(m, f){
   const F=S.fin, parts=[["Terreno e outorga",f.terreno+f.outorga,"var(--m-sub)"],["Obra e indiretos",f.obraTot+f.projetos+f.terra,"var(--m-ter)"],["Vendas, impostos, juros",f.corret+f.mkt+f.imp+f.permFin+f.juros,"var(--mark)"],["Lucro",Math.max(0,f.lucro),"var(--ok)"]];
   const tot=parts.reduce((s,p)=>s+p[1],0)||1;
-  return `<div class="mets"><div class="met big"><div class="l">Lucro</div><div class="v" style="color:${f.lucro<0?"var(--bad)":"var(--ink)"}">${mi(f.lucro)}</div><div class="s">${TERMO("VGV")} ${mi(f.vgv)} · custo ${mi(f.custo)}</div></div>
+  return `<div class="mets"><div class="met big"><div class="l">Lucro</div><div class="v" style="color:${f.lucro<0?"var(--bad)":"var(--ink)"}">${mi(f.lucro)}</div><div class="s">${TERMO("VGV")} ${mi(f.vgv)} · custo ${mi(f.custo)}</div>${finImprevHTML(f)}</div>
     <div class="met"><div class="l">Margem s/ VGV${INFO("Margem s/ VGV")}</div><div class="v" style="color:${finSCol(f.margemVGV)}">${pct(f.margemVGV)}</div><div class="s">meta ${pct(F.margemAlvo,0)} · s/ receita ${pct(f.margem)}</div></div>
     <div class="met"><div class="l">TIR a.a.${INFO("TIR")}</div><div class="v" style="color:${f.tirA==null||f.tirA<F.tma?"var(--bad)":f.tirA<S.metas.tir.alvo?"var(--warn)":"var(--ink)"}">${finTir(f.tirA)}</div><div class="s">${TERMO("TIR alvo","alvo")} ${pct(S.metas.tir.alvo,0)} · ${TERMO("TMA")} ${pct(F.tma,0)}</div></div>
     <div class="met"><div class="l">VPL${INFO("VPL")}</div><div class="v" style="color:${f.vpl<0?"var(--bad)":"var(--ink)"}">${mi(f.vpl)}</div><div class="s">à ${TERMO("TMA")} de ${pct(F.tma,0)}</div></div>
@@ -59,9 +59,9 @@ function finTopHTML(m, f){
 function finDREHTML(m, f){
   const ln=(l,v)=> v? `<tr class="neg"><td>${l}</td><td>−${brl(v)}</td></tr>` : "", sub=(l,v)=>`<tr><td style="padding-left:12px;color:var(--muted)">${l}</td><td style="color:var(--muted)">${v}</td></tr>`;
   return `<tr><td>VGV de tabela</td><td>${brl(f.vgvB)}</td></tr>${f.permV?`<tr class="neg"><td>(−) Permuta física</td><td>−${brl(f.permV)}</td></tr>`:""}<tr><td>Receita nominal</td><td>${brl(f.receita)}</td></tr>${f.distratoV?sub("já descontados os distratos","−"+brl(f.distratoV)):""}
-    ${ln("Terreno + ITBI",f.terreno)}${ln("Outorga onerosa",f.outorga)}${ln(f.orc? "Obra + administração + contingência, com INCC (orçamento por sistema)" : `Obra + administração + contingência, com INCC (${m2(f.eqA)} equiv.)`,f.obraTot)}${f.lazerC?sub("inclui lazer: equipamentos e áreas descobertas",brl(f.lazerC)):""}${ln("Movimento de terra",f.terra)}${ln("Projetos e aprovações",f.projetos)}
+    ${ln("Terreno + ITBI",f.terreno)}${ln("Outorga onerosa",f.outorga)}${ln(f.orc? "Obra + administração + contingência, com INCC (orçamento por sistema)" : `Obra + administração + contingência, com INCC (${m2(f.eqA)} equiv.)`,f.obraTot)}${f.lazerC?sub("inclui lazer: equipamentos e áreas descobertas",brl(f.lazerC)):""}${ln("Movimento de terra",f.terra)}${ln("Projetos e aprovações",f.projetos)}${finSoftDRE(f)}
     ${ln("Corretagem + marketing",f.corret+f.mkt)}${ln("Impostos (RET)",f.imp)}${ln("Permuta financeira",f.permFin)}${ln("Juros do financiamento",f.juros)}
-    <tr class="tot ${f.lucro<0?"neg":"pos"}"><td>Lucro</td><td>${brl(f.lucro)}</td></tr><tr><td>Margem s/ VGV</td><td>${pct(f.margemVGV)}</td></tr>${sub("margem s/ receita nominal",pct(f.margem))}<tr><td>Custo total / m² privativo</td><td>${brl(f.custo/Math.max(1,m.priv))}</td></tr><tr><td>Obra / m² construído</td><td>${brl(f.obraTot/Math.max(1,m.constr))}</td></tr><tr><td>Lucro ÷ custo</td><td>${pct(f.lucro/Math.max(1,f.custo))}</td></tr><tr><td>Terreno máximo p/ margem alvo (${pct(S.fin.margemAlvo,0)} s/ VGV)</td><td>${brl(f.maxTerreno)}</td></tr>`;
+    <tr class="tot ${f.lucro<0?"neg":"pos"}"><td>Lucro</td><td>${brl(f.lucro)}</td></tr><tr><td>Margem s/ VGV</td><td>${pct(f.margemVGV)}</td></tr>${sub("margem s/ receita nominal",pct(f.margem))}<tr><td>Custo total / m² privativo</td><td>${brl(f.custo/Math.max(1,m.priv))}</td></tr><tr><td>Obra / m² construído</td><td>${brl(f.obraTot/Math.max(1,m.constr))}</td></tr><tr><td>Lucro ÷ custo</td><td>${pct(f.lucro/Math.max(1,f.custo))}</td></tr>${finImprevDRE(f)}<tr><td>Terreno máximo p/ margem alvo (${pct(S.fin.margemAlvo,0)} s/ VGV)</td><td>${brl(f.maxTerreno)}</td></tr>`;
 }
 
 /* ---------------- Premissas ---------------- */
@@ -71,7 +71,7 @@ function finPremHTML(){
     (P.cob && P.cob.on? NUM("produto.cob.preco","Preço cobertura","R$/m²",{step:50, min:0, q:"preço venda cobertura"}) : "");
   const busca = `<div class="inp fbusca"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg><input class="t" id="vqFind" placeholder="Buscar premissa — CUB, INCC, corretagem…" aria-label="Buscar premissa" autocomplete="off"></div><p class="note" id="vqNada" hidden>Nenhuma premissa encontrada.</p>`;
   return RES("Resultado", `<div class="fmini" id="finMini"></div>`, {aside:"", asideId:"vStat"}) + busca +
-    SEC("Terreno e obra", KV(NUM("fin.terreno","Terreno (à vista)","R$",{step:10000,wide:true,q:"compra lote"}) + NUM("fin.cub","CUB referência","R$/m²",{step:1,help:"CUB"}) +
+    SEC("Terreno e obra", KV(NUM("fin.terreno","Terreno (à vista)","R$",{step:10000,wide:true,q:"compra lote"}) + NUM("fin.cub","CUB referência","R$/m²",{step:1,help:"CUB",fx:"cubMan"}) +
         (par? "" : NUM("fin.fator","Custo ÷ CUB","×",{step:0.01,help:"Custo ÷ CUB"}))) +
         `<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="vendas" data-open="terAlt">Comparar compra, permuta e SPE →</button></div>`,
       {key:"essObra", open:true, sum:""}) +
@@ -80,7 +80,7 @@ function finPremHTML(){
     finOrcHTML() +
     SEC("Custos indiretos", KV(NUM("fin.itbi","ITBI + escritura","%",{pct:true,step:0.5,help:"ITBI"}) + NUM("fin.projetos","Projetos e taxas","% obra",{pct:true,step:0.5,q:"aprovação"}) +
         NUM("fin.adm","Administração","% obra",{pct:true,step:0.5}) + NUM("fin.conting","Contingência","% obra",{pct:true,step:0.5,q:"reserva"})) +
-        ADV(KV(NUM("fin.decorLazer","Lazer: equipamentos","R$/m²",{step:50,q:"mobiliário decoração lazer"}) + NUM("fin.custoDesc","Lazer descoberto","R$/m²",{step:50,q:"piscina deck paisagismo"})), {key:"ind"}),
+        ADV(KV(NUM("fin.decorLazer","Lazer: equipamentos","R$/m²",{step:50,q:"mobiliário decoração lazer"}) + NUM("fin.custoDesc","Lazer descoberto","R$/m²",{step:50,q:"piscina deck paisagismo"})) + softCamposHTML(), {key:"ind"}),
       {key:"ind", cls:"fq", sum:""}) +
     SEC("Receita e comissões", KV(NUM("fin.corret","Corretagem","%",{pct:true,step:0.5,q:"comissão"}) + NUM("fin.mkt","Marketing","%",{pct:true,step:0.5,q:"publicidade stand"}) +
         NUM("fin.imp","Impostos (RET)","%",{pct:true,step:0.25,help:"RET",q:"tributos"}) + NUM("fin.reaj","Reajuste da tabela","% a.a.",{pct:true,step:0.5})) +
@@ -131,9 +131,9 @@ function finOrcHTML(){
       NUM("orc.coef.acab","Acabamentos","% CUB",{pct:true,step:0.5,help:"Por m² acabado (garagem 25%), × padrão"}) +
       NUM("orc.coef.cant","Canteiro e adm.","% sist.",{pct:true,step:0.5,help:"Canteiro e administração da obra, sobre a soma dos sistemas"})) +
       `<div class="row"><button type="button" class="btn sm ghost" data-act="orcReset">Restaurar coeficientes</button></div>` : "";
-  const cub = GRP(`Tabela CUB ${INFO("CSV: uf;padrao;valor;ref;fonte (uma linha por padrão) ou uma coluna por padrão (uf;ref;fonte;R8-N;R16-N…). JSON com os mesmos campos.")}`) + KV(
-      finSEL("orc.uf", lista.map(r=>[r.uf, `${r.uf} · ${r.nome}`]), "Estado", {rr:true, fx:"save", q:"cub sinduscon"}) +
-      finSEL("orc.padrao", CUB_PADROES, "Padrão", {rr:true, fx:"save", q:"cub r8 r16"})) +
+  const cub = GRP(`Tabela CUB ${INFO("Tabela embutida conferida em "+cubVersaoTxt()+" (mês e fonte de cada estado abaixo; onde só o R8-N foi publicado os outros padrões são estimados). CSV: uf;padrao;valor;ref;fonte (uma linha por padrão) ou uma coluna por padrão (uf;ref;fonte;R8-N;R16-N…). JSON com os mesmos campos.")}`) + KV(
+      finSEL("orc.uf", lista.map(r=>[r.uf, `${r.uf} · ${r.nome}`]), "Estado", {rr:true, fx:"cub", q:"cub sinduscon"}) +
+      finSEL("orc.padrao", CUB_PADROES, "Padrão", {rr:true, fx:"cub", q:"cub r8 r16"})) + SW("orc.cubAuto","Seguir a tabela do estado",{fx:"cub", rr:true}) + finCubSug() +
     `<div id="cubInfo"></div><div class="row"><button type="button" class="btn sm" data-act="cubUsar">Usar como CUB de referência</button><label class="btn sm ghost" style="cursor:pointer">Importar CSV/JSON<input type="file" id="cubFile" accept=".csv,.json,.txt,text/csv,application/json" hidden></label>${(O.cubTab||[]).length?`<button type="button" class="btn sm ghost" data-act="cubLimpa">Voltar à tabela embutida</button>`:""}</div>`;
   return SEC("Orçamento da obra",
     finCampoSeg("Método", "orçamento paramétrico sistema cub fator", SEG("orc.modo",[["cub","CUB × fator"],["param","Paramétrico"]],{full:true,label:"Método do orçamento"})) +
@@ -170,8 +170,7 @@ function finOrcLive(m, f){
     sub("cant", mi(v("cant").param));
   }
   const r=cubLinha(S,O.uf), val=r && r.v[O.padrao];
-  setHTML("cubInfo", r? `<div class="row sb" style="align-items:baseline"><span style="font-family:var(--f-mono);font-size:13px">${val? brl(val)+"/m²" : "padrão sem valor"}</span><span class="note">${esc(r.fonte||"")}${r.ref?" · ref. "+esc(r.ref):""}</span></div>
-    ${r.ilustrativo?`<span class="pill warn">ilustrativo — atualize com o boletim</span>`:`<span class="pill ok">importado</span>`}${val && Math.abs(val-C)>0.5?` <span class="note">em uso: ${brl(C)}</span>`:""}` : "");
+  setHTML("cubInfo", cubInfoHTML(r, val, C));
 }
 
 /* ---------------- Riscos ---------------- */
@@ -353,7 +352,7 @@ function finViabLive(m, f, fast){
   if(document.getElementById("f-fin-terreno")){
     setSub("fin.terreno",`${brl(F.terreno/Math.max(1,m.A))}/m² · ${pct(F.terreno/Math.max(1,f.vgvB))} do VGV · máx. ${mi(f.maxTerreno)}`);
     setSub("fin.fator",`${brl(F.cub*F.fator)}/m² equiv.`);
-    if(S.orc.modo!=="param"){ const r=cubLinha(S,S.orc.uf), v=r&&r.v[S.orc.padrao]; setSub("fin.cub", v? `${S.orc.padrao} ${r.uf}: ${nf(v,0)}${r.ilustrativo?" · ilustrativo":""}` : "") }
+    if(S.orc.modo!=="param"){ const r=cubLinha(S,S.orc.uf), v=r&&r.v[S.orc.padrao]; setSub("fin.cub", v? `${S.orc.padrao} ${r.uf}${r.ref?" · "+cubRefTxt(r.ref):""}: ${nf(v,0)}${r.ilustrativo?" · ilustrativo":(r.est||[]).includes(S.orc.padrao)?" · estimado":""}` : "") }
     setSub("fin.incc",`efeito ${mi(f.obraTot-(f.obra+f.adm+f.conting))}`);
     S.produto.mix.forEach((u,i)=>setSub(`produto.mix.${i}.preco`, `${(m.unitRows[i]||{}).n||0} un. · ${mi(((m.unitRows[i]||{}).area||0)*u.preco)}`));
     if(F.finOn) setSub("fin.finPct",`limite ${mi(f.lim)} · juros ${mi(f.juros)}`);
@@ -414,7 +413,8 @@ HOOK.pdf.push(async ctx=>{
   rows([...o.itens.filter(i=>i.total>0).map(i=>[i.nome+(i.extra?` (inclui ${mi(i.extra)} de outros módulos)`:""), `${mi(i.total)} · ${pct(i.total/Math.max(1,o.total),1)}`]),
     ["Total da obra (sem INCC)", mi(tot)], ["Custo por m² construído", `${brl(tot/Math.max(1,m.constr))} · ${nf(tot/Math.max(1,m.constr)/Math.max(1,C),2)} CUB`],
     [par? "Diferença para CUB x fator" : "Paramétrico (comparação)", par? `${finPP(o.total/Math.max(1,o.cubFator+o.lazer+o.extraT)-1)}%` : mi(o.total)]], {bold:["Total da obra (sem INCC)"]});
-  { const r=cubLinha(S,O.uf); rows([["CUB de referência", `${brl(C)}/m² · tabela ${O.uf} ${O.padrao}: ${r&&r.v[O.padrao]? brl(r.v[O.padrao]) : "-"}`], ["Fonte da tabela CUB", `${r? (r.fonte||"")+(r.ref?" "+r.ref:"") : "-"}${r&&r.ilustrativo?" (ilustrativo - atualize com o boletim)":""}`]]) }
+  { const r=cubLinha(S,O.uf); rows([["CUB de referência", `${brl(C)}/m² · tabela ${O.uf} ${O.padrao}: ${r&&r.v[O.padrao]? brl(r.v[O.padrao]) : "-"}`], ["Fonte da tabela CUB", cubDescricao(S,O.uf,O.padrao)+" · tabela embutida de "+cubVersaoTxt()]]) }
+  ccalPdf(ctx);
   const RD=S.flx.receb, CV=S.flx.curva;
   h2("Fluxo: curva de obra e recebimento");
   rows([["Curva de obra", {sen:"senoidal", s:`curva S (início ${pct(CV.ini,0)}, pico ${pct(CV.pico,0)}, fim ${pct(CV.fim,0)} do prazo)`, sis:`por sistema (início ${pct(CV.ini,0)}, fim ${pct(CV.fim,0)})`}[CV.modo]||"senoidal"],

@@ -17,9 +17,9 @@ function finance(st, m, adj={}){
   // cronograma
   const launch=Math.round(F.prelanc), N=Math.max(1,Math.round(F.obra)), chaves=launch+N, V=Math.max(1,Math.round(F.venda));
   const RD = st.flx && st.flx.receb && st.flx.receb.modo==="det" ? st.flx.receb : null;   // recebimento detalhado (src/calc/fluxo.js)
-  const T=Math.max(chaves, launch+V)+2 + (RD? flxMesesExtra(RD) : 0);
+  const T=Math.max(chaves, launch+V)+2 + (RD? flxMesesExtra(RD) : 0) + softMesesExtra(st);   // + meses da assistência pós-obra (src/calc/indiretos.js)
   const z=()=>new Array(T).fill(0);
-  const c={terreno:z(),outorga:z(),projetos:z(),obra:z(),terra:z(),mkt:z(),corret:z(),imp:z(),permFin:z(),juros:z(),receb:z(),finIn:z(),finOut:z(),vendas:z(),distr:z()};
+  const c={terreno:z(),outorga:z(),projetos:z(),obra:z(),terra:z(),mkt:z(),corret:z(),imp:z(),soft:z(),permFin:z(),juros:z(),receb:z(),finIn:z(),finOut:z(),vendas:z(),distr:z()};
   const fI = mm => Math.pow(1+F.incc, mm/12);
   c.terreno[0] = terreno+itbi; c.outorga[Math.min(3,T-1)] = outorga;
   for(let k=0;k<Math.max(1,launch);k++) c.projetos[k] = projetos/Math.max(1,launch);
@@ -29,6 +29,7 @@ function finance(st, m, adj={}){
     if(curva.sis && !adj.noHooks) c.obraSis = curva.sis.map(s=>({k:s.k, nome:s.nome, cor:s.cor, v:s.w.map((x,k)=>(obra+adm+conting)*x*fI(launch+k)), mes0:launch})) }
   else { let wsum=0; const w=[]; for(let k=0;k<N;k++){ w[k]=Math.sin(Math.PI*(k+.5)/N); wsum+=w[k] }
   for(let k=0;k<N;k++) c.obra[launch+k] = (obra+adm+conting)*w[k]/wsum*fI(launch+k) }
+  const SC = softCustos(st, {obra, vgv, terreno, launch, N, chaves, T, fI}); c.soft = SC.mes;   // registro, seguros, IPTU, jurídico, pós-obra, gestão (desligados por padrão)
   const mStart=Math.max(0,launch-2), mLen=V+2; for(let k=0;k<mLen;k++) c.mkt[mStart+k] = vgv*F.mkt/mLen;
   const sold=[]; for(let k=0;k<V;k++) sold[k]=(k===0?F.vendaLanc:0)+(1-F.vendaLanc)/V;
   const soldCum=z(); let sc=0, dist=null;
@@ -52,10 +53,10 @@ function finance(st, m, adj={}){
     }
   }
   const cf=z();
-  for(let i=0;i<T;i++) cf[i] = c.receb[i] + c.finIn[i] - c.terreno[i]-c.outorga[i]-c.projetos[i]-c.obra[i]-c.terra[i]-c.mkt[i]-c.corret[i]-c.imp[i]-c.permFin[i]-c.juros[i]-c.finOut[i];
+  for(let i=0;i<T;i++) cf[i] = c.receb[i] + c.finIn[i] - c.terreno[i]-c.outorga[i]-c.projetos[i]-c.obra[i]-c.terra[i]-c.mkt[i]-c.corret[i]-c.imp[i]-c.soft[i]-c.permFin[i]-c.juros[i]-c.finOut[i];
   const sum=a=>a.reduce((s,v)=>s+v,0);
-  const S_={receita:sum(c.receb), terreno:sum(c.terreno), outorga:sum(c.outorga), projetos:sum(c.projetos), obraTot:sum(c.obra), terra:sum(c.terra), mkt:sum(c.mkt), corret:sum(c.corret), imp:sum(c.imp), permFin:sum(c.permFin), juros:sum(c.juros)};
-  const custo = S_.terreno+S_.outorga+S_.projetos+S_.obraTot+S_.terra+S_.mkt+S_.corret+S_.imp+S_.permFin+S_.juros;
+  const S_={receita:sum(c.receb), terreno:sum(c.terreno), outorga:sum(c.outorga), projetos:sum(c.projetos), obraTot:sum(c.obra), terra:sum(c.terra), mkt:sum(c.mkt), corret:sum(c.corret), imp:sum(c.imp), soft:sum(c.soft), permFin:sum(c.permFin), juros:sum(c.juros)};
+  const custo = S_.terreno+S_.outorga+S_.projetos+S_.obraTot+S_.terra+S_.mkt+S_.corret+S_.imp+S_.soft+S_.permFin+S_.juros;
   const lucro = S_.receita - custo, margem = S_.receita? lucro/S_.receita : 0;
   const margemVGV = vgv>0? lucro/vgv : 0;   // convenção do mercado: lucro ÷ VGV (a margem s/ receita nominal fica em `margem`)
   const npv = r => cf.reduce((s,v,i)=>s+v/Math.pow(1+r,i),0);
@@ -67,7 +68,7 @@ function finance(st, m, adj={}){
   const maxTerreno = terreno + (lucro - F.margemAlvo*vgv)/(1+F.itbi);   // a margem alvo é sobre o VGV
   // `terreno` (abaixo, vindo de S_) = preço + ITBI desembolsados; terrenoPreco e terrenoITBI separam os dois
   const out = {eqA,lazerC,extraC,obra,vgvB,permV,vgv,vRes,vLoja,terreno,itbi,outorga,terra,projetos,adm,conting,...S_,terrenoPreco:terreno,terrenoITBI:itbi,finOn:!!F.finOn,custo,lucro,margem,margemReceita:margem,margemVGV,cf,cumA,c,tirA,vpl,exp:minCum,pay,maxTerreno,chaves,launch,lim,
-    orc, distratoV: dist? dist.loss : 0, distrato: dist, recebModo: RD? "det" : "simples", curvaModo: curva? st.flx.curva.modo : "sen"};
+    softItens:SC.itens, orc, distratoV: dist? dist.loss : 0, distrato: dist, recebModo: RD? "det" : "simples", curvaModo: curva? st.flx.curva.modo : "sen"};
   if(!adj.noHooks) runHooks("finance", out, st, m, adj);
   return out;
 }
