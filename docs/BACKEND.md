@@ -11,7 +11,7 @@ Todos os métodos devolvem `Promise` e trabalham com objetos JSON simples (o est
 | método | devolve | observação |
 |---|---|---|
 | `Repo.pronto()` | `"idb" \| "local" \| "memoria"` | abre o banco; sem IndexedDB cai para `localStorage` (`gabarito.repo`) e, em último caso, memória |
-| `Repo.modo()` | idem | modo atual (síncrono) |
+| `Repo.modo()` | idem, ou `"nuvem"` | modo atual (síncrono); `"nuvem"` no app web com login (`src/ui/repo-nuvem.js`, que também tem `sincroniza()` e `pendentes()`) |
 | `Repo.novoId()` | `string` | UUID v4 (`crypto.randomUUID`) — o mesmo formato do `uuid` do Postgres |
 | `Repo.estudos.list()` | `[{id, nome, k, criado, atualizado, dono}]` | **sem** o estado `S`; mais recente primeiro |
 | `Repo.estudos.get(id)` | `{id, nome, S, k, criado, atualizado, dono}` ou `null` | |
@@ -39,10 +39,44 @@ Campos:
   ficam sempre). Restaurar = padrões atuais (`merge`, para migração) + o estado da versão por cima (`histOverlay`), o que reproduz
   exatamente os números salvos.
 
-## 2. Plano de troca por Supabase
+## 2. App web com login pela Rixel (IMPLEMENTADO — base do item 4.1)
 
-1. **Projeto e esquema**: criar o projeto, aplicar `docs/supabase/schema.sql` (tabelas `estudos`, `versoes`, `cidades_regras`,
-   `compartilhamentos`, com RLS). Nada disso foi executado ainda.
+Publicação e passo a passo: `docs/DEPLOY.md`. Resumo do desenho:
+
+- **Identidade e acesso = Rixel** (projeto Supabase `dolwuqozocfyrutcdbsa`). Quem decide se a pessoa pode usar o Gabarito é a
+  Rixel (plano, ferramenta avulsa, organização). O "Third-party auth" do Supabase não aceita outro projeto Supabase como
+  provedor, então **o navegador não fala com o banco do Gabarito**: as funções da Vercel (`api/*.js`) conferem a sessão e só
+  então leem/gravam no banco do Gabarito (`cjeyxafuajbvuxrbufkq`) com a chave secreta (`GABARITO_SUPABASE_SECRET_KEY`).
+- **Caminho A (principal) — protocolo de ferramentas da Rixel** (contrato lido das funções, 13/10/2026):
+  `issue_tool_code(p_tool, p_challenge, p_code_hash)` (front da Rixel, membro logado; challenge = base64url sem '=' de
+  sha256(verifier), 43 caracteres; code_hash = sha256 hex) → `exchange_tool_code(p_code, p_verifier, p_audience, null, null,
+  p_refresh_hash)` (anon; código de uso único, 60 s; devolve `{sub, aud, tool_id, kind, jti, iat, exp, right_expires_at,
+  device_hash, device_id, entitlements}`) → `product_access_status(p_jti, p_audience, p_sub, null)` (anon → `{active}`) →
+  `refresh_product_session(p_refresh_hash, p_next_hash, p_audience, null)` (anon, gira o hash) → `revoke_product_session`.
+  As respostas não são assinadas: valem porque o SERVIDOR do Gabarito as recebe da Rixel por HTTPS (nunca do navegador).
+  Implementação: `api/_lib/lancamento.js` (iniciar/callback), `api/_lib/sessoes.js` (sessão opaca em cookie HttpOnly; no
+  banco só `sha256(id)`, com sub, jti, aud, hash atual do refresh, `ultima_verificacao`; reconfere a cada 60 s), rotas
+  `api/rixel/{iniciar,callback,sair}.js`. Pendente da Rixel: endereço/parâmetros da página de lançamento (`RIXEL_LAUNCH_URL`).
+- **Caminho B (opcional, desligado)** — login direto por e-mail e senha no Auth da Rixel (`GABARITO_LOGIN_DIRETO=1`): token ES256
+  conferido pelo JWKS (`api/_lib/jwt.js`) e acesso por `rpc('tool_contract', {p_tool})` com o token do usuário
+  (`api/_lib/acesso.js`; exceção 'Acesso indisponível' = não pode). `current_access()` NÃO serve: só traz scope/role/status.
+- **Sem limites por plano no Gabarito**: as claims não trazem o plano. `pode()`/`limite()` (`src/ui/auth.js`) liberam tudo —
+  ponto único para plugar limites no futuro.
+- **Padrão seguro**: sem `GABARITO_TOOL_ID`, Rixel fora do ar ou resposta inesperada → nega (Rixel fora: 503 sem derrubar a sessão).
+- **API** (todas exigem sessão; escrita com cookie exige o cabeçalho `X-Gabarito: 1`): `GET /api/saude` (pública),
+  `GET /api/eu`, `/api/estudos` (GET lista|`?id=`, POST, PUT `?id=` com `rev` → 409 `{erro:"conflito", atual}`, DELETE),
+  `/api/versoes` (GET `?estudo=`|`?id=`, POST, DELETE), `/api/regras` (GET, POST, DELETE; publicar só `perfis.revisor`).
+- **Banco**: `docs/supabase/migrations/0001_inicial.sql` — `estudos`, `versoes`, `cidades_regras`, `perfis`,
+  `compartilhamentos`, `sessoes`; RLS ligado sem nenhuma política e privilégios de anon/authenticated revogados; dono = `sub`
+  da Rixel (uuid, sem FK).
+- **Navegador**: `src/ui/auth.js` (modo app web só em `*.rixel.com.br`/`*.vercel.app`/`localhost?nuvem=1`; tela "Entrar com a
+  Rixel"; abrir sem sessão inicia o fluxo sozinho; estados redirecionando / sem acesso / sessão expirada / erro; conta no topo
+  com Sair; oferta "Enviar estudos deste navegador") e `src/ui/repo-nuvem.js` (mesma interface do `Repo`, grava local
+  primeiro + fila + conflito por `rev`, ver passos 4–5 abaixo). `src/ui/repo.js` virou `RepoLocal` + `let Repo`.
+
+## 3. Plano original de troca por Supabase (referência; os passos 1–5 estão implementados como na seção 2)
+
+1. **Projeto e esquema**: aplicar `docs/supabase/migrations/0001_inicial.sql` no projeto do Gabarito (ainda não executado).
 2. **Login**: Supabase Auth (e-mail com link mágico + Google). `dono`/`autor` passam a ser o `auth.uid()`.
    - **Decisão do Luiz (13/10/2026):** o produto vai ser um app web próprio (Vercel + um projeto Supabase só do Gabarito), com o
      login **integrado ao Supabase da comunidade dele**: quem faz login e tem acesso na comunidade tem o mesmo acesso ao Gabarito.
@@ -75,7 +109,7 @@ Campos:
 10. **Testes**: os testes atuais de histórico e versões (`tests/plataforma.test.js`) continuam valendo; acrescentar testes da
     fila offline com um `Repo` falso.
 
-## 3. Web Worker e nuvem
+## 4. Web Worker e nuvem
 
 O cálculo continua no navegador (Web Worker, `src/ui/calcworker.js`); a nuvem guarda só estado e números. Os números `k` de cada
 estudo/versão permitem listar e comparar estudos sem recalcular.

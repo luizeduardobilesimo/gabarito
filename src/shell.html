@@ -605,6 +605,41 @@ details.card>summary:hover{background:color-mix(in srgb,var(--surface-2) 60%,tra
 }
 /* seções fechadas não ocupam espaço nem contam como visíveis (vale para todas as etapas) */
 details.card:not([open])>.cb{display:none}
+/* ===== conta (app web com login pela Rixel — src/ui/auth.js) ===== */
+.auth{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px 16px;overflow-y:auto;background:radial-gradient(120% 80% at 50% 0%,var(--stage-a),var(--bg) 70%)}
+.auth::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(var(--line) 1px,transparent 1px) 0 0/48px 48px,linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/48px 48px;opacity:.35;-webkit-mask-image:radial-gradient(70% 55% at 50% 40%,#000,transparent);mask-image:radial-gradient(70% 55% at 50% 40%,#000,transparent)}
+.auth-card{position:relative;width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:28px 28px 24px;display:grid;gap:14px;animation:authIn .3s ease both}
+@keyframes authIn{from{transform:translateY(8px)}to{transform:none}}
+.auth-marca{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-variation-settings:"wdth" 125;font-weight:700;font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink)}
+.auth-marca svg{width:24px;height:24px}
+.auth h1{font-family:var(--f-display);font-variation-settings:"wdth" 112;font-weight:650;font-size:23px;letter-spacing:-.01em;margin:6px 0 -6px}
+.auth-sub{margin:0;color:var(--muted);font-size:13px}
+.auth-b{min-height:42px;font-size:13.5px;text-decoration:none}
+.auth a.btn{color:inherit}
+.auth-msg{margin:0;padding:9px 12px;border-radius:10px;font-size:12.5px;background:color-mix(in srgb,var(--warn) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 30%,var(--line));color:var(--ink)}
+.auth-msg.ok{background:var(--accent-2);border-color:color-mix(in srgb,var(--accent) 25%,var(--line))}
+.auth-ou{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11.5px}.auth-ou::before,.auth-ou::after{content:"";flex:1;height:1px;background:var(--line)}
+.auth-f{display:grid;gap:10px}.auth-f .inp input{padding:9px 10px;font-size:13.5px}
+.auth-lk{justify-self:center;color:var(--muted)}
+.auth-lin{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.auth-pe{margin:4px 0 0;font-size:12px;color:var(--muted);text-align:center}.auth-pe a,.auth-rod a{color:var(--accent);text-decoration:none;font-weight:500}
+.auth-rod{position:relative;margin:0;font-size:11px;color:var(--muted);font-family:var(--f-mono);letter-spacing:.02em}
+.auth-roda{display:flex;align-items:center;gap:12px;color:var(--ink-2);font-size:13px;padding:6px 0 2px}
+.auth-spin{width:18px;height:18px;border-radius:50%;border:2px solid var(--line-2);border-top-color:var(--accent);animation:authGira .8s linear infinite;flex:none}
+@keyframes authGira{to{transform:rotate(360deg)}}
+.auth-ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--surface-2);border:1px solid var(--line)}
+.auth-ic svg{width:22px;height:22px;fill:none;stroke:var(--ink-2);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+html.auth-on body{overflow:hidden}
+.conta{position:relative}
+.conta-b{gap:9px;padding:4px 10px 4px 4px}
+.conta-av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--accent-2);color:var(--accent);font-family:var(--f-display);font-weight:650;font-size:11.5px;letter-spacing:.04em;flex:none}
+.conta-n{display:grid;text-align:left;line-height:1.15;max-width:160px}.conta-n b{font-weight:550;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conta-n small{font-size:10.5px;color:var(--muted);font-family:var(--f-mono)}
+.conta-m{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:240px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;display:grid}
+.conta-q{display:grid;gap:3px;padding:8px 10px 10px;border-bottom:1px solid var(--line);margin-bottom:4px}.conta-q span:not(.pill){font-size:11.5px;color:var(--muted)}.conta-q .pill{justify-self:start;margin-top:4px}
+.conta-i{display:block;text-align:left;border:0;background:none;padding:8px 10px;border-radius:8px;font-size:12.5px;color:var(--ink);text-decoration:none;cursor:pointer}.conta-i:hover{background:var(--surface-2)}
+.auth-oferta{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:45;width:min(340px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:14px;display:grid;gap:8px;animation:apIn .25s ease both}
+@media (max-width:860px){.auth-oferta{bottom:calc(86px + env(safe-area-inset-bottom,0px))}}
+@media (max-width:520px){.conta-n{display:none}.conta-b{padding:4px}.auth-card{padding:24px 20px 20px}}
 </style>
 
 <div class="app">

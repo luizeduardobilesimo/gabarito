@@ -9,8 +9,10 @@
      Repo.versoes.get(id) · put(v) · remove(id)
      Repo.regras.list({cidade}?) · get(id) · put(r) · remove(id)       (biblioteca de regras por cidade/zona)
      Repo.modo()                    → "idb" | "local" (fallback em localStorage quando não há IndexedDB) | "memoria"
-   Sem IndexedDB (navegador antigo, iframe sem permissão) cai para localStorage ("gabarito.repo") e, em último caso, memória. */
-const Repo = (()=>{
+   Sem IndexedDB (navegador antigo, iframe sem permissão) cai para localStorage ("gabarito.repo") e, em último caso, memória.
+   App web com login (src/ui/auth.js): `Repo` passa a ser a implementação da nuvem (src/ui/repo-nuvem.js), que usa esta
+   (RepoLocal) como cópia local e fila; `RepoLocal.bruto` grava registros sem mexer em datas (cache da nuvem). */
+const RepoLocal = (()=>{
   const NOME="gabarito", VER=1, LOJAS={ estudos:"atualizado", versoes:"estudoId", regras:"cidade" };
   let modo="idb", dbP=null, mem=null;
   const agora = ()=>new Date().toISOString();
@@ -73,5 +75,7 @@ const Repo = (()=>{
       put: r=>{ const t=agora(); return grava("regras", {status:"rascunho", ...r, id:r.id||novoId(), criado:r.criado||t, atualizado:t}) },
       remove: id=>apaga("regras", id),
     },
+    bruto: { um, grava, apaga, todos },
   };
 })();
+let Repo = RepoLocal;

@@ -15,6 +15,11 @@ async function estInit(){
   try{
     await Repo.pronto();
     let lista=await Repo.estudos.list(), id=LS.get("gabarito.estudo");
+    if((!id || !lista.some(e=>e.id===id)) && Repo.modo()==="nuvem" && lista.length){
+      // conta na nuvem, aparelho novo: abre o estudo mais recente da conta em vez de criar outro
+      EST.pronto=true; setInterval(estAuto, 30000);
+      await estAbrir(lista[0].id, "Estudo aberto: "+lista[0].nome); return;
+    }
     if(!id || !lista.some(e=>e.id===id)){
       // migração: o estudo atual (gabarito.v2) vira um estudo do repositório — o gabarito.v2 continua lá
       const rec=await Repo.estudos.put({nome:S.nome||"Estudo", S:clone(S)}); id=rec.id;
@@ -156,11 +161,12 @@ function estCardsHTML(){
   const campo=(id,ph,rot,act,btn)=>`<div class="row" style="flex-wrap:nowrap"><div class="inp" style="flex:1"><input class="t" id="${id}" placeholder="${ph}" aria-label="${rot}" autocomplete="off"></div><button type="button" class="btn pri" data-act="${act}">${btn}</button></div>`;
   return `<div id="estUndo">${estUndoHTML()}</div>` +
     RES("Estudo aberto", `<div class="estcur"><b id="estCurNome">${esc(S.nome||"Estudo")}</b><span class="note" id="estCurSt">${estStatus()}</span></div>`,
-      {aside: modo==="idb"||modo==="local"? "salvo neste navegador" : "só nesta sessão"}) +
+      {aside: modo==="nuvem"? "salvo na sua conta" : modo==="idb"||modo==="local"? "salvo neste navegador" : "só nesta sessão"}) +
     SEC("Comparação", `<div id="cmpBox">${c}</div>`, {key:"cmp", open:true, id:"cmpSec", hidden:!c, sum:sm.cmp,
       info:"O estudo atual lado a lado com o que você marcou nas listas abaixo (quadradinho à esquerda de cada linha). Em verde, o melhor valor de cada linha."}) +
     SEC("Estudos", `<div id="estBox">${estListHTML()}</div>`, {key:"estudos", open:true, sum:sm.estudos,
-      info:"Cada estudo é um terreno ou uma proposta diferente. Ficam guardados neste navegador; o aberto é salvo sozinho a cada mudança. Use o .json (aba Entregar) para levar a outro aparelho."}) +
+      info: modo==="nuvem"? "Cada estudo é um terreno ou uma proposta diferente. Ficam guardados na sua conta e abrem em qualquer aparelho; o aberto é salvo sozinho a cada mudança (sem internet, ele espera e envia depois)."
+        : "Cada estudo é um terreno ou uma proposta diferente. Ficam guardados neste navegador; o aberto é salvo sozinho a cada mudança. Use o .json (aba Entregar) para levar a outro aparelho."}) +
     SEC("Versões", campo("vsNome","Ex.: aprovada na reunião","Nome da versão","vsSalvar","Salvar versão") + `<div id="vsBox">${vsListHTML()}</div>`, {key:"versoes", open:true, sum:sm.versoes,
       info:`Fotos do estudo aberto ao longo do tempo. Salvas sozinhas a cada ${EST.autoMin} minutos quando ele muda, ou quando você pedir. Restaurar volta o estudo exatamente àquele ponto (Ctrl+Z desfaz); o ícone ao lado abre a versão como um estudo novo.`}) +
     SEC("Cenários", campo("cenNome","Ex.: 2 torres · 12 e 9 pav","Nome do cenário","cenSave","Salvar") + `<div id="cenBox">${cenListHTML()}</div>`, {key:"cenarios", sum:sm.cenarios,
