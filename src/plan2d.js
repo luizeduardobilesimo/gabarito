@@ -155,7 +155,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     fillP(poly,col,0.95); strokeP(poly,css("--ink"),1, item.desc? [4,3] : null);
     if(V.s>3.5){ const c=w2s(G.centroid(poly)); label(item.nome,[c[0],c[1]-(V.s>6?7:0)],{size:10,w:"600",bg:false}); if(V.s>6) label(`${nf(item.area,0)} m²${item.desc?" · descoberto":""}`,[c[0],c[1]+7],{size:9,bg:false,col:css("--ink-2")}) } }) }
   function tipoBody(ti, onlyOutline){
-    const t=m.T[ti], lay=m.tipo[ti]; if(!t||!t.plate.length) return;
+    const t=m.T[ti], lay=(mode==="andar" && opt.andar && typeof torreLayAndar==="function" ? torreLayAndar(m, ti, opt.andar.j+1) : null) || m.tipo[ti]; if(!t||!t.plate.length) return;   // C2: andar de outro bloco → layout do bloco
     if(!lay || onlyOutline){ strokeP(t.plate,css("--ink"),1.2,[5,4]); return }
     const pal=[css("--u1"),css("--u2"),css("--u3"),css("--u4"),css("--u5")], names=[...new Set(S.produto.mix.map(u=>u.nome))];
     lay.units.forEach(u=>{ fillP(u.poly, u.livre?css("--c-circ"):pal[names.indexOf(u.nome)%pal.length], u.livre?0.6:0.8); strokeP(u.poly,css("--ink"),1.4) });
@@ -170,8 +170,8 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     if(V.s>4) lay.units.forEach(u=>{ if(!u.poly.length || (com && u.com)) return; const c=w2s(G.centroid(u.poly)); if(u.livre){ label("livre",c,{size:10}); return }
       label(u.nome, [c[0],c[1]-8], {w:"600",font:"--f-display",size:12,bg:false}); label(`${nf(u.alvo,1)} m² priv${u.sac?` · sacada ${nf(u.sac.area,1)}`:""}`, [c[0],c[1]+8], {size:10,bg:false}) });
   }
-  function cobBody(ti){ const t=m.T[ti]; if(!t||!t.plate.length) return; const n=Math.max(1,S.produto.cob.qtd), ux=G.longestDir(t.plate);
-    for(let k=0;k<n;k++){ const [mn,mx]=G.extent(t.plate,ux), a=k? G.cutAt(t.plate,ux,k/n):mn, b=k<n-1? G.cutAt(t.plate,ux,(k+1)/n):mx, p=G.band(t.plate,ux,a,b); fillP(p,css("--m-cob"),0.85); strokeP(p,css("--ink"),1.3); if(p.length) label(`Cobertura ${k+1}`, w2s(G.centroid(p)), {w:"600",font:"--f-display",size:12,bg:false}) } coreDraw(m.tipo[ti], true) }
+  function cobBody(ti){ const t=m.T[ti]; if(!t||!t.plate.length) return; const n=Math.max(1,S.produto.cob.qtd), cp=t.desenhada? torrePlantaAndar(t,t.pav) : t.plate, ux=G.longestDir(cp);   // C2: cobertura no último bloco
+    for(let k=0;k<n;k++){ const [mn,mx]=G.extent(cp,ux), a=k? G.cutAt(cp,ux,k/n):mn, b=k<n-1? G.cutAt(cp,ux,(k+1)/n):mx, p=G.band(cp,ux,a,b); fillP(p,css("--m-cob"),0.85); strokeP(p,css("--ink"),1.3); if(p.length) label(`Cobertura ${k+1}`, w2s(G.centroid(p)), {w:"600",font:"--f-display",size:12,bg:false}) } coreDraw(m.tipo[ti], true) }
   function terreoBody(){
     const T=m.ter||{};
     fillP(L,css("--m-lote"),0.4); strokeP(L,css("--ink"),1.4);

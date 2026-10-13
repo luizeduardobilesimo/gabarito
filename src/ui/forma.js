@@ -68,7 +68,7 @@ HOOK.draw2d.push((g, ctx)=>{
   }
   if(mode==="andar" && opt.andar && opt.andar.tipo==="tipo"){
     const j=opt.andar.j;
-    m.T.forEach(t=>{ const f=(t.faixas||[]).find(f=>j+1>=f.de && j+1<=f.ate); if(!f || j>=t.pav || f.plate===t.plate) return;
+    m.T.forEach(t=>{ const f=(t.faixas||[]).find(f=>j+1>=f.de && j+1<=f.ate); if(!f || j>=t.pav || f.plate===t.plate || t.desenhada) return;   // C2: a pilha de blocos desenha os próprios terraços (src/ui/blocos.js)
       // terraço = planta típica fora da planta deste andar
       const ring=p=>p.forEach((q,i)=>{ const [x,y]=w2s(q); i? g.lineTo(x,y) : g.moveTo(x,y) });
       g.save(); g.beginPath(); ring(t.plate); g.closePath(); if(f.plate.length){ ring(f.plate); g.closePath() } g.fillStyle=css("--lz-deck"); g.globalAlpha=0.92; g.fill("evenodd");
@@ -82,7 +82,7 @@ HOOK.draw2d.push((g, ctx)=>{
 function formaLegenda(){
   const el=document.getElementById("planLeg"), m=window._last&&window._last.m; if(!el || !m || !m.forma || el.querySelector(".formaLeg") || VIEW!=="andar") return;
   const a=typeof floorsList==="function"? floorsList(m).find(f=>f.key===ANDAR) : null; if(!a || a.tipo!=="tipo") return;
-  if(!m.T.some(t=>{ const f=(t.faixas||[]).find(f=>a.j+1>=f.de && a.j+1<=f.ate); return f && f.plate!==t.plate })) return;
+  if(!m.T.some(t=>{ const f=(t.faixas||[]).find(f=>a.j+1>=f.de && a.j+1<=f.ate); return f && f.plate!==t.plate && !t.desenhada })) return;
   el.insertAdjacentHTML("beforeend", `<div class="formaLeg"><i style="background:var(--lz-deck)"></i>terraço (andar recuado)</div>`);
 }
 if(typeof planLegend==="function"){ const _plForma=planLegend; planLegend=function(){ _plForma.apply(this, arguments); try{ formaLegenda() }catch(e){ console.error("[forma] legenda", e) } } }

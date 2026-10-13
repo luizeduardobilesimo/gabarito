@@ -302,6 +302,177 @@ describe('Fase 0 — faixas lidas por sol, orçamento, unidades e export', () =>
   });
 });
 
+/* ===================================== C2 — pilha de blocos ===================================== */
+// lote 30 × 50, 12 pavimentos (H = 4,5 + 36 = 40,5 m → afastamento 5,06 m): embasamento largo 1º–3º, tipo 4º–10º, cobertura recuada 11º–12º
+const EMB = [[6, 8], [24, 8], [24, 44], [6, 44]];          // 18 × 36 = 648 m²
+const TOP = [[10, 16], [20, 16], [20, 36], [10, 36]];      // 10 × 20 = 200 m²
+const pilha = (blocos, pav = 12, extra = {}) => { const st = desenhada([null], extra); st.produto.torres = [{ pav }]; st.blocos.torres = [{ blocos }]; return st };
+const tres = () => pilha([{ pts: EMB, de: 1 }, { pts: RET, de: 4 }, { pts: TOP, de: 11 }]);
+
+describe('C2 — um bloco continua igual ao C1', () => {
+  it('bloco acima do total de andares é ignorado (com aviso) e os números ficam os do bloco único', () => {
+    const s1 = pilha([{ pts: RET, de: 1 }]), r1 = num(A, s1);
+    const s2 = pilha([{ pts: RET, de: 1 }, { pts: TOP, de: 15 }]), r2 = num(A, s2);
+    expect(r1.m.T[0].faixas.length).toBe(1);
+    expect(r2.m.T[0].faixas.length).toBe(1);
+    expect(r2.m.tiposA).toBeCloseTo(r1.m.tiposA, 9); expect(r2.m.units).toBe(r1.m.units); expect(r2.f.vgv).toBeCloseTo(r1.f.vgv, 4);
+    expect(r2.m.avisos.some(a => /começa no 15º andar e a torre tem 12/.test(a))).toBe(true);
+    expect(r1.m.T[0].Aproj).toBeCloseTo(392, 9);
+  });
+});
+
+describe('C2 — pilha de 3 blocos: áreas por faixa conferidas à mão', () => {
+  it('faixas, bloco de referência, mix por faixa, CA, privativa, unidades e VGV', () => {
+    const st = tres(), { m, f } = num(A, st), t = m.T[0];
+    // faixas: 1º–3º (648), 4º–10º (392, referência: mais andares tipo), 11º–12º (200)
+    expect(t.faixas.map(x => [x.de, x.ate, x.n])).toEqual([[1, 3, 3], [4, 10, 7], [11, 12, 2]]);
+    expect(t.faixas.map(x => x.A)).toEqual([648, 392, 200]);
+    expect(t.blcRef).toBe(1); expect(t.A).toBeCloseTo(392, 9); expect(t.plate).toBe(t.faixas[1].plate);
+    // referência: 2 un. de 100 m² com fator 392 × 0,8 ÷ 200 = 1,568 (C1). Embasamento: 518,4 ÷ 1,568 = 330,6 → 3 un. → fator 1,728.
+    // Cobertura recuada: 160 ÷ 1,568 = 102 → 1 un. → fator 1,6
+    expect(t.faixas.map(x => x.qtd[0])).toEqual([3, 2, 1]);
+    expect(t.faixas[1].r).toBeCloseTo(1.568, 9); expect(t.faixas[0].r).toBeCloseTo(1.728, 9); expect(t.faixas[2].r).toBeCloseTo(1.6, 9);
+    expect(m.tiposA).toBeCloseTo(648 * 3 + 392 * 7 + 200 * 2, 6);                 // 5.088 m²
+    expect(m.privRes).toBeCloseTo((648 * 3 + 392 * 7 + 200 * 2) * 0.8, 6);         // 4.070,4 m² (área × eficiência em cada faixa)
+    expect(m.units).toBe(3 * 3 + 2 * 7 + 1 * 2);                                    // 25
+    expect(m.unitRows[0].n).toBe(25); expect(m.unitRows[0].area).toBeCloseTo(4070.4, 6);
+    const R = st.regras, comp = m.tiposA * (1 - R.ncTipo) + m.lojaA + (R.ncTerreo ? 0 : m.hallA + m.lzExtraA) + (R.ncGaragem ? 0 : m.garA);
+    expect(m.CA).toBeCloseTo(comp / m.A, 9);
+    expect(t.Aproj).toBeCloseTo(648, 9);                                            // TO pela maior projeção
+    // VGV = privativa de cada faixa × preço (mesmo fator de reajuste/permuta do estudo com um bloco)
+    const s1 = pilha([{ pts: RET, de: 1 }]), r1 = num(A, s1), F = st.fin;
+    const k = r1.f.vgv / (r1.m.unitRows[0].area * 10000 + r1.m.lojaPriv * F.precoLoja);
+    expect(f.vgv).toBeCloseTo(k * (4070.4 * 10000 + m.lojaPriv * F.precoLoja), 2);
+  });
+  it('TO acima da regra é medida pela maior projeção da pilha', () => {
+    const st = tres(); st.regras.toTorre = 0.4;                                     // 600 m² < 648
+    const m = A.compute(st, { layouts: false });
+    expect(m.avisos.some(a => /As torres ocupam 648 m²/.test(a))).toBe(true);
+  });
+  it('o último bloco estica com o stepper; o Máx continua funcionando', () => {
+    const st = tres(); st.produto.torres[0].pav = 15;
+    const t = A.massing(st).T[0];
+    expect(t.faixas[2].ate).toBe(15); expect(t.faixas[2].n).toBe(5);
+    expect(t.Atot).toBeCloseTo(648 * 3 + 392 * 7 + 200 * 5, 6);
+    st.regras.hMax = 30; expect(A.maxPav(st)).toBe(8);                             // 4,5 + 8 × 3 = 28,5 m (o bloco de cima fica de fora)
+    st.produto.torres[0].pav = 8; expect(A.massing(st).T[0].faixas.length).toBe(2);
+  });
+});
+
+describe('C2 — edição da pilha (puras)', () => {
+  it('"+ Bloco": cópia do de cima, começando no meio da faixa de cima; faixa de um andar não divide', () => {
+    const st = pilha([{ pts: RET, de: 1, tipo: 'ret' }], 17);
+    const nb = A.blcMaisBloco(st, 0);
+    expect(nb.de).toBe(10); expect(nb.pts).toEqual(RET); expect(nb.pts).not.toBe(st.blocos.torres[0].blocos[0].pts);
+    expect(A.blcMaisBloco(st, 0).de).toBe(14);                                      // 10º–17º → 14º
+    const t = A.massing(st).T[0];
+    expect(t.faixas.map(f => [f.de, f.ate])).toEqual([[1, 9], [10, 13], [14, 17]]);
+    const st2 = pilha([{ pts: RET, de: 1 }, { pts: TOP, de: 12 }], 12);
+    expect(A.blcMaisBloco(st2, 0)).toBe(null);
+  });
+  it('"Copiar do de baixo" copia o contorno e mantém o andar inicial', () => {
+    const st = tres(), c = A.blcCopiaBaixo(st, 0, 2), L = st.blocos.torres[0].blocos;
+    expect(c.pts).toEqual(RET); expect(c.de).toBe(11); expect(L[2].pts).not.toBe(L[1].pts);
+    expect(A.blcCopiaBaixo(st, 0, 0)).toBe(null);
+  });
+  it('"Recuar X m": retângulo e L recuados em todas as fachadas; recuo grande demais devolve null', () => {
+    const st = pilha([{ pts: EMB, de: 1 }, { pts: EMB, de: 4 }]);
+    const nb = A.blcRecua(st, 0, 1, 3);
+    expect(A.G.area(nb.pts)).toBeCloseTo(12 * 30, 6); expect(nb.de).toBe(4);
+    expect(A.blcFora(nb.pts, EMB)).toBeCloseTo(0, 6);
+    const off = A.blcOffset(ELE, 2);
+    expect(A.G.area(off)).toBeCloseTo(14 * 6 + 4 * 20, 6);                          // ala de 10 → 6 e ala de 8 → 4
+    [[8, 12], [22, 12], [22, 18], [12, 18], [12, 38], [8, 38]].forEach((q, k) => { expect(off[k][0]).toBeCloseTo(q[0], 9); expect(off[k][1]).toBeCloseTo(q[1], 9) });
+    expect(A.blcOffset(ELE, 5)).toBe(null);                                          // a ala de 8 m some
+    expect(A.blcRecua(st, 0, 1, 20)).toBe(null);
+  });
+  it('apagar bloco: o de baixo estica até o próximo; o 1º apagado passa o andar inicial ao seguinte', () => {
+    const st = tres(); A.blcApagaBloco(st, 0, 1);
+    expect(A.massing(st).T[0].faixas.map(f => [f.de, f.ate])).toEqual([[1, 10], [11, 12]]);
+    A.blcApagaBloco(st, 0, 0); expect(st.blocos.torres[0].blocos[0].de).toBe(1);
+  });
+  it('formato pronto num bloco de cima fica dentro do bloco de baixo e mantém o andar inicial', () => {
+    const st = tres(), r = A.blcAplicaFormato(st, 0, 'L', 2), L = st.blocos.torres[0].blocos;
+    expect(L.length).toBe(3); expect(L[2].de).toBe(11); expect(L[2].tipo).toBe('L');
+    expect(Math.abs(r.A - 200)).toBeLessThan(1);
+    expect(A.blcAreaFora(L[2].pts, RET)).toBeLessThan(0.5);
+  });
+});
+
+describe('C2 — núcleo contínuo e avisos por bloco', () => {
+  it('o mesmo núcleo em todas as faixas; layout por área nos blocos fora da referência', () => {
+    const st = tres(), m = A.compute(st, { layouts: false }), t = m.T[0], ref = m.tipo[0];
+    const f0 = t.faixas[0];
+    expect(f0.lay.core).toBe(ref.core); expect(f0.lay.coreParts).toBe(ref.coreParts);
+    expect(A.torreLayAndar(m, 0, 2)).toBe(f0.lay); expect(A.torreLayAndar(m, 0, 5)).toBe(ref);
+    const un = f0.lay.units.filter(u => !u.livre);
+    expect(un.length).toBe(3); un.forEach(u => expect(u.alvo).toBeCloseTo(100 * f0.r, 9));
+    expect(A.blcDentro(ref.core, f0.plate)).toBe(1);
+    f0.lay.units.forEach(u => expect(A.G.polysOverlap(A.G.scaleToArea(u.poly, A.G.area(u.poly) * 0.98), ref.core)).toBe(false));
+  });
+  it('núcleo cortado: aviso no bloco que não contém o núcleo inteiro; bloco que contém, sem aviso', () => {
+    const m = A.compute(tres(), { layouts: false });
+    expect(m.T[0].faixas[2].nucleoCortado).toBe(true);
+    expect(m.blc[0].bl.find(b => b.k === 2).nucleo).toBe(false);
+    expect(m.avisos.some(a => /bloco 11º–12º corta o núcleo/.test(a))).toBe(true);
+    const st = tres(); st.blocos.torres[0].blocos[2].pts = [[12, 20], [22, 20], [22, 40], [12, 40]];   // 10 × 20 junto à fachada do núcleo
+    const m2 = A.compute(st, { layouts: false });
+    expect(m2.avisos.some(a => /corta o núcleo/.test(a))).toBe(false);
+    const st3 = tres(); st3.blocos.torres[0].blocos[2].pts = RET.map(q => [...q]);   // cópia do tipo: nunca "corta"
+    expect(A.compute(st3, { layouts: false }).avisos.some(a => /corta o núcleo/.test(a))).toBe(false);
+  });
+  it('balanço medido sobre o bloco de baixo (retângulo e L)', () => {
+    const big = [[6, 12], [24, 12], [24, 40], [6, 40]];                                // 18 × 28 sobre 14 × 28 → 2 × 4 × 28 = 112 m²
+    const m = A.compute(pilha([{ pts: RET, de: 1 }, { pts: big, de: 6 }]), { layouts: false });
+    expect(m.blc[0].bl[1].bal).toBeCloseTo(112, 6);
+    expect(m.avisos.some(a => /bloco 6º–12º avança 112 m² além do bloco de baixo/.test(a))).toBe(true);
+    // bloco de baixo em L (côncavo): amostragem
+    const sq = [[6, 10], [24, 10], [24, 40], [6, 40]];                                 // 540 m² sobre a L de 340 → 200 m²
+    const mL = A.compute(pilha([{ pts: ELE, de: 1 }, { pts: sq, de: 6 }]), { layouts: false });
+    expect(Math.abs(mL.blc[0].bl[1].bal - 200)).toBeLessThan(4);
+  });
+  it('recuos progressivos (2.4): cada bloco é conferido com o envelope da sua cota', () => {
+    const FX = [{ ate: 12, af: 2, div: 0 }, { ate: 0, af: 2, div: 6 }];
+    const W = [[3, 8], [27, 8], [27, 44], [3, 44]];                                    // 3 m das divisas: vale embaixo (≈ 2,25 m), não no topo (6,75 m)
+    const s1 = pilha([{ pts: W, de: 1 }, { pts: RET, de: 4 }], 12, {}); s1.forma = { ...s1.forma, on: true, prog: true, escalonar: true, faixas: FX };
+    const m1 = A.compute(s1, { layouts: false });
+    expect(m1.blc[0].bl[0].foraRecuo).toBeCloseTo(0, 6);
+    expect(m1.avisos.some(a => /sobre os recuos/.test(a))).toBe(false);
+    const s2 = pilha([{ pts: W, de: 1 }], 12); s2.forma = { ...s2.forma, on: true, prog: true, escalonar: true, faixas: FX };
+    const m2 = A.compute(s2, { layouts: false });
+    expect(m2.blc[0].foraRecuo).toBeGreaterThan(50);
+    expect(m2.avisos.some(a => /sobre os recuos/.test(a))).toBe(true);
+  });
+});
+
+describe('C2 — sol, orçamento, unidades e IFC por faixa com a pilha', () => {
+  it('prismas: um por bloco, empilhados até o topo', () => {
+    const st = tres(), m = A.massing(st), t = m.T[0], pr = A.prisms(st, m).filter(p => p.own && p.poly !== m.emb);
+    expect(pr.length).toBe(3);
+    expect(pr.map(p => A.G.area(p.poly))).toEqual([648, 392, 200]);
+    expect(pr[0].z0).toBeCloseTo(m.hEmb, 9); expect(pr[1].z0).toBeCloseTo(m.hEmb + 9, 9); expect(pr[2].z0).toBeCloseTo(m.hEmb + 30, 9); expect(pr[2].z1).toBeCloseTo(t.H, 9);
+  });
+  it('orçamento: fachada e carga somando por bloco', () => {
+    const st = tres(), m = A.compute(st, { layouts: false }), d = A.orcDrivers(st, m), emb = A.G.perimeter(m.emb) * m.hEmb;
+    expect(d.fachA - emb).toBeCloseTo(2 * (18 + 36) * 9 + 2 * (14 + 28) * 21 + 2 * (10 + 20) * 6, 6);
+    const s1 = pilha([{ pts: RET, de: 1 }]), d1 = A.orcDrivers(s1, A.compute(s1, { layouts: false }));
+    expect(d.carga - d1.carga).toBeCloseTo(5088 - 392 * 12, 6);
+  });
+  it('unidades (tabela de vendas e sol): cada andar segue o mix e a planta do seu bloco', () => {
+    const m = A.compute(tres(), { layouts: false }), U = m.unidades.filter(u => !u.cob);
+    expect(U.length).toBe(25);
+    expect(U.filter(u => u.andar === 1).length).toBe(3); expect(U.find(u => u.andar === 1).area).toBeCloseTo(172.8, 6);
+    expect(U.filter(u => u.andar === 12).length).toBe(1); expect(U.find(u => u.andar === 12).area).toBeCloseTo(160, 6);
+    expect(U.filter(u => u.andar === 1 && u.sol).length).toBe(3);                   // casadas com o layout do bloco
+  });
+  it('planta e layout por andar (IFC/DXF)', () => {
+    const m = A.compute(tres(), { layouts: false }), t = m.T[0];
+    expect(A.torrePlantaAndar(t, 2)).toBe(t.faixas[0].plate); expect(A.torrePlantaAndar(t, 7)).toBe(t.plate); expect(A.torrePlantaAndar(t, 12)).toBe(t.faixas[2].plate);
+    expect(A.torreLayAndar(m, 0, 12)).toBe(t.faixas[2].lay);
+    expect(A.serialProblemas(m)).toEqual([]);                                        // o modelo continua clonável (Worker)
+  });
+});
+
 describe('torreAjustaMix', () => {
   const mix = [{ area: 50, qtd: 4 }, { area: 80, qtd: 2 }];   // 360 m²
   it('mantém a proporção e não passa do alvo', () => {

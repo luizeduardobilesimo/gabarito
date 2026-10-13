@@ -120,9 +120,10 @@ function rebuild3d(m, force){
     const fxs=t.faixas||[], plateK=k=>{ const f=fxs.find(f=>k+1>=f.de && k+1<=f.ate); return f? f.plate : t.plate }, topP=fxs.length? fxs[fxs.length-1].plate : t.plate;
     for(let k=0;k<t.pav;k++){ const cob = t.hasCob && k===t.pav-1, pk=plateK(k), pPrev=k? plateK(k-1) : null;
       if(pPrev && pPrev!==pk && G.area(pPrev)>G.area(pk)+0.5){ slab(pPrev, yy-0.02, 0.07, col3("--lz-deck"), {eop:0.35, rough:0.8}); outline(pPrev, yy, 1.05, col3("--ink"), false) }
-      const oco = pk===t.plate && t.oco;   // C1: torre com pátio → laje com furo (sem a "ponte" do polígono)
+      const fK=fxs.find(f=>k+1>=f.de && k+1<=f.ate), oco = (fK && fK.oco) || (pk===t.plate && t.oco);   // C1/C2: torre (ou bloco) com pátio → laje com furo (sem a "ponte" do polígono)
       slab(oco? oco.pts : pk, yy, P.pe-0.22, cob? col3("--m-cob") : white, {eop:0.22, rough:0.75, holes: oco? oco.vazios : undefined});
-      if(lay && !cob && pk===t.plate) lay.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length) return; if(u.sac.tipo==="balanco"){ slab(u.sac.poly, yy, 0.16, white, {eop:0.3}); slab(u.sac.poly, yy+0.16, 1.05, glass, {op:0.3, eop:0.25, rough:0.1}) } else { slab(G.scaleToArea(u.sac.poly,G.area(u.sac.poly)*0.999), yy+0.03, P.pe-0.3, sacCol, {op:0.55, eop:0.2, rough:0.2}) } });
+      const layK = fK && fK.lay ? fK.lay : pk===t.plate ? lay : null;   // C2: sacadas do layout do bloco
+      if(layK && !cob) layK.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length) return; if(u.sac.tipo==="balanco"){ slab(u.sac.poly, yy, 0.16, white, {eop:0.3}); slab(u.sac.poly, yy+0.16, 1.05, glass, {op:0.3, eop:0.25, rough:0.1}) } else { slab(G.scaleToArea(u.sac.poly,G.area(u.sac.poly)*0.999), yy+0.03, P.pe-0.3, sacCol, {op:0.55, eop:0.2, rough:0.2}) } });
       yy+=P.pe }
     if(t.duplexA>1){ slab(G.scaleToArea(topP,t.duplexA), yy, P.pe-0.22, col3("--m-cob"), {eop:0.22}); yy+=P.pe }
     if(ti===0) lzMesh(LZ.cob, yy);
@@ -164,8 +165,8 @@ function cutFloor(m, fl){
   if(fl.tipo==="ter"){ (m.ter.lojas||[]).forEach(p=>flat(p,y,col3("--m-loja"))); (m.ter.hall||[]).forEach(p=>flat(p,y,col3("--m-ter"))); ((m.lzLay||{}).terreo||[]).forEach(o=>flat(o.poly,y+0.01,col3("--lz-c"))) }
   if(fl.tipo!=="tipo") (m.coreSets||[]).forEach(cs=>{ if(fl.tipo==="pavlaz"||fl.tipo==="roof"){ if(cs.i!==0) return } (cs.lay.coreParts||[]).forEach(cp=>flat(cp.poly,y+0.012,col3("--c-"+cp.kind))) });
   if(garLay){ garLay.vagas.forEach(v=>{ if(v.tipo==="off") return; flat(v.poly,y+0.01, v.tipo==="pcd"? col3("--accent") : v.tipo==="idoso"? col3("--ok") : col3("--m-gar")) }); }
-  if(fl.tipo==="tipo") m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l||fl.j>=t.tipoFloors) return;
-    const fx=(t.faixas||[]).find(f=>fl.j+1>=f.de && fl.j+1<=f.ate), pf=fx && fx.plate!==t.plate ? fx.plate : null; // 2.4: andar recuado → terraço em volta
+  if(fl.tipo==="tipo") m.T.forEach((t,i)=>{ const fx=(t.faixas||[]).find(f=>fl.j+1>=f.de && fl.j+1<=f.ate), l=(fx && fx.lay) || m.tipo[i]; if(!l||fl.j>=t.tipoFloors) return;   // C2: bloco com layout próprio
+    const pf=fx && fx.plate!==t.plate && !fx.lay ? fx.plate : null; // 2.4: andar recuado → terraço em volta
     if(pf) flat(t.plate,y-0.004,col3("--lz-deck"));
     l.units.forEach(u=>{ const p= pf? G.clipToPoly(u.poly,pf) : u.poly; if(p.length) flat(p,y,u.livre?col3("--c-circ"):pal[names.indexOf(u.nome)%5]) }); l.coreParts.forEach(cp=>flat(cp.poly,y+0.01,col3("--c-"+cp.kind))); flat(l.corridor,y+0.005,col3("--surface")) });
 }

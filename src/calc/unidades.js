@@ -108,7 +108,8 @@ function uniGroups(st, m, spacing){
       const pl = f.plate && f.plate.length>2 ? f.plate : null; if(!pl) return;
       const floors=[]; for(let k=f.de-1;k<Math.min(f.ate,t.tipoFloors);k++) floors.push({k, z:base+k*P.pe+P.pe/2});
       if(!floors.length) return;
-      const us = pl===t.plate ? units : units.map(u=>({...u, poly:G.clipToPoly(u.poly, pl)})).filter(u=>u.poly.length>2 && G.area(u.poly)>4);
+      const us = f.lay ? f.lay.units.filter(u=>!u.livre && u.poly && u.poly.length>2)   // C2: bloco com layout próprio (mesmo núcleo, unidades por área)
+        : pl===t.plate ? units : units.map(u=>({...u, poly:G.clipToPoly(u.poly, pl)})).filter(u=>u.poly.length>2 && G.area(u.poly)>4);
       groups.push({ti, fk, kind:"tipo", plate:pl, units:us.map(u=>({poly:u.poly, nome:u.nome, alvo:u.alvo, fac:uniFacades(u.poly,pl,st,spacing)})), floors});
     });
     if(t.hasCob){ const fl=fxs[fxs.length-1], cp=fl.plate && fl.plate.length>2 ? fl.plate : t.plate;
@@ -168,7 +169,7 @@ const uniNow=()=> (typeof performance!=="undefined"? performance.now() : Date.no
 function unidadesGeo(st, m, o={}){
   const PR=o.prisms||prisms(st,m), obst=uniObst(PR);
   const geoSig=JSON.stringify([+st.lote.lat||0, st.lote.norte||0, obst.map(q=>[q.poly,q.z0,q.z1]),
-    (m.T||[]).map((t,ti)=>[t.plate, t.tipoFloors, t.hasCob, m.tipo&&m.tipo[ti]? m.tipo[ti].units.map(u=>u.poly) : 0]), m.hEmb, m.pavLz, st.produto.pe, st.produto.cob.qtd]);
+    (m.T||[]).map((t,ti)=>[t.plate, t.tipoFloors, t.hasCob, m.tipo&&m.tipo[ti]? m.tipo[ti].units.map(u=>u.poly) : 0, (t.faixas||[]).map(f=>f.lay? f.lay.units.map(u=>u.poly) : 0)]), m.hEmb, m.pavLz, st.produto.pe, st.produto.cob.qtd]);
   const full=_uniCache.full;
   if(full && full.sig===geoSig) return full;
   if(o.rough){ const r=_uniCache.rough; if(r && r.sig===geoSig) return r }
