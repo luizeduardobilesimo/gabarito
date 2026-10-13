@@ -196,6 +196,15 @@ describe('3.2 cenários, tornado e Monte Carlo', () => {
     t.vars.forEach(v => expect(v.lo.margem).toBeLessThanOrEqual(v.hi.margem + 1e-12));
     const tt = A.flxTornado(st, m, null, 'tir'); tt.vars.forEach(v => expect(v.lo.tir ?? -1).toBeLessThanOrEqual((v.hi.tir ?? -1) + 1e-12));
   });
+  it('Fase D: tornado, grade de sensibilidade e Monte Carlo usam a margem s/ VGV (a s/ receita vai em margemReceita)', () => {
+    const t = A.flxTornado(st, m, null, 'margem'), b = A.finance(st, m, { noHooks: true });
+    expect(t.base.margem).toBeCloseTo(b.margemVGV, 12); expect(t.base.margemReceita).toBeCloseTo(b.margem, 12);
+    const p = t.vars.find(v => v.k === 'preco'); expect(p.hi.margem).toBeCloseTo(A.flxAjuste(st, m, { preco: 0.1 }).margemVGV, 12);
+    expect(A.sensGrid(st, m)[1][1]).toBeCloseTo(b.margemVGV, 12);
+    const r = A.flxMonteCarlo(st, m, 60, 5), r1 = A.flxMCRodada(st, m, A.flxRng(5));
+    expect(r1.margemReceita).not.toBeCloseTo(r1.margem, 3);                                   // a rodada guarda as duas margens, que são diferentes expect(r.margem[0]).toBeLessThanOrEqual(r.margem[2]);
+    expect(r.margem[1]).toBeGreaterThan(b.margemVGV - 0.15); expect(r.margem[1]).toBeLessThan(b.margemVGV + 0.15);
+  });
   it('Monte Carlo: P10 ≤ P50 ≤ P90 e reprodutível', () => {
     const r = A.flxMonteCarlo(st, m, 200, 3), r2 = A.flxMonteCarlo(st, m, 200, 3);
     expect(r.tir[0]).toBeLessThanOrEqual(r.tir[1]); expect(r.tir[1]).toBeLessThanOrEqual(r.tir[2]);

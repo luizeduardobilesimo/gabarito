@@ -82,7 +82,7 @@ async function exportPDF(){
     doc.setDrawColor(200); doc.setLineWidth(0.2); [mn,0,mx].forEach(v=>{ doc.line(x0,sy(v),x0+w,sy(v)); doc.setFontSize(7); doc.setTextColor(...mut); doc.text(nf(v/1e6,1)+" mi",x0-2,sy(v)+1,{align:"right"}) });
     doc.setDrawColor(...acc); doc.setLineWidth(0.6); for(let i=1;i<n;i++) doc.line(sx(i-1),sy(cum[i-1]),sx(i),sy(cum[i]));
     doc.setDrawColor(...mut); doc.setLineWidth(0.2); [[f.launch,"lançamento"],[f.chaves,"chaves"]].forEach(([i,l])=>{ doc.line(sx(i),y,sx(i),y+h); doc.text(T(l),sx(i)+1,y+h+4) }); y+=h+10; doc.setTextColor(...ink) }
-  h2("Sensibilidade da margem (preço x custo de obra)");
+  h2("Sensibilidade da margem s/ VGV (preço x custo de obra)");
   { const sg=sensGrid(S,m); rows([["","obra -10%  |  base  |  obra +10%"],...["preço -10%","preço base","preço +10%"].map((l,i)=>[l,sg[i].map(v=>pct(v)).join("   |   ")])]) }
   h2("Premissas");
   rows([S.orc&&S.orc.modo==="param"? ["CUB de referência / orçamento",`${brl(F.cub)}/m² · paramétrico por sistema`] : ["CUB de referência / fator",`${brl(F.cub)}/m² × ${nf(F.fator,2)}`],["INCC / reajuste de tabela",`${pct(F.incc)} / ${pct(F.reaj)} a.a.`],["Lançamento / obra / vendas",`mês ${F.prelanc} / ${F.obra} meses / ${F.venda} meses`],["Vendido no lançamento / pago até as chaves",`${pct(F.vendaLanc,0)} / ${pct(F.entrada,0)}`],["Corretagem / marketing / impostos",`${pct(F.corret)} / ${pct(F.mkt)} / ${pct(F.imp)}`],["Financiamento à produção",F.finOn?`${pct(F.finPct,0)} da obra a ${pct(F.finTaxa)} a.a.`:"não"],["Permuta física / financeira",`${pct(F.permuta,0)} / ${pct(F.permutaFin,1)}`]]);

@@ -198,7 +198,7 @@ function finTornSVG(t, met){
   const val=o=> met==="tir"? (o.tir==null? null : o.tir) : o.margem, b=val(t.base), vs=t.vars;
   const all=[b,...vs.flatMap(v=>[val(v.lo),val(v.hi)])].filter(x=>x!=null&&isFinite(x)); if(!all.length) return "";
   const mn=Math.min(...all), mx=Math.max(...all), W=360, L=122, R=40, rh=21, H=vs.length*rh+26, sx=v=>L+(W-L-R)*((v??mn)-mn)/((mx-mn)||1), x0=sx(b);
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Sensibilidade: impacto de cada variável na ${met==="tir"?"TIR":"margem"}">
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Sensibilidade: impacto de cada variável na ${met==="tir"?"TIR":"margem sobre o VGV"}">
     ${vs.map((v,i)=>{ const y=6+i*rh, lo=sx(val(v.lo)), hi=sx(val(v.hi));
       return `<text x="${L-8}" y="${y+9}" font-size="10.5" text-anchor="end" fill="var(--ink-2)">${esc(v.nome)}</text><text x="${L-8}" y="${y+18}" font-size="8.5" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${v.faixa}</text>
       <rect x="${Math.min(lo,x0).toFixed(1)}" y="${y+2}" width="${Math.max(0.8,Math.abs(lo-x0)).toFixed(1)}" height="13" rx="2" fill="var(--bad)" fill-opacity=".72"/>
@@ -208,9 +208,9 @@ function finTornSVG(t, met){
   </svg>`;
 }
 function finSensHTML(){
-  return SEC("Sensibilidade", SEG("flx.sens",[["margem","Margem"],["tir","TIR"]],{label:"Métrica"}) + `<div id="torn"></div>
+  return SEC("Sensibilidade", SEG("flx.sens",[["margem","Margem s/ VGV"],["tir","TIR"]],{label:"Métrica"}) + `<div id="torn"></div>
     <div class="stackleg"><span><i style="background:var(--bad);opacity:.72"></i>desfavorável</span><span><i style="background:var(--ok);opacity:.72"></i>favorável</span></div>
-    <div class="grp">Margem: preço × custo de obra</div><div class="sens" id="sens"></div>`, {key:"sens", open:true, info:"Sensibilidade", sum:""});
+    <div class="grp">Margem s/ VGV: preço × custo de obra</div><div class="sens" id="sens"></div>`, {key:"sens", open:true, info:"Sensibilidade", sum:""});
 }
 function finSensLive(m, f){
   if(!finVis("torn")) return;
@@ -422,7 +422,7 @@ HOOK.pdf.push(async ctx=>{
     ...(RD.modo==="det"? [["Correção", `INCC ${pct(S.fin.incc)} até as chaves · IPCA ${pct(RD.ipca)} depois`], ["Distratos", RD.distrato? `${pct(RD.distrato,0)} dos contratos no mês ${RD.distratoMes} após o lançamento (retenção ${pct(RD.retencao,0)}): -${mi(f.distratoV)}` : "não considerados"]] : [])]);
   const cs=flxCenarios(S,m,f); h2("Cenários");
   rows([["", cs.map(c=>c.nome).join("  |  ")], ...[["Lucro",x=>mi(x.lucro)],["Margem s/ VGV",x=>pct(x.margemVGV)],["TIR a.a.",x=>finTir(x.tirA)],["VPL",x=>mi(x.vpl)],["Exposição",x=>mi(-x.exp)]].map(([l,fn])=>[l, cs.map(c=>fn(c.f)).join("  |  ")])]);
-  const t=flxTornado(S,m,null,"margem"); h2("Sensibilidade da margem (desfavorável / favorável)");
+  const t=flxTornado(S,m,null,"margem"); h2("Sensibilidade da margem s/ VGV (desfavorável / favorável)");
   rows(t.vars.map(v=>[`${v.nome} (${v.faixa})`, `${pct(v.lo.margem)} / ${pct(v.hi.margem)}  ·  TIR ${finTir(v.lo.tir)} / ${finTir(v.hi.tir)}`]));
   const mc=FIN_UI.mc; if(S.flx.mc.on && mc.res && mc.sig===finMCSig()){ const r=mc.res; h2(`Monte Carlo (${r.n} rodadas)`);
     rows([["TIR P10 / P50 / P90", r.tir.map(finTir).join(" / ")], ["Lucro P10 / P50 / P90", r.lucro.map(v=>mi(v)).join(" / ")], ["Probabilidade de prejuízo", pct(r.pPrej,1)]]) }

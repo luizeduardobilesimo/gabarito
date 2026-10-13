@@ -97,7 +97,8 @@ function flxCenarios(st, m, fBase){
   return [["pess","Pessimista",C.pess],["base","Base",null],["otim","Otimista",C.otim]].map(([k,nome,s])=>({k, nome, s, f: s? flxAjuste(st,m,s,false) : (fBase||finance(st,m))}));
 }
 
-/* ---------- sensibilidade (tornado) ---------- */
+/* ---------- sensibilidade (tornado) ----------
+   Fase D: a margem do tornado e do Monte Carlo é a do mercado, lucro ÷ VGV (`margem`); a margem sobre a receita nominal vai em `margemReceita`. */
 function flxTornadoVars(st){
   const F=st.fin, v=[
     ["preco","Preço de venda","±10%",-0.1,0.1],
@@ -114,13 +115,13 @@ function flxTornadoVars(st){
 }
 /* para cada variável: resultado no lado desfavorável (lo) e favorável (hi); ordenado pelo impacto na métrica escolhida */
 function flxTornado(st, m, fBase, met="margem"){
-  const b=fBase||finance(st,m,{noHooks:true}), val=f=> met==="tir"? (f.tirA==null? -1 : f.tirA) : f.margem;
+  const b=fBase||finance(st,m,{noHooks:true}), val=f=> met==="tir"? (f.tirA==null? -1 : f.tirA) : f.margemVGV;
   // lo = lado que piora a métrica escolhida, hi = lado que melhora (nem sempre é o "óbvio": vender devagar pode render reajuste)
   const out=flxTornadoVars(st).map(([k,nome,faixa,a,b])=>{ let fl=flxAjuste(st,m,{[k]:a}), fh=flxAjuste(st,m,{[k]:b});
     if(val(fl)>val(fh)){ const t=fl; fl=fh; fh=t }
-    return { k, nome, faixa, lo:{margem:fl.margem, tir:fl.tirA, lucro:fl.lucro}, hi:{margem:fh.margem, tir:fh.tirA, lucro:fh.lucro}, d: Math.abs(val(fh)-val(fl)) } });
+    return { k, nome, faixa, lo:{margem:fl.margemVGV, margemReceita:fl.margem, tir:fl.tirA, lucro:fl.lucro}, hi:{margem:fh.margemVGV, margemReceita:fh.margem, tir:fh.tirA, lucro:fh.lucro}, d: Math.abs(val(fh)-val(fl)) } });
   out.sort((a,b)=>b.d-a.d);
-  return { base:{margem:b.margem, tir:b.tirA, lucro:b.lucro}, vars:out };
+  return { base:{margem:b.margemVGV, margemReceita:b.margem, tir:b.tirA, lucro:b.lucro}, vars:out };
 }
 
 /* ---------- Monte Carlo ---------- */
@@ -130,7 +131,7 @@ const flxTri = (u,a,c,b) => { const F=(c-a)/((b-a)||1); return u<F? a+Math.sqrt(
 const FLX_MC = { preco:[-0.10,0,0.06], custo:[-0.05,0,0.12], vel:[-0.20,0,0.50], incc:[-0.01,0,0.03], obra:[-0.05,0,0.20] };
 function flxMCRodada(st, m, rng){
   const s={}; for(const k in FLX_MC){ const [a,c,b]=FLX_MC[k]; s[k]=flxTri(rng(),a,c,b) }
-  const f=flxAjuste(st,m,s,true); return { tir:f.tirA, lucro:f.lucro, margem:f.margem };
+  const f=flxAjuste(st,m,s,true); return { tir:f.tirA, lucro:f.lucro, margem:f.margemVGV, margemReceita:f.margem };
 }
 function flxPctil(arr, p){ const a=arr.filter(v=>v!=null&&isFinite(v)).sort((x,y)=>x-y); if(!a.length) return null; const i=(a.length-1)*p, lo=Math.floor(i), hi=Math.ceil(i); return a[lo]+(a[hi]-a[lo])*(i-lo) }
 /* roda n rodadas de uma vez (testes / Worker); a interface usa flxMCRodada em blocos */
@@ -139,7 +140,7 @@ function flxMonteCarlo(st, m, n=1000, seed=7){
   return flxMCResumo(r);
 }
 function flxMCResumo(r){
-  const tir=r.map(x=>x.tir), lu=r.map(x=>x.lucro);
-  return { n:r.length, tir:[0.1,0.5,0.9].map(p=>flxPctil(tir,p)), lucro:[0.1,0.5,0.9].map(p=>flxPctil(lu,p)),
+  const tir=r.map(x=>x.tir), lu=r.map(x=>x.lucro), mg=r.map(x=>x.margem);
+  return { n:r.length, tir:[0.1,0.5,0.9].map(p=>flxPctil(tir,p)), lucro:[0.1,0.5,0.9].map(p=>flxPctil(lu,p)), margem:[0.1,0.5,0.9].map(p=>flxPctil(mg,p)),
     pPrej: r.filter(x=>x.lucro<0).length/Math.max(1,r.length), lucros: lu };
 }

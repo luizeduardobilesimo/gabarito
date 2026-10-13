@@ -59,7 +59,7 @@ function finance(st, m, adj={}){
   const lucro = S_.receita - custo, margem = S_.receita? lucro/S_.receita : 0;
   const margemVGV = vgv>0? lucro/vgv : 0;   // convenção do mercado: lucro ÷ VGV (a margem s/ receita nominal fica em `margem`)
   const npv = r => cf.reduce((s,v,i)=>s+v/Math.pow(1+r,i),0);
-  let tirM=null; { let lo=-0.5, hi=1; const a=npv(lo), b=npv(hi); if(a*b<0){ for(let i=0;i<100;i++){ const mid=(lo+hi)/2; (npv(lo)*npv(mid)<=0)? hi=mid : lo=mid } tirM=(lo+hi)/2 } }
+  let tirM=null; { let lo=-0.5, hi=1; const a=npv(lo), b=npv(hi); if(a*b<0){ let fl=a; for(let i=0;i<100;i++){ const mid=(lo+hi)/2, fm=npv(mid); if(fl*fm<=0) hi=mid; else { lo=mid; fl=fm } } tirM=(lo+hi)/2 } }   // fl = npv(lo) guardado: mesmo resultado, metade das avaliações
   const tirA = tirM===null? null : Math.pow(1+tirM,12)-1;
   const rm=Math.pow(1+F.tma,1/12)-1, vpl=npv(rm);
   let cum=0, minCum=0; const cumA=cf.map(v=>{ cum+=v; if(cum<minCum) minCum=cum; return cum });
@@ -71,4 +71,4 @@ function finance(st, m, adj={}){
   if(!adj.noHooks) runHooks("finance", out, st, m, adj);
   return out;
 }
-function sensGrid(st,m){ return [-0.1,0,0.1].map(dp=>[-0.1,0,0.1].map(dc=>finance(st,m,{dp,dc}).margem)) }
+function sensGrid(st,m){ return [-0.1,0,0.1].map(dp=>[-0.1,0,0.1].map(dc=>finance(st,m,{dp,dc}).margemVGV)) }   // margem s/ VGV (convenção da Fase A; f.margem = s/ receita nominal)
