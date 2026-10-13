@@ -56,7 +56,7 @@ function orcDrivers(st, m){
   const P=st.produto, E=st.estudo, T=m.T||[], sub=+P.subsolos||0, gac=+P.garAcima||0;
   const maxPav = T.reduce((s,t)=>Math.max(s,t.pav||0),0);
   const proj = Math.max(m.embA||0, sub>0? (m.subA||0) : 0);
-  const carga = T.reduce((s,t)=>s+(t.A||0)*(t.pav||0),0) + proj*(1+sub+gac);
+  const carga = T.reduce((s,t)=>s+(t.desenhada && t.Atot ? t.Atot : (t.A||0)*(t.pav||0)),0) + proj*(1+sub+gac);   // C2: pilha de blocos soma por faixa
   const contArea = sub>0 ? orcPerim(m.sub)*sub*(+P.peGar||3) : 0;
   const vedA = (m.tiposA||0)+(m.duplexA||0)+(m.aticoA||0)+(m.hallA||0)+(m.lojaA||0)+(m.lzExtraA||0) + (m.garA||0)*0.1;
   const fachA = T.reduce((s,t)=>s+orcFachTorre(t, m),0) + orcPerim(m.emb)*(m.hEmb||0);

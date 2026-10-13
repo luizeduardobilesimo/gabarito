@@ -134,7 +134,7 @@ function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.p
 /* contorno da torre: com pátio (C1), borda e vazios em polilinhas separadas (sem a "ponte" do polígono) */
 function dxfTorre(d, layer, t, col){ if(t.oco){ d.poly(layer,t.oco.pts,col); t.oco.vazios.forEach(v=>d.poly(layer+"-VAZIO",v,col)) } else d.poly(layer,t.plate,col) }
 function dxfTipo(m,i){ const d=DXF(), l=m.tipo[i], t=m.T[i]; dxfTorre(d,"PAVIMENTO",t,7);
-  (t.faixas||[]).forEach(f=>{ if(f.plate && f.plate!==t.plate && f.plate.length>2) d.poly(`PAVIMENTO-RECUADO-${f.de}-${f.ate}`,f.plate,3) });   // 2.4: andares recuados
+  (t.faixas||[]).forEach(f=>{ if(f.plate && f.plate!==t.plate && f.plate.length>2) d.poly(`PAVIMENTO-${t.desenhada?"BLOCO":"RECUADO"}-${f.de}-${f.ate}`,f.plate,3) });   // 2.4: andares recuados · C2: blocos da pilha
   if(!l) return d.out(); d.poly("NUCLEO",l.coreOut||l.core,1); (l.coreParts||[]).forEach(cp=>d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1)); d.poly("CIRCULACAO",l.corridor,8); (l.hallEnds||[]).forEach(h=>d.poly("CIRCULACAO",h,8));
   if(typeof comDxf==="function" && S.comodos && S.comodos.on) comDxf(d, l);   // cômodos: PAREDES, PORTAS, JANELAS, MOBILIARIO, TEXTOS
   l.units.forEach(u=>{ d.poly(u.livre?"LIVRE":"UNIDADES",u.poly,u.livre?8:3); if(u.poly.length){ const c=G.centroid(u.poly); d.text("TEXTOS",c,0.9,u.livre?"livre":u.nome); if(!u.livre) d.text("TEXTOS",[c[0],c[1]-1.3],0.6,`${nf(u.alvo,1)} m2 priv / ${nf(u.area,1)} m2 bruto`) } });
@@ -173,7 +173,7 @@ function IFC(m){
     const z=m.hEmb+j*P.pe, st=storey(`Pavimento ${j+1}`,z);
     m.T.forEach((t,i)=>{
       if(j<t.pav){ const cob=t.hasCob && j===t.pav-1, pk=torrePlantaAndar(t,j+1); proxy(st,`Torre ${i+1} - Pav ${j+1}`,cob?"Cobertura":"Pavimento tipo",pk,P.pe);   // planta da faixa do andar (escalonada / blocos)
-        const l=m.tipo[i]; if(l && !cob) l.units.filter(u=>!u.livre).map(u=>pk===t.plate? u : {...u, poly:G.clipToPoly(u.poly,pk)}).filter(u=>u.poly.length>2).forEach((u,q)=>{ const cod=`T${i+1}-${String(j+1).padStart(2,"0")}${String(q+1).padStart(2,"0")}`; space(st,cod,`${u.nome} - ${nf(u.alvo,1)} m2 priv`,u.poly,2.6);
+        const l=torreLayAndar(m,i,j+1); if(l && !cob) l.units.filter(u=>!u.livre).map(u=>pk===t.plate || l.blc? u : {...u, poly:G.clipToPoly(u.poly,pk)}).filter(u=>u.poly.length>2).forEach((u,q)=>{ const cod=`T${i+1}-${String(j+1).padStart(2,"0")}${String(q+1).padStart(2,"0")}`; space(st,cod,`${u.nome} - ${nf(u.alvo,1)} m2 priv`,u.poly,2.6);
           // cômodos: IfcSpace por cômodo (dentro do espaço da unidade) e IfcWall por parede
           if(u.com && S.comodos && S.comodos.on){ const un=st.sp[st.sp.length-1], rs=[];
             u.com.rooms.forEach((r,k)=>{ if(r.poly.length<3) return; const p=lp(st.p,0); rs.push(add(`IFCSPACE('${ifcGuid()}',$,${str(cod+"-"+String(k+1).padStart(2,"0"))},$,$,${p},${solid(r.poly,2.6)},${str(`${r.longo} - ${nf(r.area,2)} m2`)},.PARTIAL.,.SPACE.,$)`)) });

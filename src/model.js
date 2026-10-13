@@ -48,7 +48,7 @@ function massing(st, opt={}){
   const T = torres.map((t,i)=>{
     const slot=slots[i]||[], maxP=G.scaleToArea(slot, G.area(slot)*k), maxA=G.area(maxP);
     // C1: torre desenhada (src/calc/blocos.js) — a planta é o bloco recortado pelo lote; recuos, TO e CA viram avisos
-    const bl = typeof blcTorre==="function" ? blcTorre(st, i, L) : null;
+    const bl = typeof blcTorre==="function" ? blcTorre(st, i, L, t.pav) : null;   // C2: pilha de blocos (plate = bloco de referência)
     const plate = bl ? bl.plate : ocupa ? maxP : G.scaleToArea(maxP, need), pA=G.area(plate);
     const fit = bl ? pA>1 && pA >= need-0.5 : ocupa ? pA>1 : maxA >= need-0.5 && pA>1;
     // fator das unidades: < 1 se o mix não couber; ocupando o contorno, as unidades crescem ou encolhem até preencher o andar
@@ -57,11 +57,11 @@ function massing(st, opt={}){
     const tipoFloors = t.pav - (hasCob?1:0);
     // faixas de andares (2.4): planta de cada andar recortada pelo recuo da sua cota; sem recuos progressivos é uma faixa só
     const zB = hEmb + (pavLz && i===0 ? P.pe : 0);
-    let faixas = prog && FO.escalonar && plate.length && !bl ? formaTorre({plate, pav:t.pav, zBase:zB, pe:P.pe, envBand:z=>slotIn(i, envAt(afAt(z))), afAt}) : [];
+    let faixas = prog && FO.escalonar && plate.length && !bl ? formaTorre({plate, pav:t.pav, zBase:zB, pe:P.pe, envBand:z=>slotIn(i, envAt(afAt(z))), afAt}) : bl ? blcFaixas(bl, zB, P.pe, afAt) : [];
     if(!faixas.length) faixas=[{de:1, ate:t.pav, n:t.pav, plate, A:pA, z0:zB, z1:zB+t.pav*P.pe, af:afAt(zB+t.pav*P.pe)}];
     faixas.forEach(f=>{ f.nTipo=Math.max(0, Math.min(f.ate, tipoFloors)-f.de+1);
       if(Math.abs(f.A-pA)<0.25){ f.qtd=P.mix.map(u=>u.qtd); f.r=r; f.priv=mixPriv*r; f.un=mixUn }
-      else { const x= f.A<1 ? {qtd:P.mix.map(()=>0), r:0} : formaMix(P.mix, f.A*P.efic, FO.rMin||0.9); f.qtd=x.qtd; f.r=x.r; f.priv=P.mix.reduce((s,u,j)=>s+u.area*x.qtd[j],0)*x.r; f.un=x.qtd.reduce((s,n)=>s+n,0) } });
+      else { const x= f.A<1 ? {qtd:P.mix.map(()=>0), r:0} : f.blc ? blcMixFaixa(P.mix, f.A*P.efic, r) : formaMix(P.mix, f.A*P.efic, (FO&&FO.rMin)||0.9); f.qtd=x.qtd; f.r=x.r; f.priv=P.mix.reduce((s,u,j)=>s+u.area*x.qtd[j],0)*x.r; f.un=x.qtd.reduce((s,n)=>s+n,0) } });
     const Atop = faixas[faixas.length-1].A, one = faixas.length===1;
     const floorPriv = Atop*P.efic;
     const rc = hasCob ? Math.min(1, (duplex? 2*floorPriv : floorPriv)/Math.max(1,cobPriv)) : 0;
@@ -69,7 +69,7 @@ function massing(st, opt={}){
     const duplexA = hasCob && duplex ? Math.min(Atop, Math.max(0, cobP-floorPriv)/P.efic) : 0;
     const Atot = one ? pA*t.pav : faixas.reduce((s,f)=>s+f.A*f.n,0);
     return {i, pav:t.pav, H:Hs[i], slot, maxP, maxA, plate, A:pA, Atop, Atot, faixas, fit, r, rc, hasCob, cobP, duplexA, tipoFloors,
-      ...(bl ? {desenhada:true, oco:bl.oco, blcForaLote:bl.foraLote} : {}),
+      ...(bl ? {desenhada:true, oco:bl.oco, blcForaLote:bl.foraLote, blcRef:bl.ref, blcIgn:bl.ign, Aproj:bl.Aproj} : {}),
       priv: (one ? tipoFloors*mixPriv*r : faixas.reduce((s,f)=>s+f.nTipo*f.priv,0)) + cobP,
       units: (one ? tipoFloors*mixUn : faixas.reduce((s,f)=>s+f.nTipo*f.un,0)) + (hasCob?P.cob.qtd:0) };
   });
@@ -80,13 +80,13 @@ function massing(st, opt={}){
   const tiposA = T.reduce((s,t)=>s+t.Atot,0), duplexA=T.reduce((s,t)=>s+t.duplexA,0);
   const aticoA = P.atico ? T.reduce((s,t)=>s+t.Atop*0.25,0) : 0;
   const unitsRes = T.reduce((s,t)=>s+t.units,0), privRes=T.reduce((s,t)=>s+t.priv,0);
-  const torProj = T.reduce((s,t)=>s+t.A,0);
+  const torProj = T.reduce((s,t)=>s+(t.Aproj||t.A),0);   // C2: maior projeção da pilha de blocos
   const H = Hmax;
   // aptos por tipologia (todas as torres)
   const unitRows = P.mix.map(u=>({nome:u.nome, alvo:u.area, n:0, area:0, preco:u.preco}));
   T.forEach(t=>t.faixas.forEach(f=>P.mix.forEach((u,j)=>{ unitRows[j].n += f.qtd[j]*f.nTipo; unitRows[j].area += f.qtd[j]*f.nTipo*u.area*f.r })));
   const cobN = T.reduce((s,t)=>s+(t.hasCob?P.cob.qtd:0),0), cobArea = T.reduce((s,t)=>s+t.cobP,0);
-  const minApto = !prog ? Math.min(...P.mix.map(u=>u.area*Math.min(...T.map(t=>t.r||1))))
+  const minApto = !prog && T.every(t=>t.faixas.length<2) ? Math.min(...P.mix.map(u=>u.area*Math.min(...T.map(t=>t.r||1))))
     : Math.min(...P.mix.map((u,j)=>u.area*Math.min(1, ...T.flatMap(t=>t.faixas.filter(f=>f.qtd[j]>0 && f.nTipo>0).map(f=>f.r||1)))));
   const hLim = typeof formaHLim==="function" ? formaHLim(st) : R.hMax;
   const env = prog ? formaEnvelope(envAt, afAt, hEmb, Math.max(hLim, Hmax), P.pe) : null;
@@ -123,9 +123,10 @@ function compute(st, opt={}){
     return tipoLayout(t.plate, list, {corr:E.corrTipo, profMin:E.profMin, nElev: +E.elevadores||nAuto, pos:E.nucleoPos, lado:E.nucleoLado, escada:E.escadaLado, planta:E.tipoPlanta,
       escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf});
   });
+  if(typeof blcLayFaixas==="function") blcLayFaixas(st, m);   // C2: blocos fora da referência → mesmo núcleo, unidades por área (f.lay)
   // sacadas em balanço somam área construída e privativa
   m.sacA=0; m.sacBal=0;
-  m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; const fl=t.tipoFloors; l.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } }) });
+  m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; (t.faixas.some(f=>f.lay)? t.faixas.map(f=>[f.lay||l, f.nTipo]) : [[l, t.tipoFloors]]).forEach(([ly,fl])=>ly.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } })) });
   m.coreSets = m.tipo.map((l,i)=>l && l.core && l.core.length? {i, core:l.core, lobby:l.lobby, lay:l} : null).filter(Boolean);
   m.cores = m.coreSets.map(c=>c.core); m.lobbies = m.coreSets.map(c=>c.lobby).filter(p=>p&&p.length);
   m.obst = [...m.cores, ...m.lobbies];

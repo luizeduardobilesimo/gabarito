@@ -77,13 +77,13 @@ function formaAvisos(m, st){
   const F=st.forma, out=[]; if(!F || !F.on) return out;
   if(+F.hEmbMax>0 && m.hEmb > +F.hEmbMax+1e-6) out.push(`O embasamento tem ${nf(m.hEmb,1)} m e a zona permite ${nf(+F.hEmbMax,1)} m — reduza o pé-direito do térreo ou as garagens elevadas.`);
   if(F.aero && m.H > m.hLim+1e-6) out.push(`O plano de proteção do aeródromo limita a altura a ${nf(m.hLim,1)} m acima da soleira (cota ${nf(+F.aeroCota,1)} m) — o estudo tem ${nf(m.H,1)} m.`);
-  (m.T||[]).forEach((t,i)=>{ const fx=t.faixas||[]; if(fx.length>1){ const mn=fx.reduce((a,f)=>Math.min(a,f.A),Infinity); if(mn<1) out.push(`A torre ${i+1} não cabe nos recuos progressivos a partir do ${fx.find(f=>f.A<1).de}º pavimento.`) } });
+  (m.T||[]).forEach((t,i)=>{ const fx=t.faixas||[]; if(fx.length>1 && !t.desenhada){ /* C2: a pilha de blocos tem avisos próprios (src/calc/blocos.js) */ const mn=fx.reduce((a,f)=>Math.min(a,f.A),Infinity); if(mn<1) out.push(`A torre ${i+1} não cabe nos recuos progressivos a partir do ${fx.find(f=>f.A<1).de}º pavimento.`) } });
   return out;
 }
 HOOK.compute.push((m, st)=>{
   if(!st.forma || !st.forma.on) return;
   // andar recuado que corta o núcleo: a torre não pode subir até ali com esse escalonamento
-  (m.T||[]).forEach((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l || !l.core || !l.core.length) return; const core=G.scaleToArea(l.core, G.area(l.core)*0.97);
+  (m.T||[]).forEach((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l || !l.core || !l.core.length || t.desenhada) return; const core=G.scaleToArea(l.core, G.area(l.core)*0.97);
     const f=(t.faixas||[]).find(f=>f.plate!==t.plate && !core.every(q=>G.pip(q,f.plate))); if(f){ f.nucleoFora=true; t.nucleoFora=f.de;
       m.avisos && m.avisos.push(`Na torre ${i+1}, o recuo progressivo corta o núcleo a partir do ${f.de}º pavimento — reduza pavimentos (até ${f.de-1}) ou use a torre reta.`) } });
   if(m.avisos) m.avisos.push(...formaAvisos(m, st));
