@@ -2166,7 +2166,7 @@ function finance(st, m, adj={}){
   const lucro = S_.receita - custo, margem = S_.receita? lucro/S_.receita : 0;
   const margemVGV = vgv>0? lucro/vgv : 0;   // convenção do mercado: lucro ÷ VGV (a margem s/ receita nominal fica em `margem`)
   const npv = r => cf.reduce((s,v,i)=>s+v/Math.pow(1+r,i),0);
-  let tirM=null; { let lo=-0.5, hi=1; const a=npv(lo), b=npv(hi); if(a*b<0){ for(let i=0;i<100;i++){ const mid=(lo+hi)/2; (npv(lo)*npv(mid)<=0)? hi=mid : lo=mid } tirM=(lo+hi)/2 } }
+  let tirM=null; { let lo=-0.5, hi=1; const a=npv(lo), b=npv(hi); if(a*b<0){ let fl=a; for(let i=0;i<100;i++){ const mid=(lo+hi)/2, fm=npv(mid); if(fl*fm<=0) hi=mid; else { lo=mid; fl=fm } } tirM=(lo+hi)/2 } }   // fl = npv(lo) guardado: mesmo resultado, metade das avaliações
   const tirA = tirM===null? null : Math.pow(1+tirM,12)-1;
   const rm=Math.pow(1+F.tma,1/12)-1, vpl=npv(rm);
   let cum=0, minCum=0; const cumA=cf.map(v=>{ cum+=v; if(cum<minCum) minCum=cum; return cum });
@@ -2178,7 +2178,7 @@ function finance(st, m, adj={}){
   if(!adj.noHooks) runHooks("finance", out, st, m, adj);
   return out;
 }
-function sensGrid(st,m){ return [-0.1,0,0.1].map(dp=>[-0.1,0,0.1].map(dc=>finance(st,m,{dp,dc}).margem)) }
+function sensGrid(st,m){ return [-0.1,0,0.1].map(dp=>[-0.1,0,0.1].map(dc=>finance(st,m,{dp,dc}).margemVGV)) }   // margem s/ VGV (convenção da Fase A; f.margem = s/ receita nominal)
 
 /* ---- optim.js ---- */
 /* ================= potencial do terreno e otimizador de produto ================= */
@@ -2198,22 +2198,47 @@ function distrib(tips, N, mk){
   raw.map((r,i)=>[r-q[i],i]).sort((a,b)=>b[0]-a[0]).forEach(([_,i])=>{ if(rest>0){ q[i]++; rest-- } });
   return tips.map((t,i)=>({...mk(t), qtd:q[i]})).filter(u=>u.qtd>0);
 }
+/* Potencial do terreno (Fase D). Dois olhares sobre o privativo possível:
+   - pelo ANDAR (priv0, o cálculo antigo): área bruta de pavimentos tipo × eficiência do andar. Não conta garagem, hall nem lazer — superestima;
+   - GLOBAL (priv, o que vale): área total construída possível × eficiência global do estudo (privativa ÷ ATC, `m.eficGlobal`), a mesma
+     da "Saúde do negócio". A ATC possível é o menor entre o limite do CA (computável máx. × ATC ÷ computável do estudo, que carrega
+     subsolos, garagem e áreas comuns na mesma proporção) e o da altura (cada torre sobe até o gabarito: + andares × área do andar).
+   A altura-limite é m.hLim (gabarito da zona ou plano do aeródromo — src/calc/forma.js), não só R.hMax. */
 function potencial(st, m){
-  const R=st.regras, P=st.produto, A=m.A, hEmb=P.peTerreo+P.garAcima*P.peGar;
+  const R=st.regras, P=st.produto, A=m.A, hLim=m.hLim ?? R.hMax, hEmb=P.peTerreo+P.garAcima*P.peGar;
   const compMax=R.caMax*A, compBas=R.caBas*A;
-  const pavH=Math.max(0,Math.floor((R.hMax-hEmb)/P.pe));
+  const pavH=Math.max(0,Math.floor((hLim-hEmb)/P.pe));
   const brutoPorCA = compMax/(1-R.ncTipo) - m.lojaA; // área bruta de pavimentos tipo que o CA permite
   const brutoPorVol = R.toTorre*A*pavH;           // limite pela projeção x altura
   const bruto=Math.max(0,Math.min(brutoPorCA, brutoPorVol)), limita = brutoPorCA<=brutoPorVol? "ca" : "altura";
-  const priv=bruto*P.efic + m.lojaPriv, area=(m.mixPriv/Math.max(1,m.mixUn))||70, un=Math.floor(bruto*P.efic/area);
-  return {compMax, compBas, pavH, bruto, priv, un, limita, vgv: bruto*P.efic*basePrice(st) + m.lojaPriv*st.fin.precoLoja,
-    uso:{ ca:m.CA/Math.max(1e-9,R.caMax), to:m.TO/Math.max(1e-9,R.toEmb), h:m.H/Math.max(1e-9,R.hMax), priv:m.priv/Math.max(1,priv) } };
+  const area=(m.mixPriv/Math.max(1,m.mixUn))||70, preco=basePrice(st);
+  // pelo andar (antigo)
+  const priv0=bruto*P.efic + m.lojaPriv, un0=Math.floor(bruto*P.efic/area), vgv0=bruto*P.efic*preco + m.lojaPriv*st.fin.precoLoja;
+  // global
+  const eficGlobal = m.constr>0 ? m.priv/m.constr : 0;
+  const atcCA = m.comp>0 ? m.constr*compMax/m.comp : 0;
+  const atcAlt = m.constr + (m.T||[]).reduce((s,t)=>s+Math.max(0,pavH-(+t.pav||0))*(+t.A||0),0);
+  let priv=priv0, un=un0, vgv=vgv0, atc=0, lim=limita;
+  if(eficGlobal>0 && atcCA>0){
+    atc=Math.min(atcCA, atcAlt); lim = atcCA<=atcAlt? "ca" : "altura";
+    priv=atc*eficGlobal; const res=Math.max(0, priv-m.lojaPriv); un=Math.floor(res/area); vgv=res*preco + m.lojaPriv*st.fin.precoLoja;
+  }
+  return {compMax, compBas, pavH, hLim, bruto, priv, un, limita:lim, vgv, atc, eficGlobal, priv0, un0, vgv0, limita0:limita,
+    uso:{ ca:m.CA/Math.max(1e-9,R.caMax), to:m.TO/Math.max(1e-9,R.toEmb), h:m.H/Math.max(1e-9,hLim), priv:m.priv/Math.max(1,priv) } };
 }
-function maxPavFast(st){ // maior nº de pavimentos (iguais) que respeita gabarito e CA — busca binária
-  const ok=n=>{ const m=massing(st,{pav:n}); return m.H<=st.regras.hMax+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1) };
+/* maior nº de pavimentos (iguais) que respeita gabarito (m.hLim) e CA — bisseção em 1..80. `teto` (opcional) é um limite superior EXATO do
+   que o gabarito permite (cada pavimento custa ao menos P.pe): acima dele ok(n) é falso sem precisar do massing(), que é o que custa.
+   O resultado é o mesmo da bisseção sem teto (a função não é monótona: a planta encolhe com a altura; por isso não se usa galope). */
+function hLimDe(st){ return typeof formaHLim==="function" ? formaHLim(st) : st.regras.hMax }
+function maxPavFast(st, teto=80){
+  const ok=n=>{ if(n>teto) return false; const m=massing(st,{pav:n}); return m.H<=(m.hLim ?? st.regras.hMax)+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1) };
   if(!ok(1)) return 0; let lo=1, hi=80; while(lo<hi){ const mid=Math.ceil((lo+hi)/2); if(ok(mid)) lo=mid; else hi=mid-1 } return lo;
 }
-const OBJ = { lucro:["Lucro",f=>f.lucro], margem:["Margem",f=>f.margem], tir:["TIR",f=>f.tirA??-1], vpl:["VPL",f=>f.vpl] };
+const OBJ = { lucro:["Lucro",f=>f.lucro,"lucro"], margem:["Margem s/ VGV",f=>f.margemVGV,"margem s/ VGV"], tir:["TIR",f=>f.tirA??-1,"TIR"], vpl:["VPL",f=>f.vpl,"VPL"] };
+/* números que cada combinação guarda (estimada ou conferida): margem = s/ VGV; eficiência global e V/C vêm da "Saúde do negócio" (f.saude) */
+function otimNum(f, m){ const sd=f.saude;
+  return { lucro:f.lucro, margem:f.margemVGV, margemReceita:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv,
+    efic: sd? sd.eficGlobal : (m.constr>0? m.priv/m.constr : 0), vc: sd? sd.vc : null } }
 
 /* ---------- critérios extras (item 1.3) ----------
    Sol médio das unidades: usa unidadesSolMedio(st, m) quando existir (módulo de unidades).
@@ -2231,19 +2256,26 @@ function otimSolVetores(st){
     out.push({x:east[0]*e+north[0]*nn, y:east[1]*e+north[1]*nn, z:Math.sin(alt), t:Math.tan(alt)}) }
   return out;
 }
-function otimSolProxy(st, m){
+const otimBox=p=>{ const xs=p.map(q=>q[0]), ys=p.map(q=>q[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)] };
+/* prismas do entorno (polígono com ponte, altura e caixa) — o otimizador calcula uma vez por rodada e passa a cada otimSolProxy */
+function otimEntorno(st){ return (st.entorno||[]).filter(e=>e.pts&&e.pts.length>2).map(e=>{ const poly=entPoly(e); return {poly, z1:+e.h||0, own:-1, bb:otimBox(poly)} }) }
+function otimSolProxy(st, m, ent){
   const suns=otimSolVetores(st), P=st.produto, T=(m.T||[]).filter(t=>t.plate&&t.plate.length>2);
   if(!T.length || !suns.length) return 0;
-  const box=p=>{ const xs=p.map(q=>q[0]), ys=p.map(q=>q[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)] };
-  const prs=[...T.map(t=>({poly:t.plate, z1:t.H, own:t.i})), ...(st.entorno||[]).filter(e=>e.pts&&e.pts.length>2).map(e=>({poly:entPoly(e), z1:+e.h||0, own:-1}))];
-  prs.forEach(p=>p.bb=box(p.poly));
+  const prs=[...T.map(t=>({poly:t.plate, z1:t.H, own:t.i, bb:otimBox(t.plate)})), ...(ent || otimEntorno(st))];
+  // por raio de sol, só os prismas que podem sombrear algum ponto de partida: dentro do corredor da sombra (perpendicular ≤ raios somados,
+  // ao longo de [−raios, alcance]). Conservador: descarta apenas quem nunca é atingido, então o resultado é o mesmo, bem mais rápido
+  const vs=T.flatMap(t=>t.plate), cx=vs.reduce((a,q)=>a+q[0],0)/vs.length, cy=vs.reduce((a,q)=>a+q[1],0)/vs.length, rT=1+Math.max(...vs.map(q=>Math.hypot(q[0]-cx,q[1]-cy)));
+  const info=prs.map(q=>({q, bx:(q.bb[0]+q.bb[2])/2-cx, by:(q.bb[1]+q.bb[3])/2-cy, r:Math.hypot(q.bb[2]-q.bb[0], q.bb[3]-q.bb[1])/2+rT}));
+  const hzs=suns.map(s=>Math.hypot(s.x,s.y)||1);
+  const cor=suns.map((s,si)=>{ const ux=s.x/hzs[si], uy=s.y/hzs[si]; return info.filter(o=>{ const al=o.bx*ux+o.by*uy, pe=Math.abs(o.bx*uy-o.by*ux); return pe<=o.r && al>=-o.r && al<=o.q.z1/s.t+o.r }).map(o=>o.q) });
   let sum=0, wsum=0;
   T.forEach(t=>{ const pl=t.plate, ccw=G.sArea(pl)>0, tipoH=Math.max(P.pe, t.pav*P.pe);
     for(let i=0;i<pl.length;i++){ const a=pl[i], b=pl[(i+1)%pl.length], dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy); if(L<1) continue;
       const n= ccw? [dy/L,-dx/L] : [-dy/L,dx/L], mid=[(a[0]+b[0])/2+n[0]*0.2, (a[1]+b[1])/2+n[1]*0.2];
       for(const fz of [0.15,0.5,0.85]){ const z=m.hEmb+fz*tipoH; let lit=0;
-        for(const s of suns){ if(n[0]*s.x+n[1]*s.y<0.05) continue; let sh=false;
-          for(const q of prs){ if(q.own===t.i || q.z1<=z) continue; const d=(q.z1-z)/s.t, hz=Math.hypot(s.x,s.y)||1, e=[mid[0]+s.x/hz*d, mid[1]+s.y/hz*d];
+        for(let si=0; si<suns.length; si++){ const s=suns[si]; if(n[0]*s.x+n[1]*s.y<0.05) continue; let sh=false;
+          for(const q of cor[si]){ if(q.own===t.i || q.z1<=z) continue; const d=(q.z1-z)/s.t, hz=hzs[si], e=[mid[0]+s.x/hz*d, mid[1]+s.y/hz*d];
             if(Math.max(mid[0],e[0])<q.bb[0]||Math.min(mid[0],e[0])>q.bb[2]||Math.max(mid[1],e[1])<q.bb[1]||Math.min(mid[1],e[1])>q.bb[3]) continue;
             if(G.segPolyHit(mid,e,q.poly)){ sh=true; break } }
           if(!sh) lit++ }
@@ -2274,7 +2306,10 @@ const otimKey=r=>[r.nT,r.pk,r.N,r.pav,r.sub,r.gac].join("|");
 let OTIM=null;
 /* otimizar(opts, onProg?, onDone?, ctx?) → Promise do resultado (também entregue a onDone).
    Puro (sem DOM): roda no Web Worker. ctx = {st, m} (padrão: S e o último modelo da tela; sem eles, calcula).
-   opts: {obj, torres, tipologias, unidades} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, vento=false, malha=false}.
+   opts: {obj, torres, tipologias, unidades} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, tempoTotal=15000 ms, vento=false, malha=false, efic=false, vc=false}
+   (efic/vc acrescentam eficiência global e V/C aos critérios da fronteira de Pareto).
+   Desempenho: maxPavFast com teto vindo das combinações menores; combinações dominadas (mais subsolos com o mesmo nº de pavimentos e
+   garagem elevada, vagas já cumpridas) não são recalculadas; o sol (que não depende dos subsolos) é guardado por assinatura.
    Resultado serializável: {res (as melhores pelo objetivo, conferidas — igual ao otimizador antigo), pts (estimativas de todas as combinações),
    pareto:{pts (conferidas com a garagem real), criterios}, solFonte, …}. */
 function otimizar(opts, onProg, onDone, ctx={}){
@@ -2289,30 +2324,35 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const Ns = opts.unidades? [2,3,4,5,6,8] : [base.produto.mix.reduce((s,u)=>s+u.qtd,0)];
   const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
   const jobs=[]; nTs.forEach(nT=>presets.forEach(pk=>Ns.forEach(N=>jobs.push({nT,pk,N}))));
-  const res=[], pts=[]; let i=0; const t0=performance.now(); const score=OBJ[opts.obj][1];
+  const res=[], pts=[]; let i=0; const t0=performance.now(); const score=OBJ[opts.obj][1], solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
   let resolve; const done=new Promise(r=>resolve=r);
   const finish=o=>{ OTIM=o; if(typeof onDone==="function") onDone(o); resolve(o) };
   const step=()=>{
     const ts=performance.now();
     while(i<jobs.length && performance.now()-ts<40){
       const {nT,pk,N}=jobs[i++]; const st=clone(base); st.produto.mix=presetMix(base,pk,N); if(!st.produto.mix.length) continue;
-      let best=null, tested=0;
+      let best=null, tested=0; const cumpre=new Map();   // cumpre: "gac|pav" → menor nº de subsolos (≥1) que já atende às vagas
       for(const [sub,gac] of gars){
         st.produto.subsolos=sub; st.produto.garAcima=gac; st.produto.torres=Array.from({length:nT},()=>({pav:4}));
-        const pmax=maxPavFast(st); if(pmax<2) continue;
+        // teto exato pelo gabarito: acima dele o massing() nem precisa rodar
+        const hEmbG=st.produto.peTerreo+gac*st.produto.peGar, pmax=maxPavFast(st, Math.floor((hLimDe(st)+1e-6-hEmbG)/st.produto.pe));
+        if(pmax<2) continue;
         for(const pav of [...new Set([pmax, pmax-1, pmax-3, Math.ceil(pmax*0.7)])].filter(p=>p>=2)){
+          const kc=gac+"|"+pav, sMin=cumpre.get(kc);
+          if(sMin!=null && sub>sMin){ tested++; continue }   // dominada por sMin subsolos: mesmo preço, mais custo (conta como testada, como antes)
           st.produto.torres=Array.from({length:nT},()=>({pav}));
           const m=massing(st); if(!m.T.every(t=>t.fit)) continue;
           const okVg = m.vagasEst*k >= m.vagasReq;
           if(!okVg && !mc) continue;
           if(m.minApto<st.regras.aptoMin) continue;
-          const f=finance(st,m), sc=score(f);
+          const f=finance(st,m), sc=score(f), num=otimNum(f,m);
           // multicritério: guarda todas as combinações dentro das regras (inclusive as que não atingem as vagas — é um dos critérios)
-          if(mc) pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq,
-            lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv, sol:otimSolProxy(st,m), est:true});
+          if(mc){ const sk=nT+"|"+pk+"|"+N+"|"+pav+"|"+gac; let sol=solMemo.get(sk); if(sol===undefined){ sol=otimSolProxy(st,m,entPrs); solMemo.set(sk,sol) }
+            pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq,
+              ...num, sol, est:true}) }
           if(!okVg) continue;
-          tested++;
-          if(!best || sc>best.sc) best={sc, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq, CA:m.CA, H:m.H, lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv};
+          tested++; if(sub>=1 && (cumpre.get(kc)==null || sub<cumpre.get(kc))) cumpre.set(kc, sub);
+          if(!best || sc>best.sc) best={sc, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq, CA:m.CA, H:m.H, ...num};
         }
         if(tested>=8) break;
       }
@@ -2335,26 +2375,28 @@ function otimizar(opts, onProg, onDone, ctx={}){
       while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++]; const st=stOf(r);
         let m=compute(st,{quick:true}), t=0;
         while(m.vagas<m.vagasReq && t<4){ if(st.produto.subsolos<=st.produto.garAcima+1 && st.produto.subsolos<5) st.produto.subsolos++; else st.produto.garAcima++; m=compute(st,{quick:true}); t++ }
-        if(m.vagas<m.vagasReq || !m.T.every(x=>x.fit) || m.H>R.hMax+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...r, sc:score(f), sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv};
+        if(m.vagas<m.vagasReq || !m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
+        const f=finance(st,m), v={...r, sc:score(f), sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m)};
         v.key=otimKey(v); v.est=false; if(mc) extras(st,m,v); out.push(v) }
       prog(0.6+0.2*j/Math.max(1,list.length));
       if(j<list.length && out.length<5) setTimeout(stepV,0); else done(out.sort((a,b)=>b.sc-a.sc)) };
     stepV() };
   // multicritério: confere com a garagem real alguns pontos da fronteira estimada e calcula a fronteira final
   const multi=(out, o)=>{
-    const R=base.regras, crit0=[PARETO_CRIT.lucro, PARETO_CRIT.sol, PARETO_CRIT.vagas], have=new Set(out.map(r=>r.key));
+    const R=base.regras, crit0=[PARETO_CRIT.lucro, PARETO_CRIT.sol, PARETO_CRIT.vagas, ...(opts.efic? [PARETO_CRIT.efic] : []), ...(opts.vc? [PARETO_CRIT.vc] : [])], have=new Set(out.map(r=>r.key));
     // metade da fronteira geral, metade da fronteira das que atingem as vagas (para o filtro "vagas ≥ exigidas" ter opções)
     const nMax=Math.max(0, opts.paretoMax ?? 8), fr0=(l)=>paretoFronteira(l, crit0).map(q=>l[q]).filter(p=>!have.has(p.key));
     const okV=pts.filter(p=>p.vagas>=p.req), a=paretoEspalha(fr0(okV), Math.ceil(nMax/2), "lucro"), aK=new Set(a.map(p=>p.key));
-    const cand=[...a, ...paretoEspalha(fr0(pts).filter(p=>!aK.has(p.key)), nMax-a.length, "lucro")], val=[], t1=performance.now(); let j=0;
+    const cand=paretoPrioridade([...a, ...paretoEspalha(fr0(pts).filter(p=>!aK.has(p.key)), nMax-a.length, "lucro")], "lucro"), val=[], t1=performance.now(); let j=0;   // extremos primeiro: se o tempo acabar, a fronteira perde o meio, não as pontas
+    // tempo da conferência com a garagem real: o que sobra de tempoTotal (15 s), entre 2 s e tempoMax (9 s); os extremos da fronteira vêm primeiro
+    const tBud=Math.min(opts.tempoMax ?? 9000, Math.max(2000, (opts.tempoTotal ?? 15000)-(t1-t0)));
     const stepM=()=>{ const ts=performance.now();
-      while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<(opts.tempoMax ?? 9000)){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
-        if(!m.T.every(x=>x.fit) || m.H>R.hMax+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...p, sc:score(f), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv, est:false};
+      while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<tBud){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
+        if(!m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
+        const f=finance(st,m), v={...p, sc:score(f), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m), est:false};
         val.push(extras(st,m,v)) }
       prog(0.8+0.2*j/Math.max(1,cand.length));
-      if(j<cand.length && performance.now()-t1<(opts.tempoMax ?? 9000)) return setTimeout(stepM,0);
+      if(j<cand.length && performance.now()-t1<tBud) return setTimeout(stepM,0);
       const seen=new Set(), P=[...out, ...val].filter(r=>!seen.has(r.key) && seen.add(r.key));
       const crit=[...crit0]; if(opts.vento && P.length && P.every(r=>r.vento!=null)) crit.push(PARETO_CRIT.vento);
       if(opts.malha && P.length && P.every(r=>r.malhaCusto!=null)) crit.push(PARETO_CRIT.malha);
@@ -2368,7 +2410,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
 }
 function aplicarOtim(r, st=S){ st.produto.torres=Array.from({length:r.nT},()=>({pav:r.pav})); st.produto.mix=clone(r.mix); st.produto.subsolos=r.sub; st.produto.garAcima=r.gac }
 /* opções do otimizador com vários critérios (vão junto com S.otim para o Worker); filtros fVagas/fSol/solMin são só da tela */
-extendDEF("otim", { ...DEF.otim, mc:true, vento:false, malha:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });
+extendDEF("otim", { ...DEF.otim, mc:true, vento:false, malha:false, efic:false, vc:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });
 
 /* ---- clima.js ---- */
 /* ================= clima: entorno, horas de sol e vento ================= */
@@ -2500,6 +2542,89 @@ function fieldCanvas(kind){
 function fieldFrame(kind){ // origem, eixos e tamanho de célula no referencial do desenho
   if(kind==="vento") return {o:[WIND.a0,WIND.b0], fx:WIND.f, fy:WIND.pp, cs:WIND.cs, nx:WIND.nx, ny:WIND.ny};
   const s=_sunCache; return {o:[s.x0,s.y0], fx:[1,0], fy:[0,1], cs:s.cs, nx:s.nx, ny:s.ny};
+}
+
+/* ---- calc/alavancas.js ---- */
+/* ================= Fase D: Alavancas do negócio =================
+   Cálculo puro (página, Worker e testes). Mexe numa coisa por vez e mostra quanto o resultado muda: lucro, margem s/ VGV (a margem
+   principal, convenção da Fase A) e TIR. Nada é gravado em S; cada linha é um finance() sobre uma cópia rasa do estado/modelo.
+
+   alavancasCalc(st, m) → { base:{lucro, margem, tir, vgv}, linhas:[{k, nome, passo, ok, motivo, desc, d:{lucro, margem, tir}, f?}], melhor }
+     k        "efic" · "preco" · "terreno" · "obra" · "pav"
+     d        diferenças em relação ao estudo (lucro em R$; margem e TIR em pontos de fração: 0,034 = +3,4 p.p.; tir null sem TIR)
+     ok       false quando a alavanca não se aplica (sem terreno lançado, andar já no limite, o andar a mais não cabe…) — `motivo` diz por quê
+     linhas   ordenadas: as que se aplicam, pelo maior ganho de lucro; depois as que não se aplicam
+
+   O que é cada uma (passos em S.alavancas, todos editáveis):
+   - efic    +5% de EFICIÊNCIA DO ANDAR (S.produto.efic, relativa: 80% → 84%). A mesma planta, a mesma área construída e o mesmo custo,
+             mas cada andar entrega 5% mais área privativa (paredes e circulação mais enxutas): as unidades crescem 5% ao mesmo preço por m².
+             (No modelo isso equivale a subir `efic` e as áreas do mix na mesma proporção: a planta do andar não muda.) Limite: 95%.
+   - preco   +5% no preço de tabela (todas as tipologias, coberturas e lojas); o custo não muda, corretagem/marketing/RET acompanham o VGV.
+   - terreno −10% no preço do terreno, na permuta física e na financeira (o ITBI acompanha).
+   - obra    −5% no custo de obra (CUB, lazer e movimento de terra); projetos, administração e contingência acompanham.
+   - pav     +1 pavimento tipo em cada torre. Estimado pela massa (massing, sem o layout da garagem), comparando o estudo e a variante pelo
+             mesmo caminho; só vale se couber no gabarito (m.hLim), no CA e no mix. */
+extendDEF("alavancas", { efic: 0.05, preco: 0.05, terreno: 0.10, obra: 0.05, pav: 1 });
+
+const ALAV_EFIC_MAX = 0.95;
+const alavMi2 = (a, b) => `${nf(a / 1e6, 1)} → ${nf(b / 1e6, 1)} mi`;   // 13,9 → 12,5 mi
+const alavP = (p) => nf(p * 100, Math.abs(p * 100 - Math.round(p * 100)) < 1e-9 ? 0 : 1);
+
+function alavancasCalc(st, m) {
+  const A = Object.assign({}, DEF.alavancas, st.alavancas || {}), F = st.fin, P = st.produto, R = st.regras;
+  const base = finance(st, m, { noHooks: true });
+  const dif = (f, b) => ({ lucro: f.lucro - b.lucro, margem: f.margemVGV - b.margemVGV, tir: (f.tirA != null && b.tirA != null) ? f.tirA - b.tirA : null });
+  const linhas = [];
+  const lin = (k, nome, passo, f, b, extra) => linhas.push(Object.assign({ k, nome, passo, ok: true, d: dif(f, b), f }, extra));
+  const nao = (k, nome, passo, motivo, extra) => linhas.push(Object.assign({ k, nome, passo, ok: false, motivo, d: { lucro: 0, margem: 0, tir: null } }, extra));
+
+  // eficiência do andar: a planta é a mesma, cada andar vende `fac` vezes mais área privativa (unidades maiores ao mesmo preço por m²)
+  { const p = +A.efic || 0, nome = `+${alavP(p)}% eficiência`, fac = Math.min(1 + p, ALAV_EFIC_MAX / Math.max(0.01, P.efic));
+    if (!(p > 0)) nao("efic", nome, p, "passo zerado");
+    else if (fac <= 1 + 1e-9) nao("efic", nome, p, `eficiência do andar já em ${pct(P.efic, 0)}, perto do limite de ${pct(ALAV_EFIC_MAX, 0)}`);
+    else {
+      const mv = Object.assign({}, m, { unitRows: (m.unitRows || []).map(u => Object.assign({}, u, { area: u.area * fac })), vgvUnidades: m.vgvUnidades != null ? m.vgvUnidades * fac : m.vgvUnidades });
+      const f = finance(st, mv, { noHooks: true });
+      lin("efic", nome, p, f, base, { desc: `${pct(P.efic, 0)} → ${pct(P.efic * fac, 0)} no andar` });
+    }
+  }
+  // preço
+  { const p = +A.preco || 0, nome = `+${alavP(p)}% preço`;
+    if (!(p > 0)) nao("preco", nome, p, "passo zerado");
+    else { const f = finance(st, m, { noHooks: true, dp: p }); lin("preco", nome, p, f, base, { desc: `VGV ${f.vgv >= base.vgv ? "+" : "−"}${mi(Math.abs(f.vgv - base.vgv))}` }) }
+  }
+  // terreno (preço à vista + permuta física + permuta financeira)
+  { const p = +A.terreno || 0, nome = `−${alavP(p)}% terreno`;
+    if (!(p > 0)) nao("terreno", nome, p, "passo zerado");
+    else if (!(F.terreno > 0 || F.permuta > 0 || F.permutaFin > 0)) nao("terreno", nome, p, "sem terreno lançado nas premissas");
+    else {
+      const st2 = Object.assign({}, st, { fin: Object.assign({}, F, { terreno: F.terreno * (1 - p), permuta: F.permuta * (1 - p), permutaFin: F.permutaFin * (1 - p) }) });
+      const f = finance(st2, m, { noHooks: true });
+      lin("terreno", nome, p, f, base, { desc: `${alavMi2(base.terreno + base.permV, f.terreno + f.permV)} de terreno` });
+    }
+  }
+  // obra
+  { const p = +A.obra || 0, nome = `−${alavP(p)}% obra`;
+    if (!(p > 0)) nao("obra", nome, p, "passo zerado");
+    else { const f = finance(st, m, { noHooks: true, dc: -p }); lin("obra", nome, p, f, base, { desc: `${alavMi2(base.obra, f.obra)} de obra` }) }
+  }
+  // +N pavimentos em cada torre (estimativa pela massa; base e variante pelo mesmo caminho)
+  { const n = Math.max(1, Math.round(+A.pav || 1)), nome = `+${n} pavimento${n > 1 ? "s" : ""}`;
+    const stB = Object.assign({}, st), mB = massing(stB);
+    const st2 = Object.assign({}, st, { produto: Object.assign({}, P, { torres: P.torres.map(t => Object.assign({}, t, { pav: (+t.pav || 0) + n })) }) });
+    const m2 = massing(st2), hLim = m2.hLim != null ? m2.hLim : R.hMax;
+    if (!mB.T.every(t => t.fit)) nao("pav", nome, n, "o mix já não cabe no andar");
+    else if (m2.H > hLim + 1e-6) nao("pav", nome, n, `passa do gabarito de ${nf(hLim, 0)} m`);
+    else if (m2.CA > R.caMax + 1e-6) nao("pav", nome, n, `passa do CA de ${nf(R.caMax, 1)}`);
+    else if (!m2.T.every(t => t.fit)) nao("pav", nome, n, "o mix não cabe no andar");
+    else {
+      const fB = finance(stB, mB, { noHooks: true }), f = finance(st2, m2, { noHooks: true });
+      lin("pav", nome, n, f, fB, { desc: `+${m2.units - mB.units} un · exige +${Math.max(0, m2.vagasReq - mB.vagasReq)} vagas` });
+    }
+  }
+  const ordem = (a, b) => (b.ok - a.ok) || (a.ok ? b.d.lucro - a.d.lucro : 0);
+  linhas.sort(ordem);
+  return { base: { lucro: base.lucro, margem: base.margemVGV, tir: base.tirA, vgv: base.vgv }, linhas, melhor: linhas.length && linhas[0].ok ? linhas[0] : null };
 }
 
 /* ---- calc/blocos.js ---- */
@@ -4066,7 +4191,8 @@ function flxCenarios(st, m, fBase){
   return [["pess","Pessimista",C.pess],["base","Base",null],["otim","Otimista",C.otim]].map(([k,nome,s])=>({k, nome, s, f: s? flxAjuste(st,m,s,false) : (fBase||finance(st,m))}));
 }
 
-/* ---------- sensibilidade (tornado) ---------- */
+/* ---------- sensibilidade (tornado) ----------
+   Fase D: a margem do tornado e do Monte Carlo é a do mercado, lucro ÷ VGV (`margem`); a margem sobre a receita nominal vai em `margemReceita`. */
 function flxTornadoVars(st){
   const F=st.fin, v=[
     ["preco","Preço de venda","±10%",-0.1,0.1],
@@ -4083,13 +4209,13 @@ function flxTornadoVars(st){
 }
 /* para cada variável: resultado no lado desfavorável (lo) e favorável (hi); ordenado pelo impacto na métrica escolhida */
 function flxTornado(st, m, fBase, met="margem"){
-  const b=fBase||finance(st,m,{noHooks:true}), val=f=> met==="tir"? (f.tirA==null? -1 : f.tirA) : f.margem;
+  const b=fBase||finance(st,m,{noHooks:true}), val=f=> met==="tir"? (f.tirA==null? -1 : f.tirA) : f.margemVGV;
   // lo = lado que piora a métrica escolhida, hi = lado que melhora (nem sempre é o "óbvio": vender devagar pode render reajuste)
   const out=flxTornadoVars(st).map(([k,nome,faixa,a,b])=>{ let fl=flxAjuste(st,m,{[k]:a}), fh=flxAjuste(st,m,{[k]:b});
     if(val(fl)>val(fh)){ const t=fl; fl=fh; fh=t }
-    return { k, nome, faixa, lo:{margem:fl.margem, tir:fl.tirA, lucro:fl.lucro}, hi:{margem:fh.margem, tir:fh.tirA, lucro:fh.lucro}, d: Math.abs(val(fh)-val(fl)) } });
+    return { k, nome, faixa, lo:{margem:fl.margemVGV, margemReceita:fl.margem, tir:fl.tirA, lucro:fl.lucro}, hi:{margem:fh.margemVGV, margemReceita:fh.margem, tir:fh.tirA, lucro:fh.lucro}, d: Math.abs(val(fh)-val(fl)) } });
   out.sort((a,b)=>b.d-a.d);
-  return { base:{margem:b.margem, tir:b.tirA, lucro:b.lucro}, vars:out };
+  return { base:{margem:b.margemVGV, margemReceita:b.margem, tir:b.tirA, lucro:b.lucro}, vars:out };
 }
 
 /* ---------- Monte Carlo ---------- */
@@ -4099,7 +4225,7 @@ const flxTri = (u,a,c,b) => { const F=(c-a)/((b-a)||1); return u<F? a+Math.sqrt(
 const FLX_MC = { preco:[-0.10,0,0.06], custo:[-0.05,0,0.12], vel:[-0.20,0,0.50], incc:[-0.01,0,0.03], obra:[-0.05,0,0.20] };
 function flxMCRodada(st, m, rng){
   const s={}; for(const k in FLX_MC){ const [a,c,b]=FLX_MC[k]; s[k]=flxTri(rng(),a,c,b) }
-  const f=flxAjuste(st,m,s,true); return { tir:f.tirA, lucro:f.lucro, margem:f.margem };
+  const f=flxAjuste(st,m,s,true); return { tir:f.tirA, lucro:f.lucro, margem:f.margemVGV, margemReceita:f.margem };
 }
 function flxPctil(arr, p){ const a=arr.filter(v=>v!=null&&isFinite(v)).sort((x,y)=>x-y); if(!a.length) return null; const i=(a.length-1)*p, lo=Math.floor(i), hi=Math.ceil(i); return a[lo]+(a[hi]-a[lo])*(i-lo) }
 /* roda n rodadas de uma vez (testes / Worker); a interface usa flxMCRodada em blocos */
@@ -4108,8 +4234,8 @@ function flxMonteCarlo(st, m, n=1000, seed=7){
   return flxMCResumo(r);
 }
 function flxMCResumo(r){
-  const tir=r.map(x=>x.tir), lu=r.map(x=>x.lucro);
-  return { n:r.length, tir:[0.1,0.5,0.9].map(p=>flxPctil(tir,p)), lucro:[0.1,0.5,0.9].map(p=>flxPctil(lu,p)),
+  const tir=r.map(x=>x.tir), lu=r.map(x=>x.lucro), mg=r.map(x=>x.margem);
+  return { n:r.length, tir:[0.1,0.5,0.9].map(p=>flxPctil(tir,p)), lucro:[0.1,0.5,0.9].map(p=>flxPctil(lu,p)), margem:[0.1,0.5,0.9].map(p=>flxPctil(mg,p)),
     pPrej: r.filter(x=>x.lucro<0).length/Math.max(1,r.length), lucros: lu };
 }
 
@@ -5027,10 +5153,12 @@ function orcPesos(st, m){
    Valor ausente/NaN conta como o pior possível nesse critério. */
 const PARETO_CRIT = {
   lucro:  { k:"lucro",  sentido:1, nome:"Lucro" },
-  margem: { k:"margem", sentido:1, nome:"Margem" },
+  margem: { k:"margem", sentido:1, nome:"Margem s/ VGV" },
   tir:    { k:"tir",    sentido:1, nome:"TIR" },
   sol:    { k:"sol",    sentido:1, nome:"Sol médio", tol:0.05 },
   vagas:  { k:"vagasAt", sentido:1, nome:"Vagas / exigidas", f:p=>Math.min(1, (+p.vagas||0)/Math.max(1,+p.req||0)) },
+  efic:   { k:"efic",   sentido:1, nome:"Eficiência global", tol:0.002 },   // privativa ÷ área total construída (Fase D)
+  vc:     { k:"vc",     sentido:1, nome:"V/C", tol:0.02 },                 // preço por m² privativo ÷ custo de referência (Fase D)
   vento:  { k:"vento",  sentido:1, nome:"Conforto ao vento" },
   malha:  { k:"malhaCusto", sentido:-1, nome:"Custo da malha" },
 };
@@ -5066,6 +5194,16 @@ function paretoEspalha(list, n, key="lucro"){
   if(list.length<=n) return list.slice();
   const s=list.slice().sort((a,b)=>(+a[key]||0)-(+b[key]||0)), out=[];
   for(let i=0;i<n;i++){ const p=s[Math.round(i*(s.length-1)/Math.max(1,n-1))]; if(!out.includes(p)) out.push(p) }
+  return out;
+}
+/** reordena uma lista (já espalhada e ordenada pela chave) para que os extremos venham primeiro e depois os pontos médios (bisseção):
+    se o tempo acabar no meio da conferência, a fronteira perde o interior e não as pontas */
+function paretoPrioridade(list, key="lucro"){
+  const s=list.slice().sort((a,b)=>(+a[key]||0)-(+b[key]||0)), n=s.length, out=[], seen=new Set();
+  const add=i=>{ if(i>=0 && i<n && !seen.has(i)){ seen.add(i); out.push(s[i]) } };
+  add(0); add(n-1);
+  // em largura (não em profundidade): primeiro os pontos do meio de cada metade
+  const fila=[[0,n-1]]; while(fila.length){ const [lo,hi]=fila.shift(); if(hi-lo<2) continue; const mid=(lo+hi)>>1; add(mid); fila.push([lo,mid],[mid,hi]) }
   return out;
 }
 
@@ -7877,7 +8015,7 @@ function finance(st, m, adj={}){
   const lucro = S_.receita - custo, margem = S_.receita? lucro/S_.receita : 0;
   const margemVGV = vgv>0? lucro/vgv : 0;   // convenção do mercado: lucro ÷ VGV (a margem s/ receita nominal fica em `margem`)
   const npv = r => cf.reduce((s,v,i)=>s+v/Math.pow(1+r,i),0);
-  let tirM=null; { let lo=-0.5, hi=1; const a=npv(lo), b=npv(hi); if(a*b<0){ for(let i=0;i<100;i++){ const mid=(lo+hi)/2; (npv(lo)*npv(mid)<=0)? hi=mid : lo=mid } tirM=(lo+hi)/2 } }
+  let tirM=null; { let lo=-0.5, hi=1; const a=npv(lo), b=npv(hi); if(a*b<0){ let fl=a; for(let i=0;i<100;i++){ const mid=(lo+hi)/2, fm=npv(mid); if(fl*fm<=0) hi=mid; else { lo=mid; fl=fm } } tirM=(lo+hi)/2 } }   // fl = npv(lo) guardado: mesmo resultado, metade das avaliações
   const tirA = tirM===null? null : Math.pow(1+tirM,12)-1;
   const rm=Math.pow(1+F.tma,1/12)-1, vpl=npv(rm);
   let cum=0, minCum=0; const cumA=cf.map(v=>{ cum+=v; if(cum<minCum) minCum=cum; return cum });
@@ -7889,7 +8027,7 @@ function finance(st, m, adj={}){
   if(!adj.noHooks) runHooks("finance", out, st, m, adj);
   return out;
 }
-function sensGrid(st,m){ return [-0.1,0,0.1].map(dp=>[-0.1,0,0.1].map(dc=>finance(st,m,{dp,dc}).margem)) }
+function sensGrid(st,m){ return [-0.1,0,0.1].map(dp=>[-0.1,0,0.1].map(dc=>finance(st,m,{dp,dc}).margemVGV)) }   // margem s/ VGV (convenção da Fase A; f.margem = s/ receita nominal)
 
 /* ================= potencial do terreno e otimizador de produto ================= */
 const MIX_PRESETS = {
@@ -7908,22 +8046,47 @@ function distrib(tips, N, mk){
   raw.map((r,i)=>[r-q[i],i]).sort((a,b)=>b[0]-a[0]).forEach(([_,i])=>{ if(rest>0){ q[i]++; rest-- } });
   return tips.map((t,i)=>({...mk(t), qtd:q[i]})).filter(u=>u.qtd>0);
 }
+/* Potencial do terreno (Fase D). Dois olhares sobre o privativo possível:
+   - pelo ANDAR (priv0, o cálculo antigo): área bruta de pavimentos tipo × eficiência do andar. Não conta garagem, hall nem lazer — superestima;
+   - GLOBAL (priv, o que vale): área total construída possível × eficiência global do estudo (privativa ÷ ATC, `m.eficGlobal`), a mesma
+     da "Saúde do negócio". A ATC possível é o menor entre o limite do CA (computável máx. × ATC ÷ computável do estudo, que carrega
+     subsolos, garagem e áreas comuns na mesma proporção) e o da altura (cada torre sobe até o gabarito: + andares × área do andar).
+   A altura-limite é m.hLim (gabarito da zona ou plano do aeródromo — src/calc/forma.js), não só R.hMax. */
 function potencial(st, m){
-  const R=st.regras, P=st.produto, A=m.A, hEmb=P.peTerreo+P.garAcima*P.peGar;
+  const R=st.regras, P=st.produto, A=m.A, hLim=m.hLim ?? R.hMax, hEmb=P.peTerreo+P.garAcima*P.peGar;
   const compMax=R.caMax*A, compBas=R.caBas*A;
-  const pavH=Math.max(0,Math.floor((R.hMax-hEmb)/P.pe));
+  const pavH=Math.max(0,Math.floor((hLim-hEmb)/P.pe));
   const brutoPorCA = compMax/(1-R.ncTipo) - m.lojaA; // área bruta de pavimentos tipo que o CA permite
   const brutoPorVol = R.toTorre*A*pavH;           // limite pela projeção x altura
   const bruto=Math.max(0,Math.min(brutoPorCA, brutoPorVol)), limita = brutoPorCA<=brutoPorVol? "ca" : "altura";
-  const priv=bruto*P.efic + m.lojaPriv, area=(m.mixPriv/Math.max(1,m.mixUn))||70, un=Math.floor(bruto*P.efic/area);
-  return {compMax, compBas, pavH, bruto, priv, un, limita, vgv: bruto*P.efic*basePrice(st) + m.lojaPriv*st.fin.precoLoja,
-    uso:{ ca:m.CA/Math.max(1e-9,R.caMax), to:m.TO/Math.max(1e-9,R.toEmb), h:m.H/Math.max(1e-9,R.hMax), priv:m.priv/Math.max(1,priv) } };
+  const area=(m.mixPriv/Math.max(1,m.mixUn))||70, preco=basePrice(st);
+  // pelo andar (antigo)
+  const priv0=bruto*P.efic + m.lojaPriv, un0=Math.floor(bruto*P.efic/area), vgv0=bruto*P.efic*preco + m.lojaPriv*st.fin.precoLoja;
+  // global
+  const eficGlobal = m.constr>0 ? m.priv/m.constr : 0;
+  const atcCA = m.comp>0 ? m.constr*compMax/m.comp : 0;
+  const atcAlt = m.constr + (m.T||[]).reduce((s,t)=>s+Math.max(0,pavH-(+t.pav||0))*(+t.A||0),0);
+  let priv=priv0, un=un0, vgv=vgv0, atc=0, lim=limita;
+  if(eficGlobal>0 && atcCA>0){
+    atc=Math.min(atcCA, atcAlt); lim = atcCA<=atcAlt? "ca" : "altura";
+    priv=atc*eficGlobal; const res=Math.max(0, priv-m.lojaPriv); un=Math.floor(res/area); vgv=res*preco + m.lojaPriv*st.fin.precoLoja;
+  }
+  return {compMax, compBas, pavH, hLim, bruto, priv, un, limita:lim, vgv, atc, eficGlobal, priv0, un0, vgv0, limita0:limita,
+    uso:{ ca:m.CA/Math.max(1e-9,R.caMax), to:m.TO/Math.max(1e-9,R.toEmb), h:m.H/Math.max(1e-9,hLim), priv:m.priv/Math.max(1,priv) } };
 }
-function maxPavFast(st){ // maior nº de pavimentos (iguais) que respeita gabarito e CA — busca binária
-  const ok=n=>{ const m=massing(st,{pav:n}); return m.H<=st.regras.hMax+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1) };
+/* maior nº de pavimentos (iguais) que respeita gabarito (m.hLim) e CA — bisseção em 1..80. `teto` (opcional) é um limite superior EXATO do
+   que o gabarito permite (cada pavimento custa ao menos P.pe): acima dele ok(n) é falso sem precisar do massing(), que é o que custa.
+   O resultado é o mesmo da bisseção sem teto (a função não é monótona: a planta encolhe com a altura; por isso não se usa galope). */
+function hLimDe(st){ return typeof formaHLim==="function" ? formaHLim(st) : st.regras.hMax }
+function maxPavFast(st, teto=80){
+  const ok=n=>{ if(n>teto) return false; const m=massing(st,{pav:n}); return m.H<=(m.hLim ?? st.regras.hMax)+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1) };
   if(!ok(1)) return 0; let lo=1, hi=80; while(lo<hi){ const mid=Math.ceil((lo+hi)/2); if(ok(mid)) lo=mid; else hi=mid-1 } return lo;
 }
-const OBJ = { lucro:["Lucro",f=>f.lucro], margem:["Margem",f=>f.margem], tir:["TIR",f=>f.tirA??-1], vpl:["VPL",f=>f.vpl] };
+const OBJ = { lucro:["Lucro",f=>f.lucro,"lucro"], margem:["Margem s/ VGV",f=>f.margemVGV,"margem s/ VGV"], tir:["TIR",f=>f.tirA??-1,"TIR"], vpl:["VPL",f=>f.vpl,"VPL"] };
+/* números que cada combinação guarda (estimada ou conferida): margem = s/ VGV; eficiência global e V/C vêm da "Saúde do negócio" (f.saude) */
+function otimNum(f, m){ const sd=f.saude;
+  return { lucro:f.lucro, margem:f.margemVGV, margemReceita:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv,
+    efic: sd? sd.eficGlobal : (m.constr>0? m.priv/m.constr : 0), vc: sd? sd.vc : null } }
 
 /* ---------- critérios extras (item 1.3) ----------
    Sol médio das unidades: usa unidadesSolMedio(st, m) quando existir (módulo de unidades).
@@ -7941,19 +8104,26 @@ function otimSolVetores(st){
     out.push({x:east[0]*e+north[0]*nn, y:east[1]*e+north[1]*nn, z:Math.sin(alt), t:Math.tan(alt)}) }
   return out;
 }
-function otimSolProxy(st, m){
+const otimBox=p=>{ const xs=p.map(q=>q[0]), ys=p.map(q=>q[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)] };
+/* prismas do entorno (polígono com ponte, altura e caixa) — o otimizador calcula uma vez por rodada e passa a cada otimSolProxy */
+function otimEntorno(st){ return (st.entorno||[]).filter(e=>e.pts&&e.pts.length>2).map(e=>{ const poly=entPoly(e); return {poly, z1:+e.h||0, own:-1, bb:otimBox(poly)} }) }
+function otimSolProxy(st, m, ent){
   const suns=otimSolVetores(st), P=st.produto, T=(m.T||[]).filter(t=>t.plate&&t.plate.length>2);
   if(!T.length || !suns.length) return 0;
-  const box=p=>{ const xs=p.map(q=>q[0]), ys=p.map(q=>q[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)] };
-  const prs=[...T.map(t=>({poly:t.plate, z1:t.H, own:t.i})), ...(st.entorno||[]).filter(e=>e.pts&&e.pts.length>2).map(e=>({poly:entPoly(e), z1:+e.h||0, own:-1}))];
-  prs.forEach(p=>p.bb=box(p.poly));
+  const prs=[...T.map(t=>({poly:t.plate, z1:t.H, own:t.i, bb:otimBox(t.plate)})), ...(ent || otimEntorno(st))];
+  // por raio de sol, só os prismas que podem sombrear algum ponto de partida: dentro do corredor da sombra (perpendicular ≤ raios somados,
+  // ao longo de [−raios, alcance]). Conservador: descarta apenas quem nunca é atingido, então o resultado é o mesmo, bem mais rápido
+  const vs=T.flatMap(t=>t.plate), cx=vs.reduce((a,q)=>a+q[0],0)/vs.length, cy=vs.reduce((a,q)=>a+q[1],0)/vs.length, rT=1+Math.max(...vs.map(q=>Math.hypot(q[0]-cx,q[1]-cy)));
+  const info=prs.map(q=>({q, bx:(q.bb[0]+q.bb[2])/2-cx, by:(q.bb[1]+q.bb[3])/2-cy, r:Math.hypot(q.bb[2]-q.bb[0], q.bb[3]-q.bb[1])/2+rT}));
+  const hzs=suns.map(s=>Math.hypot(s.x,s.y)||1);
+  const cor=suns.map((s,si)=>{ const ux=s.x/hzs[si], uy=s.y/hzs[si]; return info.filter(o=>{ const al=o.bx*ux+o.by*uy, pe=Math.abs(o.bx*uy-o.by*ux); return pe<=o.r && al>=-o.r && al<=o.q.z1/s.t+o.r }).map(o=>o.q) });
   let sum=0, wsum=0;
   T.forEach(t=>{ const pl=t.plate, ccw=G.sArea(pl)>0, tipoH=Math.max(P.pe, t.pav*P.pe);
     for(let i=0;i<pl.length;i++){ const a=pl[i], b=pl[(i+1)%pl.length], dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy); if(L<1) continue;
       const n= ccw? [dy/L,-dx/L] : [-dy/L,dx/L], mid=[(a[0]+b[0])/2+n[0]*0.2, (a[1]+b[1])/2+n[1]*0.2];
       for(const fz of [0.15,0.5,0.85]){ const z=m.hEmb+fz*tipoH; let lit=0;
-        for(const s of suns){ if(n[0]*s.x+n[1]*s.y<0.05) continue; let sh=false;
-          for(const q of prs){ if(q.own===t.i || q.z1<=z) continue; const d=(q.z1-z)/s.t, hz=Math.hypot(s.x,s.y)||1, e=[mid[0]+s.x/hz*d, mid[1]+s.y/hz*d];
+        for(let si=0; si<suns.length; si++){ const s=suns[si]; if(n[0]*s.x+n[1]*s.y<0.05) continue; let sh=false;
+          for(const q of cor[si]){ if(q.own===t.i || q.z1<=z) continue; const d=(q.z1-z)/s.t, hz=hzs[si], e=[mid[0]+s.x/hz*d, mid[1]+s.y/hz*d];
             if(Math.max(mid[0],e[0])<q.bb[0]||Math.min(mid[0],e[0])>q.bb[2]||Math.max(mid[1],e[1])<q.bb[1]||Math.min(mid[1],e[1])>q.bb[3]) continue;
             if(G.segPolyHit(mid,e,q.poly)){ sh=true; break } }
           if(!sh) lit++ }
@@ -7984,7 +8154,10 @@ const otimKey=r=>[r.nT,r.pk,r.N,r.pav,r.sub,r.gac].join("|");
 let OTIM=null;
 /* otimizar(opts, onProg?, onDone?, ctx?) → Promise do resultado (também entregue a onDone).
    Puro (sem DOM): roda no Web Worker. ctx = {st, m} (padrão: S e o último modelo da tela; sem eles, calcula).
-   opts: {obj, torres, tipologias, unidades} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, vento=false, malha=false}.
+   opts: {obj, torres, tipologias, unidades} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, tempoTotal=15000 ms, vento=false, malha=false, efic=false, vc=false}
+   (efic/vc acrescentam eficiência global e V/C aos critérios da fronteira de Pareto).
+   Desempenho: maxPavFast com teto vindo das combinações menores; combinações dominadas (mais subsolos com o mesmo nº de pavimentos e
+   garagem elevada, vagas já cumpridas) não são recalculadas; o sol (que não depende dos subsolos) é guardado por assinatura.
    Resultado serializável: {res (as melhores pelo objetivo, conferidas — igual ao otimizador antigo), pts (estimativas de todas as combinações),
    pareto:{pts (conferidas com a garagem real), criterios}, solFonte, …}. */
 function otimizar(opts, onProg, onDone, ctx={}){
@@ -7999,30 +8172,35 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const Ns = opts.unidades? [2,3,4,5,6,8] : [base.produto.mix.reduce((s,u)=>s+u.qtd,0)];
   const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
   const jobs=[]; nTs.forEach(nT=>presets.forEach(pk=>Ns.forEach(N=>jobs.push({nT,pk,N}))));
-  const res=[], pts=[]; let i=0; const t0=performance.now(); const score=OBJ[opts.obj][1];
+  const res=[], pts=[]; let i=0; const t0=performance.now(); const score=OBJ[opts.obj][1], solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
   let resolve; const done=new Promise(r=>resolve=r);
   const finish=o=>{ OTIM=o; if(typeof onDone==="function") onDone(o); resolve(o) };
   const step=()=>{
     const ts=performance.now();
     while(i<jobs.length && performance.now()-ts<40){
       const {nT,pk,N}=jobs[i++]; const st=clone(base); st.produto.mix=presetMix(base,pk,N); if(!st.produto.mix.length) continue;
-      let best=null, tested=0;
+      let best=null, tested=0; const cumpre=new Map();   // cumpre: "gac|pav" → menor nº de subsolos (≥1) que já atende às vagas
       for(const [sub,gac] of gars){
         st.produto.subsolos=sub; st.produto.garAcima=gac; st.produto.torres=Array.from({length:nT},()=>({pav:4}));
-        const pmax=maxPavFast(st); if(pmax<2) continue;
+        // teto exato pelo gabarito: acima dele o massing() nem precisa rodar
+        const hEmbG=st.produto.peTerreo+gac*st.produto.peGar, pmax=maxPavFast(st, Math.floor((hLimDe(st)+1e-6-hEmbG)/st.produto.pe));
+        if(pmax<2) continue;
         for(const pav of [...new Set([pmax, pmax-1, pmax-3, Math.ceil(pmax*0.7)])].filter(p=>p>=2)){
+          const kc=gac+"|"+pav, sMin=cumpre.get(kc);
+          if(sMin!=null && sub>sMin){ tested++; continue }   // dominada por sMin subsolos: mesmo preço, mais custo (conta como testada, como antes)
           st.produto.torres=Array.from({length:nT},()=>({pav}));
           const m=massing(st); if(!m.T.every(t=>t.fit)) continue;
           const okVg = m.vagasEst*k >= m.vagasReq;
           if(!okVg && !mc) continue;
           if(m.minApto<st.regras.aptoMin) continue;
-          const f=finance(st,m), sc=score(f);
+          const f=finance(st,m), sc=score(f), num=otimNum(f,m);
           // multicritério: guarda todas as combinações dentro das regras (inclusive as que não atingem as vagas — é um dos critérios)
-          if(mc) pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq,
-            lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv, sol:otimSolProxy(st,m), est:true});
+          if(mc){ const sk=nT+"|"+pk+"|"+N+"|"+pav+"|"+gac; let sol=solMemo.get(sk); if(sol===undefined){ sol=otimSolProxy(st,m,entPrs); solMemo.set(sk,sol) }
+            pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq,
+              ...num, sol, est:true}) }
           if(!okVg) continue;
-          tested++;
-          if(!best || sc>best.sc) best={sc, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq, CA:m.CA, H:m.H, lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv};
+          tested++; if(sub>=1 && (cumpre.get(kc)==null || sub<cumpre.get(kc))) cumpre.set(kc, sub);
+          if(!best || sc>best.sc) best={sc, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq, CA:m.CA, H:m.H, ...num};
         }
         if(tested>=8) break;
       }
@@ -8045,26 +8223,28 @@ function otimizar(opts, onProg, onDone, ctx={}){
       while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++]; const st=stOf(r);
         let m=compute(st,{quick:true}), t=0;
         while(m.vagas<m.vagasReq && t<4){ if(st.produto.subsolos<=st.produto.garAcima+1 && st.produto.subsolos<5) st.produto.subsolos++; else st.produto.garAcima++; m=compute(st,{quick:true}); t++ }
-        if(m.vagas<m.vagasReq || !m.T.every(x=>x.fit) || m.H>R.hMax+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...r, sc:score(f), sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv};
+        if(m.vagas<m.vagasReq || !m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
+        const f=finance(st,m), v={...r, sc:score(f), sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m)};
         v.key=otimKey(v); v.est=false; if(mc) extras(st,m,v); out.push(v) }
       prog(0.6+0.2*j/Math.max(1,list.length));
       if(j<list.length && out.length<5) setTimeout(stepV,0); else done(out.sort((a,b)=>b.sc-a.sc)) };
     stepV() };
   // multicritério: confere com a garagem real alguns pontos da fronteira estimada e calcula a fronteira final
   const multi=(out, o)=>{
-    const R=base.regras, crit0=[PARETO_CRIT.lucro, PARETO_CRIT.sol, PARETO_CRIT.vagas], have=new Set(out.map(r=>r.key));
+    const R=base.regras, crit0=[PARETO_CRIT.lucro, PARETO_CRIT.sol, PARETO_CRIT.vagas, ...(opts.efic? [PARETO_CRIT.efic] : []), ...(opts.vc? [PARETO_CRIT.vc] : [])], have=new Set(out.map(r=>r.key));
     // metade da fronteira geral, metade da fronteira das que atingem as vagas (para o filtro "vagas ≥ exigidas" ter opções)
     const nMax=Math.max(0, opts.paretoMax ?? 8), fr0=(l)=>paretoFronteira(l, crit0).map(q=>l[q]).filter(p=>!have.has(p.key));
     const okV=pts.filter(p=>p.vagas>=p.req), a=paretoEspalha(fr0(okV), Math.ceil(nMax/2), "lucro"), aK=new Set(a.map(p=>p.key));
-    const cand=[...a, ...paretoEspalha(fr0(pts).filter(p=>!aK.has(p.key)), nMax-a.length, "lucro")], val=[], t1=performance.now(); let j=0;
+    const cand=paretoPrioridade([...a, ...paretoEspalha(fr0(pts).filter(p=>!aK.has(p.key)), nMax-a.length, "lucro")], "lucro"), val=[], t1=performance.now(); let j=0;   // extremos primeiro: se o tempo acabar, a fronteira perde o meio, não as pontas
+    // tempo da conferência com a garagem real: o que sobra de tempoTotal (15 s), entre 2 s e tempoMax (9 s); os extremos da fronteira vêm primeiro
+    const tBud=Math.min(opts.tempoMax ?? 9000, Math.max(2000, (opts.tempoTotal ?? 15000)-(t1-t0)));
     const stepM=()=>{ const ts=performance.now();
-      while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<(opts.tempoMax ?? 9000)){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
-        if(!m.T.every(x=>x.fit) || m.H>R.hMax+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...p, sc:score(f), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv, est:false};
+      while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<tBud){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
+        if(!m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
+        const f=finance(st,m), v={...p, sc:score(f), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m), est:false};
         val.push(extras(st,m,v)) }
       prog(0.8+0.2*j/Math.max(1,cand.length));
-      if(j<cand.length && performance.now()-t1<(opts.tempoMax ?? 9000)) return setTimeout(stepM,0);
+      if(j<cand.length && performance.now()-t1<tBud) return setTimeout(stepM,0);
       const seen=new Set(), P=[...out, ...val].filter(r=>!seen.has(r.key) && seen.add(r.key));
       const crit=[...crit0]; if(opts.vento && P.length && P.every(r=>r.vento!=null)) crit.push(PARETO_CRIT.vento);
       if(opts.malha && P.length && P.every(r=>r.malhaCusto!=null)) crit.push(PARETO_CRIT.malha);
@@ -8078,7 +8258,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
 }
 function aplicarOtim(r, st=S){ st.produto.torres=Array.from({length:r.nT},()=>({pav:r.pav})); st.produto.mix=clone(r.mix); st.produto.subsolos=r.sub; st.produto.garAcima=r.gac }
 /* opções do otimizador com vários critérios (vão junto com S.otim para o Worker); filtros fVagas/fSol/solMin são só da tela */
-extendDEF("otim", { ...DEF.otim, mc:true, vento:false, malha:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });
+extendDEF("otim", { ...DEF.otim, mc:true, vento:false, malha:false, efic:false, vc:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });
 
 /* ================= clima: entorno, horas de sol e vento ================= */
 function prisms(st, m){
@@ -8209,6 +8389,88 @@ function fieldCanvas(kind){
 function fieldFrame(kind){ // origem, eixos e tamanho de célula no referencial do desenho
   if(kind==="vento") return {o:[WIND.a0,WIND.b0], fx:WIND.f, fy:WIND.pp, cs:WIND.cs, nx:WIND.nx, ny:WIND.ny};
   const s=_sunCache; return {o:[s.x0,s.y0], fx:[1,0], fy:[0,1], cs:s.cs, nx:s.nx, ny:s.ny};
+}
+
+/* ================= Fase D: Alavancas do negócio =================
+   Cálculo puro (página, Worker e testes). Mexe numa coisa por vez e mostra quanto o resultado muda: lucro, margem s/ VGV (a margem
+   principal, convenção da Fase A) e TIR. Nada é gravado em S; cada linha é um finance() sobre uma cópia rasa do estado/modelo.
+
+   alavancasCalc(st, m) → { base:{lucro, margem, tir, vgv}, linhas:[{k, nome, passo, ok, motivo, desc, d:{lucro, margem, tir}, f?}], melhor }
+     k        "efic" · "preco" · "terreno" · "obra" · "pav"
+     d        diferenças em relação ao estudo (lucro em R$; margem e TIR em pontos de fração: 0,034 = +3,4 p.p.; tir null sem TIR)
+     ok       false quando a alavanca não se aplica (sem terreno lançado, andar já no limite, o andar a mais não cabe…) — `motivo` diz por quê
+     linhas   ordenadas: as que se aplicam, pelo maior ganho de lucro; depois as que não se aplicam
+
+   O que é cada uma (passos em S.alavancas, todos editáveis):
+   - efic    +5% de EFICIÊNCIA DO ANDAR (S.produto.efic, relativa: 80% → 84%). A mesma planta, a mesma área construída e o mesmo custo,
+             mas cada andar entrega 5% mais área privativa (paredes e circulação mais enxutas): as unidades crescem 5% ao mesmo preço por m².
+             (No modelo isso equivale a subir `efic` e as áreas do mix na mesma proporção: a planta do andar não muda.) Limite: 95%.
+   - preco   +5% no preço de tabela (todas as tipologias, coberturas e lojas); o custo não muda, corretagem/marketing/RET acompanham o VGV.
+   - terreno −10% no preço do terreno, na permuta física e na financeira (o ITBI acompanha).
+   - obra    −5% no custo de obra (CUB, lazer e movimento de terra); projetos, administração e contingência acompanham.
+   - pav     +1 pavimento tipo em cada torre. Estimado pela massa (massing, sem o layout da garagem), comparando o estudo e a variante pelo
+             mesmo caminho; só vale se couber no gabarito (m.hLim), no CA e no mix. */
+extendDEF("alavancas", { efic: 0.05, preco: 0.05, terreno: 0.10, obra: 0.05, pav: 1 });
+
+const ALAV_EFIC_MAX = 0.95;
+const alavMi2 = (a, b) => `${nf(a / 1e6, 1)} → ${nf(b / 1e6, 1)} mi`;   // 13,9 → 12,5 mi
+const alavP = (p) => nf(p * 100, Math.abs(p * 100 - Math.round(p * 100)) < 1e-9 ? 0 : 1);
+
+function alavancasCalc(st, m) {
+  const A = Object.assign({}, DEF.alavancas, st.alavancas || {}), F = st.fin, P = st.produto, R = st.regras;
+  const base = finance(st, m, { noHooks: true });
+  const dif = (f, b) => ({ lucro: f.lucro - b.lucro, margem: f.margemVGV - b.margemVGV, tir: (f.tirA != null && b.tirA != null) ? f.tirA - b.tirA : null });
+  const linhas = [];
+  const lin = (k, nome, passo, f, b, extra) => linhas.push(Object.assign({ k, nome, passo, ok: true, d: dif(f, b), f }, extra));
+  const nao = (k, nome, passo, motivo, extra) => linhas.push(Object.assign({ k, nome, passo, ok: false, motivo, d: { lucro: 0, margem: 0, tir: null } }, extra));
+
+  // eficiência do andar: a planta é a mesma, cada andar vende `fac` vezes mais área privativa (unidades maiores ao mesmo preço por m²)
+  { const p = +A.efic || 0, nome = `+${alavP(p)}% eficiência`, fac = Math.min(1 + p, ALAV_EFIC_MAX / Math.max(0.01, P.efic));
+    if (!(p > 0)) nao("efic", nome, p, "passo zerado");
+    else if (fac <= 1 + 1e-9) nao("efic", nome, p, `eficiência do andar já em ${pct(P.efic, 0)}, perto do limite de ${pct(ALAV_EFIC_MAX, 0)}`);
+    else {
+      const mv = Object.assign({}, m, { unitRows: (m.unitRows || []).map(u => Object.assign({}, u, { area: u.area * fac })), vgvUnidades: m.vgvUnidades != null ? m.vgvUnidades * fac : m.vgvUnidades });
+      const f = finance(st, mv, { noHooks: true });
+      lin("efic", nome, p, f, base, { desc: `${pct(P.efic, 0)} → ${pct(P.efic * fac, 0)} no andar` });
+    }
+  }
+  // preço
+  { const p = +A.preco || 0, nome = `+${alavP(p)}% preço`;
+    if (!(p > 0)) nao("preco", nome, p, "passo zerado");
+    else { const f = finance(st, m, { noHooks: true, dp: p }); lin("preco", nome, p, f, base, { desc: `VGV ${f.vgv >= base.vgv ? "+" : "−"}${mi(Math.abs(f.vgv - base.vgv))}` }) }
+  }
+  // terreno (preço à vista + permuta física + permuta financeira)
+  { const p = +A.terreno || 0, nome = `−${alavP(p)}% terreno`;
+    if (!(p > 0)) nao("terreno", nome, p, "passo zerado");
+    else if (!(F.terreno > 0 || F.permuta > 0 || F.permutaFin > 0)) nao("terreno", nome, p, "sem terreno lançado nas premissas");
+    else {
+      const st2 = Object.assign({}, st, { fin: Object.assign({}, F, { terreno: F.terreno * (1 - p), permuta: F.permuta * (1 - p), permutaFin: F.permutaFin * (1 - p) }) });
+      const f = finance(st2, m, { noHooks: true });
+      lin("terreno", nome, p, f, base, { desc: `${alavMi2(base.terreno + base.permV, f.terreno + f.permV)} de terreno` });
+    }
+  }
+  // obra
+  { const p = +A.obra || 0, nome = `−${alavP(p)}% obra`;
+    if (!(p > 0)) nao("obra", nome, p, "passo zerado");
+    else { const f = finance(st, m, { noHooks: true, dc: -p }); lin("obra", nome, p, f, base, { desc: `${alavMi2(base.obra, f.obra)} de obra` }) }
+  }
+  // +N pavimentos em cada torre (estimativa pela massa; base e variante pelo mesmo caminho)
+  { const n = Math.max(1, Math.round(+A.pav || 1)), nome = `+${n} pavimento${n > 1 ? "s" : ""}`;
+    const stB = Object.assign({}, st), mB = massing(stB);
+    const st2 = Object.assign({}, st, { produto: Object.assign({}, P, { torres: P.torres.map(t => Object.assign({}, t, { pav: (+t.pav || 0) + n })) }) });
+    const m2 = massing(st2), hLim = m2.hLim != null ? m2.hLim : R.hMax;
+    if (!mB.T.every(t => t.fit)) nao("pav", nome, n, "o mix já não cabe no andar");
+    else if (m2.H > hLim + 1e-6) nao("pav", nome, n, `passa do gabarito de ${nf(hLim, 0)} m`);
+    else if (m2.CA > R.caMax + 1e-6) nao("pav", nome, n, `passa do CA de ${nf(R.caMax, 1)}`);
+    else if (!m2.T.every(t => t.fit)) nao("pav", nome, n, "o mix não cabe no andar");
+    else {
+      const fB = finance(stB, mB, { noHooks: true }), f = finance(st2, m2, { noHooks: true });
+      lin("pav", nome, n, f, fB, { desc: `+${m2.units - mB.units} un · exige +${Math.max(0, m2.vagasReq - mB.vagasReq)} vagas` });
+    }
+  }
+  const ordem = (a, b) => (b.ok - a.ok) || (a.ok ? b.d.lucro - a.d.lucro : 0);
+  linhas.sort(ordem);
+  return { base: { lucro: base.lucro, margem: base.margemVGV, tir: base.tirA, vgv: base.vgv }, linhas, melhor: linhas.length && linhas[0].ok ? linhas[0] : null };
 }
 
 /* ================= Fase C — torres desenhadas (blocos) =================
@@ -9767,7 +10029,8 @@ function flxCenarios(st, m, fBase){
   return [["pess","Pessimista",C.pess],["base","Base",null],["otim","Otimista",C.otim]].map(([k,nome,s])=>({k, nome, s, f: s? flxAjuste(st,m,s,false) : (fBase||finance(st,m))}));
 }
 
-/* ---------- sensibilidade (tornado) ---------- */
+/* ---------- sensibilidade (tornado) ----------
+   Fase D: a margem do tornado e do Monte Carlo é a do mercado, lucro ÷ VGV (`margem`); a margem sobre a receita nominal vai em `margemReceita`. */
 function flxTornadoVars(st){
   const F=st.fin, v=[
     ["preco","Preço de venda","±10%",-0.1,0.1],
@@ -9784,13 +10047,13 @@ function flxTornadoVars(st){
 }
 /* para cada variável: resultado no lado desfavorável (lo) e favorável (hi); ordenado pelo impacto na métrica escolhida */
 function flxTornado(st, m, fBase, met="margem"){
-  const b=fBase||finance(st,m,{noHooks:true}), val=f=> met==="tir"? (f.tirA==null? -1 : f.tirA) : f.margem;
+  const b=fBase||finance(st,m,{noHooks:true}), val=f=> met==="tir"? (f.tirA==null? -1 : f.tirA) : f.margemVGV;
   // lo = lado que piora a métrica escolhida, hi = lado que melhora (nem sempre é o "óbvio": vender devagar pode render reajuste)
   const out=flxTornadoVars(st).map(([k,nome,faixa,a,b])=>{ let fl=flxAjuste(st,m,{[k]:a}), fh=flxAjuste(st,m,{[k]:b});
     if(val(fl)>val(fh)){ const t=fl; fl=fh; fh=t }
-    return { k, nome, faixa, lo:{margem:fl.margem, tir:fl.tirA, lucro:fl.lucro}, hi:{margem:fh.margem, tir:fh.tirA, lucro:fh.lucro}, d: Math.abs(val(fh)-val(fl)) } });
+    return { k, nome, faixa, lo:{margem:fl.margemVGV, margemReceita:fl.margem, tir:fl.tirA, lucro:fl.lucro}, hi:{margem:fh.margemVGV, margemReceita:fh.margem, tir:fh.tirA, lucro:fh.lucro}, d: Math.abs(val(fh)-val(fl)) } });
   out.sort((a,b)=>b.d-a.d);
-  return { base:{margem:b.margem, tir:b.tirA, lucro:b.lucro}, vars:out };
+  return { base:{margem:b.margemVGV, margemReceita:b.margem, tir:b.tirA, lucro:b.lucro}, vars:out };
 }
 
 /* ---------- Monte Carlo ---------- */
@@ -9800,7 +10063,7 @@ const flxTri = (u,a,c,b) => { const F=(c-a)/((b-a)||1); return u<F? a+Math.sqrt(
 const FLX_MC = { preco:[-0.10,0,0.06], custo:[-0.05,0,0.12], vel:[-0.20,0,0.50], incc:[-0.01,0,0.03], obra:[-0.05,0,0.20] };
 function flxMCRodada(st, m, rng){
   const s={}; for(const k in FLX_MC){ const [a,c,b]=FLX_MC[k]; s[k]=flxTri(rng(),a,c,b) }
-  const f=flxAjuste(st,m,s,true); return { tir:f.tirA, lucro:f.lucro, margem:f.margem };
+  const f=flxAjuste(st,m,s,true); return { tir:f.tirA, lucro:f.lucro, margem:f.margemVGV, margemReceita:f.margem };
 }
 function flxPctil(arr, p){ const a=arr.filter(v=>v!=null&&isFinite(v)).sort((x,y)=>x-y); if(!a.length) return null; const i=(a.length-1)*p, lo=Math.floor(i), hi=Math.ceil(i); return a[lo]+(a[hi]-a[lo])*(i-lo) }
 /* roda n rodadas de uma vez (testes / Worker); a interface usa flxMCRodada em blocos */
@@ -9809,8 +10072,8 @@ function flxMonteCarlo(st, m, n=1000, seed=7){
   return flxMCResumo(r);
 }
 function flxMCResumo(r){
-  const tir=r.map(x=>x.tir), lu=r.map(x=>x.lucro);
-  return { n:r.length, tir:[0.1,0.5,0.9].map(p=>flxPctil(tir,p)), lucro:[0.1,0.5,0.9].map(p=>flxPctil(lu,p)),
+  const tir=r.map(x=>x.tir), lu=r.map(x=>x.lucro), mg=r.map(x=>x.margem);
+  return { n:r.length, tir:[0.1,0.5,0.9].map(p=>flxPctil(tir,p)), lucro:[0.1,0.5,0.9].map(p=>flxPctil(lu,p)), margem:[0.1,0.5,0.9].map(p=>flxPctil(mg,p)),
     pPrej: r.filter(x=>x.lucro<0).length/Math.max(1,r.length), lucros: lu };
 }
 
@@ -10719,10 +10982,12 @@ function orcPesos(st, m){
    Valor ausente/NaN conta como o pior possível nesse critério. */
 const PARETO_CRIT = {
   lucro:  { k:"lucro",  sentido:1, nome:"Lucro" },
-  margem: { k:"margem", sentido:1, nome:"Margem" },
+  margem: { k:"margem", sentido:1, nome:"Margem s/ VGV" },
   tir:    { k:"tir",    sentido:1, nome:"TIR" },
   sol:    { k:"sol",    sentido:1, nome:"Sol médio", tol:0.05 },
   vagas:  { k:"vagasAt", sentido:1, nome:"Vagas / exigidas", f:p=>Math.min(1, (+p.vagas||0)/Math.max(1,+p.req||0)) },
+  efic:   { k:"efic",   sentido:1, nome:"Eficiência global", tol:0.002 },   // privativa ÷ área total construída (Fase D)
+  vc:     { k:"vc",     sentido:1, nome:"V/C", tol:0.02 },                 // preço por m² privativo ÷ custo de referência (Fase D)
   vento:  { k:"vento",  sentido:1, nome:"Conforto ao vento" },
   malha:  { k:"malhaCusto", sentido:-1, nome:"Custo da malha" },
 };
@@ -10758,6 +11023,16 @@ function paretoEspalha(list, n, key="lucro"){
   if(list.length<=n) return list.slice();
   const s=list.slice().sort((a,b)=>(+a[key]||0)-(+b[key]||0)), out=[];
   for(let i=0;i<n;i++){ const p=s[Math.round(i*(s.length-1)/Math.max(1,n-1))]; if(!out.includes(p)) out.push(p) }
+  return out;
+}
+/** reordena uma lista (já espalhada e ordenada pela chave) para que os extremos venham primeiro e depois os pontos médios (bisseção):
+    se o tempo acabar no meio da conferência, a fronteira perde o interior e não as pontas */
+function paretoPrioridade(list, key="lucro"){
+  const s=list.slice().sort((a,b)=>(+a[key]||0)-(+b[key]||0)), n=s.length, out=[], seen=new Set();
+  const add=i=>{ if(i>=0 && i<n && !seen.has(i)){ seen.add(i); out.push(s[i]) } };
+  add(0); add(n-1);
+  // em largura (não em profundidade): primeiro os pontos do meio de cada metade
+  const fila=[[0,n-1]]; while(fila.length){ const [lo,hi]=fila.shift(); if(hi-lo<2) continue; const mid=(lo+hi)>>1; add(mid); fila.push([lo,mid],[mid,hi]) }
   return out;
 }
 
@@ -13832,7 +14107,7 @@ async function exportPDF(){
     doc.setDrawColor(200); doc.setLineWidth(0.2); [mn,0,mx].forEach(v=>{ doc.line(x0,sy(v),x0+w,sy(v)); doc.setFontSize(7); doc.setTextColor(...mut); doc.text(nf(v/1e6,1)+" mi",x0-2,sy(v)+1,{align:"right"}) });
     doc.setDrawColor(...acc); doc.setLineWidth(0.6); for(let i=1;i<n;i++) doc.line(sx(i-1),sy(cum[i-1]),sx(i),sy(cum[i]));
     doc.setDrawColor(...mut); doc.setLineWidth(0.2); [[f.launch,"lançamento"],[f.chaves,"chaves"]].forEach(([i,l])=>{ doc.line(sx(i),y,sx(i),y+h); doc.text(T(l),sx(i)+1,y+h+4) }); y+=h+10; doc.setTextColor(...ink) }
-  h2("Sensibilidade da margem (preço x custo de obra)");
+  h2("Sensibilidade da margem s/ VGV (preço x custo de obra)");
   { const sg=sensGrid(S,m); rows([["","obra -10%  |  base  |  obra +10%"],...["preço -10%","preço base","preço +10%"].map((l,i)=>[l,sg[i].map(v=>pct(v)).join("   |   ")])]) }
   h2("Premissas");
   rows([S.orc&&S.orc.modo==="param"? ["CUB de referência / orçamento",`${brl(F.cub)}/m² · paramétrico por sistema`] : ["CUB de referência / fator",`${brl(F.cub)}/m² × ${nf(F.fator,2)}`],["INCC / reajuste de tabela",`${pct(F.incc)} / ${pct(F.reaj)} a.a.`],["Lançamento / obra / vendas",`mês ${F.prelanc} / ${F.obra} meses / ${F.venda} meses`],["Vendido no lançamento / pago até as chaves",`${pct(F.vendaLanc,0)} / ${pct(F.entrada,0)}`],["Corretagem / marketing / impostos",`${pct(F.corret)} / ${pct(F.mkt)} / ${pct(F.imp)}`],["Financiamento à produção",F.finOn?`${pct(F.finPct,0)} da obra a ${pct(F.finTaxa)} a.a.`:"não"],["Permuta física / financeira",`${pct(F.permuta,0)} / ${pct(F.permutaFin,1)}`]]);
@@ -14392,6 +14667,70 @@ function cfdBarUI(){
   document.getElementById("cfReset").onclick=()=>{ cfdStart(true) };
   document.getElementById("cfVar").onchange=e=>{ S.cfd.var=e.target.value; if(S.cfd.var==="lawson"){ S.cfd.viz.plano=true; S.cfd.plano.orient="h"; S.cfd.plano.h=1.5 } save(); cfdRefresh(true); cfdBarUI(); if(TAB==="clima") renderTab() };
   cfdStatus();
+}
+
+/* ================= Fase D: interface das Alavancas e do Potencial do terreno =================
+   Cálculo em src/calc/alavancas.js (alavancasCalc) e src/optim.js (potencial). Aqui só marcação.
+   - Card "Alavancas" (Viabilidade › Riscos): fechado por padrão, calculado SÓ quando a seção está aberta (finVis); mesmo padrão dos
+     Cenários e da Sensibilidade. Cada linha muda uma coisa e mostra Δ lucro, Δ margem s/ VGV e Δ TIR. Os passos ficam em "Mais opções".
+   - potInfoHTML(po) / potNotaHTML(po): ⓘ e a linha "só pelo andar" do card "Potencial do terreno" (Produto) — chamados de src/ui/produto.js. */
+
+const ALAV_UI = { sig: null };
+{ const st = document.createElement("style"); st.id = "alavCSS"; st.textContent = `.alav td:first-child{white-space:normal;padding-right:8px}.alav td:not(:first-child),.alav th:not(:first-child){padding-left:4px;font-size:11px}.alav .fsub{white-space:normal;line-height:1.35}.alav .info{margin-left:4px;vertical-align:1px}.alav tr.alav-no td{color:var(--muted)}`; document.head.appendChild(st) }
+const alavSinal = (v, f) => v == null ? `<span style="color:var(--muted)">—</span>` : `<span style="color:${Math.abs(v) < 1e-9 ? "var(--muted)" : v > 0 ? "var(--ok)" : "var(--bad)"}">${f(v)}</span>`;
+const alavMi = v => (v < 0 ? "−" : "+") + mi(Math.abs(v));
+const alavPP = v => (v < 0 ? "−" : "+") + nf(Math.abs(v) * 100, 1) + " p.p.";
+
+const ALAV_INFO = {
+  efic: () => `Eficiência do andar: quanto do pavimento tipo vira área vendável (hoje ${pct(S.produto.efic, 0)}). Aumentar ${nf(S.alavancas.efic * 100, 0)}% (relativo) mantém a mesma planta, a mesma área construída e o mesmo custo, mas cada andar entrega esse tanto a mais de área privativa (paredes e circulação mais enxutas): as unidades crescem, ao mesmo preço por m².`,
+  preco: () => `Preço de tabela ${nf(S.alavancas.preco * 100, 0)}% maior em todas as tipologias, lojas e coberturas. O custo da obra não muda; corretagem, marketing e impostos acompanham o VGV.`,
+  terreno: () => `Terreno ${nf(S.alavancas.terreno * 100, 0)}% mais barato, no preço à vista e nas permutas física e financeira (o ITBI acompanha). É o que a negociação da compra pode render.`,
+  obra: () => `Custo de obra ${nf(S.alavancas.obra * 100, 0)}% menor (CUB, lazer e movimento de terra); projetos, administração e contingência acompanham.`,
+  pav: () => `Mais ${S.alavancas.pav > 1 ? S.alavancas.pav + " pavimentos" : "um pavimento"} tipo em cada torre, se couber no gabarito, no CA e no terreno. Estimativa pela massa do prédio, sem o layout da garagem; mais unidades exigem mais vagas.`,
+};
+
+function alavHTML() {
+  const sub = (k, l, o = {}) => NUM(`alavancas.${k}`, l, o.u || "%", Object.assign({ pct: !o.int, int: !!o.int, step: o.int ? 1 : 1, min: o.int ? 1 : 0, max: o.int ? 5 : 0.5, fx: "alav" }, o));
+  return SEC("Alavancas",
+    `<div id="alavBox"><p class="note">Calculando…</p></div>` +
+    ADV(KV(sub("efic", "Eficiência") + sub("preco", "Preço") + sub("terreno", "Terreno") + sub("obra", "Obra") + sub("pav", "Pavimentos", { u: "por torre", int: true }), 3), { key: "alav" }),
+    { key: "alavancas", info: "Alavancas", sum: "toque para calcular" });
+}
+
+function alavLinhasHTML(r) {
+  const th = (t, w) => `<th style="min-width:0;${w ? `width:${w}` : ""};white-space:nowrap">${t}</th>`;
+  const lin = (l, i) => {
+    const nome = `<td><b>${esc(l.nome)}</b>${INFO(ALAV_INFO[l.k]())}<div class="fsub">${esc(l.ok ? (l.desc || "") : l.motivo)}</div></td>`;
+    if (!l.ok) return `<tr class="alav-no">${nome}<td colspan="3">não se aplica</td></tr>`;
+    return `<tr>${nome}<td${i === 0 ? ' style="font-weight:600"' : ""}>${alavSinal(l.d.lucro, alavMi)}</td><td>${alavSinal(l.d.margem, alavPP)}</td><td>${alavSinal(l.d.tir, alavPP)}</td></tr>`;
+  };
+  return `<table class="tbl multi alav" style="table-layout:fixed"><tr>${th("", "36%")}${th("Lucro")}${th("Margem")}${th("TIR")}</tr>${r.linhas.map(lin).join("")}</table>
+    <p class="note">Hoje: lucro ${mi(r.base.lucro)} · margem ${pct(r.base.margem)} · TIR ${r.base.tir == null ? "—" : pct(r.base.tir)}</p>`;
+}
+
+function alavLive(m, f, fast) {
+  const box = document.getElementById("alavBox"); if (!box) return;
+  if (!finVis("alavBox")) return;                          // seção fechada: nada é calculado
+  if (fast && ALAV_UI.sig) return;                          // arraste de controle: mantém o último resultado
+  m = m || (window._last && window._last.m); if (!m) return;
+  let r; try { r = alavancasCalc(S, m) } catch (e) { box.innerHTML = `<p class="note">Não foi possível calcular as alavancas.</p>`; console.error("[alavancas]", e); return }
+  ALAV_UI.sig = true;
+  setHTML("alavBox", alavLinhasHTML(r));
+  const b = r.melhor;
+  setSum("alavancas", b ? `maior efeito: <b>${esc(b.nome)}</b> ${alavMi(b.d.lucro)}` : "nenhuma se aplica");
+}
+FX.alav = () => { save(); ALAV_UI.sig = null; alavLive() };
+addCard("viab", { key: "alavancas", sub: "risco", order: 70, html: alavHTML, live: alavLive });
+
+/* ---------- Potencial do terreno (Produto): eficiência global em vez de só a do andar ---------- */
+function potInfoHTML(po) {
+  return INFO(`Área que o CA e o gabarito (${nf(po.hLim, 0)} m) permitem construir, vezes a eficiência global do estudo (${pct(po.eficGlobal, 1)} = área privativa ÷ área total construída, com subsolos, térreo e lazer). Pela eficiência do andar (${pct(S.produto.efic, 0)}) a conta daria ${m2(po.priv0)}, mas ela não desconta garagem, hall nem áreas comuns e superestima.`, "o potencial");
+}
+function potNotaHTML(po) {
+  if (!(po.priv0 > 0) || !(po.priv > 0)) return "";
+  const dif = po.priv0 / po.priv - 1;
+  if (Math.abs(dif) < 0.02) return "";                       // diferença pequena: nada a avisar
+  return `<p class="note" style="grid-column:1/-1;margin-top:6px">Só pelo andar: <b>${m2(po.priv0)}</b> <span style="color:${dif > 0 ? "var(--warn)" : "var(--muted)"}">(${dif > 0 ? "+" : "−"}${nf(Math.abs(dif) * 100, 0)}%)</span></p>`;
 }
 
 /* ================= modo apresentação e link somente leitura =================
@@ -16427,7 +16766,7 @@ function finTornSVG(t, met){
   const val=o=> met==="tir"? (o.tir==null? null : o.tir) : o.margem, b=val(t.base), vs=t.vars;
   const all=[b,...vs.flatMap(v=>[val(v.lo),val(v.hi)])].filter(x=>x!=null&&isFinite(x)); if(!all.length) return "";
   const mn=Math.min(...all), mx=Math.max(...all), W=360, L=122, R=40, rh=21, H=vs.length*rh+26, sx=v=>L+(W-L-R)*((v??mn)-mn)/((mx-mn)||1), x0=sx(b);
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Sensibilidade: impacto de cada variável na ${met==="tir"?"TIR":"margem"}">
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Sensibilidade: impacto de cada variável na ${met==="tir"?"TIR":"margem sobre o VGV"}">
     ${vs.map((v,i)=>{ const y=6+i*rh, lo=sx(val(v.lo)), hi=sx(val(v.hi));
       return `<text x="${L-8}" y="${y+9}" font-size="10.5" text-anchor="end" fill="var(--ink-2)">${esc(v.nome)}</text><text x="${L-8}" y="${y+18}" font-size="8.5" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${v.faixa}</text>
       <rect x="${Math.min(lo,x0).toFixed(1)}" y="${y+2}" width="${Math.max(0.8,Math.abs(lo-x0)).toFixed(1)}" height="13" rx="2" fill="var(--bad)" fill-opacity=".72"/>
@@ -16437,9 +16776,9 @@ function finTornSVG(t, met){
   </svg>`;
 }
 function finSensHTML(){
-  return SEC("Sensibilidade", SEG("flx.sens",[["margem","Margem"],["tir","TIR"]],{label:"Métrica"}) + `<div id="torn"></div>
+  return SEC("Sensibilidade", SEG("flx.sens",[["margem","Margem s/ VGV"],["tir","TIR"]],{label:"Métrica"}) + `<div id="torn"></div>
     <div class="stackleg"><span><i style="background:var(--bad);opacity:.72"></i>desfavorável</span><span><i style="background:var(--ok);opacity:.72"></i>favorável</span></div>
-    <div class="grp">Margem: preço × custo de obra</div><div class="sens" id="sens"></div>`, {key:"sens", open:true, info:"Sensibilidade", sum:""});
+    <div class="grp">Margem s/ VGV: preço × custo de obra</div><div class="sens" id="sens"></div>`, {key:"sens", open:true, info:"Sensibilidade", sum:""});
 }
 function finSensLive(m, f){
   if(!finVis("torn")) return;
@@ -16651,7 +16990,7 @@ HOOK.pdf.push(async ctx=>{
     ...(RD.modo==="det"? [["Correção", `INCC ${pct(S.fin.incc)} até as chaves · IPCA ${pct(RD.ipca)} depois`], ["Distratos", RD.distrato? `${pct(RD.distrato,0)} dos contratos no mês ${RD.distratoMes} após o lançamento (retenção ${pct(RD.retencao,0)}): -${mi(f.distratoV)}` : "não considerados"]] : [])]);
   const cs=flxCenarios(S,m,f); h2("Cenários");
   rows([["", cs.map(c=>c.nome).join("  |  ")], ...[["Lucro",x=>mi(x.lucro)],["Margem s/ VGV",x=>pct(x.margemVGV)],["TIR a.a.",x=>finTir(x.tirA)],["VPL",x=>mi(x.vpl)],["Exposição",x=>mi(-x.exp)]].map(([l,fn])=>[l, cs.map(c=>fn(c.f)).join("  |  ")])]);
-  const t=flxTornado(S,m,null,"margem"); h2("Sensibilidade da margem (desfavorável / favorável)");
+  const t=flxTornado(S,m,null,"margem"); h2("Sensibilidade da margem s/ VGV (desfavorável / favorável)");
   rows(t.vars.map(v=>[`${v.nome} (${v.faixa})`, `${pct(v.lo.margem)} / ${pct(v.hi.margem)}  ·  TIR ${finTir(v.lo.tir)} / ${finTir(v.hi.tir)}`]));
   const mc=FIN_UI.mc; if(S.flx.mc.on && mc.res && mc.sig===finMCSig()){ const r=mc.res; h2(`Monte Carlo (${r.n} rodadas)`);
     rows([["TIR P10 / P50 / P90", r.tir.map(finTir).join(" / ")], ["Lucro P10 / P50 / P90", r.lucro.map(v=>mi(v)).join(" / ")], ["Probabilidade de prejuízo", pct(r.pPrej,1)]]) }
@@ -16951,6 +17290,8 @@ const GLOSS_DATA = {
   "SRTM": { t:"SRTM", d:"Missão da NASA que mediu a altitude da Terra por radar. É a base dos mapas de relevo gratuitos, com ~30 m entre pontos e erro de alguns metros." },
   "Inclinação": { t:"Inclinação do terreno", d:"Quantos metros o terreno sobe ou desce a cada 100 m na horizontal. 10% é subir 10 m em 100 m. Abaixo de ~2% o modelo não consegue distinguir da imprecisão, e o terreno é tratado como plano.", f:"inclinação = desnível ÷ distância" },
   "Cota": { t:"Cota (altitude)", d:"Altura de um ponto acima do nível do mar, em metros. A cota do térreo e as cotas dos cantos do lote ficam no mesmo referencial." },
+  "Alavancas": { t:"Alavancas do negócio", d:"Quanto o resultado muda se uma só coisa melhorar um pouco: mais eficiência, preço maior, terreno mais barato, obra mais barata ou um andar a mais. Mostra onde vale a pena concentrar o esforço. Cada linha muda apenas aquilo e recalcula o fluxo de caixa; as outras premissas ficam como estão.", ex:"No estudo exemplo, +5% no preço de venda rende cerca de +R$ 4,5 mi de lucro e +3,7 p.p. de margem. Os passos (5%, 10%…) ficam em Mais opções." },
+  "Potencial do terreno": { t:"Potencial do terreno", d:"O quanto o lote comporta dentro do CA e do gabarito. O privativo possível usa a eficiência global do estudo (privativa ÷ área total construída), que já carrega garagem, térreo e lazer. A conta só pela eficiência do andar (privativa ÷ pavimento tipo) ignora tudo isso e superestima.", f:"área construída possível × eficiência global" },
   "Plano ajustado": { t:"Plano ajustado", d:"Superfície reta que melhor representa o terreno em volta do lote. É calculada por mínimos quadrados, descartando pontos muito fora (prédios, árvores). Dá a inclinação e a direção da descida." },
 };
 
@@ -17527,7 +17868,7 @@ function pfPontos(){
 function paretoCardHTML(){
   if(!OTIM || !OTIM.pareto || !OTIM.pareto.pts.length) return "";
   const O=S.otim, src=OTIM.solFonte==="unidades"? "média das unidades, com sombras (módulo Unidades)" : "horas de sol direto nas fachadas no inverno (aproximação)";
-  const info=`Cada ponto é uma combinação conferida com a garagem real. Em destaque, a fronteira: nenhuma outra opção é melhor em lucro, sol e vagas ao mesmo tempo. Toque num ponto para ver e aplicar. Sol médio: ${src}. ${OTIM.ventoOn?"Conforto ao vento: 1 − fração do lote com vento forte (vento 2D, aproximado). ":""}Vagas pelo layout rápido da garagem; na tela o layout completo pode achar mais algumas.`;
+  const nomes=pfCrit().map(c=>c.nome.toLowerCase()), lista=nomes.length>1? nomes.slice(0,-1).join(", ")+" e "+nomes[nomes.length-1] : nomes.join(""), info=`Cada ponto é uma combinação conferida com a garagem real. Em destaque, a fronteira: nenhuma outra opção é melhor em ${lista} ao mesmo tempo. ${O.efic?"Eficiência global: área privativa ÷ área total construída. ":""}${O.vc?"V/C: preço por m² privativo ÷ custo de referência (CUB × fator). ":""}Toque num ponto para ver e aplicar. Sol médio: ${src}. ${OTIM.ventoOn?"Conforto ao vento: 1 − fração do lote com vento forte (vento 2D, aproximado). ":""}Vagas pelo layout rápido da garagem; na tela o layout completo pode achar mais algumas.`;
   return SEC("Trocas entre critérios", `<div class="chips"><button type="button" class="chip" data-act="pfF" data-k="fVagas" aria-pressed="${!!O.fVagas}">Vagas ≥ exigidas</button><button type="button" class="chip" data-act="pfF" data-k="fSol" aria-pressed="${!!O.fSol}">Sol médio ≥ ${nf(+O.solMin||0,1)} h</button></div>
     ${O.fSol? KV(NUM("otim.solMin","Sol médio mínimo","h",{step:0.5,min:0,max:14,fx:"pf"})) : ""}
     <div class="pf-chart" id="pfChart"></div>
@@ -17547,7 +17888,7 @@ Object.assign(ACT, {
 function paretoChipsHTML(){
   const O=S.otim, c=(k,l,t)=>`<button type="button" class="chip" data-act="otk2" data-k="${k}" aria-pressed="${!!O[k]}" ${t?`title="${esc(t)}"`:""}>${l}</button>`;
   return c("mc","Comparar sol e vagas","Além do objetivo, mostra as trocas entre lucro, sol médio das unidades e vagas") +
-    (O.mc? c("vento","Conforto ao vento","Roda o vento 2D em cada opção conferida — deixa a análise mais lenta") : "") +
+    (O.mc? c("efic","Eficiência global","Inclui a eficiência global (privativa ÷ área construída) entre os critérios da fronteira") + c("vc","V/C","Inclui a relação venda/custo (preço ÷ CUB × fator) entre os critérios da fronteira") + c("vento","Conforto ao vento","Roda o vento 2D em cada opção conferida — deixa a análise mais lenta") : "") +
     (O.mc && typeof estruturaMalhas==="function"? c("malha","Malha estrutural","Calcula a malha estrutural de cada opção conferida") : "");
 }
 function paretoLive(){
@@ -17583,8 +17924,8 @@ function paretoLive(){
   if(pill) pill.textContent=`${nF} na fronteira · ${nP} de ${L.length} nos filtros${s?"":" · toque num ponto"}`;
   const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button class="btn sm ${top?"pri":""}" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
     <div class="note">${pfDesc(p)}${o.passa?"":" · fora dos filtros"}</div>
-    <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
-    ${p.tir!=null?`<span>TIR<b>${pct(p.tir)}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
+    <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem s/ VGV<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
+    ${p.tir!=null?`<span>TIR<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
   setHTML("pfDet", s? card(s,true) : nF? "" : `<p class="note">Nenhuma opção passa nos filtros. Afrouxe um deles.</p>`);
   const resto=frL.slice().reverse().filter(o=>!s||o.i!==s.i), more=document.getElementById("pfMore"), mt=document.getElementById("pfMoreT");
   if(more) more.hidden=!resto.length;
@@ -17693,7 +18034,7 @@ STEP_R.produto = ()=>{
     const chip=(k,l)=>`<button type="button" class="chip" data-act="otk" data-k="${k}" aria-pressed="${!!O[k]}">${l}</button>`;
     const extra=typeof paretoChipsHTML==="function"? paretoChipsHTML() : "";
     body =
-      SEC("Gerar opções", `<div class="row sb" style="flex-wrap:nowrap"><span class="fl" style="flex:none">Maximizar${INFO("Lucro = receita líquida − custos. Margem = lucro ÷ receita. TIR = rendimento anual do fluxo de caixa. VPL = valor presente do fluxo, descontado pela TMA.","os objetivos")}</span>${SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","TIR"],["vpl","VPL"]],{fx:"save",rr:false,label:"Objetivo"})}</div>
+      SEC("Gerar opções", `<div class="row sb" style="flex-wrap:nowrap"><span class="fl" style="flex:none">Maximizar${INFO("Lucro = receita líquida − custos. Margem = lucro ÷ VGV (a conta do mercado). TIR = rendimento anual do fluxo de caixa. VPL = valor presente do fluxo, descontado pela TMA.","os objetivos")}</span>${SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","TIR"],["vpl","VPL"]],{fx:"save",rr:false,label:"Objetivo"})}</div>
         ${GRP("O que variar")}<div class="chips">${chip("torres","Nº de torres")+chip("tipologias","Tipologias")+chip("unidades","Unidades/andar")}</div>
         ${extra? GRP("Comparar também")+`<div class="chips">${extra}</div>` : ""}
         <button type="button" class="btn pri full" data-act="otim" ${OTRUN?"disabled":""}>${OTRUN?"Analisando…":"Gerar opções"}</button><div class="prog" id="otProg" ${OTRUN?"":"hidden"}><i style="width:0"></i></div>`,
@@ -17728,13 +18069,13 @@ function prEmbSum(){ const P=S.produto; return `${P.subsolos} subsolo${P.subsolo
 
 function otimHTML(){
   const O=OTIM; if(!O.res.length) return `<p class="note">Nenhuma combinação atende às regras e às vagas exigidas.</p>`;
-  const cur=window._last.f, ob=OBJ[O.obj][0];
+  const cur=window._last.f, ob=OBJ[O.obj][2];
   const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0?"Melhor opção":"Opção "+(k+1)} · ${MIX_PRESETS[r.pk].nome}</b><button type="button" class="btn sm ${k===0?"pri":""}" data-act="otApply" data-i="${k}">Aplicar</button></div>
     <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas</div>
-    <div class="rm"><span>Lucro<b>${mi(r.lucro)}</b></span><span>Margem<b>${pct(r.margem)}</b></span><span>TIR<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
+    <div class="rm"><span>Lucro<b>${mi(r.lucro)}</b></span><span>Margem s/ VGV<b>${pct(r.margem)}</b></span><span>TIR<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
   const L=O.res.slice(0,4);
   return card(L[0],0) + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
-    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob.toLowerCase()}</p><p class="note">Hoje: lucro ${mi(cur.lucro)} · margem ${pct(cur.margem)}</p>`;
+    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}</p><p class="note">Hoje: lucro ${mi(cur.lucro)} · margem s/ VGV ${pct(cur.margemVGV)}</p>`;
 }
 
 /* ---------------- partes vivas ---------------- */
@@ -17789,11 +18130,11 @@ STEP_LIVE.produto = (m,f)=>{
   if(cur==="lazer"){ prLazerLive(m); return }
   const po=potencial(S,m);
   const lim=document.getElementById("potLim"); if(lim) lim.textContent = po.limita==="ca"? "limite: coeficiente" : "limite: altura";
-  setHTML("pot", `<div class="met big"><div class="l">Privativo possível<span class="pill ${po.uso.priv>1?"bad":"ok"}" title="Parte do potencial que o estudo usa">${pct(po.uso.priv,0)} em uso</span></div><div class="v">${m2(po.priv)}</div><div class="s">≈ ${po.un} un · ${TERMO("VGV")} ≈ ${mi(po.vgv)}</div></div>
+  setHTML("pot", `<div class="met big"><div class="l">Privativo possível${potInfoHTML(po)}<span class="pill ${po.uso.priv>1?"bad":"ok"}" title="Parte do potencial que o estudo usa">${pct(po.uso.priv,0)} em uso</span></div><div class="v">${m2(po.priv)}</div><div class="s">≈ ${po.un} un · ${TERMO("VGV")} ≈ ${mi(po.vgv)}</div></div>
       <div class="met"><div class="l">Computável máx.</div><div class="v">${m2(po.compMax)}</div><div class="s">${TERMO("CA")} ${nf(R.caMax,1)} × ${m2(m.A)}</div></div>
-      <div class="met"><div class="l">Pavimentos tipo</div><div class="v">até ${po.pavH}</div><div class="s">altura de ${nf(R.hMax,0)} m</div></div>`);
+      <div class="met"><div class="l">Pavimentos tipo</div><div class="v">até ${po.pavH}</div><div class="s">altura de ${nf(po.hLim,0)} m</div></div>`);
   const u=(l,v)=>`<div><span>${l}<b style="${v>1?"color:var(--bad)":""}">${pct(v,0)}</b></span>${bar(v, v>1?"bad":"")}</div>`;
-  setHTML("potUso", u("CA usado",po.uso.ca)+u("Altura",po.uso.h)+u("Ocupação",po.uso.to));
+  setHTML("potUso", u("CA usado",po.uso.ca)+u("Altura",po.uso.h)+u("Ocupação",po.uso.to)+potNotaHTML(po));
   prTorresLive(m); prMixLive(m); if(typeof blcLive==="function") blcLive(m);
   setSub("produto.subsolos",`${m2(m.subA)} · ${m.gar&&m.gar.s1? m.gar.s1.count+" vg no 1º" : Math.floor(m.subA/R.m2Vaga)+" vg (est.)"}`);
   setSub("produto.garAcima",`${m2(m.embA)} · ${m.gar&&m.gar.g1? m.gar.g1.count+" vg no 1º" : Math.floor(m.embA/R.m2Vaga)+" vg (est.)"}`);
@@ -17846,7 +18187,7 @@ Object.assign(ACT,{
   rmT: b=>{ const T=S.produto.torres, i=+b.dataset.i; if(T.length<2 || !T[i]) return; T.splice(i,1); if(typeof blcTorreRemovida==="function") blcTorreRemovida(i); renderTab(); toast(`Torre ${i+1} removida — Ctrl+Z desfaz`) },
   maxPav: ()=>{ const t=maxPav(S); if(t>0){ S.produto.torres.forEach(x=>x.pav=t); update(); toast(`${t} pavimentos por torre (gabarito/CA)`) } else toast("Nenhum pavimento cabe com essas regras") },
   maxT: b=>{ const i=+b.dataset.i, T=S.produto.torres, keep=T[i].pav; let best=0;
-    for(let n=1;n<=80;n++){ T[i].pav=n; const mm=massing(S); if(mm.H<=S.regras.hMax+1e-6 && mm.CA<=S.regras.caMax+1e-6) best=n; else break }
+    for(let n=1;n<=80;n++){ T[i].pav=n; const mm=massing(S); if(mm.H<=(mm.hLim??S.regras.hMax)+1e-6 && mm.CA<=S.regras.caMax+1e-6) best=n; else break }
     T[i].pav=best||keep; update(); toast(best? `Torre ${i+1}: ${best} pavimentos` : `Torre ${i+1}: nenhum pavimento a mais cabe`) },
   addMix: ()=>{ const X=S.produto.mix; if(X.length<5){ X.push({nome:"Studio",area:35,qtd:1,preco:12000,sac:3}); PR.mix=X.length-1; update(); requestAnimationFrame(()=>prRelista("mix", PR.mix)) } },
   rmMix: b=>{ const X=S.produto.mix, i=+b.dataset.i; if(X.length<2 || !X[i]) return; const nome=X[i].nome; X.splice(i,1); PR.mix=-1; update(); toast(`${nome||"Tipologia"} removida — Ctrl+Z desfaz`) },

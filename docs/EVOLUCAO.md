@@ -190,7 +190,8 @@ Princípio: **um conceito só, o "bloco"**.
   - Hoje o motor do pavimento tipo assume uma forma quase retangular.
 - Modo "Automática" fica como padrão e intocado: estudos de referência iguais.
 
-### Fase D — Alavancas e otimização pela eficiência — **M**
+### Fase D — Alavancas e otimização pela eficiência — **M** — **FEITO** (13/10/2026)
+- Feito: card "Alavancas" (Viabilidade › Riscos; +5% eficiência, +5% preço, −10% terreno, −5% obra, +1 pavimento; Δ lucro, Δ margem s/ VGV, Δ TIR); `potencial()` pela eficiência global e `m.hLim`; otimizador, tornado, grade e Monte Carlo pela margem s/ VGV; eficiência global e V/C como critérios opcionais na fronteira de Pareto; fronteira de ~13 s para ~9 s (com 150 prédios no entorno), teto de 15 s. Falta (com a Fase C): otimizar o mix para uma forma desenhada.
 - Card **"Alavancas"** na Viabilidade, calculado só quando aberto.
   - Linhas: +5% eficiência, +5% preço e −10% terreno.
   - Cada linha mostra Δlucro, Δmargem e ΔTIR.
