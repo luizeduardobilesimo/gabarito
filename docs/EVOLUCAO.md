@@ -185,7 +185,7 @@ Princípio: **um conceito só, o "bloco"**.
   - Antes disso, Fase 0 técnica: sol, orçamento, DXF/IFC e unidades lendo a planta por faixa, o que já corrige as torres escalonadas atuais.
 - **C2 — M**: pilha de blocos. — **FEITO** (13/10/2026; ver `PLANO.md` › Andamento Fase C)
   - O núcleo é contínuo, com layout detalhado no bloco de referência e layout por área nos demais.
-- **C3 — M/G, opcional**: L/U/H com layout real por ala.
+- **C3 — M/G, opcional**: L/U/H com layout real por ala. — **FEITO** (13/10/2026; ver `PLANO.md` › Andamento Fase C)
   - Até lá, essas formas funcionam nos números, mas o núcleo pode cair no vão; a tela avisa.
   - Hoje o motor do pavimento tipo assume uma forma quase retangular.
 - Modo "Automática" fica como padrão e intocado: estudos de referência iguais.
