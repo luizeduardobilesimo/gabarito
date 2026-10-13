@@ -754,7 +754,7 @@ const DEF = {
     angulo: "90", garDir: "auto", garDirGraus: 0, rampa: null, nucleoPos: 0.5, nucleoLado: "B", escadaLado: "E", elevadores: 0, tipoPlanta: "auto", escTipo: "pf_duto", nEsc: 1, emerg: false, fachada: true, rampaTipo: "reta", vtipo: {}
   },
   sol: { on: false, mes: 6, dia: 21, hora: 15 },
-  custom: { emb: [], tor: [], sub: [] },
+  custom: { emb: [], tor: [], sub: [], torOcupa: false },
   corte: "",
   otim: { obj: "lucro", torres: true, tipologias: true, unidades: true },
   entorno: [],
@@ -1799,13 +1799,16 @@ function massing(st, opt={}){
   const slotIn = (i, env)=> !slotOk || !env.length ? [] : nT===1 ? env : G.band(env, axis, slotR[i][0], slotR[i][1]);
   // torre reta com recuos progressivos: a torre inteira obedece ao recuo da cota do topo
   if(prog && !FO.escalonar) slots = slots.map((s,i)=> s.length ? slotIn(i, envAt(afAt(Hs[i]))) : s);
-  const sumSlot = slots.reduce((s,p)=>s+G.area(p),0), cap=A*R.toTorre, k=sumSlot>cap? cap/sumSlot : 1;
+  // C0: "ocupar o contorno" — o limite desenhado das torres vira a planta (não é encolhido até o mix nem pela TO; a TO excedida vira aviso)
+  const ocupa = !!(C.torOcupa && cust("tor"));
+  const sumSlot = slots.reduce((s,p)=>s+G.area(p),0), cap=A*R.toTorre, k=!ocupa && sumSlot>cap? cap/sumSlot : 1;
   const need = mixPriv/P.efic;
   const T = torres.map((t,i)=>{
     const slot=slots[i]||[], maxP=G.scaleToArea(slot, G.area(slot)*k), maxA=G.area(maxP);
-    const plate = G.scaleToArea(maxP, need), pA=G.area(plate);
-    const fit = maxA >= need-0.5 && pA>1;
-    const r = mixPriv>0 ? Math.min(1, pA*P.efic/mixPriv) : 0; // fator de redução das unidades se não couber
+    const plate = ocupa ? maxP : G.scaleToArea(maxP, need), pA=G.area(plate);
+    const fit = ocupa ? pA>1 : maxA >= need-0.5 && pA>1;
+    // fator das unidades: < 1 se o mix não couber; ocupando o contorno, as unidades crescem ou encolhem até preencher o andar
+    const r = mixPriv>0 ? (ocupa ? pA*P.efic/mixPriv : Math.min(1, pA*P.efic/mixPriv)) : 0;
     const hasCob = P.cob.on && t.pav>=2;
     const tipoFloors = t.pav - (hasCob?1:0);
     // faixas de andares (2.4): planta de cada andar recortada pelo recuo da sua cota; sem recuos progressivos é uma faixa só
@@ -1844,7 +1847,7 @@ function massing(st, opt={}){
   const env = prog ? formaEnvelope(envAt, afAt, hEmb, Math.max(hLim, Hmax), P.pe) : null;
   const terra = subA*P.subsolos*P.peGar + A*Math.abs(st.lote.desnivel)*0.25;
   const TO = A? Math.max(embA,torProj)/A : 0, perm = A? (A-Math.max(P.subsolos>0?subA:0, embA))/A : 0;
-  const m = {A,H,Hs,afast: prog? afAt(hEmb+P.pe) : afast,gap,axis,sub,emb,torAll,env,hLim,forma:!!FO,T,slotOk,subA,embA,tiposA,duplexA,aticoA,unitsRes,privRes,TO,perm,unitRows,cobN,cobArea,minApto,mixPriv,mixUn,duplex,terra,hEmb,lz,pavLz,acesso,ter,units:unitsRes};
+  const m = {A,H,Hs,afast: prog? afAt(hEmb+P.pe) : afast,gap,axis,sub,emb,torAll,env,hLim,forma:!!FO,torOcupa:ocupa,T,slotOk,subA,embA,tiposA,duplexA,aticoA,unitsRes,privRes,TO,perm,unitRows,cobN,cobArea,minApto,mixPriv,mixUn,duplex,terra,hEmb,lz,pavLz,acesso,ter,units:unitsRes};
   areasFin(st, m);
   return m;
 }
@@ -1903,7 +1906,7 @@ function compute(st, opt={}){
     m.lzLay = lazerLayout(st, m);
   }
   // avisos do térreo e da circulação de veículos
-  const T=m.ter; m.avisos=[...(T.warn||[]), ...m.vert.warn];
+  const T=m.ter; m.avisos=[...(T.warn||[]), ...m.vert.warn, ...(typeof torOcupaAvisos==="function"? torOcupaAvisos(st, m) : [])];
   if(m.gar) Object.entries(m.gar).forEach(([k,l])=>{ if(l && l.ok===false) m.avisos.push(`No ${nomePav(k)}, os carros não conseguem ir da rampa até a circulação — mude o acesso ou o tipo de rampa (use “Encontrar o melhor acesso”).`) });
   if(m.gar && m.gar.ter && m.gTer>150 && m.gar.ter.count < m.gTer/st.regras.m2Vaga*0.4) m.avisos.push(`Térreo rende pouco: ${m.gar.ter.count} vagas em ${nf(m.gTer,0)} m². Mova o núcleo ou tire a garagem do térreo.`);
   if(m.lzLay.miss.length) m.avisos.push(`Não couberam: ${m.lzLay.miss.map(x=>x.nome).join(", ")}.`);
@@ -2456,6 +2459,54 @@ function fieldCanvas(kind){
 function fieldFrame(kind){ // origem, eixos e tamanho de célula no referencial do desenho
   if(kind==="vento") return {o:[WIND.a0,WIND.b0], fx:WIND.f, fy:WIND.pp, cs:WIND.cs, nx:WIND.nx, ny:WIND.ny};
   const s=_sunCache; return {o:[s.x0,s.y0], fx:[1,0], fy:[0,1], cs:s.cs, nx:s.nx, ny:s.ny};
+}
+
+/* ---- calc/blocos.js ---- */
+/* ================= Fase C — torres desenhadas (blocos) =================
+   C0: o "Limite especial › Torres" pode virar a planta da torre (S.custom.torOcupa).
+   O massing usa o contorno recortado pelos recuos como planta; as unidades do mix crescem ou encolhem
+   (fator t.r) até preencher o andar. Aqui ficam o resumo, os avisos e o "Ajustar mix". Puro (sem DOM). */
+
+/* resumo do contorno ocupado: área do andar, privativa que cabe e quanto as unidades mudaram frente ao mix */
+function torOcupaResumo(st, m){
+  if(!m || !m.torOcupa) return null;
+  const P=st.produto, mixPriv=m.mixPriv||0, mixUn=m.mixUn||0;
+  const T=(m.T||[]).filter(t=>t.A>1);
+  if(!T.length || mixPriv<=0 || mixUn<=0) return {torres:T.length, A:0, priv:0, r:0, media:0, mixMedia:0, q:P.mix.map(u=>u.qtd), muda:false, desiguais:false};
+  const A=T.reduce((s,t)=>s+t.A,0)/T.length, r=T.reduce((s,t)=>s+t.r,0)/T.length;
+  // o mix é o mesmo em todas as torres: o ajuste mira a planta média
+  const q=torreAjustaMix(P.mix, A*P.efic), muda=q.some((n,j)=>n!==P.mix[j].qtd);
+  const As=T.map(t=>t.A), desiguais=Math.max(...As) > Math.min(...As)*1.15;
+  return {torres:T.length, A, priv:A*P.efic, r, media:mixPriv*r/mixUn, mixMedia:mixPriv/mixUn, q, muda, desiguais, As};
+}
+
+/* avisos do contorno ocupado (entram em m.avisos no compute) */
+function torOcupaAvisos(st, m){
+  const R=torOcupaResumo(st, m); if(!R) return [];
+  const out=[], P=st.produto;
+  if(!R.torres) return ["O contorno desenhado das torres ficou vazio depois dos recuos — redesenhe o limite das torres."];
+  if(Math.abs(R.r-1)>0.10 && R.muda) out.push(`As torres ocupam o contorno desenhado: as unidades ficaram ${R.r>1?"maiores":"menores"} que o mix (${nf(R.media,0)} m² em média, o mix pede ${nf(R.mixMedia,0)} m²). Use “Ajustar mix” em Terreno › Limites especiais.`);
+  if(R.desiguais) out.push(`O contorno desenhado deixa as torres com andares de tamanhos diferentes (${R.As.map(a=>nf(a,0)+" m²").join(" e ")}) e o mix é o mesmo em todas: as unidades mudam de tamanho de uma torre para outra. Redesenhe o contorno ou use uma torre.`);
+  const tor=(m.T||[]).reduce((s,t)=>s+t.A,0), cap=st.regras.toTorre*m.A;
+  if(tor>cap+1) out.push(`O contorno desenhado das torres passa da taxa de ocupação: ${nf(tor,0)} m² de ${nf(cap,0)} m² permitidos.`);
+  if(P.torres.length>1 && !m.slotOk) out.push("O contorno desenhado é estreito demais para dividir entre as torres.");
+  return out;
+}
+
+/* nova quantidade por tipologia para que o mix preencha 'alvo' m² privativos por andar, sem passar dele.
+   Mantém a proporção entre as tipologias, cada tipologia usada fica com ≥ 1 unidade e no máximo 'max'. */
+function torreAjustaMix(mix, alvo, max=20){
+  const tot=mix.reduce((s,u)=>s+u.area*u.qtd,0);
+  if(!(tot>0) || !(alvo>0)) return mix.map(u=>u.qtd);
+  const f=alvo/tot, usa=mix.map(u=>u.qtd>0 && u.area>0);
+  const q=mix.map((u,j)=> usa[j] ? Math.min(max, Math.max(1, Math.floor(u.qtd*f))) : 0);
+  let s=mix.reduce((a,u,j)=>a+u.area*q[j],0);
+  const prop=j=>q[j]/mix[j].qtd;
+  // passou do alvo (por causa do mínimo de 1): tira de quem está mais acima da proporção
+  while(s>alvo){ let b=-1; mix.forEach((u,j)=>{ if(usa[j] && q[j]>1 && (b<0 || prop(j)>prop(b))) b=j }); if(b<0) break; q[b]--; s-=mix[b].area }
+  // completa enquanto couber: soma em quem está mais atrás da proporção
+  for(;;){ let b=-1; mix.forEach((u,j)=>{ if(usa[j] && q[j]<max && s+u.area<=alvo+1e-6 && (b<0 || prop(j)<prop(b))) b=j }); if(b<0) break; q[b]++; s+=mix[b].area }
+  return q;
 }
 
 /* ---- calc/cidades.js ---- */
@@ -5939,7 +5990,7 @@ const DEF = {
     angulo: "90", garDir: "auto", garDirGraus: 0, rampa: null, nucleoPos: 0.5, nucleoLado: "B", escadaLado: "E", elevadores: 0, tipoPlanta: "auto", escTipo: "pf_duto", nEsc: 1, emerg: false, fachada: true, rampaTipo: "reta", vtipo: {}
   },
   sol: { on: false, mes: 6, dia: 21, hora: 15 },
-  custom: { emb: [], tor: [], sub: [] },
+  custom: { emb: [], tor: [], sub: [], torOcupa: false },
   corte: "",
   otim: { obj: "lucro", torres: true, tipologias: true, unidades: true },
   entorno: [],
@@ -6979,13 +7030,16 @@ function massing(st, opt={}){
   const slotIn = (i, env)=> !slotOk || !env.length ? [] : nT===1 ? env : G.band(env, axis, slotR[i][0], slotR[i][1]);
   // torre reta com recuos progressivos: a torre inteira obedece ao recuo da cota do topo
   if(prog && !FO.escalonar) slots = slots.map((s,i)=> s.length ? slotIn(i, envAt(afAt(Hs[i]))) : s);
-  const sumSlot = slots.reduce((s,p)=>s+G.area(p),0), cap=A*R.toTorre, k=sumSlot>cap? cap/sumSlot : 1;
+  // C0: "ocupar o contorno" — o limite desenhado das torres vira a planta (não é encolhido até o mix nem pela TO; a TO excedida vira aviso)
+  const ocupa = !!(C.torOcupa && cust("tor"));
+  const sumSlot = slots.reduce((s,p)=>s+G.area(p),0), cap=A*R.toTorre, k=!ocupa && sumSlot>cap? cap/sumSlot : 1;
   const need = mixPriv/P.efic;
   const T = torres.map((t,i)=>{
     const slot=slots[i]||[], maxP=G.scaleToArea(slot, G.area(slot)*k), maxA=G.area(maxP);
-    const plate = G.scaleToArea(maxP, need), pA=G.area(plate);
-    const fit = maxA >= need-0.5 && pA>1;
-    const r = mixPriv>0 ? Math.min(1, pA*P.efic/mixPriv) : 0; // fator de redução das unidades se não couber
+    const plate = ocupa ? maxP : G.scaleToArea(maxP, need), pA=G.area(plate);
+    const fit = ocupa ? pA>1 : maxA >= need-0.5 && pA>1;
+    // fator das unidades: < 1 se o mix não couber; ocupando o contorno, as unidades crescem ou encolhem até preencher o andar
+    const r = mixPriv>0 ? (ocupa ? pA*P.efic/mixPriv : Math.min(1, pA*P.efic/mixPriv)) : 0;
     const hasCob = P.cob.on && t.pav>=2;
     const tipoFloors = t.pav - (hasCob?1:0);
     // faixas de andares (2.4): planta de cada andar recortada pelo recuo da sua cota; sem recuos progressivos é uma faixa só
@@ -7024,7 +7078,7 @@ function massing(st, opt={}){
   const env = prog ? formaEnvelope(envAt, afAt, hEmb, Math.max(hLim, Hmax), P.pe) : null;
   const terra = subA*P.subsolos*P.peGar + A*Math.abs(st.lote.desnivel)*0.25;
   const TO = A? Math.max(embA,torProj)/A : 0, perm = A? (A-Math.max(P.subsolos>0?subA:0, embA))/A : 0;
-  const m = {A,H,Hs,afast: prog? afAt(hEmb+P.pe) : afast,gap,axis,sub,emb,torAll,env,hLim,forma:!!FO,T,slotOk,subA,embA,tiposA,duplexA,aticoA,unitsRes,privRes,TO,perm,unitRows,cobN,cobArea,minApto,mixPriv,mixUn,duplex,terra,hEmb,lz,pavLz,acesso,ter,units:unitsRes};
+  const m = {A,H,Hs,afast: prog? afAt(hEmb+P.pe) : afast,gap,axis,sub,emb,torAll,env,hLim,forma:!!FO,torOcupa:ocupa,T,slotOk,subA,embA,tiposA,duplexA,aticoA,unitsRes,privRes,TO,perm,unitRows,cobN,cobArea,minApto,mixPriv,mixUn,duplex,terra,hEmb,lz,pavLz,acesso,ter,units:unitsRes};
   areasFin(st, m);
   return m;
 }
@@ -7083,7 +7137,7 @@ function compute(st, opt={}){
     m.lzLay = lazerLayout(st, m);
   }
   // avisos do térreo e da circulação de veículos
-  const T=m.ter; m.avisos=[...(T.warn||[]), ...m.vert.warn];
+  const T=m.ter; m.avisos=[...(T.warn||[]), ...m.vert.warn, ...(typeof torOcupaAvisos==="function"? torOcupaAvisos(st, m) : [])];
   if(m.gar) Object.entries(m.gar).forEach(([k,l])=>{ if(l && l.ok===false) m.avisos.push(`No ${nomePav(k)}, os carros não conseguem ir da rampa até a circulação — mude o acesso ou o tipo de rampa (use “Encontrar o melhor acesso”).`) });
   if(m.gar && m.gar.ter && m.gTer>150 && m.gar.ter.count < m.gTer/st.regras.m2Vaga*0.4) m.avisos.push(`Térreo rende pouco: ${m.gar.ter.count} vagas em ${nf(m.gTer,0)} m². Mova o núcleo ou tire a garagem do térreo.`);
   if(m.lzLay.miss.length) m.avisos.push(`Não couberam: ${m.lzLay.miss.map(x=>x.nome).join(", ")}.`);
@@ -7632,6 +7686,53 @@ function fieldCanvas(kind){
 function fieldFrame(kind){ // origem, eixos e tamanho de célula no referencial do desenho
   if(kind==="vento") return {o:[WIND.a0,WIND.b0], fx:WIND.f, fy:WIND.pp, cs:WIND.cs, nx:WIND.nx, ny:WIND.ny};
   const s=_sunCache; return {o:[s.x0,s.y0], fx:[1,0], fy:[0,1], cs:s.cs, nx:s.nx, ny:s.ny};
+}
+
+/* ================= Fase C — torres desenhadas (blocos) =================
+   C0: o "Limite especial › Torres" pode virar a planta da torre (S.custom.torOcupa).
+   O massing usa o contorno recortado pelos recuos como planta; as unidades do mix crescem ou encolhem
+   (fator t.r) até preencher o andar. Aqui ficam o resumo, os avisos e o "Ajustar mix". Puro (sem DOM). */
+
+/* resumo do contorno ocupado: área do andar, privativa que cabe e quanto as unidades mudaram frente ao mix */
+function torOcupaResumo(st, m){
+  if(!m || !m.torOcupa) return null;
+  const P=st.produto, mixPriv=m.mixPriv||0, mixUn=m.mixUn||0;
+  const T=(m.T||[]).filter(t=>t.A>1);
+  if(!T.length || mixPriv<=0 || mixUn<=0) return {torres:T.length, A:0, priv:0, r:0, media:0, mixMedia:0, q:P.mix.map(u=>u.qtd), muda:false, desiguais:false};
+  const A=T.reduce((s,t)=>s+t.A,0)/T.length, r=T.reduce((s,t)=>s+t.r,0)/T.length;
+  // o mix é o mesmo em todas as torres: o ajuste mira a planta média
+  const q=torreAjustaMix(P.mix, A*P.efic), muda=q.some((n,j)=>n!==P.mix[j].qtd);
+  const As=T.map(t=>t.A), desiguais=Math.max(...As) > Math.min(...As)*1.15;
+  return {torres:T.length, A, priv:A*P.efic, r, media:mixPriv*r/mixUn, mixMedia:mixPriv/mixUn, q, muda, desiguais, As};
+}
+
+/* avisos do contorno ocupado (entram em m.avisos no compute) */
+function torOcupaAvisos(st, m){
+  const R=torOcupaResumo(st, m); if(!R) return [];
+  const out=[], P=st.produto;
+  if(!R.torres) return ["O contorno desenhado das torres ficou vazio depois dos recuos — redesenhe o limite das torres."];
+  if(Math.abs(R.r-1)>0.10 && R.muda) out.push(`As torres ocupam o contorno desenhado: as unidades ficaram ${R.r>1?"maiores":"menores"} que o mix (${nf(R.media,0)} m² em média, o mix pede ${nf(R.mixMedia,0)} m²). Use “Ajustar mix” em Terreno › Limites especiais.`);
+  if(R.desiguais) out.push(`O contorno desenhado deixa as torres com andares de tamanhos diferentes (${R.As.map(a=>nf(a,0)+" m²").join(" e ")}) e o mix é o mesmo em todas: as unidades mudam de tamanho de uma torre para outra. Redesenhe o contorno ou use uma torre.`);
+  const tor=(m.T||[]).reduce((s,t)=>s+t.A,0), cap=st.regras.toTorre*m.A;
+  if(tor>cap+1) out.push(`O contorno desenhado das torres passa da taxa de ocupação: ${nf(tor,0)} m² de ${nf(cap,0)} m² permitidos.`);
+  if(P.torres.length>1 && !m.slotOk) out.push("O contorno desenhado é estreito demais para dividir entre as torres.");
+  return out;
+}
+
+/* nova quantidade por tipologia para que o mix preencha 'alvo' m² privativos por andar, sem passar dele.
+   Mantém a proporção entre as tipologias, cada tipologia usada fica com ≥ 1 unidade e no máximo 'max'. */
+function torreAjustaMix(mix, alvo, max=20){
+  const tot=mix.reduce((s,u)=>s+u.area*u.qtd,0);
+  if(!(tot>0) || !(alvo>0)) return mix.map(u=>u.qtd);
+  const f=alvo/tot, usa=mix.map(u=>u.qtd>0 && u.area>0);
+  const q=mix.map((u,j)=> usa[j] ? Math.min(max, Math.max(1, Math.floor(u.qtd*f))) : 0);
+  let s=mix.reduce((a,u,j)=>a+u.area*q[j],0);
+  const prop=j=>q[j]/mix[j].qtd;
+  // passou do alvo (por causa do mínimo de 1): tira de quem está mais acima da proporção
+  while(s>alvo){ let b=-1; mix.forEach((u,j)=>{ if(usa[j] && q[j]>1 && (b<0 || prop(j)>prop(b))) b=j }); if(b<0) break; q[b]--; s-=mix[b].area }
+  // completa enquanto couber: soma em quem está mais atrás da proporção
+  for(;;){ let b=-1; mix.forEach((u,j)=>{ if(usa[j] && q[j]<max && s+u.area<=alvo+1e-6 && (b<0 || prop(j)<prop(b))) b=j }); if(b<0) break; q[b]++; s+=mix[b].area }
+  return q;
 }
 
 /* ================= biblioteca de regras por cidade e zona =================
@@ -11861,7 +11962,7 @@ const terrenoSum = {
   contorno: ()=>`${S.lote.pts.length} vértices · ${m2(G.area(S.lote.pts))}`,
   lados: ()=>{ const n=S.lote.front.length; return `frente L${S.lote.principal+1}${n>1? ` · ${n} lados na rua`:""}` },
   local: ()=>S.lote.geo? `${nf(+S.lote.lat||0,4)}, ${nf(+S.lote.lon||0,4)} · norte ${nf(+S.lote.norte||0,0)}°` : `sem posição no mapa · norte ${nf(+S.lote.norte||0,0)}°`,
-  lim: ()=>{ const l=TERRENO_LIM.filter(([k])=>S.custom[k]&&S.custom[k].length).map(([,n])=>n.toLowerCase()); return l.length? l.join(" · ") : "nenhum" },
+  lim: ()=>{ const l=TERRENO_LIM.filter(([k])=>S.custom[k]&&S.custom[k].length).map(([,n])=>n.toLowerCase()==="torres" && S.custom.torOcupa? "torres (planta)" : n.toLowerCase()); return l.length? l.join(" · ") : "nenhum" },
 };
 STEP_R.terreno = ()=>{
   const forms = {
@@ -11885,7 +11986,8 @@ STEP_R.terreno = ()=>{
     SEC("Localização", `<div class="geoNote" id="geoNote" ${S.lote.geo?"hidden":""}><span class="note">Lote sem posição no mapa.</span><button class="btn sm pri" data-act="geoMapa">Posicionar no mapa</button></div>` + KV(NUM("lote.lat","Latitude","°",{step:0.0001,fx:"geo",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas e serve ao sol, ao entorno do OpenStreetMap e aos levantamentos em lat/lon ou UTM."})+NUM("lote.lon","Longitude","°",{step:0.0001,fx:"geo",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas."})+NUM("lote.norte","Norte","°",{step:1,help:"Rotação do norte em relação ao topo da planta."})),
       {key:"local", sum:terrenoSum.local()}) +
     (typeof topoCardHTML==="function" ? topoCardHTML() : SEC("Topografia", KV(NUM("lote.desnivel","Desnível frente→fundos","m",{step:0.1})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1}))+`<div class="fsub" id="sub-terra"></div>`, {key:"topografia"})) +
-    SEC("Limites especiais", `<div class="list">${TERRENO_LIM.map(([k,l])=>{ const has=S.custom[k]&&S.custom[k].length; return `<div class="li"><span class="dot ${has?"ok":""}"></span><span class="tt">${l}</span><span class="row" style="gap:4px"><button class="btn sm" data-act="lim" data-k="${k}">${has?"Redesenhar":"Desenhar"}</button>${has?`<button class="btn sm ghost" data-act="limx" data-k="${k}">Limpar</button>`:""}</span></div>` }).join("")}</div>`,
+    SEC("Limites especiais", `<div class="list">${TERRENO_LIM.map(([k,l])=>{ const has=S.custom[k]&&S.custom[k].length; return `<div class="li"><span class="dot ${has?"ok":""}"></span><span class="tt">${l}</span><span class="row" style="gap:4px"><button class="btn sm" data-act="lim" data-k="${k}">${has?"Redesenhar":"Desenhar"}</button>${has?`<button class="btn sm ghost" data-act="limx" data-k="${k}">Limpar</button>`:""}</span></div>` }).join("")}</div>`
+      + (S.custom.tor && S.custom.tor.length ? `<div class="row" style="gap:6px;margin-top:8px">${SW("custom.torOcupa","Torre ocupa o contorno desenhado",{rr:true})}${INFO("Desligado, o limite das torres é só um teto: a torre fica do tamanho do mix dentro dele. Ligado, o contorno (recortado pelos recuos) vira a planta do andar tipo e as unidades do mix crescem ou encolhem até preenchê-lo. “Ajustar mix” muda a quantidade de unidades por andar para elas voltarem ao tamanho do mix.")}</div>${S.custom.torOcupa? `<div class="fsub" id="torOcupa"></div>` : ""}` : ""),
       {key:"lim", sum:terrenoSum.lim(), info:"Para APP, servidão ou recuo escalonado: desenhe na implantação o limite onde se pode construir. Ele substitui o recuo calculado daquela parte (embasamento, torres ou subsolo)."})
   };
 };
@@ -11921,6 +12023,9 @@ STEP_LIVE.terreno = (m)=>{
   { const gn=document.getElementById("geoNote"); if(gn) gn.hidden=!!S.lote.geo }
   { const T=m.ter||{}; setSub("lote.acessoVei", T.drive0? `${T.drive0.dv? nf(T.drive0.dv[1]-T.drive0.dv[0],1)+" m de largura (rampas"+(T.lanes?" + faixa da garagem":"")+")" : ""}${T.veiShift? " · ajustado "+nf(Math.abs(T.veiShift),1)+" m para não passar pelos núcleos":""}` : "") }
   if(typeof topoLive==="function") topoLive(m); else setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`);
+  { const R=torOcupaResumo(S, m), ajuste=R && R.A>0 && R.muda && Math.abs(R.r-1)>0.03;
+    setHTML("torOcupa", !R ? "" : !R.A ? "O contorno ficou vazio depois dos recuos." :
+      `<span>${R.desiguais? R.As.map(a=>m2(a)).join(" e ") : m2(R.A)}/andar · unidades com ${nf(R.media,0)} m² em média (mix: ${nf(R.mixMedia,0)} m²)</span>${ajuste? ` <button type="button" class="btn sm" data-act="torAjMix" style="margin-left:6px">Ajustar mix</button>` : ""}`) }
 };
 Object.assign(ACT,{
   tmeth: b=>{ TMETH=b.dataset.v; renderTab(); if(TMETH!=="desenhar" && VIEW!=="impl") setView("impl") },
@@ -11934,7 +12039,10 @@ Object.assign(ACT,{
   front: b=>{ const i=+b.dataset.i; const on=!S.lote.front.includes(i); S.lote.front = on? [...new Set([...S.lote.front,i])] : S.lote.front.filter(x=>x!==i); if(!S.lote.front.length){ S.lote.front=[i]; toast("O lote precisa de pelo menos uma frente") } update() },
   princ: b=>{ S.lote.principal=+b.dataset.i; update() },
   lim: b=>{ setView("impl"); DRAW=[]; setTool("draw","lim:"+b.dataset.k); toast("Clique nos cantos do limite e feche no primeiro ponto") },
-  limx: b=>{ if(!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on"); return } S.custom[b.dataset.k]=[]; renderTab(); toast("Limite removido") },
+  limx: b=>{ if(!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on"); return } S.custom[b.dataset.k]=[]; renderTab(); update(); toast("Limite removido") },
+  torAjMix: ()=>{ const m=window._last&&window._last.m, R=m&&torOcupaResumo(S, m); if(!R||!R.A) return;
+    const q=R.q; S.produto.mix.forEach((u,j)=>u.qtd=q[j]);
+    update(); toast(`Mix ajustado: ${q.reduce((s,n)=>s+n,0)} unidades por andar`) },
 });
 TB.addEventListener("change",e=>{
   const t=e.target, d=t.dataset||{};
@@ -16114,7 +16222,7 @@ function prTorresLive(m){
     return `<div class="pr-row${t.fit===false?" warn":""}"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b></div>
       ${prStp(`produto.torres.${i}.pav`, tw.pav, 1, 80, `Pavimentos da ${nome.toLowerCase()}`)}
       <button type="button" class="pr-ic lbl" data-act="maxT" data-i="${i}" title="Máximo de pavimentos para esta torre" aria-label="Máximo de pavimentos para a ${nome.toLowerCase()}">Máx</button>${n>1? prRm("rmT", i, nome) : ""}</div>
-      <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
+      <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : m.torOcupa? `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar no contorno desenhado · unidades a ${pct(t.r||0,0)} do mix` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
   setSum("pr-torres", `${n} torre${n>1?"s":""} · ${P.torres.map(t=>t.pav).join(" e ")} pav`);
 }
 function prMixLive(m){

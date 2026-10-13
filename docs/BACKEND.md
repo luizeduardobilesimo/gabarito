@@ -44,6 +44,12 @@ Campos:
 1. **Projeto e esquema**: criar o projeto, aplicar `docs/supabase/schema.sql` (tabelas `estudos`, `versoes`, `cidades_regras`,
    `compartilhamentos`, com RLS). Nada disso foi executado ainda.
 2. **Login**: Supabase Auth (e-mail com link mágico + Google). `dono`/`autor` passam a ser o `auth.uid()`.
+   - **Decisão do Luiz (13/10/2026):** o produto vai ser um app web próprio (Vercel + um projeto Supabase só do Gabarito), com o
+     login **integrado ao Supabase da comunidade dele**: quem faz login e tem acesso na comunidade tem o mesmo acesso ao Gabarito.
+     A identidade vem do projeto da comunidade; os dados do Gabarito ficam no projeto do Gabarito. Antes de implementar, levantar
+     com o Luiz como a comunidade marca quem tem acesso (tabela, papel, claim no JWT ou assinatura) e escolher como o projeto do
+     Gabarito confia no token da comunidade (por exemplo, verificação do JWT da comunidade e troca por uma sessão do Gabarito numa
+     Edge Function, com o RLS ligado ao id do usuário da comunidade). O artifact continua como demonstração, sem login.
 3. **Nova implementação de `Repo`** (`src/ui/repo-supabase.js`), mesma interface:
    - `estudos.list()` → `select id,nome,k,criado,atualizado,dono from estudos order by atualizado desc` (o RLS já filtra o que o usuário pode ver);
    - `estudos.get(id)` → `select * … where id = $1`;

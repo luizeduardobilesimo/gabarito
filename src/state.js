@@ -42,7 +42,7 @@ const DEF = {
     angulo: "90", garDir: "auto", garDirGraus: 0, rampa: null, nucleoPos: 0.5, nucleoLado: "B", escadaLado: "E", elevadores: 0, tipoPlanta: "auto", escTipo: "pf_duto", nEsc: 1, emerg: false, fachada: true, rampaTipo: "reta", vtipo: {}
   },
   sol: { on: false, mes: 6, dia: 21, hora: 15 },
-  custom: { emb: [], tor: [], sub: [] },
+  custom: { emb: [], tor: [], sub: [], torOcupa: false },
   corte: "",
   otim: { obj: "lucro", torres: true, tipologias: true, unidades: true },
   entorno: [],

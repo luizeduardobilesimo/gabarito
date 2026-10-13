@@ -143,7 +143,7 @@ function prTorresLive(m){
     return `<div class="pr-row${t.fit===false?" warn":""}"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b></div>
       ${prStp(`produto.torres.${i}.pav`, tw.pav, 1, 80, `Pavimentos da ${nome.toLowerCase()}`)}
       <button type="button" class="pr-ic lbl" data-act="maxT" data-i="${i}" title="Máximo de pavimentos para esta torre" aria-label="Máximo de pavimentos para a ${nome.toLowerCase()}">Máx</button>${n>1? prRm("rmT", i, nome) : ""}</div>
-      <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
+      <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : m.torOcupa? `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar no contorno desenhado · unidades a ${pct(t.r||0,0)} do mix` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
   setSum("pr-torres", `${n} torre${n>1?"s":""} · ${P.torres.map(t=>t.pav).join(" e ")} pav`);
 }
 function prMixLive(m){

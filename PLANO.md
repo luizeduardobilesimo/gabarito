@@ -339,6 +339,13 @@ Execução de 05/10/2026 (protótipo local, 9 agentes em paralelo sobre a funda�
 
 - [x] A — Indicadores da colinha: `calc/saude.js` (`saudeNegocio(st,m,f)`: eficiência global, margem s/ VGV, V/C contra CUB × fator e CUB puro, terreno % VGV com permuta, soft costs % VGV, custo/m² de ATC, TIR contra o alvo, tipologia detectada e semáforo por indicador) e `ui/saude.js` (RES "Saúde do negócio" no topo da Viabilidade, KPI "Eficiência" na régua, seção "Metas e referências"). Todas as metas moram em `S.metas` (+ `S.fin.margemAlvo/tma`), com sugestão da colinha, "Restaurar sugeridas" e "Salvar como padrão" (`localStorage gabarito.metas.padrao`; troca por Supabase descrita em `docs/BACKEND.md`). Margem principal agora é lucro ÷ VGV (a margem s/ receita virou linha secundária). Novos padrões: eqGar 0,8 · TMA 15% · margem alvo 25% · TIR alvo 25%. Estudo exemplo realista (terreno ~15% do VGV, vagas atendidas, preços ajustados). Correções: aviso/"Zerar terreno" na permuta, rótulos do DRE e do glossário, "Eficiência do andar", `f.terrenoPreco/terrenoITBI`, aviso de custo financeiro desligado. Testes: `tests/saude.test.js`. **Pendente:** otimizador, tornado e Monte Carlo ainda classificam pela margem s/ receita; `potencial()` ainda usa só a eficiência do andar (Fase D); calibrar eqGar e CUB com obras reais (Fase E).
 
+## Andamento — Evolução v2, Fase C (13/10/2026)
+
+- [x] C0 — Torre ocupa o contorno desenhado: `calc/blocos.js`, `massing` (`S.custom.torOcupa`, desligado por padrão; estudos de referência iguais), interruptor + "Ajustar mix" em Terreno › Limites especiais, linha da torre em Produto, avisos (unidades fora do mix, TO excedida, torres desiguais). `tests/blocos.test.js` (11 testes). Limitações: o mix é o mesmo em todas as torres (com duas torres de andares diferentes as unidades mudam de tamanho; há aviso); o pavimento tipo continua assumindo planta quase retangular (formas em L/U funcionam nos números, o desenho fica aproximado até o C3).
+- [ ] C1 — forma livre da torre com um bloco e formatos prontos.
+- [ ] C2 — pilha de blocos.
+- [ ] C3 — L/U/H com layout por ala (opcional).
+
 ## Próxima etapa — Evolução v2 (08/10/2026)
 
 Diagnóstico contra a colinha de viabilidade, relevo e ruas automáticos e construção personalizada por blocos: ver `docs/EVOLUCAO.md` (fases A–E, ordem e decisões pendentes do Luiz).

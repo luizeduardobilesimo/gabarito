@@ -41,13 +41,16 @@ function massing(st, opt={}){
   const slotIn = (i, env)=> !slotOk || !env.length ? [] : nT===1 ? env : G.band(env, axis, slotR[i][0], slotR[i][1]);
   // torre reta com recuos progressivos: a torre inteira obedece ao recuo da cota do topo
   if(prog && !FO.escalonar) slots = slots.map((s,i)=> s.length ? slotIn(i, envAt(afAt(Hs[i]))) : s);
-  const sumSlot = slots.reduce((s,p)=>s+G.area(p),0), cap=A*R.toTorre, k=sumSlot>cap? cap/sumSlot : 1;
+  // C0: "ocupar o contorno" — o limite desenhado das torres vira a planta (não é encolhido até o mix nem pela TO; a TO excedida vira aviso)
+  const ocupa = !!(C.torOcupa && cust("tor"));
+  const sumSlot = slots.reduce((s,p)=>s+G.area(p),0), cap=A*R.toTorre, k=!ocupa && sumSlot>cap? cap/sumSlot : 1;
   const need = mixPriv/P.efic;
   const T = torres.map((t,i)=>{
     const slot=slots[i]||[], maxP=G.scaleToArea(slot, G.area(slot)*k), maxA=G.area(maxP);
-    const plate = G.scaleToArea(maxP, need), pA=G.area(plate);
-    const fit = maxA >= need-0.5 && pA>1;
-    const r = mixPriv>0 ? Math.min(1, pA*P.efic/mixPriv) : 0; // fator de redução das unidades se não couber
+    const plate = ocupa ? maxP : G.scaleToArea(maxP, need), pA=G.area(plate);
+    const fit = ocupa ? pA>1 : maxA >= need-0.5 && pA>1;
+    // fator das unidades: < 1 se o mix não couber; ocupando o contorno, as unidades crescem ou encolhem até preencher o andar
+    const r = mixPriv>0 ? (ocupa ? pA*P.efic/mixPriv : Math.min(1, pA*P.efic/mixPriv)) : 0;
     const hasCob = P.cob.on && t.pav>=2;
     const tipoFloors = t.pav - (hasCob?1:0);
     // faixas de andares (2.4): planta de cada andar recortada pelo recuo da sua cota; sem recuos progressivos é uma faixa só
@@ -86,7 +89,7 @@ function massing(st, opt={}){
   const env = prog ? formaEnvelope(envAt, afAt, hEmb, Math.max(hLim, Hmax), P.pe) : null;
   const terra = subA*P.subsolos*P.peGar + A*Math.abs(st.lote.desnivel)*0.25;
   const TO = A? Math.max(embA,torProj)/A : 0, perm = A? (A-Math.max(P.subsolos>0?subA:0, embA))/A : 0;
-  const m = {A,H,Hs,afast: prog? afAt(hEmb+P.pe) : afast,gap,axis,sub,emb,torAll,env,hLim,forma:!!FO,T,slotOk,subA,embA,tiposA,duplexA,aticoA,unitsRes,privRes,TO,perm,unitRows,cobN,cobArea,minApto,mixPriv,mixUn,duplex,terra,hEmb,lz,pavLz,acesso,ter,units:unitsRes};
+  const m = {A,H,Hs,afast: prog? afAt(hEmb+P.pe) : afast,gap,axis,sub,emb,torAll,env,hLim,forma:!!FO,torOcupa:ocupa,T,slotOk,subA,embA,tiposA,duplexA,aticoA,unitsRes,privRes,TO,perm,unitRows,cobN,cobArea,minApto,mixPriv,mixUn,duplex,terra,hEmb,lz,pavLz,acesso,ter,units:unitsRes};
   areasFin(st, m);
   return m;
 }
@@ -145,7 +148,7 @@ function compute(st, opt={}){
     m.lzLay = lazerLayout(st, m);
   }
   // avisos do térreo e da circulação de veículos
-  const T=m.ter; m.avisos=[...(T.warn||[]), ...m.vert.warn];
+  const T=m.ter; m.avisos=[...(T.warn||[]), ...m.vert.warn, ...(typeof torOcupaAvisos==="function"? torOcupaAvisos(st, m) : [])];
   if(m.gar) Object.entries(m.gar).forEach(([k,l])=>{ if(l && l.ok===false) m.avisos.push(`No ${nomePav(k)}, os carros não conseguem ir da rampa até a circulação — mude o acesso ou o tipo de rampa (use “Encontrar o melhor acesso”).`) });
   if(m.gar && m.gar.ter && m.gTer>150 && m.gar.ter.count < m.gTer/st.regras.m2Vaga*0.4) m.avisos.push(`Térreo rende pouco: ${m.gar.ter.count} vagas em ${nf(m.gTer,0)} m². Mova o núcleo ou tire a garagem do térreo.`);
   if(m.lzLay.miss.length) m.avisos.push(`Não couberam: ${m.lzLay.miss.map(x=>x.nome).join(", ")}.`);

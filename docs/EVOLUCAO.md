@@ -179,7 +179,8 @@ Princípio: **um conceito só, o "bloco"**.
 - Ctrl+Z vem de graça (histórico atual). Voltar para "Automática" não apaga os blocos.
 
 **Etapas**
-- **C0 — P (ganho rápido)**: o "Limite especial da torre" (convexo) passa a ser a planta (opção "ocupar o contorno"), em vez de teto.
+- **C0 — P (ganho rápido)**: o "Limite especial da torre" (convexo) passa a ser a planta (opção "ocupar o contorno"), em vez de teto. — **FEITO** (13/10/2026)
+  - Feito: interruptor "Torre ocupa o contorno desenhado" em Terreno › Limites especiais (`S.custom.torOcupa`, desligado). O contorno recortado pelos recuos vira a planta; as unidades do mix crescem ou encolhem até preencher o andar (`t.r` pode passar de 1); "Ajustar mix" muda a quantidade por andar para elas voltarem ao tamanho do mix. Avisos: unidades fora do mix, TO excedida (a planta não encolhe), torres com andares desiguais. Aceita contorno não convexo (L) nos números. `calc/blocos.js`, `tests/blocos.test.js`.
 - **C1 — M**: forma livre da torre, com um bloco e formatos prontos.
   - Antes disso, Fase 0 técnica: sol, orçamento, DXF/IFC e unidades lendo a planta por faixa, o que já corrige as torres escalonadas atuais.
 - **C2 — M**: pilha de blocos.
