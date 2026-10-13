@@ -100,7 +100,7 @@ Object.assign(ACT,{
     if(VIEW==="impl"){ BLC.sel=i; redraw2d() } else if(VIEW==="andar" && BLC.bopen) blcVerAndar(i, k);
     const m=blcM(); if(m) blcLive(m) },
   blcPers: b=>{ const i=+b.dataset.i; if(!blcPersonaliza(S,i)){ toast("Esta torre ainda não tem forma para copiar"); return } BLC.open=i; delete BLC.k[i]; update();
-    toast(`Torre ${i+1} personalizada — escolha um formato, + Bloco ou edite na implantação`) },
+    toast(`Torre ${i+1} personalizada — a privativa passa a ser a das unidades desenhadas (eficiência real da planta)`) },
   blcFmt: b=>{ const {i,k}=blcIK(b), t=b.dataset.t, m=blcM(), f=blcFx(m,i,k), alvo=f? f.A : 0, r=blcAplicaFormato(S,i,t,k); if(!r){ toast("Esse formato não coube"); return }
     BLC.open=i; BLC.k[i]=k; update(); const nome=(BLC_FORMAS.find(f=>f[0]===t)||[])[1]||t;
     toast(r.curto? `${nome}: coube ${m2(r.A)} de ${m2(alvo)} — a faixa limita` : `${nome} aplicado — clique de novo para girar 90°`) },
@@ -269,9 +269,11 @@ const BLC_IC = { ret:"M3 4h10v8H3z", L:"M3 3h4v6h6v4H3z", U:"M2 3h4v6h4V3h4v10H2
 const blcIc = k => `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="${BLC_IC[k]}"/></svg>`;
 function blcSum(){ if(!blcAtivo(S)) return "automática"; const n=blcLista().length, N=S.produto.torres.length, nb=blcLista().reduce((s,i)=>s+blcLst(i).filter(blcValido).length,0);
   return n? `desenhada · ${n} de ${N} torre${N>1?"s":""}${nb>n? ` · ${nb} blocos` : ""}` : "desenhada · nenhuma personalizada" }
+/* eficiência real da planta (blcPrivReal) numa linha de torre: " · eficiência real 72% (informada 80%)" */
+const blcEficTxt = t => t && t.eficReal!=null ? ` · eficiência real ${pct(t.eficReal,0)} (informada ${pct(S.produto.efic,0)})` : "";
 function blcSecHTML(){
   blcCss(); const on=blcAtivo(S), salvas=(S.blocos.torres||[]).filter(t=>t && t.blocos && t.blocos.length).length;
-  const body = ROW(`Forma${INFO("Automática: a torre sai das regras e do mix (recuos, faixa de cada torre, área do mix ÷ eficiência). Desenhada: você personaliza a planta de cada torre — copiando a automática, com um formato pronto (retângulo, L, U, T, H, pátio) ou editando na implantação — e pode empilhar blocos (embasamento largo, tipo, cobertura recuada). A planta desenhada não encolhe: recuos, TO, CA, gabarito, balanço, núcleo e distância entre torres viram avisos. Voltar para Automática guarda as formas.","forma das torres")}`,
+  const body = ROW(`Forma${INFO("Automática: a torre sai das regras e do mix (recuos, faixa de cada torre, área do mix ÷ eficiência). Desenhada: você personaliza a planta de cada torre — copiando a automática, com um formato pronto (retângulo, L, U, T, H, pátio) ou editando na implantação — e pode empilhar blocos (embasamento largo, tipo, cobertura recuada). A planta desenhada não encolhe: recuos, TO, CA, gabarito, balanço, núcleo e distância entre torres viram avisos. Na desenhada, a privativa é a soma das unidades desenhadas no pavimento tipo (eficiência real da planta), não área × eficiência informada. Voltar para Automática guarda as formas.","forma das torres")}`,
       SEG("blocos.modo",[["auto","Automática"],["desenhada","Desenhada"]],{label:"Forma das torres"}))
     + (on ? `<div class="list" id="blcList"></div><div id="blcGeral"></div>${ADV(SW("alas.recuaTodas", `Recuar recua todas as fachadas${INFO("Por padrão, “Recuar” não mexe na fachada onde o núcleo (escada e elevadores) encosta: o núcleo sobe inteiro até o topo e o recuo o cortaria. Ligado, recua todas as fachadas — confira o aviso de núcleo cortado.","recuar")}`, {fx:"save"}), {key:"blc-opc"})}`
           : salvas ?`<p class="note">${salvas} forma${salvas>1?"s":""} guardada${salvas>1?"s":""} — volta${salvas>1?"m":""} ao escolher Desenhada.</p>` : "");
@@ -323,9 +325,8 @@ function blcLive(m){
     const pares=(m.blcPares||[]).filter(p=>p.a===i||p.b===i).map(p=>p.d<0.01? `sobrepõe a torre ${(p.a===i?p.b:p.a)+1}` : `${nf(p.d,1)} m da torre ${(p.a===i?p.b:p.a)+1}`);
     const av=[...cu, ...pares], open=!!b && BLC.open===i, nb=blcLst(i).filter(blcValido).length, ref=nb>1? blcFx(m,i,t.blcRef??0) : null;
     if(!b) return `<div class="pr-row"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b><span>automática · ${m2(t.A||0)}/andar</span></div>
-      <button type="button" class="btn sm" data-act="blcPers" data-i="${i}" title="Copia a forma automática atual para uma forma editável">Personalizar</button></div></div>`;
-    const sub = nb>1 ? `${nb} blocos · tipo ${blcRot(ref)} · ${m2(t.A||0)}/andar · unidades a ${pct(t.r||0,0)} do mix`
-      : `${BLC_NOMES[b.tipo]||"desenhada"} · ${m2(t.A||0)}/andar · unidades a ${pct(t.r||0,0)} do mix`;
+      <button type="button" class="btn sm" data-act="blcPers" data-i="${i}" title="Copia a forma automática atual para uma forma editável. A privativa passa a ser a das unidades desenhadas no pavimento tipo (eficiência real da planta), em geral um pouco menor que área × eficiência informada">Personalizar</button></div></div>`;
+    const sub = `${nb>1 ? `${nb} blocos · tipo ${blcRot(ref)}` : BLC_NOMES[b.tipo]||"desenhada"} · ${m2(t.A||0)}/andar${blcEficTxt(t)} · unidades a ${pct(t.r||0,0)} do mix`;
     return `<div class="pr-row${open?" on":""}${av.length?" warn":""}" data-row="blc:${i}"><div class="pr-rh">
         <button type="button" class="pr-tx" data-act="blcTog" data-i="${i}" aria-expanded="${open}"><b>${nome}</b><span>${sub}</span>${av.length?`<span class="w">${av.join(" · ")}</span>`:""}</button>
         <button type="button" class="pr-ic lbl" data-act="blcEdit" data-i="${i}" title="Selecionar e editar na implantação" aria-label="Editar a ${nome.toLowerCase()} na implantação">Editar</button>
@@ -334,7 +335,8 @@ function blcLive(m){
         <div class="blc-pl">${blcBlocosHTML(i, m, I)}</div>${blcAlasLinha(m, i)}
         <div class="pr-rf"><button type="button" class="btn sm" data-act="blcAdd" data-i="${i}" title="Novo bloco no topo, cópia do de cima, começando no meio dele">+ Bloco</button>${nb===1? `<button type="button" class="btn sm ghost" data-act="blcRefaz" data-i="${i}" title="Copia de novo a forma automática">Refazer da automática</button>` : ""}${prRm("blcDel", i, "forma da "+nome.toLowerCase(), "Apagar forma")}</div></div>` : ""}</div>` }).join(""));
   const R=blcResumo(S,m), G2=(m.blcGeral||[]).filter(a=>!/^O mix ocupa/.test(a));
-  setHTML("blcGeral", (R? `<div class="row sb"><span class="note"${R.desvio?' style="color:var(--warn)"':""}>O mix ocupa ${pct(R.ocupa,0)} do pavimento ${m.T.some(t=>t.desenhada && (t.faixas||[]).length>1)? "tipo " : ""}desenhado</span>${R.muda? `<button type="button" class="btn sm" data-act="blcMix" title="Muda a quantidade de unidades por andar para o mix voltar ao tamanho original (no bloco tipo; os outros blocos acompanham)">Ajustar mix</button>` : ""}</div>` : "")
+  setHTML("blcGeral", (R && R.real? `<p class="note blc-ef">Eficiência real da planta <b>${pct(R.efic,0)}</b> (informada ${pct(R.eficInf,0)}) · ${m2(R.priv)} de unidades/andar${INFO("Eficiência real da planta")}</p>` : "")
+    + (R? `<div class="row sb"><span class="note"${R.desvio?' style="color:var(--warn)"':""}>O mix ocupa ${pct(R.ocupa,0)} do pavimento ${m.T.some(t=>t.desenhada && (t.faixas||[]).length>1)? "tipo " : ""}desenhado</span>${R.muda? `<button type="button" class="btn sm" data-act="blcMix" title="Muda a quantidade de unidades por andar para o mix voltar ao tamanho original, pela área real que a planta desenhada tem para unidades (no bloco tipo; os outros blocos acompanham)">Ajustar mix</button>` : ""}</div>` : "")
     + (G2.length? `<div class="blc-av">${G2.map(a=>`<p>${esc(a)}</p>`).join("")}</div>` : ""));
 }
 
@@ -375,7 +377,8 @@ HOOK.pdf.push(async ctx=>{
     const un=f=>f.un!=null? f.un : (f.qtd||[]).reduce((s,n)=>s+n,0);
     ctx.rows(blocos.map(f=>{ const b=(I.bl||[]).find(x=>x.k===f.bk)||{}, av=[b.bal>0.5? `balanço ${nf(b.bal,0)} m²` : "", b.nucleo===false? "corta o núcleo" : "", b.foraRecuo>0.5? `${nf(b.foraRecuo,0)} m² sobre os recuos` : ""].filter(Boolean);
       return [`Bloco ${blcRot(f)}${f.ref? " (tipo)" : ""}`, `${f.n} andar${f.n>1?"es":""} · ${nf(f.A,0)} m² · ${nf(un(f),0)} un/andar${av.length? " · "+av.join(" · ") : ""}`, av.length? "warn" : "ok"] })
-      .concat(l && (l.alas || l.alasFalha) ? [["Pavimento tipo", l.alas? blcAlasTxt(l) : "aproximado ("+l.alasFalha+")", l.alas && !(l.alas.dist>l.alas.lim+1e-6)? "ok" : "warn"]] : []));
+      .concat(l && (l.alas || l.alasFalha) ? [["Pavimento tipo", l.alas? blcAlasTxt(l) : "aproximado ("+l.alasFalha+")", l.alas && !(l.alas.dist>l.alas.lim+1e-6)? "ok" : "warn"]] : [])
+      .concat(t.eficReal!=null ? [["Eficiência real da planta", `${pct(t.eficReal,0)} (informada ${pct(S.produto.efic,0)}) · ${nf(t.privAndar||0,0)} m² de unidades por andar tipo`, "ok"]] : []));
     // plantas: uma por bloco (de baixo para cima), com o núcleo
     const um1=blocos.length===1, imgs=withLight(()=>blocos.slice().reverse().map(f=>({f, url:blcPlantaImg(m, i, f, um1? 1400 : 1100, um1? 700 : 760)}))).filter(x=>x.url);
     const um=um1, w=um? PW-2*M : (PW-2*M-6)/2, h=w*(um? 0.5 : 760/1100);

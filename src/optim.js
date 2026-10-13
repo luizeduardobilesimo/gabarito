@@ -77,12 +77,13 @@ function otimPavMinForma(st){ const L=st.lote.pts; let pm=1;
   return pm }
 /* unidades por andar candidatas para um preset: as que preenchem o bloco de referência de todas as torres desenhadas
    (r entre 1 e 1 + tol), as mais justas primeiro; sempre inclui o nº de unidades atual */
-function otimNsForma(st, pk, caps, tol, curN){
-  const efic=st.produto.efic, cand=[];
+function otimNsForma(st, pk, caps, tol, curN, effs){
+  const efic=st.produto.efic, cand=[];   // effs[k]: eficiência real da planta da torre k (blcPrivReal); sem ela, a informada
   for(let N=1; N<=16; N++){ const mix=presetMix(st, pk, N); if(!mix.length) continue;
     const mp=mix.reduce((s,u)=>s+u.area*u.qtd,0); if(!(mp>0)) continue;
-    const rs=caps.map(c=>c*efic/mp); if(Math.min(...rs)<0.996) continue;     // tem de caber em todas as torres
-    const dv=rs.reduce((s,r)=>s+Math.abs(r-1),0)/rs.length; if(dv<=tol*1.5) cand.push({N, dv}) }
+    // com a eficiência real (que muda um pouco com o mix e o núcleo) a janela é mais larga: a estimativa de cada combinação filtra
+    const rs=caps.map((c,k)=>c*((effs && effs[k]>0) ? effs[k] : efic)/mp); if(Math.min(...rs)<(effs? 0.97 : 0.996)) continue;     // tem de caber em todas as torres
+    const dv=rs.reduce((s,r)=>s+Math.abs(r-1),0)/rs.length; if(dv<=tol*1.5+(effs? 0.05 : 0)) cand.push({N, dv}) }
   cand.sort((a,b)=>a.dv-b.dv || a.N-b.N);
   return [...new Set([...cand.slice(0,4).map(c=>c.N), curN])] }
 
@@ -179,8 +180,13 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const nTs = forma || !opts.torres? [base.produto.torres.length] : [1,2,3];
   const presets = opts.tipologias? Object.keys(MIX_PRESETS) : ["atual"];
   const curN = base.produto.mix.reduce((s,u)=>s+u.qtd,0);
-  const capsF = forma? massing(base).T.filter(t=>t.desenhada && t.A>1).map(t=>t.A) : [];
-  const NsDe = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN) : [curN]) : opts.unidades? [2,3,4,5,6,8] : [curN];
+  // eficiência real da planta (torre desenhada / contorno ocupado): as estimativas usam a privativa das unidades desenhadas
+  // (blcPrivEstimada: um pavimento tipo por mix e faixa de elevadores, guardado em memoEf); as quantidades candidatas partem
+  // da eficiência real da forma atual
+  const memoEf = typeof blcPrivEstimada==="function" ? new Map() : null;
+  const mEf = forma && !(mNow.T||[]).some(t=>t && t.eficReal!=null) ? compute(base) : mNow, efAt = forma ? blcEficMapa(mEf) : [];
+  const TF = forma? massing(base).T.filter(t=>t.desenhada && t.A>1) : [], capsF=TF.map(t=>t.A), effF0=TF.map(t=>(efAt[t.i]||{}).ref), effF=effF0.some(e=>e>0)? effF0 : undefined;
+  const NsDe = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? [2,3,4,5,6,8] : [curN];
   const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
   const jobs=[]; nTs.forEach(nT=>presets.forEach(pk=>NsDe(pk).forEach(N=>jobs.push({nT,pk,N}))));
   const res=[], pts=[]; let i=0; const t0=performance.now(); const solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
@@ -200,11 +206,14 @@ function otimizar(opts, onProg, onDone, ctx={}){
         // teto exato pelo gabarito: acima dele o massing() nem precisa rodar
         const hEmbG=st.produto.peTerreo+gac*st.produto.peGar, pmax=maxPavFast(st, Math.floor((hLimDe(st)+1e-6-hEmbG)/st.produto.pe));
         const pMin=Math.max(2, pavMinF); if(pmax<pMin) continue;   // forma desenhada: o último bloco começa no andar pavMinF (abaixo disso ele some)
-        for(const pav of [...new Set([pmax, pmax-1, pmax-3, Math.ceil(pmax*0.7), ...(forma? [curPav] : [])])].filter(p=>p>=pMin && p<=pmax)){
+        // forma desenhada: também o andar mínimo e o meio da faixa — a altura muda o bloco de referência (pilha) e o nº de elevadores
+        // (eficiência real da planta), então os pavimentos mais altos podem não comportar o mix
+        for(const pav of [...new Set([pmax, pmax-1, pmax-3, Math.ceil(pmax*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+pmax)/2)] : [])])].filter(p=>p>=pMin && p<=pmax)){
           const kc=gac+"|"+pav, sMin=cumpre.get(kc);
           if(sMin!=null && sub>sMin){ tested++; continue }   // dominada por sMin subsolos: mesmo preço, mais custo (conta como testada, como antes)
           st.produto.torres=Array.from({length:nT},()=>({pav}));
-          const m=massing(st); if(!m.T.every(t=>t.fit)) continue;
+          const m=massing(st); if(memoEf) blcPrivEstimada(st, m, memoEf);
+          if(!m.T.every(t=>t.fit)) continue;
           if(forma){   // a forma não encolhe nem sobe sozinha: gabarito, CA, blocos ignorados e tamanho das unidades conferidos aqui
             if(m.H>(m.hLim ?? st.regras.hMax)+1e-6 || m.CA>st.regras.caMax+1e-6 || m.T.some(t=>t.blcIgn && t.blcIgn.length)) continue;
             if(otimDesvio(m)>rTol && !(pk==="atual" && N===curN)) continue }

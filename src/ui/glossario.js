@@ -23,7 +23,8 @@ const GLOSS_DATA = {
 
   /* --- produto e áreas --- */
   "Área privativa": { t:"Área privativa", d:"Área de uso exclusivo da unidade (o que o cliente compra), sem as áreas comuns." },
-  "Eficiência": { t:"Eficiência do andar", d:"Quanto do andar-tipo vira área vendável. O resto é circulação, núcleo e paredes. Não confundir com a <b>eficiência global</b> (que conta também subsolos e térreo).", f:"área privativa ÷ área do andar", ex:"80% num andar de 400 m² → 320 m² privativos." },
+  "Eficiência": { t:"Eficiência do andar", d:"Quanto do andar-tipo vira área vendável. O resto é circulação, núcleo e paredes. Vale para a forma automática; na torre desenhada (ou no contorno ocupado) o Gabarito usa a <b>eficiência real da planta</b>, medida nas unidades desenhadas. Não confundir com a <b>eficiência global</b> (que conta também subsolos e térreo).", f:"área privativa ÷ área do andar", ex:"80% num andar de 400 m² → 320 m² privativos." },
+  "Eficiência real da planta": { t:"Eficiência real da planta", d:"Na torre desenhada, a área vendável é a soma das unidades desenhadas no pavimento tipo, depois do núcleo, do corredor e das sobras. Ela substitui a eficiência informada, que continua valendo para a forma automática. Até “Personalizar” sem mudar a forma pode baixar a privativa: passa a valer o desenho.", f:"soma das unidades desenhadas ÷ área do andar", ex:"Um U de 395 m² com 274 m² de unidades → 69%, e não 80% (316 m²)." },
   "Andar tipo": { t:"Pavimento tipo", d:"Andar que se repete na torre, com as unidades residenciais." },
   "Mix": { t:"Mix de tipologias", d:"Combinação de tipos de unidade em cada andar (ex.: 2 de 2 dormitórios + 2 de 3 dormitórios)." },
   "Tipologia": { t:"Tipologia", d:"Tipo de unidade: studio, 1, 2, 3 dormitórios, com ou sem suíte." },

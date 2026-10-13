@@ -101,7 +101,7 @@ STEP_LIVE.terreno = (m)=>{
   if(typeof topoLive==="function") topoLive(m); else setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`);
   { const R=torOcupaResumo(S, m), ajuste=R && R.A>0 && R.muda && Math.abs(R.r-1)>0.03;
     setHTML("torOcupa", !R ? "" : !R.A ? "O contorno ficou vazio depois dos recuos." :
-      `<span>${R.desiguais? R.As.map(a=>m2(a)).join(" e ") : m2(R.A)}/andar · unidades com ${nf(R.media,0)} m² em média (mix: ${nf(R.mixMedia,0)} m²)</span>${ajuste? ` <button type="button" class="btn sm" data-act="torAjMix" style="margin-left:6px">Ajustar mix</button>` : ""}`) }
+      `<span>${R.desiguais? R.As.map(a=>m2(a)).join(" e ") : m2(R.A)}/andar${R.real? ` · eficiência real ${pct(R.efic,0)} (informada ${pct(R.eficInf,0)})${INFO("Eficiência real da planta")}` : ""} · unidades com ${nf(R.media,0)} m² em média (mix: ${nf(R.mixMedia,0)} m²)</span>${ajuste? ` <button type="button" class="btn sm" data-act="torAjMix" style="margin-left:6px">Ajustar mix</button>` : ""}`) }
 };
 Object.assign(ACT,{
   tmeth: b=>{ TMETH=b.dataset.v; renderTab(); if(TMETH!=="desenhar" && VIEW!=="impl") setView("impl") },

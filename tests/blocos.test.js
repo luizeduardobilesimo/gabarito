@@ -116,15 +116,27 @@ describe('C1 — estado e modo automático', () => {
 });
 
 describe('C1 — "Personalizar esta torre"', () => {
-  it('copia a forma automática de cada torre sem mudar nenhum número do estudo exemplo', () => {
+  it('copia a forma automática de cada torre: a forma e as áreas construídas não mudam; a privativa passa a ser a desenhada', () => {
     const st = estado(A, {}), ref = num(A, st);
     st.produto.torres.forEach((_, i) => A.blcPersonaliza(st, i));
     expect(st.blocos.modo).toBe('desenhada');
-    const r = num(A, st);
-    r.m.T.forEach((t, i) => { expect(t.desenhada).toBe(true); expect(t.plate).toEqual(ref.m.T[i].plate); expect(t.r).toBeCloseTo(ref.m.T[i].r, 9) });
-    ['vgv', 'lucro', 'custoObra', 'margem'].forEach(k => { if (ref.f[k] != null) expect(r.f[k]).toBeCloseTo(ref.f[k], 4) });
+    const r = num(A, st), mA = A.massing(st);
+    // o massing (antes do pavimento tipo) continua igual ao automático: área × eficiência informada
+    mA.T.forEach((t, i) => { expect(t.desenhada).toBe(true); expect(t.plate).toEqual(ref.m.T[i].plate); expect(t.r).toBeCloseTo(ref.m.T[i].r, 9) });
+    expect(mA.privRes).toBeCloseTo(ref.m.privRes, 6);
+    // eficiência real da planta: a mesma planta, mas a privativa é a soma das unidades desenhadas no pavimento tipo
+    r.m.T.forEach((t, i) => {
+      const un = r.m.tipo[i].units.filter(u => !u.livre).reduce((s, u) => s + u.area, 0);
+      expect(t.privAndar).toBeCloseTo(un, 6); expect(t.eficReal).toBeCloseTo(un / t.A, 9);
+      expect(t.r).toBeCloseTo(un / ref.m.mixPriv, 9);
+      expect(t.eficReal).toBeLessThan(st.produto.efic); expect(t.eficReal).toBeGreaterThan(0.7);   // núcleo + corredor de verdade: ~76%
+    });
+    expect(r.m.privRes).toBeCloseTo(r.m.T.reduce((s, t) => s + t.tipoFloors * t.privAndar + t.cobP, 0), 6);
+    expect(r.m.privRes).toBeLessThan(ref.m.privRes); expect(r.m.privRes / ref.m.privRes).toBeGreaterThan(0.9);   // ~5% menos
+    expect(r.f.vgv).toBeLessThan(ref.f.vgv);
+    // área construída, CA, unidades e custo da obra não dependem da eficiência
     expect(r.m.units).toBe(ref.m.units); expect(r.m.CA).toBeCloseTo(ref.m.CA, 9); expect(r.m.constr).toBeCloseTo(ref.m.constr, 6);
-    expect(r.m.avisos.filter(a => !ref.m.avisos.includes(a))).toEqual([]);   // nenhum aviso novo
+    expect(r.m.avisos.filter(a => !ref.m.avisos.includes(a))).toEqual([]);   // nenhum aviso novo (o mix ainda ocupa ~105%)
   });
   it('o bloco é cópia (editar o bloco não mexe na forma automática)', () => {
     const st = estado(A, {}), m = A.massing(st), b = A.blcPersonaliza(st, 0);
@@ -138,7 +150,9 @@ describe('C1 — massing da torre desenhada', () => {
     const st = desenhada([{ pts: ELE, de: 1 }]), m = A.compute(st, { layouts: false }), t = m.T[0];
     expect(t.desenhada).toBe(true);
     expect(t.A).toBeCloseTo(340, 6);                                    // x de 6 a 24 passa do afastamento (4,3 m) e não é cortado
-    expect(t.r).toBeCloseTo(340 * 0.8 / 200, 9);
+    expect(A.massing(st).T[0].r).toBeCloseTo(340 * 0.8 / 200, 9);              // antes do pavimento tipo: área × eficiência
+    const un = m.tipo[0].units.filter(u => !u.livre).reduce((s, u) => s + u.area, 0);
+    expect(t.r).toBeCloseTo(un / 200, 9);                                       // depois: unidades desenhadas ÷ mix
     expect(m.tiposA).toBeCloseTo(340 * 10, 6);
     expect(m.avisos.some(a => /sobre os recuos/.test(a))).toBe(false);   // 6 m > 4,3 m: dentro do envelope
     const st2 = desenhada([{ pts: [[2, 10], [24, 10], [24, 30], [2, 30]], de: 1 }]), m2 = A.compute(st2, { layouts: false });
@@ -205,10 +219,12 @@ describe('C1 — avisos automáticos', () => {
     expect(mR.avisos.some(a => /núcleo/.test(a))).toBe(false);
   });
   it('“o mix ocupa X% do pavimento” e o Ajustar mix', () => {
-    const st = desenhada([{ pts: RET, de: 1 }]), m = A.compute(st, { layouts: false });
-    expect(m.avisos.some(a => /O mix ocupa 64% do pavimento/.test(a))).toBe(true);   // 200 ÷ (392 × 0,8)
+    const st = desenhada([{ pts: RET, de: 1 }]), m = A.compute(st, { layouts: false }), t = m.T[0];
+    // eficiência real da planta: 200 ÷ unidades desenhadas (≈ 302 m², 77% de 392) — não 200 ÷ (392 × 0,8) = 64%
+    expect(m.avisos.some(a => a.includes(`O mix ocupa ${Math.round(200 / t.privAndar * 100)}% do pavimento`))).toBe(true);
     const R = A.blcResumo(st, m);
-    expect(R.muda).toBe(true);
+    expect(R.real).toBe(true); expect(R.priv).toBeCloseTo(t.privAndar, 9); expect(R.efic).toBeCloseTo(t.eficReal, 9); expect(R.eficInf).toBe(0.8);
+    expect(R.muda).toBe(true); expect(R.q[0]).toBe(Math.floor(R.util / 100));      // "Ajustar mix" mira a área real para unidades
     st.produto.mix[0].qtd = R.q[0];
     const m2 = A.compute(st, { layouts: false });
     expect(m2.avisos.some(a => /O mix ocupa/.test(a))).toBe(false);
@@ -324,26 +340,33 @@ describe('C2 — um bloco continua igual ao C1', () => {
 
 describe('C2 — pilha de 3 blocos: áreas por faixa conferidas à mão', () => {
   it('faixas, bloco de referência, mix por faixa, CA, privativa, unidades e VGV', () => {
-    const st = tres(), { m, f } = num(A, st), t = m.T[0];
+    const st = tres(), { m, f } = num(A, st), t = m.T[0], mA = A.massing(st), tA = mA.T[0];
     // faixas: 1º–3º (648), 4º–10º (392, referência: mais andares tipo), 11º–12º (200)
     expect(t.faixas.map(x => [x.de, x.ate, x.n])).toEqual([[1, 3, 3], [4, 10, 7], [11, 12, 2]]);
     expect(t.faixas.map(x => x.A)).toEqual([648, 392, 200]);
     expect(t.blcRef).toBe(1); expect(t.A).toBeCloseTo(392, 9); expect(t.plate).toBe(t.faixas[1].plate);
-    // referência: 2 un. de 100 m² com fator 392 × 0,8 ÷ 200 = 1,568 (C1). Embasamento: 518,4 ÷ 1,568 = 330,6 → 3 un. → fator 1,728.
-    // Cobertura recuada: 160 ÷ 1,568 = 102 → 1 un. → fator 1,6
-    expect(t.faixas.map(x => x.qtd[0])).toEqual([3, 2, 1]);
-    expect(t.faixas[1].r).toBeCloseTo(1.568, 9); expect(t.faixas[0].r).toBeCloseTo(1.728, 9); expect(t.faixas[2].r).toBeCloseTo(1.6, 9);
-    expect(m.tiposA).toBeCloseTo(648 * 3 + 392 * 7 + 200 * 2, 6);                 // 5.088 m²
-    expect(m.privRes).toBeCloseTo((648 * 3 + 392 * 7 + 200 * 2) * 0.8, 6);         // 4.070,4 m² (área × eficiência em cada faixa)
-    expect(m.units).toBe(3 * 3 + 2 * 7 + 1 * 2);                                    // 25
-    expect(m.unitRows[0].n).toBe(25); expect(m.unitRows[0].area).toBeCloseTo(4070.4, 6);
+    // massing (antes do pavimento tipo), área × eficiência informada: referência 2 un. de 100 m² com fator 392 × 0,8 ÷ 200 = 1,568 (C1).
+    // Embasamento: 518,4 ÷ 1,568 = 330,6 → 3 un. → fator 1,728. Cobertura recuada: 160 ÷ 1,568 = 102 → 1 un. → fator 1,6
+    expect(tA.faixas.map(x => x.qtd[0])).toEqual([3, 2, 1]);
+    expect(tA.faixas[1].r).toBeCloseTo(1.568, 9); expect(tA.faixas[0].r).toBeCloseTo(1.728, 9); expect(tA.faixas[2].r).toBeCloseTo(1.6, 9);
+    expect(mA.privRes).toBeCloseTo((648 * 3 + 392 * 7 + 200 * 2) * 0.8, 6);        // 4.070,4 m² (área × eficiência em cada faixa)
+    // compute (eficiência real da planta): privativa de cada faixa = unidades desenhadas no layout dela
+    const lay = x => x.lay || m.tipo[0], un = x => lay(x).units.filter(u => !u.livre);
+    t.faixas.forEach(x => { expect(x.priv).toBeCloseTo(un(x).reduce((s, u) => s + u.area, 0), 6); expect(x.qtd[0]).toBe(un(x).length);
+      expect(x.r).toBeCloseTo(x.priv / (100 * x.qtd[0]), 9); expect(x.eficReal).toBeCloseTo(x.priv / x.A, 9) });
+    expect(t.faixas[1].qtd[0]).toBe(2);
+    expect(m.tiposA).toBeCloseTo(648 * 3 + 392 * 7 + 200 * 2, 6);                 // 5.088 m² (área construída não muda)
+    const priv = t.faixas.reduce((s, x) => s + x.nTipo * x.priv, 0), nUn = t.faixas.reduce((s, x) => s + x.nTipo * x.qtd[0], 0);
+    expect(m.privRes).toBeCloseTo(priv, 6); expect(m.privRes).toBeLessThan(mA.privRes);
+    expect(m.units).toBe(nUn); expect(m.unitRows[0].n).toBe(nUn); expect(m.unitRows[0].area).toBeCloseTo(priv, 6);
+    expect(m.eficReal).toBeCloseTo(priv / m.tiposA, 9);
     const R = st.regras, comp = m.tiposA * (1 - R.ncTipo) + m.lojaA + (R.ncTerreo ? 0 : m.hallA + m.lzExtraA) + (R.ncGaragem ? 0 : m.garA);
     expect(m.CA).toBeCloseTo(comp / m.A, 9);
     expect(t.Aproj).toBeCloseTo(648, 9);                                            // TO pela maior projeção
     // VGV = privativa de cada faixa × preço (mesmo fator de reajuste/permuta do estudo com um bloco)
     const s1 = pilha([{ pts: RET, de: 1 }]), r1 = num(A, s1), F = st.fin;
     const k = r1.f.vgv / (r1.m.unitRows[0].area * 10000 + r1.m.lojaPriv * F.precoLoja);
-    expect(f.vgv).toBeCloseTo(k * (4070.4 * 10000 + m.lojaPriv * F.precoLoja), 2);
+    expect(f.vgv).toBeCloseTo(k * (priv * 10000 + m.lojaPriv * F.precoLoja), 2);
   });
   it('TO acima da regra é medida pela maior projeção da pilha', () => {
     const st = tres(); st.regras.toTorre = 0.4;                                     // 600 m² < 648
@@ -460,11 +483,13 @@ describe('C2 — sol, orçamento, unidades e IFC por faixa com a pilha', () => {
     expect(d.carga - d1.carga).toBeCloseTo(5088 - 392 * 12, 6);
   });
   it('unidades (tabela de vendas e sol): cada andar segue o mix e a planta do seu bloco', () => {
-    const m = A.compute(tres(), { layouts: false }), U = m.unidades.filter(u => !u.cob);
-    expect(U.length).toBe(25);
-    expect(U.filter(u => u.andar === 1).length).toBe(3); expect(U.find(u => u.andar === 1).area).toBeCloseTo(172.8, 6);
-    expect(U.filter(u => u.andar === 12).length).toBe(1); expect(U.find(u => u.andar === 12).area).toBeCloseTo(160, 6);
-    expect(U.filter(u => u.andar === 1 && u.sol).length).toBe(3);                   // casadas com o layout do bloco
+    const m = A.compute(tres(), { layouts: false }), U = m.unidades.filter(u => !u.cob), [f0, , f2] = m.T[0].faixas;
+    expect(U.length).toBe(m.units);
+    // eficiência real da planta: cada unidade com o tamanho médio das desenhadas no seu bloco; a tabela soma a privativa
+    expect(U.filter(u => u.andar === 1).length).toBe(f0.qtd[0]); expect(U.find(u => u.andar === 1).area).toBeCloseTo(100 * f0.r, 6);
+    expect(U.filter(u => u.andar === 12).length).toBe(f2.qtd[0]); expect(U.find(u => u.andar === 12).area).toBeCloseTo(100 * f2.r, 6);
+    expect(U.reduce((s, u) => s + u.area, 0)).toBeCloseTo(m.privRes, 6);
+    expect(U.filter(u => u.andar === 1 && u.sol).length).toBe(f0.qtd[0]);          // casadas com o layout do bloco
   });
   it('planta e layout por andar (IFC/DXF)', () => {
     const m = A.compute(tres(), { layouts: false }), t = m.T[0];
