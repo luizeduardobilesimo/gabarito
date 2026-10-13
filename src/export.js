@@ -116,7 +116,7 @@ function DXF(){
   const ents=[], layers={};
   const fx=v=>(+v).toFixed(4);
   return {
-    poly(layer, pts, color=7){ if(!pts||pts.length<2) return; layers[layer]=color; ents.push(`0\nPOLYLINE\n8\n${layer}\n66\n1\n70\n${pts.length>2?1:0}\n10\n0\n20\n0\n30\n0\n`+pts.map(q=>`0\nVERTEX\n8\n${layer}\n10\n${fx(q[0])}\n20\n${fx(q[1])}\n30\n0\n`).join("")+`0\nSEQEND\n8\n${layer}\n`) },
+    poly(layer, pts, color=7, aberta=false){ if(!pts||pts.length<2) return; layers[layer]=color; ents.push(`0\nPOLYLINE\n8\n${layer}\n66\n1\n70\n${pts.length>2&&!aberta?1:0}\n10\n0\n20\n0\n30\n0\n`+pts.map(q=>`0\nVERTEX\n8\n${layer}\n10\n${fx(q[0])}\n20\n${fx(q[1])}\n30\n0\n`).join("")+`0\nSEQEND\n8\n${layer}\n`) },
     text(layer, [x,y], h, s, color=7){ layers[layer]=color; ents.push(`0\nTEXT\n8\n${layer}\n10\n${fx(x)}\n20\n${fx(y)}\n30\n0\n40\n${h}\n1\n${ascii(s)}\n72\n1\n11\n${fx(x)}\n21\n${fx(y)}\n31\n0\n`) },
     out(){ const lt=Object.entries(layers); return `0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n${lt.length}\n`+lt.map(([n,c])=>`0\nLAYER\n2\n${n}\n70\n0\n62\n${c}\n6\nCONTINUOUS\n`).join("")+`0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n`+ents.join("")+`0\nENDSEC\n0\nEOF\n` }
   };
@@ -178,7 +178,7 @@ function IFC(m){
           if(u.com && S.comodos && S.comodos.on){ const un=st.sp[st.sp.length-1], rs=[];
             u.com.rooms.forEach((r,k)=>{ if(r.poly.length<3) return; const p=lp(st.p,0); rs.push(add(`IFCSPACE('${ifcGuid()}',$,${str(cod+"-"+String(k+1).padStart(2,"0"))},$,$,${p},${solid(r.poly,2.6)},${str(`${r.longo} - ${nf(r.area,2)} m2`)},.PARTIAL.,.SPACE.,$)`)) });
             if(rs.length) add(`IFCRELAGGREGATES('${ifcGuid()}',$,$,$,${un},(${rs.join(",")}))`);
-            comParedes(u).forEach((w,k)=>{ const p=lp(st.p,0); st.els.push(add(`IFCWALL('${ifcGuid()}',$,${str(`${cod} parede ${k+1}`)},$,${str(w.tipo==="interna"?"Parede interna":w.tipo==="guarda"?"Guarda-corpo":w.tipo==="fachada"?"Parede de fachada":"Parede de divisa")},${p},${solid(w.poly, w.tipo==="guarda"? 1.1 : 2.8)},$,${w.tipo==="interna"?".PARTITIONING.":".STANDARD."})`)) }) } }) }
+            comIfcParedes(u,{add,lp,solid,str,guid:ifcGuid,st,cod}) } }) }   // paredes com vãos de porta: IfcOpeningElement + IfcDoor
       else if(j===t.pav && t.duplexA>1) proxy(st,`Torre ${i+1} - Duplex`,"Cobertura duplex",G.scaleToArea(t.plate,t.duplexA),P.pe);
     });
   }
@@ -195,7 +195,7 @@ async function exportZIP(){
   if(m.gar) Object.entries(m.gar).forEach(([k,lay])=>{ if(lay) z.file(`garagem-${nomePav(k).replace(/\s+/g,"-")}.dxf`, dxfGar(m,lay,k[0]==="s"?m.sub:k[0]==="g"?m.emb:m.tGar)) });
   m.T.forEach((t,i)=>{ if(t.plate.length) z.file(`pavimento-tipo-torre-${i+1}.dxf`, dxfTipo(m,i)) });
   z.file(slug(S.nome)+".ifc", IFC(m));
-  z.file("leia-me.txt", ascii(`Gabarito - ${S.nome}\nUnidades em metros. DXF R12 (AC1009) em camadas. IFC4 com pavimentos (IfcBuildingStorey), volumes (IfcBuildingElementProxy), unidades e comodos (IfcSpace) e paredes das unidades (IfcWall).\nEstudo de massa preliminar: nao substitui projeto legal.\n`));
+  z.file("leia-me.txt", ascii(`Gabarito - ${S.nome}\nUnidades em metros. DXF R12 (AC1009) em camadas. IFC4 com pavimentos (IfcBuildingStorey), volumes (IfcBuildingElementProxy), unidades e comodos (IfcSpace), paredes das unidades (IfcWall) com os vaos de porta (IfcOpeningElement) e as portas (IfcDoor).\nEstudo de massa preliminar: nao substitui projeto legal.\n`));
   const blob=await z.generateAsync({type:"blob",compression:"DEFLATE"});
   await saveFile(slug(S.nome)+"-dxf-ifc.zip", blob);
 }

@@ -22,7 +22,7 @@
    relevoResumo(plano,conf)               → texto de uma linha · relevoDirTexto(az) → "SO"
    relevoOpenMeteoUrl / relevoOpenMeteoLer → reserva (90 m, uso não comercial) */
 const RELEVO_Z = 14;
-const RELEVO_JANELAS = { terrarium:[100,160,240], openmeteo:[160,240,320] };
+const RELEVO_JANELAS = { terrarium:[100,160,240], openmeteo:[160,240,320], anadem:[100,160,240] };
 const RELEVO_MIN = 2;          // % abaixo do qual o terreno é considerado praticamente plano
 const RELEVO_DIR = ["N","NE","L","SE","S","SO","O","NO"];
 
@@ -180,4 +180,40 @@ function relevoOpenMeteoUrl(ref, pontos){
 function relevoOpenMeteoLer(json, pontos){
   const el=json && json.elevation; if(!Array.isArray(el) || el.length!==pontos.length) return [];
   return pontos.map((p,i)=>[p[0], p[1], el[i]]).filter(q=>typeof q[2]==="number" && isFinite(q[2]));
+}
+
+/* ---------------- plano em uso e prévia no 3D ---------------- */
+/* plano em uso a partir do estado: o modelo digital (ou o arquivo) corrigido pelas cotas dos cantos; null se não há relevo lido */
+function relevoEfetivoDe(st){
+  const R=st && st.relevo, L=st && st.lote && st.lote.pts; if(!R || !L || L.length<3) return null;
+  const cantos = Array.isArray(R.cantos) && R.cantos.length===L.length ? R.cantos : L.map(()=>null);
+  const ef=relevoPlanoEfetivo(L, cantos, R.plano, {norte:st.lote.norte}); if(!ef) return null;
+  const info = ef.nInformados>=3;
+  return { ...ef, info, conf: info? {nivel:"alta", motivo:"cotas informadas", informado:true} : R.conf };
+}
+/* trecho da reta {p : g·(p−c) = h} dentro do retângulo [x0,y0,x1,y1] → [xa,ya,xb,yb] ou null */
+function relevoRetaNoRetangulo(g, c, h, rect){
+  const gl2=g[0]*g[0]+g[1]*g[1]; if(gl2<1e-18) return null;
+  const p=[c[0]+g[0]*h/gl2, c[1]+g[1]*h/gl2], d=[-g[1], g[0]]; let lo=-Infinity, hi=Infinity;
+  for(let k=0;k<2;k++){ const a=rect[k], b=rect[k+2];
+    if(Math.abs(d[k])<1e-12){ if(p[k]<a-1e-9 || p[k]>b+1e-9) return null; continue }
+    const t0=(a-p[k])/d[k], t1=(b-p[k])/d[k]; lo=Math.max(lo, Math.min(t0,t1)); hi=Math.min(hi, Math.max(t0,t1)) }
+  if(!(hi-lo>1e-9)) return null;
+  return [p[0]+d[0]*lo, p[1]+d[1]*lo, p[0]+d[0]*hi, p[1]+d[1]*hi];
+}
+/* geometria da prévia do relevo (3D sem a topografia ligada, mapa do PDF): plano que passa pela cota do centro do lote,
+   cantos do retângulo com a cota relativa, curvas de nível do plano (passo conforme a amplitude) e direção da descida.
+   null quando não há relevo ou o terreno é praticamente plano. Cotas relativas ao centroide do lote (m). */
+function relevoPrevia(st, o={}){
+  const ef=relevoEfetivoDe(st); if(!ef) return null;
+  const nivel=ef.conf && ef.conf.nivel; if(nivel==="plano") return null;
+  const L=st.lote.pts, pl=ef.plano, norte=st.lote.norte, g=relevoGradPlanta(pl, norte), gl=Math.hypot(g[0],g[1]); if(gl<1e-9) return null;
+  const xs=L.map(q=>q[0]), ys=L.map(q=>q[1]), bx0=Math.min(...xs), bx1=Math.max(...xs), by0=Math.min(...ys), by1=Math.max(...ys);
+  const mg=o.margem ?? Math.max(8, 0.2*Math.max(bx1-bx0, by1-by0)), rect=[bx0-mg, by0-mg, bx1+mg, by1+mg], c=relevoCentroide(L);
+  const dz=(x,y)=>g[0]*(x-c[0])+g[1]*(y-c[1]);
+  const cantos=[[rect[0],rect[1]],[rect[2],rect[1]],[rect[2],rect[3]],[rect[0],rect[3]]].map(([x,y])=>[x,y,dz(x,y)]);
+  const zs=cantos.map(q=>q[2]), zmin=Math.min(...zs), zmax=Math.max(...zs), amp=zmax-zmin;
+  const passo=o.passo || (amp<=2.5? 0.5 : amp<=8? 1 : amp<=20? 2 : 5), curvas=[];
+  for(let k=Math.ceil(zmin/passo-1e-9); k*passo<=zmax+1e-9; k++){ const h=+(k*passo).toFixed(6), s=relevoRetaNoRetangulo(g, c, h, rect); if(s) curvas.push({h, seg:s}) }
+  return { rect, c, g, pct:pl.pct, az:pl.azDesc, dirTxt:relevoDirTexto(pl.azDesc), dir:[-g[0]/gl, -g[1]/gl], nivel, conf:ef.conf, info:ef.info, cantos, zmin, zmax, amp, passo, curvas };
 }

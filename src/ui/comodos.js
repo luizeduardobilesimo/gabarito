@@ -5,7 +5,7 @@
    comDragEnd); o ajuste vale para a tipologia inteira (S.comodos.tipos). Variações salvas em S.comodos.variantes. */
 let COMHOV=null, COMDRAG=null;
 
-const COM_COR = { sala:"pal", sacada:"--c-sac", dorm:"pal", suite:"pal", closet:"pal", circ:"--surface", cozinha:"--c-ant", serv:"--c-ant", desp:"--c-ant", banho:"--c-ant", bsuite:"--c-ant" };
+const COM_COR = { sala:"pal", sacada:"--c-sac", dorm:"pal", suite:"pal", closet:"pal", circ:"--surface", cozinha:"--c-ant", serv:"--c-ant", desp:"--c-ant", banho:"--c-ant", bsuite:"--c-ant", lavabo:"--c-ant" };
 
 /* desenho de uma planta tipo: devolve true se desenhou os cômodos */
 function comDraw(g, lay, K){
@@ -100,6 +100,8 @@ function comDragEnd(){ COMDRAG=null; update(); if(TAB==="projeto") renderTab() }
 
 /* ---------- inspetor (Projeto › Pavimento tipo) ---------- */
 function comTiposSync(){ const C=S.comodos; C.tipos=C.tipos||[]; [...new Set(S.produto.mix.map(u=>u.nome))].forEach(n=>comTipoEntry(n)) }
+/* a tipologia usa um modelo em que o lavabo é opcional (3 dormitórios ou mais)? */
+function comLavOpc(nome){ const it=S.produto.mix.find(u=>u.nome===nome), mk=comModeloDe(S, nome, it? it.area : 60); return !!COM_MODELOS[mk] && COM_MODELOS[mk].lavabo==="opc" }
 function comCardHTML(){
   const C=S.comodos; comTiposSync();
   let h=SW("comodos.on","Mostrar cômodos nas plantas",{rr:true});
@@ -115,12 +117,13 @@ function comCardHTML(){
           <option value="auto" ${t.modelo==="auto"?"selected":""}>modelo automático</option>${Object.entries(COM_MODELOS).map(([k,M])=>`<option value="${k}" ${t.modelo===k?"selected":""}>${M.nome}</option>`).join("")}</select>
           <button class="btn sm" data-act="comSalvar" data-k="${esc(n)}" title="Salvar as divisões atuais como variação">Salvar variação</button>
           ${ajust?`<button class="btn sm ghost" data-act="comAuto" data-k="${esc(n)}" title="Voltar às divisões automáticas">Automático</button>`:""}</div>
+        ${comLavOpc(n)?`<div class="row sb" style="flex-wrap:nowrap">${SW(`comodos.tipos.${i}.lavabo`,"Lavabo junto da sala")}${INFO("Acrescenta um lavabo na faixa molhada, embaixo da sala e perto da entrada, com porta para a sala. Só nos modelos de 3 dormitórios ou mais; no de 2 suítes o lavabo já faz parte do programa.")}</div>`:""}
         ${vs.length?`<div class="chips">${vs.map(v=>`<span class="chip" aria-pressed="${t.sel===v.j}" style="display:inline-flex;gap:6px;align-items:center"><button type="button" data-act="comUsar" data-i="${v.j}" style="all:unset;cursor:pointer" title="Usar ${esc(v.nome)}">${esc(v.nome)}</button><button type="button" data-act="comDel" data-i="${v.j}" aria-label="Excluir ${esc(v.nome)}" title="Excluir ${esc(v.nome)}" style="all:unset;cursor:pointer;opacity:.6">×</button></span>`).join("")}</div>`:""}
       </div>` }).join("")+`</div>`;
     const M=C.min, rowM=(k,l)=>`<tr><td>${l}</td><td>${NUM(`comodos.min.${k}.a`,"","m²",{step:0.1})}</td><td>${NUM(`comodos.min.${k}.l`,"","m",{step:0.05})}</td></tr>`;
     h+=ADV(GRP("Quadro de áreas por cômodo")+`<div id="comQuadro"></div>`+
       GRP(`Mínimos do código de obras${INFO("Referência genérica: confira no código de obras do município.","os mínimos")}`)+
-      `<table class="tbl comMin"><tr><th></th><th>Área</th><th>Menor lado</th></tr>${rowM("sala","Sala")+rowM("suite","Suíte / dorm. principal")+rowM("dorm","Dormitório")+rowM("cozinha","Cozinha")+rowM("serv","Área de serviço")+rowM("banho","Banheiro")}</table>
+      `<table class="tbl comMin"><tr><th></th><th>Área</th><th>Menor lado</th></tr>${rowM("sala","Sala")+rowM("suite","Suíte / dorm. principal")+rowM("dorm","Dormitório")+rowM("cozinha","Cozinha")+rowM("serv","Área de serviço")+rowM("banho","Banheiro")+rowM("lavabo","Lavabo")}</table>
       ${KV(NUM("comodos.jan.frac","Janela ≥ 1/n do piso","n",{step:1,int:true})+NUM("comodos.jan.h","Altura da janela","m",{step:0.05})+NUM("comodos.jan.hSala","Porta-janela (sala)","m",{step:0.05}),3)}`, {key:"comAdv"});
   }
   return SEC("Cômodos das unidades", h, {key:"comodos", sum: C.on? "" : "desligado", info:"Divisão interna de cada tipologia: sala, dormitórios, cozinha, banheiros e serviço, conferida com os mínimos do código de obras. Arraste as divisões na planta tipo (passe o cursor sobre uma unidade): o ajuste vale para todas as unidades da tipologia e pode virar uma variação salva."});
