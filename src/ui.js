@@ -219,7 +219,7 @@ function renderKPIs(m,f){
     k(TERMO("CA"), nf(m.CA,2), `máx ${nf(S.regras.caMax,1)}`, s.ca, `Coeficiente de aproveitamento · básico ${nf(S.regras.caBas,1)} · máximo ${nf(S.regras.caMax,1)}`) +
     k("Altura", nf(m.H,1)+" m", `máx ${nf(S.regras.hMax,0)} m`, s.h) +
     k(TERMO("VGV"), mi(f.vgv), `${mi(f.vgv/Math.max(1,m.units))}/un`, null, `Valor geral de vendas · ${mi(f.vgv/Math.max(1,m.units))} por unidade`) +
-    k(TERMO("Eficiência global","Eficiência"), pct(sd.eficGlobal,0), `${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)}`, sc(sd.nivel.efic), `Área privativa ÷ construída · referência ${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)} (${sd.tipologiaNome})`) +
+    k(TERMO("Eficiência global","Eficiência"), pct(sd.eficGlobal,0), `${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)}`, sc(sd.nivel.efic), `Área privativa ÷ construída · referência ${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)} (${sd.tipologiaNome})${m.eficReal!=null? ` · eficiência real da planta ${pct(m.eficReal,0)} (informada ${pct(S.produto.efic,0)})` : ""}`) +
     k(TERMO("Margem s/ VGV","Margem"), pct(sd.margemVGV), `lucro ${mic(f.lucro)}`, mg, `Lucro ${mi(f.lucro)} · margem s/ VGV · meta ${pct(S.fin.margemAlvo,0)} · s/ receita ${pct(f.margem)}`) +
     k(TERMO("TIR","TIR a.a."), f.tirA==null?"—":pct(f.tirA), `VPL ${mic(f.vpl)}`, sc(sd.nivel.tir), `TIR ao ano · VPL ${mi(f.vpl)} · alvo ${pct(S.metas.tir.alvo,0)} · TMA ${pct(S.fin.tma,0)}`);
   const el=document.getElementById("kpis"); if(el.innerHTML!==h) el.innerHTML=h;

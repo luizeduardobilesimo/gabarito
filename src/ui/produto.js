@@ -114,7 +114,7 @@ STEP_R.produto = ()=>{
       SEC("Mix do andar tipo", `<div class="pr-lh"><span>Tipologia</span><span class="c" style="margin-right:44px">Un/andar</span></div><div class="list" id="mix"></div>
         <div class="row sb"><button type="button" class="btn sm" data-act="addMix" ${P.mix.length>=5?"disabled":""}>+ Tipologia</button><span class="note" id="mixSum"></span></div>
         ${ADV(ROW(`Sacadas${INFO("Sacada")}`, SEG("produto.sacTipo",[["embutida","embutidas"],["balanco","em balanço"]],{rr:false,label:"Sacadas"})), {key:"mix"})}`,
-        {key:"pr-mix", open:true, info:"Unidades de cada andar tipo, iguais em todas as torres. O tamanho do andar sai da área privativa do mix ÷ eficiência. Toque numa tipologia para editar nome, área, preço e sacada."}) +
+        {key:"pr-mix", open:true, info:"Unidades de cada andar tipo, iguais em todas as torres. O tamanho do andar sai da área privativa do mix ÷ eficiência (na forma desenhada o andar é o desenho e vale a eficiência real da planta). Toque numa tipologia para editar nome, área, preço e sacada."}) +
       SEC("Embasamento e garagem", KV(STP("produto.subsolos",0,6,"Subsolos",{sub:""})+STP("produto.garAcima",0,8,"Garagens elevadas",{sub:""}))+
         SLD("produto.lojaTerreo","Lojas na frente do térreo",0,0.8,0.05,"%",{pct:true,sub:""})+SW("produto.garTerOn","Garagem no térreo, atrás do hall e do lazer")+`<div class="fsub" id="sub-terreo"></div>`+
         ADV(SW("produto.vagasFrente","Vagas externas na frente (clientes das lojas)")+SW("produto.atico","Ático técnico (reservatório, máquinas)"), {key:"emb"}),
@@ -146,7 +146,7 @@ function prTorresLive(m){
     return `<div class="pr-row${t.fit===false?" warn":""}"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b></div>
       ${prStp(`produto.torres.${i}.pav`, tw.pav, 1, 80, `Pavimentos da ${nome.toLowerCase()}`)}
       <button type="button" class="pr-ic lbl" data-act="maxT" data-i="${i}" title="Máximo de pavimentos para esta torre" aria-label="Máximo de pavimentos para a ${nome.toLowerCase()}">Máx</button>${n>1? prRm("rmT", i, nome) : ""}</div>
-      <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false && !t.desenhada? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : m.torOcupa||t.desenhada? `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar ${t.desenhada?"na forma desenhada":"no contorno desenhado"} · unidades a ${pct(t.r||0,0)} do mix` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
+      <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false && !t.desenhada? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : m.torOcupa||t.desenhada? `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar ${t.desenhada?"na forma desenhada":"no contorno desenhado"}${t.eficReal!=null? ` · eficiência real ${pct(t.eficReal,0)} (informada ${pct(P.efic,0)})` : ""} · unidades a ${pct(t.r||0,0)} do mix` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
   setSum("pr-torres", `${n} torre${n>1?"s":""} · ${P.torres.map(t=>t.pav).join(" e ")} pav`);
 }
 function prMixLive(m){

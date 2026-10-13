@@ -106,7 +106,12 @@ function blcLayFaixas(st, m){
   const P=st.produto;
   (m.T||[]).forEach((t,i)=>{ const ref=m.tipo && m.tipo[i]; if(!t.desenhada || !ref || !t.faixas || t.faixas.length<2) return;
     const tem = ref.core && ref.core.length, base = tem ? blcDentro(ref.core, t.plate) : 1;   // o quanto o núcleo cabe no próprio bloco de referência
+    // eficiência real da planta: a quantidade de unidades dos outros blocos sai da eficiência REAL do bloco de referência
+    // (já desenhado) e do tamanho real das unidades dele — não de área × eficiência informada (blcMixFaixa, como no massing)
+    const refF=t.faixas.find(f=>f.plate===t.plate), xr=refF && blcLayPriv(ref, P.mix, refF.qtd), mpR=xr ? P.mix.reduce((s,u,j)=>s+(+u.area||0)*xr.qtd[j],0) : 0;
+    const eRef = xr && xr.priv>0 && t.A>0 ? xr.priv/t.A : 0, rRef = mpR>0 ? xr.priv/mpR : 0;
     t.faixas.forEach(f=>{ if(f.plate===t.plate) return;
+      if(eRef>0 && rRef>0 && f.nTipo>=1 && f.A>=1){ const x=blcMixFaixa(P.mix, f.A*eRef, rRef); f.qtd=x.qtd; f.r=x.r }
       // núcleo cortado = o bloco perde parte do núcleo que o bloco de referência tem (C3: a segunda escada também sobe inteira)
       f.nucleo = f.A>1 && tem ? Math.min(1, blcDentro(ref.core, f.plate) + (1-base), ...(ref.coreExtra||[]).map(p=>blcDentro(p, f.plate))) : 0;
       if(f.nTipo<1 || f.A<1) return;
@@ -117,6 +122,89 @@ function blcLayFaixas(st, m){
         escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, nElev:ref.coreParts.filter(c=>c.kind==="elev").length||1}, st) : null;
       // sem layout por ala: unidades por área em volta do núcleo, no corredor que passa na frente dele
       f.lay = la || blcLayFaixa(f.plate, ref.alas ? {...ref, ux:ref.coreUx||ref.ux, vy:ref.coreVy||ref.vy, corridor:ref.corrNucleo||ref.corridor} : ref, list, o) }) });
+}
+/* ---------- eficiência real da planta (torre desenhada C1/C2/C3 e contorno ocupado C0) ----------
+   O massing calcula a privativa como área do andar × eficiência informada (S.produto.efic), antes de existir o pavimento tipo.
+   Nas torres desenhadas a planta é do usuário: depois dos layouts (compute), a privativa de cada faixa passa a ser a SOMA DAS
+   UNIDADES DESENHADAS (sem "livre"; sacada embutida dentro da unidade, sacada em balanço somada à parte como sempre — m.sacBal).
+   A quantidade por tipologia passa a ser a desenhada (unidade do mix que não coube sai da conta) e o fator f.r / t.r = privativa
+   desenhada ÷ privativa do mix — o tamanho médio de venda das unidades (unitRows, m.unidades, VGV, cômodos). Uma faixa sem layout
+   próprio (bloco sem andar tipo, layout que falhou) usa a eficiência real do bloco de referência. Modo automático: nada muda. */
+const blcEficTorre = (m, t) => !!(t && (t.desenhada || (m && m.torOcupa)) && t.A>1);
+const BLC_FIT_TOL = 0.02;   // folga do "o mix cabe" com a eficiência real (unidades até 2% menores que o mix)
+/* privativa de um layout de andar: soma das unidades desenhadas; quantidade por tipologia do mix (pelo nome, na ordem do mix) */
+function blcLayPriv(lay, mix, cap){
+  const q=mix.map(()=>0), lim=cap || mix.map(u=>u.qtd), idx=[]; let priv=0, livre=0;
+  ((lay && lay.units) || []).forEach(u=>{ const a=+u.area||0; if(u.livre){ livre+=a; return }
+    let j=mix.findIndex((x,k)=>x.nome===u.nome && q[k]<(lim[k]||0)); if(j<0) j=mix.findIndex(x=>x.nome===u.nome);
+    if(j<0) return; q[j]++; priv+=a; idx.push([u, j]) });
+  return {priv, livre, qtd:q, un:q.reduce((s,n)=>s+n,0), idx};
+}
+/* aplica a privativa por faixa (fx(t, i, f) → {priv, qtd, util?, idx?} ou null = eficiência real da referência) e refaz os totais
+   do massing: t.priv/units/r/fit, m.privRes/unitsRes/unitRows/minApto e as áreas (areasFin). Devolve true se alguma torre mudou */
+function blcAplicaPriv(st, m, fx){
+  const P=st.produto, mix=P.mix, mixA=q=>mix.reduce((s,u,j)=>s+(+u.area||0)*(q[j]||0),0);
+  let mud=false, pS=0, aS=0;
+  (m.T||[]).forEach((t,i)=>{ if(!blcEficTorre(m, t) || !t.faixas || !t.faixas.length) return;
+    const refF=t.faixas.find(f=>f.plate===t.plate) || t.faixas[0], R=new Map();
+    t.faixas.forEach(f=>{ const x=fx(t, i, f, f===refF); if(x) R.set(f, x) });
+    const xr=R.get(refF), eRef = xr && refF.A>0 ? xr.priv/refF.A : null; if(eRef==null) return;
+    t.faixas.forEach(f=>{ let x=R.get(f);
+      if(!x){ if(eRef==null || !(f.A>0)) return; x={priv:f.A*eRef, qtd:f.qtd} }
+      const q=(x.qtd||f.qtd||[]).slice(), mp=mixA(q);
+      f.qtd=q; f.un=q.reduce((s,n)=>s+n,0); f.r = mp>0 ? x.priv/mp : 0; f.priv = mp>0 ? x.priv : 0;
+      f.eficReal = f.A>0 ? f.priv/f.A : 0; f.privUtil = x.util!=null ? x.util : f.priv;
+      // o tamanho de venda de cada unidade desenhada (rótulo da planta, m.unidades, cômodos) acompanha o fator novo
+      (x.idx||[]).forEach(([u,j])=>{ u.alvo=(+mix[j].area||0)*f.r });
+      if(f.nTipo>0){ pS+=f.nTipo*f.priv; aS+=f.nTipo*f.A } });
+    t.eficInf=P.efic; t.eficReal=refF.eficReal||0; t.privAndar=refF.priv||0; t.privUtil=refF.privUtil||0; t.r=refF.r||0;
+    t.priv = t.faixas.reduce((s,f)=>s+(f.nTipo||0)*(f.priv||0),0) + (t.cobP||0);
+    t.units = t.faixas.reduce((s,f)=>s+(f.nTipo||0)*(f.un||0),0) + (t.hasCob ? P.cob.qtd : 0);
+    // o mix cabe na forma desenhada se todas as unidades foram desenhadas e a privativa desenhada comporta o mix — com
+    // BLC_FIT_TOL de folga: unidades até 2% menores que o mix (o desenho não acerta o m²) contam como cabendo; o aptoMin
+    // segue valendo. No contorno ocupado sempre "cabe"
+    if(t.desenhada) t.fit = t.A>1 && t.privAndar >= (m.mixPriv||0)*(1-BLC_FIT_TOL)-0.4 && refF.un >= (m.mixUn||0);
+    mud=true });
+  if(!mud) return false;
+  m.eficInf=P.efic; m.eficReal = aS>0 ? pS/aS : 0;
+  m.privRes=m.T.reduce((s,t)=>s+t.priv,0); m.unitsRes=m.units=m.T.reduce((s,t)=>s+t.units,0);
+  m.unitRows=mix.map(u=>({nome:u.nome, alvo:u.area, n:0, area:0, preco:u.preco}));
+  m.T.forEach(t=>t.faixas.forEach(f=>mix.forEach((u,j)=>{ m.unitRows[j].n += f.qtd[j]*f.nTipo; m.unitRows[j].area += f.qtd[j]*f.nTipo*u.area*f.r })));
+  // mesma regra do massing (uma faixa por torre: o menor fator; com faixas: o menor fator ≤ 1 das faixas que têm a tipologia)
+  m.minApto = !m.env && m.T.every(t=>t.faixas.length<2) ? Math.min(...mix.map(u=>u.area*Math.min(...m.T.map(t=>t.r||1))))
+    : Math.min(...mix.map((u,j)=>u.area*Math.min(1, ...m.T.flatMap(t=>t.faixas.filter(f=>f.qtd[j]>0 && f.nTipo>0).map(f=>f.r||1)))));
+  areasFin(st, m);
+  return true;
+}
+/* compute (src/model.js), logo depois dos layouts do pavimento tipo e dos blocos: privativa = unidades desenhadas */
+function blcPrivReal(st, m){
+  if(!(m.T||[]).some(t=>blcEficTorre(m, t))) return false;
+  const mix=st.produto.mix;
+  return blcAplicaPriv(st, m, (t, i, f, ref)=>{ const lay = f.lay || (ref ? m.tipo && m.tipo[i] : null);
+    if(!lay || !lay.units || !(f.A>0)) return null;
+    const x=blcLayPriv(lay, mix, f.qtd);
+    // contorno ocupado com recuos escalonados (2.4): a 1ª faixa não é a planta do tipo — vale a eficiência da planta do tipo
+    if(!f.lay && f.plate!==t.plate){ const k=t.A>0 ? f.A/t.A : 0; return {priv:x.priv*k, qtd:f.qtd, util:(x.priv+x.livre)*k} }
+    return {priv:x.priv, qtd:x.qtd, util:x.priv+x.livre, idx:x.idx} });
+}
+/* eficiência real de cada torre desenhada de um modelo completo: [{ref, bk:{k: efic}}] por torre (otimizador) */
+function blcEficMapa(m){
+  return (m && m.T || []).map(t=>!t || t.eficReal==null ? null : {ref:t.eficReal, bk:Object.fromEntries((t.faixas||[]).filter(f=>f.bk!=null && f.eficReal!=null).map(f=>[f.bk, f.eficReal]))});
+}
+/* atalho do otimizador (que só roda o massing): a eficiência real depende da planta (fixa no otimizador), do mix (sobras
+   "livres", unidades que não cabem) e do núcleo (nº de elevadores pela altura). O pavimento tipo é montado UMA vez por assinatura
+   (mix, fator r e quantidades de cada faixa, faixa de elevadores) e a privativa de cada faixa fica guardada em 'memo' (um Map por
+   rodada do otimizador): as demais combinações (pavimentos, subsolos, garagens) só reaplicam os números — iguais aos do compute */
+function blcPrivEstimada(st, m, memo){
+  if(!(m.T||[]).some(t=>blcEficTorre(m, t))) return false;
+  const P=st.produto, r6=v=>Math.round((+v||0)*1e6)/1e6;
+  const sig=JSON.stringify([P.mix.map(u=>[u.nome, u.area, u.qtd, +u.sac||0]), m.T.map(t=>!blcEficTorre(m, t) ? 0 :
+    [t.i, r6(t.A), r6(t.r), t.units>60, t.H>45, t.H>12, t.faixas.map(f=>[f.bk??-1, r6(f.A), f.qtd, r6(f.r)])])]);
+  let R = memo && memo.get(sig);
+  if(!R){ tipoLayouts(st, m); blcPrivReal(st, m);
+    R=m.T.map(t=>blcEficTorre(m, t) && t.eficReal!=null ? t.faixas.map(f=>({priv:f.priv, qtd:f.qtd.slice(), util:f.privUtil})) : null);
+    if(memo){ if(memo.size>400) memo.clear(); memo.set(sig, R) } return true }
+  return blcAplicaPriv(st, m, (t, i, f)=>{ const x=R[i] && R[i][t.faixas.indexOf(f)]; return x ? {priv:x.priv, qtd:x.qtd.slice(), util:x.util} : null });
 }
 /* layout do andar k (1 = primeiro pavimento da torre i): o da faixa (bloco) quando houver, senão o pavimento tipo */
 function torreLayAndar(m, i, k){ const t=m.T && m.T[i], f=t && (t.faixas||[]).find(f=>k>=f.de && k<=f.ate); return (f && f.lay) || (m.tipo && m.tipo[i]) || null }
@@ -210,7 +298,8 @@ function blcAutoPlanta(st, i){
   const s2=Object.assign({}, st, {blocos:{modo:"auto", torres:[]}}), m=massing(s2), t=m.T[i]||{};
   return {plate:t.plate||[], slot:(t.slot&&t.slot.length? t.slot : m.torAll)||[], A:t.A||0, torAll:m.torAll};
 }
-/* "Personalizar esta torre": copia a forma automática atual para um bloco editável (nada muda nos números) */
+/* "Personalizar esta torre": copia a forma automática atual para um bloco editável. A forma não muda, mas a privativa passa a
+   ser a das unidades desenhadas (eficiência real da planta, blcPrivReal) — em geral um pouco abaixo de área × eficiência informada */
 function blcPersonaliza(st, i){
   const a=blcAutoPlanta(st, i); if(!a.plate.length) return null;
   const B=st.blocos; B.modo="desenhada"; B.torres=B.torres||[];
@@ -293,9 +382,12 @@ const blcNome = i => `torre ${i+1}`;
 function blcResumo(st, m){
   if(!m || !m.T) return null;
   const D=m.T.filter(t=>t.desenhada && t.A>1); if(!D.length) return null;
-  const P=st.produto, A=D.reduce((s,t)=>s+t.A,0)/D.length, priv=A*P.efic, ocupa = priv>0 ? (m.mixPriv||0)/priv : 0;
-  const q=torreAjustaMix(P.mix, priv), muda=q.some((n,j)=>n!==P.mix[j].qtd);
-  return {torres:D.map(t=>t.i), A, priv, ocupa, q, muda, desvio: Math.abs(ocupa-1)>0.10};
+  // eficiência real da planta (blcPrivReal): o mix é comparado com as unidades desenhadas e o "Ajustar mix" mira a área que a
+  // planta tem para unidades (desenhadas + sobras livres), não área × eficiência informada
+  const P=st.produto, med=k=>D.reduce((s,t)=>s+(+t[k]||0),0)/D.length, real=D.every(t=>t.eficReal!=null);
+  const A=med("A"), priv = real ? med("privAndar") : A*P.efic, util = real ? med("privUtil") : priv, ocupa = priv>0 ? (m.mixPriv||0)/priv : 0;
+  const q=torreAjustaMix(P.mix, util), muda=q.some((n,j)=>n!==P.mix[j].qtd);
+  return {torres:D.map(t=>t.i), A, priv, util, efic: A>0 ? priv/A : 0, eficInf:P.efic, real, ocupa, q, muda, desvio: Math.abs(ocupa-1)>0.10};
 }
 /* avisos de uma torre desenhada (I = medidas usadas pelo desenho da implantação) */
 const blcRotulo = f => f.de===f.ate ? `${f.de}º` : `${f.de}º–${f.ate}º`;
@@ -363,11 +455,12 @@ function torOcupaResumo(st, m){
   const P=st.produto, mixPriv=m.mixPriv||0, mixUn=m.mixUn||0;
   const T=(m.T||[]).filter(t=>t.A>1);
   if(!T.length || mixPriv<=0 || mixUn<=0) return {torres:T.length, A:0, priv:0, r:0, media:0, mixMedia:0, q:P.mix.map(u=>u.qtd), muda:false, desiguais:false};
-  const A=T.reduce((s,t)=>s+t.A,0)/T.length, r=T.reduce((s,t)=>s+t.r,0)/T.length;
-  // o mix é o mesmo em todas as torres: o ajuste mira a planta média
-  const q=torreAjustaMix(P.mix, A*P.efic), muda=q.some((n,j)=>n!==P.mix[j].qtd);
+  const med=k=>T.reduce((s,t)=>s+(+t[k]||0),0)/T.length, A=med("A"), r=med("r"), real=T.every(t=>t.eficReal!=null);
+  // o mix é o mesmo em todas as torres: o ajuste mira a planta média — pela área real para unidades (eficiência real da planta)
+  const priv = real ? med("privAndar") : A*P.efic, util = real ? med("privUtil") : priv;
+  const q=torreAjustaMix(P.mix, util), muda=q.some((n,j)=>n!==P.mix[j].qtd);
   const As=T.map(t=>t.A), desiguais=Math.max(...As) > Math.min(...As)*1.15;
-  return {torres:T.length, A, priv:A*P.efic, r, media:mixPriv*r/mixUn, mixMedia:mixPriv/mixUn, q, muda, desiguais, As};
+  return {torres:T.length, A, priv, util, efic: A>0 ? priv/A : 0, eficInf:P.efic, real, r, media:mixPriv*r/mixUn, mixMedia:mixPriv/mixUn, q, muda, desiguais, As};
 }
 
 /* avisos do contorno ocupado (entram em m.avisos no compute) */

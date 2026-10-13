@@ -113,9 +113,8 @@ function areasFin(st, m){
   m.vagasReq = Math.ceil(m.unitsRes*R.vagasApto + (m.lojaPriv>0? m.lojaPriv/R.m2LojaVaga : 0));
   m.priv = m.privRes + m.lojaPriv;
 }
-function compute(st, opt={}){
-  const m = massing(st);
-  // estudo: pavimento tipo e garagem
+/* pavimento tipo de cada torre (m.tipo) e dos blocos da pilha (f.lay) — também usado pelo atalho do otimizador (blcPrivEstimada) */
+function tipoLayouts(st, m){
   const E=st.estudo, P=st.produto;
   m.tipo = m.T.map(t=>{
     const list=[]; P.mix.forEach(u=>{ for(let q=0;q<u.qtd;q++) list.push({nome:u.nome, alvo:u.area*t.r, sac:+u.sac||0}) });
@@ -124,6 +123,13 @@ function compute(st, opt={}){
       escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
   });
   if(typeof blcLayFaixas==="function") blcLayFaixas(st, m);   // C2: blocos fora da referência → mesmo núcleo, unidades por área (f.lay)
+}
+function compute(st, opt={}){
+  const m = massing(st);
+  // estudo: pavimento tipo e garagem
+  const E=st.estudo, P=st.produto;
+  tipoLayouts(st, m);
+  if(typeof blcPrivReal==="function") blcPrivReal(st, m);     // torre desenhada / contorno ocupado: privativa = unidades desenhadas (eficiência real da planta)
   // sacadas em balanço somam área construída e privativa
   m.sacA=0; m.sacBal=0;
   m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; (t.faixas.some(f=>f.lay)? t.faixas.map(f=>[f.lay||l, f.nTipo]) : [[l, t.tipoFloors]]).forEach(([ly,fl])=>ly.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } })) });

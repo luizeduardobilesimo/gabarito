@@ -29,7 +29,9 @@ function saudeResHTML(m, f){
     saudeItem("Indiretos % VGV", pct(s.softPctVGV), `faixa ${sdFaixa(M.soft.min, M.soft.max)}`, n.soft,
       `Soft costs: projetos, administração, contingência, corretagem, marketing, RET, ITBI, outorga e juros ÷ VGV. Faixa de referência ${sdFaixa(M.soft.min, M.soft.max)}.`);
   const av = s.avisos.map(a => `<div class="row sb"><span class="note" style="color:var(--warn)">${esc(a.txt)}</span>${a.k === "permutaDupla" ? `<button type="button" class="btn sm ghost" data-act="zerarTerreno">Zerar terreno</button>` : ""}</div>`).join("");
-  return `<div class="mets">${itens}</div>${av}<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="prem" data-open="metas">Ajustar metas →</button></div>`;
+  // torre desenhada / contorno ocupado: a privativa vem das unidades desenhadas (blcPrivReal)
+  const ef = m && m.eficReal != null ? `<p class="note">Eficiência real da planta <b>${pct(m.eficReal, 0)}</b> (informada ${pct(S.produto.efic, 0)})${INFO("Eficiência real da planta")}</p>` : "";
+  return `<div class="mets">${itens}</div>${ef}${av}<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="prem" data-open="metas">Ajustar metas →</button></div>`;
 }
 function saudeStatusHTML(f){
   const s = f.saude; if(!s) return "";

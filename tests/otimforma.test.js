@@ -43,7 +43,8 @@ function confere(st0, r, tol) {
   expect(m.minApto).toBeGreaterThanOrEqual(s2.regras.aptoMin);
   expect(m.T.every(t => t.fit)).toBe(true);
   expect(m.T.every(t => !t.blcIgn || !t.blcIgn.length)).toBe(true);             // nenhum bloco ficou de fora
-  m.T.forEach(t => { expect(t.r).toBeGreaterThanOrEqual(1 - 1e-6); expect(t.r).toBeLessThanOrEqual(1 + tol + 1e-6) });
+  // eficiência real da planta: unidades até 2% menores que o mix contam como cabendo (BLC_FIT_TOL)
+  m.T.forEach(t => { expect(t.r).toBeGreaterThanOrEqual(1 - A.BLC_FIT_TOL - 1e-6); expect(t.r).toBeLessThanOrEqual(1 + tol + 1e-6) });
   expect(A.otimDesvio(m)).toBeLessThanOrEqual(tol + 1e-6);
   return { s2, m, f };
 }
