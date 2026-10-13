@@ -350,6 +350,13 @@ Execução de 05/10/2026 (protótipo local, 9 agentes em paralelo sobre a funda�
 - [x] Otimizador com forma desenhada (13/10/2026): forma e nº de torres fixos; varia mix, pavimentos, subsolos e garagens preferindo unidades no tamanho do mix; sol rápido por faixa; alavancas conferidas no modo desenhado. Limitação: sem sugestão quando nenhuma combinação preenche a forma.
 - [x] Acesso de veículos por qualquer frente (13/10/2026): `S.lote.ladoVei`, selo "veículos" em Lados e frentes, térreo com a faixa de veículos pelo lado escolhido (hall e lojas na principal), "Encontrar o melhor acesso" em todos os lados, "Detectar frentes" propõe o carro pela via de menor hierarquia sem trocar a principal. Limitações: no exemplo de 2 torres a entrada lateral não cabe (aviso); trecho de entrada no recuo ainda sem 3D. (Sobreposição de rótulos nas plantas corrigida: `label` em `plan2d.js` desvia rótulos com fundo que colidiriam.)
 
+## Andamento — Evolução v2, Fase E "Calibração" (13/10/2026)
+
+- [x] Prêmios de venda pela tabela real: importador CSV/XLSX (modelo para baixar), regressão de base por tipologia, andar (com teto), orientação, vista e cobertura, aplicar ao estudo e salvar como padrão da empresa. Sol não é calibrável sem as horas de sol da referência.
+- [x] Comparar o fluxo com a planilha da empresa: importador, métricas dos dois lados, maiores divergências e sugestões de ajuste das premissas.
+- [ ] CUB atual por UF, calibração do custo com obras reais (fator e peso da garagem) e indiretos que faltavam (em andamento).
+- Aguardando o Luiz: tabela de vendas de um lançamento da região, planilha de viabilidade, custos de obras recentes.
+
 ## Próxima etapa — Evolução v2 (08/10/2026)
 
 Diagnóstico contra a colinha de viabilidade, relevo e ruas automáticos e construção personalizada por blocos: ver `docs/EVOLUCAO.md` (fases A–E, ordem e decisões pendentes do Luiz).

@@ -3596,6 +3596,256 @@ function torreAjustaMix(mix, alvo, max=20){
   return q;
 }
 
+/* ---- calc/calibravendas.js ---- */
+/* ================= Fase E: calibrar os prêmios da tabela de vendas com uma tabela real =================
+   Cálculo puro (sem DOM); a interface fica em src/ui/calibra.js. Nada muda no estudo até o usuário aplicar.
+   Entrada: tabela de um lançamento (CSV/XLSX → matriz) com unidade, andar, área privativa e preço (ou preço/m²);
+   opcionais: final, orientação (N, NE, L, SE, S, SO, O, NO · norte, nascente, poente…), tipologia, vista, cobertura.
+   - calibCampos / calibMapa(cab) / calibLinhas(dados, mapa)  → mapeamento de colunas por nome e linhas normalizadas
+   - calibraPremios(linhas, opts)  → regressão do log do preço/m² (MQO): preço base por tipologia (no 1º andar, orientação média),
+        prêmio por andar (% por andar, com teto detectado), prêmio por direção (centrado: soma ponderada zero), vista (se houver dado)
+        e cobertura (grupo próprio: o preço da cobertura já carrega o prêmio). Devolve coeficientes, R², erro médio e resíduos.
+   - calibAplicar(st, res, o)      → grava no estudo (S.venda e preços do mix); calibModeloCSV()
+   - vendaPadraoEmpresa / vendaSalvarPadrao / vendaAplicarPadrao → padrão da empresa em localStorage "gabarito.vendas.padrao" (troca por Supabase: docs/BACKEND.md)
+   O prêmio de SOL não é calibrável sem as horas de sol da tabela de referência: o do estudo continua valendo. */
+
+const CAL_DIRS = ["N","NE","L","SE","S","SO","O","NO"];
+/* campos da tabela de vendas, na ordem de prioridade do mapeamento automático */
+const CAL_CAMPOS = [
+  { k:"precoM2",  rot:"Preço por m²", alias:["preco m2","preco por m2","valor m2","valor por m2","r m2","preco metro","preco unitario","preco do m2"] },
+  { k:"preco",    rot:"Preço",        alias:["preco","valor","preco total","valor total","preco de venda","valor de venda","preco tabela","tabela"], obrig:true },
+  { k:"area",     rot:"Área privativa", alias:["area privativa","area priv","privativa","area util","area","metragem","m2"], obrig:true },
+  { k:"andar",    rot:"Andar",        alias:["andar","pavimento","pav","piso"] },
+  { k:"unidade",  rot:"Unidade",      alias:["unidade","apto","apartamento","ap","un","numero","codigo"] },
+  { k:"orient",   rot:"Orientação",   alias:["orientacao","orient","face","posicao solar","insolacao","fachada"] },
+  { k:"tipologia",rot:"Tipologia",    alias:["tipologia","tipo","dormitorios","dorms","quartos","planta","modelo"] },
+  { k:"vista",    rot:"Vista",        alias:["vista"] },
+  { k:"cob",      rot:"Cobertura",    alias:["cobertura","cob","penthouse"] },
+  { k:"final",    rot:"Final",        alias:["final","posicao","prumada","pos"] }
+];
+const calibRound = (v, d) => v==null||!isFinite(v)? v : Math.round(v*Math.pow(10,d))/Math.pow(10,d);
+const calibMapa = cab => plaMapaAuto(cab, CAL_CAMPOS);
+
+/* orientação em texto → "N" … "NO" (aceita norte, nascente, poente, N/L, NE…) */
+function calibOrient(v){
+  if(v==null||v==="") return null;
+  const s=plaNorm(v).toUpperCase(); if(!s) return null;
+  const M={NORTE:"N",SUL:"S",LESTE:"L",OESTE:"O",NASCENTE:"L",POENTE:"O",NORDESTE:"NE",NOROESTE:"NO",SUDESTE:"SE",SUDOESTE:"SO",NE:"NE",NO:"NO",SE:"SE",SO:"SO",N:"N",S:"S",L:"L",O:"O",E:"L",W:"O",NW:"NO",SW:"SO",NL:"NE",SL:"SE",NSL:null};
+  if(M[s]) return M[s];
+  const set=new Set(); s.split(" ").forEach(t=>{ const d=M[t]; if(d) d.split("").forEach(c=>set.add(c==="E"?"L":c)) });
+  const has=c=>set.has(c);
+  if(has("N")&&has("S")||has("L")&&has("O")) return null;
+  if(has("N")&&has("L")) return "NE"; if(has("N")&&has("O")) return "NO"; if(has("S")&&has("L")) return "SE"; if(has("S")&&has("O")) return "SO";
+  return set.size===1? [...set][0] : null;
+}
+const calibSim = v => { const s=plaNorm(v); return s!=="" && /^(s|sim|x|1|true|verdadeiro|yes|y|cob|cobertura)$/.test(s) };
+const calibVistaTxt = v => { const s=plaNorm(v); if(!s) return null;
+  if(/(sem|nenhum|obstru|interna|ruim|baix|fundos)/.test(s)) return 0;
+  if(/(total|livre|panoram|mar|otima|excelente|alta|privilegi)/.test(s)) return 1;
+  if(/(parcial|boa|media|lateral|regular)/.test(s)) return 0.5;
+  return null };
+
+/* linhas normalizadas: {linha, id, andar, area, precoM2, preco, final, orient, tip, vista, cob}; descartadas = [{linha, motivo}] */
+function calibLinhas(dados, mapa, o={}){
+  const off = o.offset || 2, g = (r,k)=> mapa[k]>=0? r[mapa[k]] : undefined, avisos=[], out=[], desc=[];
+  mapa = {...mapa};
+  if(!(mapa.precoM2>=0) && mapa.preco>=0){   // coluna de "preço" com valores pequenos = é preço por m²
+    const vs=dados.map(r=>plaNum(r[mapa.preco])).filter(v=>v>0).sort((a,b)=>a-b);
+    if(vs.length && vs[vs.length>>1] < 30000){ mapa.precoM2=mapa.preco; mapa.preco=-1; avisos.push("A coluna de preço tem valores pequenos: tratei como preço por m².") }
+  }
+  const vN=[];
+  dados.forEach((r,i)=>{
+    const linha=i+off, rd=k=>g(r,k);
+    if(r.every(c=>c==null||String(c).trim()==="")) return;
+    const area=plaNum(rd("area"),{pontoDecimal:true}), pm2=plaNum(rd("precoM2")), pt=plaNum(rd("preco"));
+    let andar=plaNum(rd("andar")); const idRaw=rd("unidade"), idN=plaNum(idRaw);
+    let final=rd("final")!=null? String(rd("final")).trim() : "";
+    if((andar==null||!isFinite(andar)) && idN!=null && idN>=100 && idN<10000 && Number.isInteger(idN)){ andar=Math.floor(idN/100); if(!final) final=String(idN%100).padStart(2,"0") }
+    const precoM2 = pm2>0? pm2 : (pt>0&&area>0? pt/area : null);
+    if(!(area>0)){ desc.push({linha, motivo:"área ausente ou inválida"}); return }
+    if(!(precoM2>0)){ desc.push({linha, motivo:"preço ausente ou inválido"}); return }
+    if(precoM2<300||precoM2>300000){ desc.push({linha, motivo:`preço/m² fora do intervalo (${Math.round(precoM2)})`}); return }
+    if(andar==null||!isFinite(andar)||andar<0||andar>200){ desc.push({linha, motivo:"andar ausente ou inválido"}); return }
+    const tip=rd("tipologia")!=null? String(rd("tipologia")).trim() : "";
+    const cob = (mapa.cob>=0 && calibSim(rd("cob"))) || /(cobert|penthouse|pent house)/.test(plaNorm(tip));
+    const vr=rd("vista"); let vista=null;
+    if(vr!=null && String(vr).trim()!==""){ const vn=plaNum(vr); if(vn!=null){ vista={n:vn}; vN.push(vn) } else vista={v:calibVistaTxt(vr)} }
+    out.push({linha, id: idRaw!=null&&String(idRaw).trim()!==""? String(idRaw).trim() : String(linha), andar:Math.round(andar), area, precoM2, preco:pt>0&&pm2>0? pt : precoM2*area, final, orient:calibOrient(rd("orient")), tip, vista, cob:!!cob});
+  });
+  // vista numérica: escala 0–1 pelo mínimo e máximo da tabela; vista em texto: palavras-chave
+  // vista de 0 a 1 entra como está (é a escala do app); outras escalas (1–5, 1–10) são normalizadas pelo mínimo e máximo da tabela
+  const mn=Math.min(...vN), mx=Math.max(...vN), em01=vN.length>0 && mn>=0 && mx<=1;
+  out.forEach(l=>{ const v=l.vista; l.vista = !v? null : v.n!=null? (em01? v.n : mx>mn? (v.n-mn)/(mx-mn) : null) : v.v; });
+  if(!out.length && !desc.length) avisos.push("Nenhuma linha de dados encontrada.");
+  return { linhas:out, descartadas:desc, avisos, mapa };
+}
+
+/* ---------- mínimos quadrados ---------- */
+function calibInv(A){   // inversa por Gauss-Jordan com pivô parcial
+  const n=A.length, M=A.map((r,i)=>[...r, ...Array.from({length:n},(_,j)=>i===j?1:0)]);
+  for(let c=0;c<n;c++){
+    let p=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+    if(Math.abs(M[p][c])<1e-14) return null;
+    [M[c],M[p]]=[M[p],M[c]]; const d=M[c][c]; for(let j=0;j<2*n;j++) M[c][j]/=d;
+    for(let r=0;r<n;r++) if(r!==c){ const f=M[r][c]; if(f) for(let j=0;j<2*n;j++) M[r][j]-=f*M[c][j] }
+  }
+  return M.map(r=>r.slice(n));
+}
+function calibMQO(X, y){
+  const n=X.length, p=X[0].length, A=Array.from({length:p},()=>new Array(p).fill(0)), b=new Array(p).fill(0);
+  for(let i=0;i<n;i++){ const x=X[i]; for(let a=0;a<p;a++){ const xa=x[a]; if(!xa) continue; b[a]+=xa*y[i]; for(let c=a;c<p;c++) A[a][c]+=xa*x[c] } }
+  let tr=0; for(let a=0;a<p;a++){ for(let c=0;c<a;c++) A[a][c]=A[c][a]; tr+=A[a][a] }
+  for(let a=0;a<p;a++) A[a][a]+=1e-9*tr/p;
+  const inv=calibInv(A); if(!inv) return null;
+  const beta=inv.map(r=>r.reduce((s,v,j)=>s+v*b[j],0));
+  let sse=0; for(let i=0;i<n;i++){ let e=y[i]; for(let a=0;a<p;a++) e-=beta[a]*X[i][a]; sse+=e*e }
+  return { beta, inv, sse };
+}
+const calibMed = a => { const v=a.filter(x=>x!=null&&isFinite(x)).sort((p,q)=>p-q); if(!v.length) return 0; const h=v.length>>1; return v.length%2? v[h] : (v[h-1]+v[h])/2 };
+
+/* erro médio |real/previsto − 1| com a FÓRMULA DO APP (preço = base × (1 + prêmios)); a base de cada grupo é refeita em escala log */
+function calibErroApp(L, gi, par){
+  const prem = l => { let p=Math.max(0,l.andar-1)*par.andarPct; if(par.andarTeto!=null) p=Math.min(par.andarTeto,p);
+    if(l.orient && par.orient && par.orient[l.orient]!=null) p+=par.orient[l.orient];
+    if(par.vistaPct && l.vista!=null) p+=par.vistaPct*Math.max(-1,Math.min(1,(l.vista-par.vistaMed)/0.25));
+    return p };
+  const s={}, c={}; L.forEach((l,i)=>{ const k=gi[i]; s[k]=(s[k]||0)+Math.log(l.precoM2)-Math.log(Math.max(0.2,1+prem(l))); c[k]=(c[k]||0)+1 });
+  let e=0; L.forEach((l,i)=>{ const B=Math.exp(s[gi[i]]/c[gi[i]]); e+=Math.abs(l.precoM2/(B*Math.max(0.2,1+prem(l)))-1) });
+  return e/L.length;
+}
+
+/* ---------- a calibração ---------- */
+function calibraPremios(linhas, o={}){
+  o={ tetoAuto:true, minDir:2, usaOrient:true, usaVista:true, minLinhas:6, atual:null, ...o };
+  const avisos=[], L=(linhas||[]).filter(l=>l && l.area>0 && l.precoM2>0 && l.andar!=null && isFinite(l.andar));
+  if(L.length<o.minLinhas) return { ok:false, motivo:`Poucas linhas válidas (${L.length}): preciso de pelo menos ${o.minLinhas}.`, n:L.length, avisos };
+  const n=L.length, y=L.map(l=>Math.log(l.precoM2));
+  // grupos: tipologia (cobertura é grupo próprio)
+  const gNomes=[], gChaves=[]; const gi=L.map(l=>{ const nome=l.cob? "Cobertura" : (String(l.tip||"").trim() || "Todas"), ch=plaNorm(nome); let k=gChaves.indexOf(ch); if(k<0){ k=gChaves.length; gChaves.push(ch); gNomes.push(nome) } return k });
+  const G=gNomes.length;
+  // orientação: direções com dados suficientes; a mais frequente é a referência
+  const cd={}; L.forEach(l=>{ if(l.orient) cd[l.orient]=(cd[l.orient]||0)+1 });
+  const dirs=CAL_DIRS.filter(d=>(cd[d]||0)>=o.minDir);
+  const usaOr = o.usaOrient && dirs.length>=2;
+  const ref = usaOr? dirs.reduce((a,b)=>cd[b]>cd[a]?b:a, dirs[0]) : null;
+  const colDir = usaOr? dirs.filter(d=>d!==ref) : [];
+  const temSem = usaOr && L.some(l=>!l.orient || !dirs.includes(l.orient)) ;
+  // vista
+  const vs=L.map(l=>l.vista).filter(v=>v!=null&&isFinite(v)), vMed=calibMed(vs), vVar=vs.length? vs.reduce((s,v)=>s+(v-vMed)*(v-vMed),0)/vs.length : 0;
+  const usaVista = o.usaVista && vs.length>=0.6*n && vVar>1e-4;
+  // andar
+  const aMin=Math.min(...L.map(l=>l.andar)), aMax=Math.max(...L.map(l=>l.andar)), temAndar = aMax-aMin>=2;
+  if(!temAndar) avisos.push("Os andares da tabela variam pouco: não dá para estimar o prêmio por andar.");
+  const montar = K => L.map((l,i)=>{ const x=new Array(G).fill(0); x[gi[i]]=1;
+    colDir.forEach(d=>x.push(l.orient===d?1:0)); if(temSem) x.push(!l.orient||!dirs.includes(l.orient)?1:0);
+    if(temAndar) x.push(Math.min(Math.max(0,l.andar-1),K));
+    if(usaVista) x.push(l.vista==null? 0 : l.vista-vMed);
+    return x });
+  const iAndar = G+colDir.length+(temSem?1:0), iVista = iAndar+(temAndar?1:0);
+  // teto do andar: K que minimiza o erro; sem ganho claro sobre "sem teto", fica sem teto
+  const Kmax = Math.max(1,aMax-1); let K=Kmax, fit=null;
+  if(temAndar){
+    const full=calibMQO(montar(Kmax), y); if(!full) return { ok:false, motivo:"Os dados não permitem o ajuste (colunas repetidas).", n, avisos };
+    fit=full;
+    if(o.tetoAuto){ let bk=Kmax, bf=full; for(let k=2;k<Kmax;k++){ const f=calibMQO(montar(k),y); if(f && f.sse<bf.sse){ bf=f; bk=k } }
+      if(bk!==Kmax && bf.sse<full.sse*0.995){ K=bk; fit=bf } }
+  } else { fit=calibMQO(montar(Kmax), y); if(!fit) return { ok:false, motivo:"Os dados não permitem o ajuste.", n, avisos } }
+  const beta=fit.beta, p=beta.length, gl=Math.max(1,n-p), s2=fit.sse/gl, se=j=>Math.sqrt(Math.max(0,s2*fit.inv[j][j]));
+  // orientação centrada (soma ponderada zero)
+  const theta={}; if(usaOr){ theta[ref]=0; colDir.forEach((d,j)=>theta[d]=beta[G+j]) }
+  const nd=dirs.reduce((s,d)=>s+cd[d],0), thBar = usaOr? dirs.reduce((s,d)=>s+cd[d]*theta[d],0)/Math.max(1,nd) : 0;
+  const orient={}; CAL_DIRS.forEach(d=>{ orient[d]={ v: usaOr&&dirs.includes(d)? Math.exp(theta[d]-thBar)-1 : null, n: cd[d]||0 } });
+  // andar
+  let andar=null;
+  if(temAndar){ const b=beta[iAndar], pct=Math.exp(b)-1; andar={ pct, ep:Math.exp(b)*se(iAndar), beta:b, K: K<Kmax? K : Kmax, teto: K<Kmax? pct*K : null, comTeto:K<Kmax, aMin, aMax };
+    if(pct<0) avisos.push("O preço cai com o andar nesta tabela (prêmio negativo): confira as colunas.");
+    if(!(K<Kmax) && aMax-aMin<8) avisos.push("Poucos andares na tabela: o teto do prêmio não pôde ser avaliado.") }
+  const vista = usaVista? { gamma:beta[iVista], pct:Math.exp(0.25*beta[iVista])-1, n:vs.length, med:vMed } : null;
+  if(o.usaVista && !usaVista && vs.length) avisos.push("Vista sem variação suficiente na tabela: o prêmio de vista continua o atual.");
+  // grupos (preço base no 1º andar, orientação média, vista mediana)
+  const tipologias=[]; let cobGrupo=null;
+  gNomes.forEach((nome,k)=>{ const idx=[]; gi.forEach((g,i)=>{ if(g===k) idx.push(i) });
+    const ent={ nome, chave:gChaves[k], n:idx.length, base:Math.exp(beta[k]+thBar), ep:se(k), areaMedia: idx.reduce((s,i)=>s+L[i].area,0)/idx.length, cob: nome==="Cobertura" && gChaves[k]==="cobertura" };
+    if(idx.length<3) avisos.push(`“${nome}” tem só ${idx.length} unidade${idx.length>1?"s":""}: o preço base é pouco confiável.`);
+    if(ent.cob) cobGrupo=ent; else tipologias.push(ent) });
+  let cob=null;
+  if(cobGrupo){ const outros=tipologias.reduce((s,t)=>s+t.base*t.n,0)/Math.max(1,tipologias.reduce((s,t)=>s+t.n,0)); cob={ base:cobGrupo.base, n:cobGrupo.n, areaMedia:cobGrupo.areaMedia, premio: outros>0? cobGrupo.base/outros-1 : null } }
+  // qualidade
+  const ym=y.reduce((a,b)=>a+b,0)/n, sst=y.reduce((s,v)=>s+(v-ym)*(v-ym),0), r2=sst>0? 1-fit.sse/sst : 0, r2aj=sst>0? 1-(fit.sse/gl)/(sst/(n-1)) : 0;
+  const Xf=montar(K), pred=Xf.map(x=>x.reduce((e,v,j)=>e+beta[j]*v,0));
+  const residuos=L.map((l,i)=>({ linha:l.linha, id:l.id, andar:l.andar, tip:gNomes[gi[i]], real:l.precoM2, pred:Math.exp(pred[i]), res:Math.exp(y[i]-pred[i])-1 }));
+  const pa={}; residuos.forEach(r=>{ const a=pa[r.andar]=pa[r.andar]||{andar:r.andar, n:0, soma:0}; a.n++; a.soma+=r.res });
+  const porAndar=Object.values(pa).map(a=>({andar:a.andar, n:a.n, res:a.soma/a.n})).sort((a,b)=>a.andar-b.andar);
+  if(r2<0.5) avisos.push(`R² baixo (${Math.round(r2*100)}%): o preço depende de outras coisas além de tipologia, andar e orientação.`);
+  // comparação com a fórmula do app: calibrado × atual
+  const parCal={ andarPct: andar? andar.pct : 0, andarTeto: andar&&andar.comTeto? andar.teto : null, orient:Object.fromEntries(CAL_DIRS.filter(d=>orient[d].v!=null).map(d=>[d,orient[d].v])), vistaPct: vista? vista.pct : 0, vistaMed:vMed };
+  const erroMedio=calibErroApp(L, gi, parCal);
+  let erroAtual=null; if(o.atual){ const A=o.atual; erroAtual=calibErroApp(L, gi, { andarPct:A.andarPct||0, andarTeto:A.andarTeto, orient:A.orient||{}, vistaPct:A.vistaPct||0, vistaMed:vMed }) }
+  return { ok:true, n, p, r2, r2aj, erroMedio, erroAtual, rmse:Math.sqrt(s2), andar, orient, vista, cob, tipologias, residuos, porAndar, avisos,
+    refDir:ref, usouOrient:usaOr, dirs, semOrient: L.filter(l=>!l.orient).length };
+}
+
+/* ---------- aplicar ao estudo ---------- */
+/* nome do mix ↔ tipologia da tabela: igual, ou mesmo número de dormitórios/studio, ou um contém o outro */
+function calibChaveTip(nome){ const n=plaNorm(nome); if(/(studio|kitnet|loft|conjugado)/.test(n)) return "studio"; const m=n.match(/(\d)\s*(dorm|quarto|suite|qts|dq|d\b|q\b)/); return m? m[1]+"d" : n }
+function calibCasaMix(nome, mix, usados){
+  const k=calibChaveTip(nome), n=plaNorm(nome);
+  let j=mix.findIndex((u,i)=>!usados.has(i) && plaNorm(u.nome)===n);
+  if(j<0) j=mix.findIndex((u,i)=>!usados.has(i) && calibChaveTip(u.nome)===k);
+  if(j<0) j=mix.findIndex((u,i)=>{ if(usados.has(i)) return false; const a=plaNorm(u.nome); return a&&n&&(a.includes(n)||n.includes(a)) });
+  return j;
+}
+/* grava no estudo; devolve a lista do que mudou ([{rot, de, para}]). o = {andar, orient, vista, mix} (todos ligados por padrão) */
+function calibAplicar(st, res, o={}){
+  const opt={ andar:true, orient:true, vista:true, mix:true, ...o }, V=st.venda, P=st.produto, mud=[];
+  if(!res||!res.ok) return mud;
+  const set=(obj,k,v,rot)=>{ if(v==null||!isFinite(v)||obj[k]===v) return; mud.push({rot, de:obj[k], para:v}); obj[k]=v };
+  if(opt.andar && res.andar){ const a=res.andar; set(V,"andarPct",calibRound(a.pct,4),"Prêmio por andar");
+    const topo = a.pct*Math.max(1,a.aMax-1);
+    if(a.teto!=null) set(V,"andarTeto",calibRound(a.teto,4),"Teto do andar"); else if(V.andarTeto<topo) set(V,"andarTeto",calibRound(topo,4),"Teto do andar") }
+  if(opt.orient && res.usouOrient){ V.orient={...V.orient}; CAL_DIRS.forEach(d=>{ const v=res.orient[d].v; if(v!=null) set(V.orient,d,calibRound(v,4),"Orientação "+d) }) }
+  if(opt.vista && res.vista) set(V,"vistaPct",calibRound(Math.max(0,res.vista.pct),4),"Vista");
+  if(opt.mix){
+    if(res.cob){ set(P.cob,"preco",Math.round(res.cob.base),"Preço da cobertura (R$/m²)"); set(V,"cobPct",0,"Prêmio extra da cobertura") }
+    const usados=new Set(), tip=res.tipologias;
+    if(tip.length===1 && tip[0].nome==="Todas"){   // tabela sem tipologia: o preço médio do mix passa a ser o da tabela, mantendo as proporções
+      const tot=P.mix.reduce((s,u)=>s+u.area*u.qtd,0), med=tot>0? P.mix.reduce((s,u)=>s+u.preco*u.area*u.qtd,0)/tot : 0;
+      if(med>0){ const k=tip[0].base/med; P.mix.forEach(u=>set(u,"preco",Math.round(u.preco*k),"Preço "+u.nome+" (R$/m²)")) }
+    } else tip.forEach(t=>{ const j=calibCasaMix(t.nome, P.mix, usados); if(j>=0){ usados.add(j); set(P.mix[j],"preco",Math.round(t.base),"Preço "+P.mix[j].nome+" (R$/m²)") } });
+  }
+  return mud;
+}
+/* tipologias da tabela sem correspondência no mix do estudo (para avisar) */
+function calibSemMix(st, res){
+  if(!res||!res.ok) return []; const usados=new Set(), tip=res.tipologias;
+  if(tip.length===1 && tip[0].nome==="Todas") return [];
+  return tip.filter(t=>{ const j=calibCasaMix(t.nome, st.produto.mix, usados); if(j>=0){ usados.add(j); return false } return true }).map(t=>t.nome);
+}
+
+/* ---------- modelo de arquivo ---------- */
+const CAL_MODELO_CAB = ["Unidade","Andar","Área privativa (m²)","Preço (R$)","Orientação","Tipologia","Vista","Cobertura"];
+function calibModeloCSV(){ return plaCSVTexto(CAL_MODELO_CAB, [["1201",12,"65,5","785.000,00","NE","2 dorm.","0,7","Não"]]) }
+
+/* ---------- padrão da empresa (localStorage; troca por Supabase em docs/BACKEND.md) ---------- */
+function vendaPadraoEmpresa(){ const v=LS.get("gabarito.vendas.padrao"); return v && typeof v==="object" && v.andarPct!=null ? v : null }
+/* grava o que está no estudo (já aplicado) como padrão: vale para estudos novos (DEF.venda) */
+function vendaSalvarPadrao(st, origem){
+  const V=st.venda, reg={ andarPct:V.andarPct, andarTeto:V.andarTeto, orient:clone(V.orient), vistaPct:V.vistaPct, cobPct:V.cobPct,
+    mix: Object.fromEntries(st.produto.mix.map(u=>[u.nome,u.preco])), cobPreco: st.produto.cob.preco, salvo:new Date().toISOString(), origem: origem||null };
+  try{ localStorage.setItem("gabarito.vendas.padrao", JSON.stringify(reg)) }catch(e){ return false }
+  ["andarPct","andarTeto","vistaPct","cobPct"].forEach(k=>DEF.venda[k]=reg[k]); DEF.venda.orient=clone(reg.orient);
+  return true;
+}
+/* traz o padrão da empresa para o estudo atual (prêmios e preços do mix de mesmo nome) */
+function vendaAplicarPadrao(st){
+  const p=vendaPadraoEmpresa(); if(!p) return false;
+  ["andarPct","andarTeto","vistaPct","cobPct"].forEach(k=>{ if(typeof p[k]==="number") st.venda[k]=p[k] });
+  if(p.orient) st.venda.orient={...st.venda.orient, ...p.orient};
+  if(p.mix) st.produto.mix.forEach(u=>{ if(typeof p.mix[u.nome]==="number") u.preco=p.mix[u.nome] });
+  if(typeof p.cobPreco==="number") st.produto.cob.preco=p.cobPreco;
+  return true;
+}
+
 /* ---- calc/cidades.js ---- */
 /* ================= biblioteca de regras por cidade e zona =================
    Cálculo puro (sem DOM). Cada registro traz os campos de S.regras que a zona define, a lei e a data.
@@ -4243,6 +4493,229 @@ function comIfcParedes(u, B){
 function comEdgeClsPuro(r){ const pr={fachada:4, corredor:3, nucleo:3, divisa:3, interna:1}, cls=[]; (r.bordas||[]).forEach(b=>{ if(!cls[b.i] || pr[b.c]>pr[cls[b.i]]) cls[b.i]=b.c }); return cls }
 /* contorno interno do cômodo (face das paredes): recuo por aresta conforme o vizinho */
 function comInsetRoom(r){ const cls=comEdgeClsPuro(r); return comInset(r.poly, i=>{ const c=cls[i]||"interna"; return c==="fachada"? (r.k==="sacada"? COM_WALL.guarda : COM_WALL.fachada) : COM_WALL[c]||COM_WALL.interna }) }
+
+/* ---- calc/comparafluxo.js ---- */
+/* ================= Fase E: comparar o fluxo de caixa do Gabarito com a planilha da empresa =================
+   Cálculo puro (sem DOM); a interface fica em src/ui/comparaplanilha.js. Nada muda no estudo até o usuário aplicar uma sugestão.
+   Planilha (CSV/XLSX → matriz): mês, receitas, obra, terreno, indiretos (despesas), saldo do mês — só o saldo é obrigatório
+   (ou o saldo acumulado). Custos podem vir positivos ou negativos. O mês pode ser número (0 ou 1 em diante) ou data (jan/27, 01/2027).
+   - comparaCampos / comparaMapa(cab) / comparaLer(dados, mapa) → séries mensais da planilha
+   - comparaLinhasGab(f)                → o mesmo recorte no fluxo do Gabarito: receita = recebimentos · obra = obra + terra ·
+                                          terreno = terreno + ITBI + outorga · indiretos = projetos, marketing, corretagem, impostos, permuta financeira e juros (líquido do financiamento)
+   - comparaFluxo(planilha, f, {desl, tma}) → meses alinhados, diferença por linha e acumulada, TIR/VPL/exposição/lucro/payback de cada lado
+                                          e as divergências (total, janela de meses, deslocamento, pico de recebimento, curva, INCC), da mais pesada para a mais leve
+   - comparaSugestoes(cmp, st, f)       → ajustes de premissas quando a diferença é explicável (prazo e início da obra, curva, INCC, fator de custo, terreno, repasse, ato)
+   - comparaAplicar(st, sug)            → grava a sugestão no estudo; comparaModeloCSV() */
+
+const CMP_CAMPOS = [
+  { k:"acum",      rot:"Saldo acumulado", alias:["saldo acumulado","caixa acumulado","fluxo acumulado","acumulado"] },
+  { k:"saldo",     rot:"Saldo do mês",    alias:["saldo do mes","saldo mensal","saldo","fluxo liquido","fluxo de caixa","fluxo","resultado","caixa mensal"] },
+  { k:"mes",       rot:"Mês",             alias:["mes","meses","periodo","competencia","data","mes ano"] },
+  { k:"receita",   rot:"Receitas",        alias:["receitas","receita","recebimentos","recebimento","entradas","recebido","receita total","vendas"] },
+  { k:"obra",      rot:"Obra",            alias:["custo de obra","custos de obra","obra","obras","construcao","custo obra","desembolso de obra"] },
+  { k:"terreno",   rot:"Terreno",         alias:["terreno","aquisicao","terreno e outorga","aquisicao do terreno","compra do terreno"] },
+  { k:"indiretos", rot:"Indiretos",       alias:["indiretos","despesas indiretas","despesas","outras despesas","custos indiretos","despesas gerais","soft costs","soft","indireto"] }
+];
+const CMP_LINHAS = ["receita","obra","terreno","indiretos"];
+const CMP_NOMES = { receita:["Recebimento","m"], obra:["Custo de obra","m"], terreno:["Terreno","m"], indiretos:["Despesas indiretas","fp"], saldo:["Saldo","m"] };
+const comparaMapa = cab => plaMapaAuto(cab, CMP_CAMPOS);
+const cmpSoma = a => a.reduce((s,v)=>s+v,0);
+const cmpAdj = (g, mais) => g==="fp"? (mais? "maiores":"menores") : (mais? "maior":"menor");
+const cmpMeses = k => `${Math.abs(k)} ${Math.abs(k)===1? "mês":"meses"}`;
+
+/* ---------- leitura da planilha ---------- */
+function comparaLer(dados, mapa){
+  const avisos=[], rows=(dados||[]).filter(r=>r && r.some(c=>c!=null && String(c).trim()!==""));
+  if(!rows.length) return { ok:false, motivo:"Nenhuma linha de dados encontrada.", avisos };
+  if(!(mapa.saldo>=0) && !(mapa.acum>=0) && !(mapa.receita>=0 && (mapa.obra>=0||mapa.terreno>=0||mapa.indiretos>=0))) return { ok:false, motivo:"Preciso da coluna de saldo (ou de receitas e custos).", avisos };
+  // mês de cada linha
+  let idx=rows.map((_,i)=>i);
+  if(mapa.mes>=0){
+    const raw=rows.map(r=>r[mapa.mes]), dt=raw.map(plaMes);
+    if(dt.every(d=>d!=null)){ const d0=Math.min(...dt); idx=dt.map(d=>d-d0) }
+    else { const nu=raw.map(x=>plaNum(x)); if(nu.every(x=>x!=null)){ const mn=Math.min(...nu); idx=nu.map(x=>Math.round(x)-(mn===1?1:0)) } else avisos.push("Não entendi a coluna de mês: usei a ordem das linhas.") }
+  } else avisos.push("Sem coluna de mês: usei a ordem das linhas (a primeira é o mês 0).");
+  if(idx.some(i=>i<0||i>600)) return { ok:false, motivo:"Meses fora do intervalo (0 a 600).", avisos };
+  const T=Math.max(...idx)+1, L={}, tem={};
+  const serie = k => { if(!(mapa[k]>=0)) return null; const a=new Array(T).fill(0); let n=0; rows.forEach((r,i)=>{ const v=plaNum(r[mapa[k]]); if(v!=null){ a[idx[i]]+=v; n++ } }); return n? a : null };
+  CMP_LINHAS.forEach(k=>{ let a=serie(k); if(a && cmpSoma(a)<0) a=a.map(v=>0-v); L[k]=a; tem[k]=!!a });
+  let saldo=serie("saldo"), calc=false;
+  if(!saldo){
+    const ac=serie("acum");
+    if(ac){ saldo=ac.map((v,i)=>i? v-ac[i-1] : v) }   // acumulado → mensal (a série soma por mês; acumulado repetido por mês é raro)
+    else { saldo=new Array(T).fill(0); calc=true; for(let t=0;t<T;t++) saldo[t]=(L.receita?L.receita[t]:0)-(L.obra?L.obra[t]:0)-(L.terreno?L.terreno[t]:0)-(L.indiretos?L.indiretos[t]:0) }
+  } else if(L.receita && (L.obra||L.terreno||L.indiretos)){
+    const c=cmpSoma(L.receita)-cmpSoma(L.obra||[])-cmpSoma(L.terreno||[])-cmpSoma(L.indiretos||[]), s=cmpSoma(saldo);
+    if(Math.abs(c-s)>0.02*Math.max(1,cmpSoma(L.receita))) avisos.push("O saldo da planilha não fecha com receitas menos custos: ele inclui linhas que não mapeei (financiamento, por exemplo).");
+  }
+  L.saldo=saldo; tem.saldo=true;
+  return { ok:true, T, linhas:L, tem, avisos, saldoCalculado:calc, nLinhas:rows.length };
+}
+
+/* ---------- o fluxo do Gabarito no mesmo recorte ---------- */
+function comparaLinhasGab(f){
+  const c=f.c, T=f.cf.length, z=()=>new Array(T).fill(0), g=a=>a||z();
+  const receita=g(c.receb), obra=z(), terreno=z(), indiretos=z();
+  for(let t=0;t<T;t++){
+    obra[t]=c.obra[t]+c.terra[t];
+    terreno[t]=c.terreno[t]+c.outorga[t];
+    indiretos[t]=c.projetos[t]+c.mkt[t]+c.corret[t]+c.imp[t]+c.permFin[t]+c.juros[t]+c.finOut[t]-c.finIn[t];
+  }
+  return { receita, obra, terreno, indiretos, saldo:f.cf.slice() };
+}
+
+function cmpMetricas(cf, tma){
+  const m=flxMetricas(cf,tma); let cum=0; const cumA=cf.map(v=>cum+=v);
+  let pay=null; for(let i=cumA.length-1;i>=0;i--){ if(cumA[i]<0){ pay=i+1<cumA.length? i+1 : null; break } if(i===0) pay=0 }
+  return { tirA:m.tirA, vpl:m.vpl, exp:m.exp, lucro:m.soma, pay };
+}
+/* janela em que ficam 95% do gasto (quantis 2,5% e 97,5% do acumulado), centro de massa e mês do maior valor */
+function cmpJanela(a){
+  const p=a.map(v=>Math.max(0,v)), tot=cmpSoma(p); if(!(tot>0)) return null;
+  let cum=0, ini=null, fim=null, com=0, pico=0; p.forEach((v,t)=>{ cum+=v; com+=v*t; if(ini==null && cum>=0.025*tot) ini=t; if(fim==null && cum>=0.975*tot) fim=t; if(v>p[pico]) pico=t });
+  return { ini, fim, com:com/tot, pico, tot };
+}
+/* deslocamento (meses) que melhor leva o formato de G ao de P */
+function cmpDesloc(P, G, maxS=12){
+  const sP=cmpSoma(P.map(v=>Math.max(0,v))), sG=cmpSoma(G.map(v=>Math.max(0,v))); if(!(sP>0&&sG>0)) return null;
+  const N=P.length; let E0=0, best=0, Eb=Infinity;
+  for(let s=-maxS;s<=maxS;s++){ let E=0; for(let t=0;t<N;t++){ const g=t-s>=0&&t-s<N? Math.max(0,G[t-s])/sG : 0; E+=Math.abs(Math.max(0,P[t])/sP-g) } if(s===0) E0=E; if(E<Eb-1e-12){ Eb=E; best=s } }
+  return { s:best, E0, Eb };
+}
+/* trechos de meses em que P difere de G em mais de 6% (relativo ao mês) e o mês pesa ≥ 5% do maior valor da linha */
+function cmpJanelas(P, G){
+  const N=P.length, mx=Math.max(1e-9,...P.map(Math.abs),...G.map(Math.abs)), marca=new Array(N).fill(false), relev=new Array(N).fill(false);
+  for(let t=0;t<N;t++){ const a=Math.abs(P[t]), b=Math.abs(G[t]), m=Math.max(a,b); relev[t]=m>=0.05*mx; if(relev[t] && Math.abs(P[t]-G[t])>0.06*m) marca[t]=true }
+  const segs=[]; let ini=-1, ult=-1;
+  for(let t=0;t<N;t++){
+    if(marca[t]){ if(ini<0) ini=t; else if(t-ult>3){ segs.push([ini,ult]); ini=t } ult=t }
+  }
+  if(ini>=0) segs.push([ini,ult]);
+  return segs.map(([a,b])=>{ let sP=0, sG=0; for(let t=a;t<=b;t++){ sP+=P[t]; sG+=G[t] } return { a, b, sP, sG, pct: sG>0? sP/sG-1 : null, dif: sP-sG } });
+}
+
+/* ---------- comparação ---------- */
+function comparaFluxo(plan, f, o={}){
+  o={ desl:0, tma:0.15, ...o };
+  if(!plan || !plan.ok || !f || !f.cf) return { ok:false, motivo: plan&&plan.motivo || "Sem planilha." };
+  const gl=comparaLinhasGab(f), d=Math.round(+o.desl||0), N=Math.max(gl.saldo.length, plan.T+Math.max(0,d));
+  const pad=(a,sh)=>{ const r=new Array(N).fill(0); if(a) a.forEach((v,i)=>{ const j=i+sh; if(j>=0&&j<N) r[j]=v }); return r };
+  const linhas=[];
+  [...CMP_LINHAS,"saldo"].forEach(k=>{
+    if(!plan.linhas[k]) return;
+    const gab=pad(gl[k],0), pl=pad(plan.linhas[k],d), dif=pl.map((v,i)=>v-gab[i]); let ac=0;
+    const totalG=cmpSoma(gab), totalP=cmpSoma(pl);
+    linhas.push({ k, nome:CMP_NOMES[k][0], gab, plan:pl, dif, difAcum:dif.map(v=>ac+=v), totalG, totalP, dTotal:totalP-totalG, pct: Math.abs(totalG)>1e-9? totalP/totalG-1 : null });
+  });
+  const sal=linhas.find(l=>l.k==="saldo");
+  let ag=0, ap=0; const acum={ gab:sal.gab.map(v=>ag+=v), plan:sal.plan.map(v=>ap+=v) };
+  const metricas={ gab:cmpMetricas(sal.gab,o.tma), plan:cmpMetricas(sal.plan,o.tma) };
+  const L=k=>linhas.find(l=>l.k===k), diag={}, div=[];
+  const rec=L("receita"), R=Math.max(1,Math.abs(rec? Math.max(rec.totalG,rec.totalP) : cmpSoma(gl.receita)), Math.abs(sal.totalG)), mat=0.004*R;
+  const push=(linha,tipo,msg,impacto,extra={})=>div.push({ linha, tipo, msg, impacto:Math.abs(impacto), ...extra });
+  CMP_LINHAS.forEach(k=>{
+    const l=L(k); if(!l) return; const [nome,gen]=CMP_NOMES[k], G=l.gab, P=l.plan; let explicado=false, shiftS=null;
+    const wG=cmpJanela(G), wP=cmpJanela(P);
+    if(wG && wP) diag[k]={ ini:[wG.ini,wP.ini], fim:[wG.fim,wP.fim], com:[wG.com,wP.com], pico:[wG.pico,wP.pico], total:[l.totalG,l.totalP] };
+    else diag[k]={ total:[l.totalG,l.totalP] };
+    if(wG && wP){
+      if(k==="obra"){
+        // o formato (normalizado) da curva só vale como "diferente" se mudou de verdade: 1 mês de quantil não basta
+        const a=wP.ini-wG.ini, b=wP.fim-wG.fim, ds=cmpDesloc(P,G), imp=0.5*cmpSoma(l.dif.map(Math.abs));
+        if(ds && ds.s!==0 && ds.Eb<0.6*ds.E0 && ds.E0>0.05){ explicado=true; shiftS=ds.s; push(k,"desloca",`${nome} ${cmpMeses(ds.s)} ${ds.s>0?"depois":"antes"} na planilha (começa em ${wP.ini} e termina em ${wP.fim}, contra ${wG.ini} e ${wG.fim})`, imp, { meses:ds.s, mes0:wP.ini, mes1:wP.fim }) }
+        else if(ds && ds.E0>0.12 && (a!==0||b!==0)){
+          if(a!==0){ explicado=true; push(k,"inicio",`Obra começa ${cmpMeses(a)} ${a>0?"depois":"antes"} na planilha (mês ${wP.ini} contra ${wG.ini})`, imp, { meses:a }) }
+          if(b-a!==0){ explicado=true; const dur=b-a; push(k,"prazo",`Prazo de obra ${cmpMeses(dur)} ${dur>0?"mais longo":"mais curto"} na planilha (${wP.fim-wP.ini+1} contra ${wG.fim-wG.ini+1} meses)`, imp, { meses:dur }) }
+        }
+      } else if(k==="receita"){
+        const kk=wP.pico-wG.pico;
+        if(kk!==0 && Math.max(...G)>0.2*cmpSoma(G.map(v=>Math.max(0,v)))){ explicado=true; push(k,"pico",`Recebimento das chaves e do repasse ${cmpMeses(kk)} ${kk>0?"depois":"antes"} na planilha (mês ${wP.pico} contra ${wG.pico})`, Math.max(G[wG.pico],P[wP.pico]), { meses:kk, mes0:wG.pico, mes1:wP.pico }) }
+      }
+      if(!explicado && k!=="obra"){
+        const ds=cmpDesloc(P,G);
+        if(ds && ds.s!==0 && ds.Eb<0.6*ds.E0 && ds.E0>0.12){ explicado=true; shiftS=ds.s; push(k,"desloca",`${nome} ${cmpMeses(ds.s)} ${ds.s>0?"depois":"antes"} na planilha`, 0.5*cmpSoma(l.dif.map(Math.abs)), { meses:ds.s }) }
+      }
+      if(k==="obra" && !explicado){
+        // formato da curva: centro de massa relativo à janela
+        const rel=w=> w.fim>w.ini? (w.com-w.ini)/(w.fim-w.ini) : 0.5, cg=rel(wG), cp=rel(wP);
+        diag.obra.curva=[cg,cp]; diag.obra.dur=[wG.fim-wG.ini+1, wP.fim-wP.ini+1];
+        // INCC: o quociente planilha/Gabarito cresce (ou cai) em ritmo constante ao longo dos meses
+        const pts=[]; const mxG=Math.max(...G), mxP=Math.max(...P); for(let t=0;t<N;t++) if(G[t]>0.15*mxG && P[t]>0.15*mxP) pts.push([t,Math.log(P[t]/G[t])]);
+        if(pts.length>=6){ const n=pts.length, mt=pts.reduce((s,q)=>s+q[0],0)/n, my=pts.reduce((s,q)=>s+q[1],0)/n;
+          const sxx=pts.reduce((s,q)=>s+(q[0]-mt)*(q[0]-mt),0), sxy=pts.reduce((s,q)=>s+(q[0]-mt)*(q[1]-my),0), syy=pts.reduce((s,q)=>s+(q[1]-my)*(q[1]-my),0), sl=sxx>0? sxy/sxx : 0, r2=sxx>0&&syy>0? sxy*sxy/(sxx*syy) : 0;
+          const anual=Math.exp(12*sl)-1;
+          if(Math.abs(anual)>=0.01 && r2>0.6){ diag.obra.incc=anual; explicado=true; push(k,"incc",`Custo de obra cresce ${nf(Math.abs(anual)*100,1)} pontos a.a. mais ${anual>0?"rápido":"devagar"} na planilha (parece o INCC)`, Math.abs(l.dTotal), { pp:anual }) } }
+        if(!explicado && Math.abs(cp-cg)>0.06){ explicado=true; push(k,"curva",`Gasto da obra concentrado mais ${cp>cg?"ao fim":"no início"} na planilha (centro em ${Math.round(cp*100)}% do prazo contra ${Math.round(cg*100)}%)`, 0.5*cmpSoma(l.dif.map(Math.abs)), { rel:[cg,cp] }) }
+      }
+    }
+    // total
+    const tot=l.dTotal;
+    if(Math.abs(tot)>=mat && l.pct!=null && Math.abs(l.pct)>=0.03) push(k,"total",`${nome} ${nf(Math.abs(l.pct)*100,0)}% ${cmpAdj(gen,tot>0)} na planilha (${tot>0?"+":"−"}${mi(Math.abs(tot))})`, tot, { pct:l.pct });
+    // janelas de meses
+    if(!explicado || shiftS!=null){
+      // depois de um deslocamento, compara a planilha com o Gabarito já alinhado
+      const Gs=shiftS!=null? G.map((_,t)=> t-shiftS>=0&&t-shiftS<N? G[t-shiftS] : 0) : G, nota=shiftS!=null? " (descontado o deslocamento)" : "";
+      const segs=cmpJanelas(P,Gs), act=wG&&wP? Math.max(wG.fim,wP.fim)-Math.min(wG.ini,wP.ini)+1 : N;
+      segs.filter(s=>Math.abs(s.dif)>=mat && s.pct!=null && !(s.b-s.a+1>=0.7*act && Math.abs(tot)>=mat))
+        .sort((x,y)=>Math.abs(y.dif)-Math.abs(x.dif)).slice(0,2)
+        .forEach(s=>push(k,"janela",`${nome} ${nf(Math.abs(s.pct)*100,0)}% ${cmpAdj(gen,s.pct>0)} na planilha entre os meses ${s.a} e ${s.b}${nota}`, s.dif, { pct:s.pct, mes0:s.a, mes1:s.b }));
+    }
+  });
+  div.sort((x,y)=>y.impacto-x.impacto);
+  return { ok:true, N, desl:d, linhas, acum, metricas, divergencias:div.slice(0,10), diag, avisos:plan.avisos||[], tma:o.tma,
+    zero: linhas.every(l=>Math.max(...l.dif.map(Math.abs))<1) };
+}
+
+/* ---------- sugestões de ajuste das premissas ---------- */
+function comparaSugestoes(cmp, st, f){
+  const out=[]; if(!cmp||!cmp.ok) return out;
+  const F=st.fin, ob=cmp.diag.obra, rc=cmp.diag.receita, tr=cmp.diag.terreno, D=cmp.divergencias;
+  const add=(k,rot,det,set,aprox)=>out.push({ k, rot, det, set, aprox:!!aprox });
+  const r=(v,d)=>Math.round(v*Math.pow(10,d))/Math.pow(10,d);
+  let obraFimDif=0;
+  const dDes=D.find(d=>d.linha==="obra"&&d.tipo==="desloca"), dIni=D.find(d=>d.linha==="obra"&&d.tipo==="inicio"), dPra=D.find(d=>d.linha==="obra"&&d.tipo==="prazo");
+  if(dDes){ obraFimDif=dDes.meses; add("prelanc","Início da obra",`Meses até o lançamento: ${F.prelanc} → ${Math.max(0,F.prelanc+dDes.meses)} (a obra e as vendas andam juntas)`,[["fin.prelanc",Math.max(0,Math.round(F.prelanc+dDes.meses))]]) }
+  if(dIni){ obraFimDif+=dIni.meses; add("prelanc","Início da obra",`Meses até o lançamento: ${F.prelanc} → ${Math.max(0,F.prelanc+dIni.meses)}`,[["fin.prelanc",Math.max(0,Math.round(F.prelanc+dIni.meses))]]) }
+  if(dPra){ obraFimDif+=dPra.meses; add("obra","Prazo de obra",`Prazo de obra: ${F.obra} → ${Math.max(1,F.obra+dPra.meses)} meses`,[["fin.obra",Math.max(1,Math.round(F.obra+dPra.meses))]]) }
+  if(ob && ob.curva && D.some(d=>d.linha==="obra"&&d.tipo==="curva")){
+    // pico da curva S que melhor reproduz o formato da planilha na janela de obra
+    const L=cmp.linhas.find(l=>l.k==="obra"), i0=ob.ini[1], i1=ob.fim[1], n=Math.max(2,i1-i0+1), alvo=L.plan.slice(i0,i1+1).map(v=>Math.max(0,v)), sa=cmpSoma(alvo)||1;
+    let bp=0.5, be=Infinity; for(let p=0.2;p<=0.8001;p+=0.025){ const w=flxForma(n,0,1,p); const e=w.reduce((s,v,t)=>s+Math.abs(v-(alvo[t]||0)/sa),0); if(e<be){ be=e; bp=p } }
+    add("curva","Curva de obra",`Curva S com pico em ${Math.round(bp*100)}% do prazo`,[["flx.curva.modo","s"],["flx.curva.ini",0],["flx.curva.pico",r(bp,3)],["flx.curva.fim",1]]);
+  }
+  if(ob && ob.incc!=null){ const novo=Math.max(-0.1,Math.min(0.3,F.incc+ob.incc)); add("incc","INCC",`INCC: ${nf(F.incc*100,1)}% → ${nf(novo*100,1)}% a.a.`,[["fin.incc",r(novo,4)]],true) }
+  const totObra=D.find(d=>d.linha==="obra"&&d.tipo==="total");
+  if(totObra && ob.incc==null){
+    if(st.orc && st.orc.modo==="param") add("fator","Custo de obra",`Obra ${nf(Math.abs(totObra.pct)*100,0)}% ${totObra.pct>0?"maior":"menor"} na planilha: ajuste os coeficientes do orçamento paramétrico`,null);
+    else add("fator","Custo de obra",`Custo ÷ CUB: ${nf(F.fator,2)} → ${nf(F.fator*(1+totObra.pct),2)} ×`,[["fin.fator",r(F.fator*(1+totObra.pct),3)]],true);
+  }
+  const totTer=D.find(d=>d.linha==="terreno"&&d.tipo==="total");
+  if(totTer && tr){ const novo=Math.max(0,(tr.total[1]-(f.outorga||0))/(1+F.itbi)); add("terreno","Terreno",`Terreno: ${mi(F.terreno)} → ${mi(novo)} (com ITBI e outorga da planilha)`,[["fin.terreno",Math.round(novo)]]) }
+  const pico=D.find(d=>d.linha==="receita"&&d.tipo==="pico");
+  if(pico && rc){
+    const k=pico.meses-obraFimDif;
+    if(k!==0){
+      if(st.flx.receb.modo==="det") add("repasse","Repasse do banco",`Repasse: ${st.flx.receb.repasseMes} → ${Math.max(0,st.flx.receb.repasseMes+k)} meses após as chaves`,[["flx.receb.repasseMes",Math.max(0,Math.round(st.flx.receb.repasseMes+k))]]);
+      else add("repasse","Mês das chaves",`No recebimento simples o saldo entra nas chaves; use o detalhado para atrasar o repasse em ${cmpMeses(k)}.`,null);
+    }
+  }
+  if(st.flx.receb.modo==="det" && rc){
+    const rl=cmp.linhas.find(l=>l.k==="receita"), t=f.launch;
+    if(rl && t>=0 && rl.gab[t]>0 && rl.plan[t]>0 && Math.abs(rl.plan[t]/rl.gab[t]-1)>0.15 && Math.abs(rl.plan[t]-rl.gab[t])>0.004*Math.abs(rl.totalG)){
+      const novo=Math.max(0,Math.min(0.6,st.flx.receb.ato*rl.plan[t]/rl.gab[t])); add("ato","Ato (sinal)",`Ato: ${nf(st.flx.receb.ato*100,1)}% → ${nf(novo*100,1)}% do preço`,[["flx.receb.ato",r(novo,4)]],true) }
+  }
+  return out;
+}
+/* grava uma sugestão no estudo; devolve quantos campos mudaram */
+function comparaAplicar(st, sug){
+  if(!sug || !sug.set) return 0; let n=0;
+  sug.set.forEach(([path,v])=>{ const ks=path.split("."), last=ks.pop(); let o=st; for(const k of ks){ if(o==null) return; o=o[k] } if(o && o[last]!==v){ o[last]=v; n++ } });
+  return n;
+}
+
+/* ---------- modelo de arquivo ---------- */
+const CMP_MODELO_CAB = ["Mês","Receitas","Obra","Terreno","Indiretos","Saldo"];
+function comparaModeloCSV(){ return plaCSVTexto(CMP_MODELO_CAB, [[0,"0,00","0,00","13.500.000,00","180.000,00","-13.680.000,00"]]) }
 
 /* ---- calc/contexto.js ---- */
 /* ================= contexto urbano do OpenStreetMap (cálculo puro: Node, Worker e página) =================
@@ -5976,6 +6449,105 @@ function paretoPrioridade(list, key="lucro"){
   // em largura (não em profundidade): primeiro os pontos do meio de cada metade
   const fila=[[0,n-1]]; while(fila.length){ const [lo,hi]=fila.shift(); if(hi-lo<2) continue; const mid=(lo+hi)>>1; add(mid); fila.push([lo,mid],[mid,hi]) }
   return out;
+}
+
+/* ---- calc/planilha.js ---- */
+/* ================= leitura de planilhas (CSV / matriz de XLSX) para os importadores =================
+   Cálculo puro, sem DOM. Usado por calibravendas.js (tabela de vendas) e comparafluxo.js (fluxo da empresa).
+   - plaCSV(texto)                → matriz de textos (separador ; , ou tab detectado; aspas; BOM)
+   - plaNum(v, {pontoDecimal})    → número em formato brasileiro (1.234,56 · R$ 1.234 · (1.234,00) · 12%)
+   - plaMes(v)                    → mês absoluto (ano×12+mês) de datas ("jan/27", "01/2027", "2027-01", Date) ou null
+   - plaCabecalho(matriz)         → {iHead, cab, dados}: acha a linha de cabeçalho
+   - plaMapaAuto(cab, campos)     → {chave: índice da coluna | -1}, por nome (sem acento, aliases)
+   - plaCSVTexto(cab, linhas)     → texto CSV (;) com BOM, para os modelos de arquivo */
+
+const plaNorm = s => String(s==null? "" : s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/²/g,"2").replace(/[^a-z0-9]+/g," ").trim();
+
+function plaCSV(texto){
+  let t = String(texto||"").replace(/^﻿/,"");
+  const first = t.split(/\r?\n/).find(l=>l.trim()) || "";
+  // separador: o que mais aparece na primeira linha útil, fora das aspas
+  const cnt = { ";":0, ",":0, "\t":0 }; { let q=false; for(const ch of first){ if(ch==='"') q=!q; else if(!q && ch in cnt) cnt[ch]++ } }
+  const sep = cnt[";"]>=cnt["\t"] && cnt[";"]>=cnt[","] && cnt[";"]>0 ? ";" : cnt["\t"]>cnt[","] ? "\t" : cnt[","]>0 ? "," : ";";
+  const rows=[]; let row=[], cell="", q=false;
+  for(let i=0;i<t.length;i++){
+    const ch=t[i];
+    if(q){ if(ch==='"'){ if(t[i+1]==='"'){ cell+='"'; i++ } else q=false } else cell+=ch }
+    else if(ch==='"') q=true;
+    else if(ch===sep){ row.push(cell); cell="" }
+    else if(ch==="\n"||ch==="\r"){ if(ch==="\r" && t[i+1]==="\n") i++; row.push(cell); cell=""; rows.push(row); row=[] }
+    else cell+=ch;
+  }
+  if(cell!==""||row.length){ row.push(cell); rows.push(row) }
+  return rows.map(r=>r.map(c=>c.trim())).filter(r=>r.some(c=>c!==""));
+}
+
+/* número em formato brasileiro; null se não for número */
+function plaNum(v, o={}){
+  if(v==null||v==="") return null;
+  if(typeof v==="number") return isFinite(v)? v : null;
+  if(v instanceof Date) return null;
+  let s=String(v).trim().replace(/R\$|\s| /g,"").replace(/−/g,"-"); if(!s) return null;
+  let neg=false, pc=false;
+  if(/^\(.*\)$/.test(s)){ neg=true; s=s.slice(1,-1) }
+  if(s.endsWith("%")){ pc=true; s=s.slice(0,-1) }
+  if(s.startsWith("-")){ neg=!neg; s=s.slice(1) } else if(s.startsWith("+")) s=s.slice(1);
+  if(s.endsWith("-")){ neg=!neg; s=s.slice(0,-1) }
+  if(!s||/[^\d.,]/.test(s)) return null;
+  const lc=s.lastIndexOf(","), lp=s.lastIndexOf(".");
+  if(lc>=0 && lp>=0){ s = lc>lp? s.replace(/\./g,"").replace(",",".") : s.replace(/,/g,"") }
+  else if(lc>=0){ s = /^\d{1,3}(,\d{3}){2,}$/.test(s)? s.replace(/,/g,"") : s.replace(",",".") }
+  else if(lp>=0){
+    if(/^\d{1,3}(\.\d{3})+$/.test(s)){ const ponto = o.pontoDecimal && /^\d{1,3}\.\d{3}$/.test(s) && +s.split(".")[0] < 1000 && +s.replace(".","") > 1000; if(!ponto) s=s.replace(/\./g,"") }
+    else if((s.match(/\./g)||[]).length>1) return null;
+  }
+  const x=parseFloat(s); if(!isFinite(x)) return null;
+  return (neg? -x : x) / (pc? 100 : 1);
+}
+
+const PLA_MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+/* mês absoluto (ano×12+mês−1) de uma data; aceita Date, "jan/27", "janeiro/2027", "01/2027", "2027-01", "01/03/2027" */
+function plaMes(v){
+  if(v==null||v==="") return null;
+  if(v instanceof Date){ if(isNaN(v)) return null; const u=new Date(v.getTime()+12*36e5); return u.getUTCFullYear()*12+u.getUTCMonth() }   // +12 h: sem o salto de fuso das datas do XLSX
+  const s=plaNorm(v).replace(/ /g,"/"); if(!s) return null;
+  let m;
+  if((m=s.match(/^([a-z]{3})[a-z]*\/?(\d{2}|\d{4})$/))){ const i=PLA_MESES.indexOf(m[1]); if(i>=0){ let y=+m[2]; if(y<100) y+=2000; return y*12+i } }
+  if((m=s.match(/^(\d{4})\/?(\d{1,2})(\/\d{1,2})?$/))){ const mm=+m[2]; if(mm>=1&&mm<=12) return +m[1]*12+mm-1 }
+  if((m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/))){ const mm=+m[2]; let y=+m[3]; if(y<100) y+=2000; if(mm>=1&&mm<=12) return y*12+mm-1 }
+  if((m=s.match(/^(\d{1,2})\/(\d{2}|\d{4})$/))){ const mm=+m[1]; let y=+m[2]; if(y<100) y+=2000; if(mm>=1&&mm<=12) return y*12+mm-1 }
+  return null;
+}
+
+/* acha o cabeçalho: entre as 12 primeiras linhas, a que tem mais células de texto (não numéricas) */
+function plaCabecalho(matriz){
+  let best=0, bestN=-1;
+  for(let i=0;i<Math.min(12,matriz.length);i++){
+    const n=matriz[i].filter(c=>c!=null && String(c).trim()!=="" && plaNum(c)==null).length;
+    if(n>bestN){ bestN=n; best=i }
+  }
+  const cab=(matriz[best]||[]).map(c=>String(c==null? "" : c).trim());
+  return { iHead:best, cab, dados:matriz.slice(best+1) };
+}
+
+/* campos = [{k, alias:[…]}] em ordem de prioridade; devolve {k: coluna} (cada coluna serve a um campo só) */
+function plaMapaAuto(cab, campos){
+  const H=cab.map(plaNorm), usada=new Set(), out={};
+  campos.forEach(c=>{
+    let melhor=-1, ms=0;
+    H.forEach((h,i)=>{ if(!h||usada.has(i)) return;
+      c.alias.forEach(a=>{ const n=plaNorm(a); let s=0;
+        if(h===n) s=4; else if(h.startsWith(n+" ")||h.endsWith(" "+n)) s=3; else if((" "+h+" ").includes(" "+n+" ")) s=2; else if(n.length>=4 && h.includes(n)) s=1;
+        if(s>ms){ ms=s; melhor=i } }) });
+    out[c.k]=melhor; if(melhor>=0) usada.add(melhor);
+  });
+  return out;
+}
+
+/* texto CSV com ; e vírgula decimal (modelos de arquivo) */
+function plaCSVTexto(cab, linhas){
+  const cel = v => { if(v==null) return ""; if(typeof v==="number") return String(+v.toFixed(4)).replace(".",","); const s=String(v); return /[;"\n]/.test(s)? `"${s.replace(/"/g,'""')}"` : s };
+  return "﻿" + [cab, ...linhas].map(r=>r.map(cel).join(";")).join("\r\n") + "\r\n";
 }
 
 /* ---- calc/relevo.js ---- */
@@ -10210,6 +10782,255 @@ function torreAjustaMix(mix, alvo, max=20){
   return q;
 }
 
+/* ================= Fase E: calibrar os prêmios da tabela de vendas com uma tabela real =================
+   Cálculo puro (sem DOM); a interface fica em src/ui/calibra.js. Nada muda no estudo até o usuário aplicar.
+   Entrada: tabela de um lançamento (CSV/XLSX → matriz) com unidade, andar, área privativa e preço (ou preço/m²);
+   opcionais: final, orientação (N, NE, L, SE, S, SO, O, NO · norte, nascente, poente…), tipologia, vista, cobertura.
+   - calibCampos / calibMapa(cab) / calibLinhas(dados, mapa)  → mapeamento de colunas por nome e linhas normalizadas
+   - calibraPremios(linhas, opts)  → regressão do log do preço/m² (MQO): preço base por tipologia (no 1º andar, orientação média),
+        prêmio por andar (% por andar, com teto detectado), prêmio por direção (centrado: soma ponderada zero), vista (se houver dado)
+        e cobertura (grupo próprio: o preço da cobertura já carrega o prêmio). Devolve coeficientes, R², erro médio e resíduos.
+   - calibAplicar(st, res, o)      → grava no estudo (S.venda e preços do mix); calibModeloCSV()
+   - vendaPadraoEmpresa / vendaSalvarPadrao / vendaAplicarPadrao → padrão da empresa em localStorage "gabarito.vendas.padrao" (troca por Supabase: docs/BACKEND.md)
+   O prêmio de SOL não é calibrável sem as horas de sol da tabela de referência: o do estudo continua valendo. */
+
+const CAL_DIRS = ["N","NE","L","SE","S","SO","O","NO"];
+/* campos da tabela de vendas, na ordem de prioridade do mapeamento automático */
+const CAL_CAMPOS = [
+  { k:"precoM2",  rot:"Preço por m²", alias:["preco m2","preco por m2","valor m2","valor por m2","r m2","preco metro","preco unitario","preco do m2"] },
+  { k:"preco",    rot:"Preço",        alias:["preco","valor","preco total","valor total","preco de venda","valor de venda","preco tabela","tabela"], obrig:true },
+  { k:"area",     rot:"Área privativa", alias:["area privativa","area priv","privativa","area util","area","metragem","m2"], obrig:true },
+  { k:"andar",    rot:"Andar",        alias:["andar","pavimento","pav","piso"] },
+  { k:"unidade",  rot:"Unidade",      alias:["unidade","apto","apartamento","ap","un","numero","codigo"] },
+  { k:"orient",   rot:"Orientação",   alias:["orientacao","orient","face","posicao solar","insolacao","fachada"] },
+  { k:"tipologia",rot:"Tipologia",    alias:["tipologia","tipo","dormitorios","dorms","quartos","planta","modelo"] },
+  { k:"vista",    rot:"Vista",        alias:["vista"] },
+  { k:"cob",      rot:"Cobertura",    alias:["cobertura","cob","penthouse"] },
+  { k:"final",    rot:"Final",        alias:["final","posicao","prumada","pos"] }
+];
+const calibRound = (v, d) => v==null||!isFinite(v)? v : Math.round(v*Math.pow(10,d))/Math.pow(10,d);
+const calibMapa = cab => plaMapaAuto(cab, CAL_CAMPOS);
+
+/* orientação em texto → "N" … "NO" (aceita norte, nascente, poente, N/L, NE…) */
+function calibOrient(v){
+  if(v==null||v==="") return null;
+  const s=plaNorm(v).toUpperCase(); if(!s) return null;
+  const M={NORTE:"N",SUL:"S",LESTE:"L",OESTE:"O",NASCENTE:"L",POENTE:"O",NORDESTE:"NE",NOROESTE:"NO",SUDESTE:"SE",SUDOESTE:"SO",NE:"NE",NO:"NO",SE:"SE",SO:"SO",N:"N",S:"S",L:"L",O:"O",E:"L",W:"O",NW:"NO",SW:"SO",NL:"NE",SL:"SE",NSL:null};
+  if(M[s]) return M[s];
+  const set=new Set(); s.split(" ").forEach(t=>{ const d=M[t]; if(d) d.split("").forEach(c=>set.add(c==="E"?"L":c)) });
+  const has=c=>set.has(c);
+  if(has("N")&&has("S")||has("L")&&has("O")) return null;
+  if(has("N")&&has("L")) return "NE"; if(has("N")&&has("O")) return "NO"; if(has("S")&&has("L")) return "SE"; if(has("S")&&has("O")) return "SO";
+  return set.size===1? [...set][0] : null;
+}
+const calibSim = v => { const s=plaNorm(v); return s!=="" && /^(s|sim|x|1|true|verdadeiro|yes|y|cob|cobertura)$/.test(s) };
+const calibVistaTxt = v => { const s=plaNorm(v); if(!s) return null;
+  if(/(sem|nenhum|obstru|interna|ruim|baix|fundos)/.test(s)) return 0;
+  if(/(total|livre|panoram|mar|otima|excelente|alta|privilegi)/.test(s)) return 1;
+  if(/(parcial|boa|media|lateral|regular)/.test(s)) return 0.5;
+  return null };
+
+/* linhas normalizadas: {linha, id, andar, area, precoM2, preco, final, orient, tip, vista, cob}; descartadas = [{linha, motivo}] */
+function calibLinhas(dados, mapa, o={}){
+  const off = o.offset || 2, g = (r,k)=> mapa[k]>=0? r[mapa[k]] : undefined, avisos=[], out=[], desc=[];
+  mapa = {...mapa};
+  if(!(mapa.precoM2>=0) && mapa.preco>=0){   // coluna de "preço" com valores pequenos = é preço por m²
+    const vs=dados.map(r=>plaNum(r[mapa.preco])).filter(v=>v>0).sort((a,b)=>a-b);
+    if(vs.length && vs[vs.length>>1] < 30000){ mapa.precoM2=mapa.preco; mapa.preco=-1; avisos.push("A coluna de preço tem valores pequenos: tratei como preço por m².") }
+  }
+  const vN=[];
+  dados.forEach((r,i)=>{
+    const linha=i+off, rd=k=>g(r,k);
+    if(r.every(c=>c==null||String(c).trim()==="")) return;
+    const area=plaNum(rd("area"),{pontoDecimal:true}), pm2=plaNum(rd("precoM2")), pt=plaNum(rd("preco"));
+    let andar=plaNum(rd("andar")); const idRaw=rd("unidade"), idN=plaNum(idRaw);
+    let final=rd("final")!=null? String(rd("final")).trim() : "";
+    if((andar==null||!isFinite(andar)) && idN!=null && idN>=100 && idN<10000 && Number.isInteger(idN)){ andar=Math.floor(idN/100); if(!final) final=String(idN%100).padStart(2,"0") }
+    const precoM2 = pm2>0? pm2 : (pt>0&&area>0? pt/area : null);
+    if(!(area>0)){ desc.push({linha, motivo:"área ausente ou inválida"}); return }
+    if(!(precoM2>0)){ desc.push({linha, motivo:"preço ausente ou inválido"}); return }
+    if(precoM2<300||precoM2>300000){ desc.push({linha, motivo:`preço/m² fora do intervalo (${Math.round(precoM2)})`}); return }
+    if(andar==null||!isFinite(andar)||andar<0||andar>200){ desc.push({linha, motivo:"andar ausente ou inválido"}); return }
+    const tip=rd("tipologia")!=null? String(rd("tipologia")).trim() : "";
+    const cob = (mapa.cob>=0 && calibSim(rd("cob"))) || /(cobert|penthouse|pent house)/.test(plaNorm(tip));
+    const vr=rd("vista"); let vista=null;
+    if(vr!=null && String(vr).trim()!==""){ const vn=plaNum(vr); if(vn!=null){ vista={n:vn}; vN.push(vn) } else vista={v:calibVistaTxt(vr)} }
+    out.push({linha, id: idRaw!=null&&String(idRaw).trim()!==""? String(idRaw).trim() : String(linha), andar:Math.round(andar), area, precoM2, preco:pt>0&&pm2>0? pt : precoM2*area, final, orient:calibOrient(rd("orient")), tip, vista, cob:!!cob});
+  });
+  // vista numérica: escala 0–1 pelo mínimo e máximo da tabela; vista em texto: palavras-chave
+  // vista de 0 a 1 entra como está (é a escala do app); outras escalas (1–5, 1–10) são normalizadas pelo mínimo e máximo da tabela
+  const mn=Math.min(...vN), mx=Math.max(...vN), em01=vN.length>0 && mn>=0 && mx<=1;
+  out.forEach(l=>{ const v=l.vista; l.vista = !v? null : v.n!=null? (em01? v.n : mx>mn? (v.n-mn)/(mx-mn) : null) : v.v; });
+  if(!out.length && !desc.length) avisos.push("Nenhuma linha de dados encontrada.");
+  return { linhas:out, descartadas:desc, avisos, mapa };
+}
+
+/* ---------- mínimos quadrados ---------- */
+function calibInv(A){   // inversa por Gauss-Jordan com pivô parcial
+  const n=A.length, M=A.map((r,i)=>[...r, ...Array.from({length:n},(_,j)=>i===j?1:0)]);
+  for(let c=0;c<n;c++){
+    let p=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+    if(Math.abs(M[p][c])<1e-14) return null;
+    [M[c],M[p]]=[M[p],M[c]]; const d=M[c][c]; for(let j=0;j<2*n;j++) M[c][j]/=d;
+    for(let r=0;r<n;r++) if(r!==c){ const f=M[r][c]; if(f) for(let j=0;j<2*n;j++) M[r][j]-=f*M[c][j] }
+  }
+  return M.map(r=>r.slice(n));
+}
+function calibMQO(X, y){
+  const n=X.length, p=X[0].length, A=Array.from({length:p},()=>new Array(p).fill(0)), b=new Array(p).fill(0);
+  for(let i=0;i<n;i++){ const x=X[i]; for(let a=0;a<p;a++){ const xa=x[a]; if(!xa) continue; b[a]+=xa*y[i]; for(let c=a;c<p;c++) A[a][c]+=xa*x[c] } }
+  let tr=0; for(let a=0;a<p;a++){ for(let c=0;c<a;c++) A[a][c]=A[c][a]; tr+=A[a][a] }
+  for(let a=0;a<p;a++) A[a][a]+=1e-9*tr/p;
+  const inv=calibInv(A); if(!inv) return null;
+  const beta=inv.map(r=>r.reduce((s,v,j)=>s+v*b[j],0));
+  let sse=0; for(let i=0;i<n;i++){ let e=y[i]; for(let a=0;a<p;a++) e-=beta[a]*X[i][a]; sse+=e*e }
+  return { beta, inv, sse };
+}
+const calibMed = a => { const v=a.filter(x=>x!=null&&isFinite(x)).sort((p,q)=>p-q); if(!v.length) return 0; const h=v.length>>1; return v.length%2? v[h] : (v[h-1]+v[h])/2 };
+
+/* erro médio |real/previsto − 1| com a FÓRMULA DO APP (preço = base × (1 + prêmios)); a base de cada grupo é refeita em escala log */
+function calibErroApp(L, gi, par){
+  const prem = l => { let p=Math.max(0,l.andar-1)*par.andarPct; if(par.andarTeto!=null) p=Math.min(par.andarTeto,p);
+    if(l.orient && par.orient && par.orient[l.orient]!=null) p+=par.orient[l.orient];
+    if(par.vistaPct && l.vista!=null) p+=par.vistaPct*Math.max(-1,Math.min(1,(l.vista-par.vistaMed)/0.25));
+    return p };
+  const s={}, c={}; L.forEach((l,i)=>{ const k=gi[i]; s[k]=(s[k]||0)+Math.log(l.precoM2)-Math.log(Math.max(0.2,1+prem(l))); c[k]=(c[k]||0)+1 });
+  let e=0; L.forEach((l,i)=>{ const B=Math.exp(s[gi[i]]/c[gi[i]]); e+=Math.abs(l.precoM2/(B*Math.max(0.2,1+prem(l)))-1) });
+  return e/L.length;
+}
+
+/* ---------- a calibração ---------- */
+function calibraPremios(linhas, o={}){
+  o={ tetoAuto:true, minDir:2, usaOrient:true, usaVista:true, minLinhas:6, atual:null, ...o };
+  const avisos=[], L=(linhas||[]).filter(l=>l && l.area>0 && l.precoM2>0 && l.andar!=null && isFinite(l.andar));
+  if(L.length<o.minLinhas) return { ok:false, motivo:`Poucas linhas válidas (${L.length}): preciso de pelo menos ${o.minLinhas}.`, n:L.length, avisos };
+  const n=L.length, y=L.map(l=>Math.log(l.precoM2));
+  // grupos: tipologia (cobertura é grupo próprio)
+  const gNomes=[], gChaves=[]; const gi=L.map(l=>{ const nome=l.cob? "Cobertura" : (String(l.tip||"").trim() || "Todas"), ch=plaNorm(nome); let k=gChaves.indexOf(ch); if(k<0){ k=gChaves.length; gChaves.push(ch); gNomes.push(nome) } return k });
+  const G=gNomes.length;
+  // orientação: direções com dados suficientes; a mais frequente é a referência
+  const cd={}; L.forEach(l=>{ if(l.orient) cd[l.orient]=(cd[l.orient]||0)+1 });
+  const dirs=CAL_DIRS.filter(d=>(cd[d]||0)>=o.minDir);
+  const usaOr = o.usaOrient && dirs.length>=2;
+  const ref = usaOr? dirs.reduce((a,b)=>cd[b]>cd[a]?b:a, dirs[0]) : null;
+  const colDir = usaOr? dirs.filter(d=>d!==ref) : [];
+  const temSem = usaOr && L.some(l=>!l.orient || !dirs.includes(l.orient)) ;
+  // vista
+  const vs=L.map(l=>l.vista).filter(v=>v!=null&&isFinite(v)), vMed=calibMed(vs), vVar=vs.length? vs.reduce((s,v)=>s+(v-vMed)*(v-vMed),0)/vs.length : 0;
+  const usaVista = o.usaVista && vs.length>=0.6*n && vVar>1e-4;
+  // andar
+  const aMin=Math.min(...L.map(l=>l.andar)), aMax=Math.max(...L.map(l=>l.andar)), temAndar = aMax-aMin>=2;
+  if(!temAndar) avisos.push("Os andares da tabela variam pouco: não dá para estimar o prêmio por andar.");
+  const montar = K => L.map((l,i)=>{ const x=new Array(G).fill(0); x[gi[i]]=1;
+    colDir.forEach(d=>x.push(l.orient===d?1:0)); if(temSem) x.push(!l.orient||!dirs.includes(l.orient)?1:0);
+    if(temAndar) x.push(Math.min(Math.max(0,l.andar-1),K));
+    if(usaVista) x.push(l.vista==null? 0 : l.vista-vMed);
+    return x });
+  const iAndar = G+colDir.length+(temSem?1:0), iVista = iAndar+(temAndar?1:0);
+  // teto do andar: K que minimiza o erro; sem ganho claro sobre "sem teto", fica sem teto
+  const Kmax = Math.max(1,aMax-1); let K=Kmax, fit=null;
+  if(temAndar){
+    const full=calibMQO(montar(Kmax), y); if(!full) return { ok:false, motivo:"Os dados não permitem o ajuste (colunas repetidas).", n, avisos };
+    fit=full;
+    if(o.tetoAuto){ let bk=Kmax, bf=full; for(let k=2;k<Kmax;k++){ const f=calibMQO(montar(k),y); if(f && f.sse<bf.sse){ bf=f; bk=k } }
+      if(bk!==Kmax && bf.sse<full.sse*0.995){ K=bk; fit=bf } }
+  } else { fit=calibMQO(montar(Kmax), y); if(!fit) return { ok:false, motivo:"Os dados não permitem o ajuste.", n, avisos } }
+  const beta=fit.beta, p=beta.length, gl=Math.max(1,n-p), s2=fit.sse/gl, se=j=>Math.sqrt(Math.max(0,s2*fit.inv[j][j]));
+  // orientação centrada (soma ponderada zero)
+  const theta={}; if(usaOr){ theta[ref]=0; colDir.forEach((d,j)=>theta[d]=beta[G+j]) }
+  const nd=dirs.reduce((s,d)=>s+cd[d],0), thBar = usaOr? dirs.reduce((s,d)=>s+cd[d]*theta[d],0)/Math.max(1,nd) : 0;
+  const orient={}; CAL_DIRS.forEach(d=>{ orient[d]={ v: usaOr&&dirs.includes(d)? Math.exp(theta[d]-thBar)-1 : null, n: cd[d]||0 } });
+  // andar
+  let andar=null;
+  if(temAndar){ const b=beta[iAndar], pct=Math.exp(b)-1; andar={ pct, ep:Math.exp(b)*se(iAndar), beta:b, K: K<Kmax? K : Kmax, teto: K<Kmax? pct*K : null, comTeto:K<Kmax, aMin, aMax };
+    if(pct<0) avisos.push("O preço cai com o andar nesta tabela (prêmio negativo): confira as colunas.");
+    if(!(K<Kmax) && aMax-aMin<8) avisos.push("Poucos andares na tabela: o teto do prêmio não pôde ser avaliado.") }
+  const vista = usaVista? { gamma:beta[iVista], pct:Math.exp(0.25*beta[iVista])-1, n:vs.length, med:vMed } : null;
+  if(o.usaVista && !usaVista && vs.length) avisos.push("Vista sem variação suficiente na tabela: o prêmio de vista continua o atual.");
+  // grupos (preço base no 1º andar, orientação média, vista mediana)
+  const tipologias=[]; let cobGrupo=null;
+  gNomes.forEach((nome,k)=>{ const idx=[]; gi.forEach((g,i)=>{ if(g===k) idx.push(i) });
+    const ent={ nome, chave:gChaves[k], n:idx.length, base:Math.exp(beta[k]+thBar), ep:se(k), areaMedia: idx.reduce((s,i)=>s+L[i].area,0)/idx.length, cob: nome==="Cobertura" && gChaves[k]==="cobertura" };
+    if(idx.length<3) avisos.push(`“${nome}” tem só ${idx.length} unidade${idx.length>1?"s":""}: o preço base é pouco confiável.`);
+    if(ent.cob) cobGrupo=ent; else tipologias.push(ent) });
+  let cob=null;
+  if(cobGrupo){ const outros=tipologias.reduce((s,t)=>s+t.base*t.n,0)/Math.max(1,tipologias.reduce((s,t)=>s+t.n,0)); cob={ base:cobGrupo.base, n:cobGrupo.n, areaMedia:cobGrupo.areaMedia, premio: outros>0? cobGrupo.base/outros-1 : null } }
+  // qualidade
+  const ym=y.reduce((a,b)=>a+b,0)/n, sst=y.reduce((s,v)=>s+(v-ym)*(v-ym),0), r2=sst>0? 1-fit.sse/sst : 0, r2aj=sst>0? 1-(fit.sse/gl)/(sst/(n-1)) : 0;
+  const Xf=montar(K), pred=Xf.map(x=>x.reduce((e,v,j)=>e+beta[j]*v,0));
+  const residuos=L.map((l,i)=>({ linha:l.linha, id:l.id, andar:l.andar, tip:gNomes[gi[i]], real:l.precoM2, pred:Math.exp(pred[i]), res:Math.exp(y[i]-pred[i])-1 }));
+  const pa={}; residuos.forEach(r=>{ const a=pa[r.andar]=pa[r.andar]||{andar:r.andar, n:0, soma:0}; a.n++; a.soma+=r.res });
+  const porAndar=Object.values(pa).map(a=>({andar:a.andar, n:a.n, res:a.soma/a.n})).sort((a,b)=>a.andar-b.andar);
+  if(r2<0.5) avisos.push(`R² baixo (${Math.round(r2*100)}%): o preço depende de outras coisas além de tipologia, andar e orientação.`);
+  // comparação com a fórmula do app: calibrado × atual
+  const parCal={ andarPct: andar? andar.pct : 0, andarTeto: andar&&andar.comTeto? andar.teto : null, orient:Object.fromEntries(CAL_DIRS.filter(d=>orient[d].v!=null).map(d=>[d,orient[d].v])), vistaPct: vista? vista.pct : 0, vistaMed:vMed };
+  const erroMedio=calibErroApp(L, gi, parCal);
+  let erroAtual=null; if(o.atual){ const A=o.atual; erroAtual=calibErroApp(L, gi, { andarPct:A.andarPct||0, andarTeto:A.andarTeto, orient:A.orient||{}, vistaPct:A.vistaPct||0, vistaMed:vMed }) }
+  return { ok:true, n, p, r2, r2aj, erroMedio, erroAtual, rmse:Math.sqrt(s2), andar, orient, vista, cob, tipologias, residuos, porAndar, avisos,
+    refDir:ref, usouOrient:usaOr, dirs, semOrient: L.filter(l=>!l.orient).length };
+}
+
+/* ---------- aplicar ao estudo ---------- */
+/* nome do mix ↔ tipologia da tabela: igual, ou mesmo número de dormitórios/studio, ou um contém o outro */
+function calibChaveTip(nome){ const n=plaNorm(nome); if(/(studio|kitnet|loft|conjugado)/.test(n)) return "studio"; const m=n.match(/(\d)\s*(dorm|quarto|suite|qts|dq|d\b|q\b)/); return m? m[1]+"d" : n }
+function calibCasaMix(nome, mix, usados){
+  const k=calibChaveTip(nome), n=plaNorm(nome);
+  let j=mix.findIndex((u,i)=>!usados.has(i) && plaNorm(u.nome)===n);
+  if(j<0) j=mix.findIndex((u,i)=>!usados.has(i) && calibChaveTip(u.nome)===k);
+  if(j<0) j=mix.findIndex((u,i)=>{ if(usados.has(i)) return false; const a=plaNorm(u.nome); return a&&n&&(a.includes(n)||n.includes(a)) });
+  return j;
+}
+/* grava no estudo; devolve a lista do que mudou ([{rot, de, para}]). o = {andar, orient, vista, mix} (todos ligados por padrão) */
+function calibAplicar(st, res, o={}){
+  const opt={ andar:true, orient:true, vista:true, mix:true, ...o }, V=st.venda, P=st.produto, mud=[];
+  if(!res||!res.ok) return mud;
+  const set=(obj,k,v,rot)=>{ if(v==null||!isFinite(v)||obj[k]===v) return; mud.push({rot, de:obj[k], para:v}); obj[k]=v };
+  if(opt.andar && res.andar){ const a=res.andar; set(V,"andarPct",calibRound(a.pct,4),"Prêmio por andar");
+    const topo = a.pct*Math.max(1,a.aMax-1);
+    if(a.teto!=null) set(V,"andarTeto",calibRound(a.teto,4),"Teto do andar"); else if(V.andarTeto<topo) set(V,"andarTeto",calibRound(topo,4),"Teto do andar") }
+  if(opt.orient && res.usouOrient){ V.orient={...V.orient}; CAL_DIRS.forEach(d=>{ const v=res.orient[d].v; if(v!=null) set(V.orient,d,calibRound(v,4),"Orientação "+d) }) }
+  if(opt.vista && res.vista) set(V,"vistaPct",calibRound(Math.max(0,res.vista.pct),4),"Vista");
+  if(opt.mix){
+    if(res.cob){ set(P.cob,"preco",Math.round(res.cob.base),"Preço da cobertura (R$/m²)"); set(V,"cobPct",0,"Prêmio extra da cobertura") }
+    const usados=new Set(), tip=res.tipologias;
+    if(tip.length===1 && tip[0].nome==="Todas"){   // tabela sem tipologia: o preço médio do mix passa a ser o da tabela, mantendo as proporções
+      const tot=P.mix.reduce((s,u)=>s+u.area*u.qtd,0), med=tot>0? P.mix.reduce((s,u)=>s+u.preco*u.area*u.qtd,0)/tot : 0;
+      if(med>0){ const k=tip[0].base/med; P.mix.forEach(u=>set(u,"preco",Math.round(u.preco*k),"Preço "+u.nome+" (R$/m²)")) }
+    } else tip.forEach(t=>{ const j=calibCasaMix(t.nome, P.mix, usados); if(j>=0){ usados.add(j); set(P.mix[j],"preco",Math.round(t.base),"Preço "+P.mix[j].nome+" (R$/m²)") } });
+  }
+  return mud;
+}
+/* tipologias da tabela sem correspondência no mix do estudo (para avisar) */
+function calibSemMix(st, res){
+  if(!res||!res.ok) return []; const usados=new Set(), tip=res.tipologias;
+  if(tip.length===1 && tip[0].nome==="Todas") return [];
+  return tip.filter(t=>{ const j=calibCasaMix(t.nome, st.produto.mix, usados); if(j>=0){ usados.add(j); return false } return true }).map(t=>t.nome);
+}
+
+/* ---------- modelo de arquivo ---------- */
+const CAL_MODELO_CAB = ["Unidade","Andar","Área privativa (m²)","Preço (R$)","Orientação","Tipologia","Vista","Cobertura"];
+function calibModeloCSV(){ return plaCSVTexto(CAL_MODELO_CAB, [["1201",12,"65,5","785.000,00","NE","2 dorm.","0,7","Não"]]) }
+
+/* ---------- padrão da empresa (localStorage; troca por Supabase em docs/BACKEND.md) ---------- */
+function vendaPadraoEmpresa(){ const v=LS.get("gabarito.vendas.padrao"); return v && typeof v==="object" && v.andarPct!=null ? v : null }
+/* grava o que está no estudo (já aplicado) como padrão: vale para estudos novos (DEF.venda) */
+function vendaSalvarPadrao(st, origem){
+  const V=st.venda, reg={ andarPct:V.andarPct, andarTeto:V.andarTeto, orient:clone(V.orient), vistaPct:V.vistaPct, cobPct:V.cobPct,
+    mix: Object.fromEntries(st.produto.mix.map(u=>[u.nome,u.preco])), cobPreco: st.produto.cob.preco, salvo:new Date().toISOString(), origem: origem||null };
+  try{ localStorage.setItem("gabarito.vendas.padrao", JSON.stringify(reg)) }catch(e){ return false }
+  ["andarPct","andarTeto","vistaPct","cobPct"].forEach(k=>DEF.venda[k]=reg[k]); DEF.venda.orient=clone(reg.orient);
+  return true;
+}
+/* traz o padrão da empresa para o estudo atual (prêmios e preços do mix de mesmo nome) */
+function vendaAplicarPadrao(st){
+  const p=vendaPadraoEmpresa(); if(!p) return false;
+  ["andarPct","andarTeto","vistaPct","cobPct"].forEach(k=>{ if(typeof p[k]==="number") st.venda[k]=p[k] });
+  if(p.orient) st.venda.orient={...st.venda.orient, ...p.orient};
+  if(p.mix) st.produto.mix.forEach(u=>{ if(typeof p.mix[u.nome]==="number") u.preco=p.mix[u.nome] });
+  if(typeof p.cobPreco==="number") st.produto.cob.preco=p.cobPreco;
+  return true;
+}
+
 /* ================= biblioteca de regras por cidade e zona =================
    Cálculo puro (sem DOM). Cada registro traz os campos de S.regras que a zona define, a lei e a data.
    ATENÇÃO: os valores da base são EXEMPLOS ILUSTRATIVOS para demonstrar o recurso — não foram tirados de uma leitura
@@ -10855,6 +11676,228 @@ function comIfcParedes(u, B){
 function comEdgeClsPuro(r){ const pr={fachada:4, corredor:3, nucleo:3, divisa:3, interna:1}, cls=[]; (r.bordas||[]).forEach(b=>{ if(!cls[b.i] || pr[b.c]>pr[cls[b.i]]) cls[b.i]=b.c }); return cls }
 /* contorno interno do cômodo (face das paredes): recuo por aresta conforme o vizinho */
 function comInsetRoom(r){ const cls=comEdgeClsPuro(r); return comInset(r.poly, i=>{ const c=cls[i]||"interna"; return c==="fachada"? (r.k==="sacada"? COM_WALL.guarda : COM_WALL.fachada) : COM_WALL[c]||COM_WALL.interna }) }
+
+/* ================= Fase E: comparar o fluxo de caixa do Gabarito com a planilha da empresa =================
+   Cálculo puro (sem DOM); a interface fica em src/ui/comparaplanilha.js. Nada muda no estudo até o usuário aplicar uma sugestão.
+   Planilha (CSV/XLSX → matriz): mês, receitas, obra, terreno, indiretos (despesas), saldo do mês — só o saldo é obrigatório
+   (ou o saldo acumulado). Custos podem vir positivos ou negativos. O mês pode ser número (0 ou 1 em diante) ou data (jan/27, 01/2027).
+   - comparaCampos / comparaMapa(cab) / comparaLer(dados, mapa) → séries mensais da planilha
+   - comparaLinhasGab(f)                → o mesmo recorte no fluxo do Gabarito: receita = recebimentos · obra = obra + terra ·
+                                          terreno = terreno + ITBI + outorga · indiretos = projetos, marketing, corretagem, impostos, permuta financeira e juros (líquido do financiamento)
+   - comparaFluxo(planilha, f, {desl, tma}) → meses alinhados, diferença por linha e acumulada, TIR/VPL/exposição/lucro/payback de cada lado
+                                          e as divergências (total, janela de meses, deslocamento, pico de recebimento, curva, INCC), da mais pesada para a mais leve
+   - comparaSugestoes(cmp, st, f)       → ajustes de premissas quando a diferença é explicável (prazo e início da obra, curva, INCC, fator de custo, terreno, repasse, ato)
+   - comparaAplicar(st, sug)            → grava a sugestão no estudo; comparaModeloCSV() */
+
+const CMP_CAMPOS = [
+  { k:"acum",      rot:"Saldo acumulado", alias:["saldo acumulado","caixa acumulado","fluxo acumulado","acumulado"] },
+  { k:"saldo",     rot:"Saldo do mês",    alias:["saldo do mes","saldo mensal","saldo","fluxo liquido","fluxo de caixa","fluxo","resultado","caixa mensal"] },
+  { k:"mes",       rot:"Mês",             alias:["mes","meses","periodo","competencia","data","mes ano"] },
+  { k:"receita",   rot:"Receitas",        alias:["receitas","receita","recebimentos","recebimento","entradas","recebido","receita total","vendas"] },
+  { k:"obra",      rot:"Obra",            alias:["custo de obra","custos de obra","obra","obras","construcao","custo obra","desembolso de obra"] },
+  { k:"terreno",   rot:"Terreno",         alias:["terreno","aquisicao","terreno e outorga","aquisicao do terreno","compra do terreno"] },
+  { k:"indiretos", rot:"Indiretos",       alias:["indiretos","despesas indiretas","despesas","outras despesas","custos indiretos","despesas gerais","soft costs","soft","indireto"] }
+];
+const CMP_LINHAS = ["receita","obra","terreno","indiretos"];
+const CMP_NOMES = { receita:["Recebimento","m"], obra:["Custo de obra","m"], terreno:["Terreno","m"], indiretos:["Despesas indiretas","fp"], saldo:["Saldo","m"] };
+const comparaMapa = cab => plaMapaAuto(cab, CMP_CAMPOS);
+const cmpSoma = a => a.reduce((s,v)=>s+v,0);
+const cmpAdj = (g, mais) => g==="fp"? (mais? "maiores":"menores") : (mais? "maior":"menor");
+const cmpMeses = k => `${Math.abs(k)} ${Math.abs(k)===1? "mês":"meses"}`;
+
+/* ---------- leitura da planilha ---------- */
+function comparaLer(dados, mapa){
+  const avisos=[], rows=(dados||[]).filter(r=>r && r.some(c=>c!=null && String(c).trim()!==""));
+  if(!rows.length) return { ok:false, motivo:"Nenhuma linha de dados encontrada.", avisos };
+  if(!(mapa.saldo>=0) && !(mapa.acum>=0) && !(mapa.receita>=0 && (mapa.obra>=0||mapa.terreno>=0||mapa.indiretos>=0))) return { ok:false, motivo:"Preciso da coluna de saldo (ou de receitas e custos).", avisos };
+  // mês de cada linha
+  let idx=rows.map((_,i)=>i);
+  if(mapa.mes>=0){
+    const raw=rows.map(r=>r[mapa.mes]), dt=raw.map(plaMes);
+    if(dt.every(d=>d!=null)){ const d0=Math.min(...dt); idx=dt.map(d=>d-d0) }
+    else { const nu=raw.map(x=>plaNum(x)); if(nu.every(x=>x!=null)){ const mn=Math.min(...nu); idx=nu.map(x=>Math.round(x)-(mn===1?1:0)) } else avisos.push("Não entendi a coluna de mês: usei a ordem das linhas.") }
+  } else avisos.push("Sem coluna de mês: usei a ordem das linhas (a primeira é o mês 0).");
+  if(idx.some(i=>i<0||i>600)) return { ok:false, motivo:"Meses fora do intervalo (0 a 600).", avisos };
+  const T=Math.max(...idx)+1, L={}, tem={};
+  const serie = k => { if(!(mapa[k]>=0)) return null; const a=new Array(T).fill(0); let n=0; rows.forEach((r,i)=>{ const v=plaNum(r[mapa[k]]); if(v!=null){ a[idx[i]]+=v; n++ } }); return n? a : null };
+  CMP_LINHAS.forEach(k=>{ let a=serie(k); if(a && cmpSoma(a)<0) a=a.map(v=>0-v); L[k]=a; tem[k]=!!a });
+  let saldo=serie("saldo"), calc=false;
+  if(!saldo){
+    const ac=serie("acum");
+    if(ac){ saldo=ac.map((v,i)=>i? v-ac[i-1] : v) }   // acumulado → mensal (a série soma por mês; acumulado repetido por mês é raro)
+    else { saldo=new Array(T).fill(0); calc=true; for(let t=0;t<T;t++) saldo[t]=(L.receita?L.receita[t]:0)-(L.obra?L.obra[t]:0)-(L.terreno?L.terreno[t]:0)-(L.indiretos?L.indiretos[t]:0) }
+  } else if(L.receita && (L.obra||L.terreno||L.indiretos)){
+    const c=cmpSoma(L.receita)-cmpSoma(L.obra||[])-cmpSoma(L.terreno||[])-cmpSoma(L.indiretos||[]), s=cmpSoma(saldo);
+    if(Math.abs(c-s)>0.02*Math.max(1,cmpSoma(L.receita))) avisos.push("O saldo da planilha não fecha com receitas menos custos: ele inclui linhas que não mapeei (financiamento, por exemplo).");
+  }
+  L.saldo=saldo; tem.saldo=true;
+  return { ok:true, T, linhas:L, tem, avisos, saldoCalculado:calc, nLinhas:rows.length };
+}
+
+/* ---------- o fluxo do Gabarito no mesmo recorte ---------- */
+function comparaLinhasGab(f){
+  const c=f.c, T=f.cf.length, z=()=>new Array(T).fill(0), g=a=>a||z();
+  const receita=g(c.receb), obra=z(), terreno=z(), indiretos=z();
+  for(let t=0;t<T;t++){
+    obra[t]=c.obra[t]+c.terra[t];
+    terreno[t]=c.terreno[t]+c.outorga[t];
+    indiretos[t]=c.projetos[t]+c.mkt[t]+c.corret[t]+c.imp[t]+c.permFin[t]+c.juros[t]+c.finOut[t]-c.finIn[t];
+  }
+  return { receita, obra, terreno, indiretos, saldo:f.cf.slice() };
+}
+
+function cmpMetricas(cf, tma){
+  const m=flxMetricas(cf,tma); let cum=0; const cumA=cf.map(v=>cum+=v);
+  let pay=null; for(let i=cumA.length-1;i>=0;i--){ if(cumA[i]<0){ pay=i+1<cumA.length? i+1 : null; break } if(i===0) pay=0 }
+  return { tirA:m.tirA, vpl:m.vpl, exp:m.exp, lucro:m.soma, pay };
+}
+/* janela em que ficam 95% do gasto (quantis 2,5% e 97,5% do acumulado), centro de massa e mês do maior valor */
+function cmpJanela(a){
+  const p=a.map(v=>Math.max(0,v)), tot=cmpSoma(p); if(!(tot>0)) return null;
+  let cum=0, ini=null, fim=null, com=0, pico=0; p.forEach((v,t)=>{ cum+=v; com+=v*t; if(ini==null && cum>=0.025*tot) ini=t; if(fim==null && cum>=0.975*tot) fim=t; if(v>p[pico]) pico=t });
+  return { ini, fim, com:com/tot, pico, tot };
+}
+/* deslocamento (meses) que melhor leva o formato de G ao de P */
+function cmpDesloc(P, G, maxS=12){
+  const sP=cmpSoma(P.map(v=>Math.max(0,v))), sG=cmpSoma(G.map(v=>Math.max(0,v))); if(!(sP>0&&sG>0)) return null;
+  const N=P.length; let E0=0, best=0, Eb=Infinity;
+  for(let s=-maxS;s<=maxS;s++){ let E=0; for(let t=0;t<N;t++){ const g=t-s>=0&&t-s<N? Math.max(0,G[t-s])/sG : 0; E+=Math.abs(Math.max(0,P[t])/sP-g) } if(s===0) E0=E; if(E<Eb-1e-12){ Eb=E; best=s } }
+  return { s:best, E0, Eb };
+}
+/* trechos de meses em que P difere de G em mais de 6% (relativo ao mês) e o mês pesa ≥ 5% do maior valor da linha */
+function cmpJanelas(P, G){
+  const N=P.length, mx=Math.max(1e-9,...P.map(Math.abs),...G.map(Math.abs)), marca=new Array(N).fill(false), relev=new Array(N).fill(false);
+  for(let t=0;t<N;t++){ const a=Math.abs(P[t]), b=Math.abs(G[t]), m=Math.max(a,b); relev[t]=m>=0.05*mx; if(relev[t] && Math.abs(P[t]-G[t])>0.06*m) marca[t]=true }
+  const segs=[]; let ini=-1, ult=-1;
+  for(let t=0;t<N;t++){
+    if(marca[t]){ if(ini<0) ini=t; else if(t-ult>3){ segs.push([ini,ult]); ini=t } ult=t }
+  }
+  if(ini>=0) segs.push([ini,ult]);
+  return segs.map(([a,b])=>{ let sP=0, sG=0; for(let t=a;t<=b;t++){ sP+=P[t]; sG+=G[t] } return { a, b, sP, sG, pct: sG>0? sP/sG-1 : null, dif: sP-sG } });
+}
+
+/* ---------- comparação ---------- */
+function comparaFluxo(plan, f, o={}){
+  o={ desl:0, tma:0.15, ...o };
+  if(!plan || !plan.ok || !f || !f.cf) return { ok:false, motivo: plan&&plan.motivo || "Sem planilha." };
+  const gl=comparaLinhasGab(f), d=Math.round(+o.desl||0), N=Math.max(gl.saldo.length, plan.T+Math.max(0,d));
+  const pad=(a,sh)=>{ const r=new Array(N).fill(0); if(a) a.forEach((v,i)=>{ const j=i+sh; if(j>=0&&j<N) r[j]=v }); return r };
+  const linhas=[];
+  [...CMP_LINHAS,"saldo"].forEach(k=>{
+    if(!plan.linhas[k]) return;
+    const gab=pad(gl[k],0), pl=pad(plan.linhas[k],d), dif=pl.map((v,i)=>v-gab[i]); let ac=0;
+    const totalG=cmpSoma(gab), totalP=cmpSoma(pl);
+    linhas.push({ k, nome:CMP_NOMES[k][0], gab, plan:pl, dif, difAcum:dif.map(v=>ac+=v), totalG, totalP, dTotal:totalP-totalG, pct: Math.abs(totalG)>1e-9? totalP/totalG-1 : null });
+  });
+  const sal=linhas.find(l=>l.k==="saldo");
+  let ag=0, ap=0; const acum={ gab:sal.gab.map(v=>ag+=v), plan:sal.plan.map(v=>ap+=v) };
+  const metricas={ gab:cmpMetricas(sal.gab,o.tma), plan:cmpMetricas(sal.plan,o.tma) };
+  const L=k=>linhas.find(l=>l.k===k), diag={}, div=[];
+  const rec=L("receita"), R=Math.max(1,Math.abs(rec? Math.max(rec.totalG,rec.totalP) : cmpSoma(gl.receita)), Math.abs(sal.totalG)), mat=0.004*R;
+  const push=(linha,tipo,msg,impacto,extra={})=>div.push({ linha, tipo, msg, impacto:Math.abs(impacto), ...extra });
+  CMP_LINHAS.forEach(k=>{
+    const l=L(k); if(!l) return; const [nome,gen]=CMP_NOMES[k], G=l.gab, P=l.plan; let explicado=false, shiftS=null;
+    const wG=cmpJanela(G), wP=cmpJanela(P);
+    if(wG && wP) diag[k]={ ini:[wG.ini,wP.ini], fim:[wG.fim,wP.fim], com:[wG.com,wP.com], pico:[wG.pico,wP.pico], total:[l.totalG,l.totalP] };
+    else diag[k]={ total:[l.totalG,l.totalP] };
+    if(wG && wP){
+      if(k==="obra"){
+        // o formato (normalizado) da curva só vale como "diferente" se mudou de verdade: 1 mês de quantil não basta
+        const a=wP.ini-wG.ini, b=wP.fim-wG.fim, ds=cmpDesloc(P,G), imp=0.5*cmpSoma(l.dif.map(Math.abs));
+        if(ds && ds.s!==0 && ds.Eb<0.6*ds.E0 && ds.E0>0.05){ explicado=true; shiftS=ds.s; push(k,"desloca",`${nome} ${cmpMeses(ds.s)} ${ds.s>0?"depois":"antes"} na planilha (começa em ${wP.ini} e termina em ${wP.fim}, contra ${wG.ini} e ${wG.fim})`, imp, { meses:ds.s, mes0:wP.ini, mes1:wP.fim }) }
+        else if(ds && ds.E0>0.12 && (a!==0||b!==0)){
+          if(a!==0){ explicado=true; push(k,"inicio",`Obra começa ${cmpMeses(a)} ${a>0?"depois":"antes"} na planilha (mês ${wP.ini} contra ${wG.ini})`, imp, { meses:a }) }
+          if(b-a!==0){ explicado=true; const dur=b-a; push(k,"prazo",`Prazo de obra ${cmpMeses(dur)} ${dur>0?"mais longo":"mais curto"} na planilha (${wP.fim-wP.ini+1} contra ${wG.fim-wG.ini+1} meses)`, imp, { meses:dur }) }
+        }
+      } else if(k==="receita"){
+        const kk=wP.pico-wG.pico;
+        if(kk!==0 && Math.max(...G)>0.2*cmpSoma(G.map(v=>Math.max(0,v)))){ explicado=true; push(k,"pico",`Recebimento das chaves e do repasse ${cmpMeses(kk)} ${kk>0?"depois":"antes"} na planilha (mês ${wP.pico} contra ${wG.pico})`, Math.max(G[wG.pico],P[wP.pico]), { meses:kk, mes0:wG.pico, mes1:wP.pico }) }
+      }
+      if(!explicado && k!=="obra"){
+        const ds=cmpDesloc(P,G);
+        if(ds && ds.s!==0 && ds.Eb<0.6*ds.E0 && ds.E0>0.12){ explicado=true; shiftS=ds.s; push(k,"desloca",`${nome} ${cmpMeses(ds.s)} ${ds.s>0?"depois":"antes"} na planilha`, 0.5*cmpSoma(l.dif.map(Math.abs)), { meses:ds.s }) }
+      }
+      if(k==="obra" && !explicado){
+        // formato da curva: centro de massa relativo à janela
+        const rel=w=> w.fim>w.ini? (w.com-w.ini)/(w.fim-w.ini) : 0.5, cg=rel(wG), cp=rel(wP);
+        diag.obra.curva=[cg,cp]; diag.obra.dur=[wG.fim-wG.ini+1, wP.fim-wP.ini+1];
+        // INCC: o quociente planilha/Gabarito cresce (ou cai) em ritmo constante ao longo dos meses
+        const pts=[]; const mxG=Math.max(...G), mxP=Math.max(...P); for(let t=0;t<N;t++) if(G[t]>0.15*mxG && P[t]>0.15*mxP) pts.push([t,Math.log(P[t]/G[t])]);
+        if(pts.length>=6){ const n=pts.length, mt=pts.reduce((s,q)=>s+q[0],0)/n, my=pts.reduce((s,q)=>s+q[1],0)/n;
+          const sxx=pts.reduce((s,q)=>s+(q[0]-mt)*(q[0]-mt),0), sxy=pts.reduce((s,q)=>s+(q[0]-mt)*(q[1]-my),0), syy=pts.reduce((s,q)=>s+(q[1]-my)*(q[1]-my),0), sl=sxx>0? sxy/sxx : 0, r2=sxx>0&&syy>0? sxy*sxy/(sxx*syy) : 0;
+          const anual=Math.exp(12*sl)-1;
+          if(Math.abs(anual)>=0.01 && r2>0.6){ diag.obra.incc=anual; explicado=true; push(k,"incc",`Custo de obra cresce ${nf(Math.abs(anual)*100,1)} pontos a.a. mais ${anual>0?"rápido":"devagar"} na planilha (parece o INCC)`, Math.abs(l.dTotal), { pp:anual }) } }
+        if(!explicado && Math.abs(cp-cg)>0.06){ explicado=true; push(k,"curva",`Gasto da obra concentrado mais ${cp>cg?"ao fim":"no início"} na planilha (centro em ${Math.round(cp*100)}% do prazo contra ${Math.round(cg*100)}%)`, 0.5*cmpSoma(l.dif.map(Math.abs)), { rel:[cg,cp] }) }
+      }
+    }
+    // total
+    const tot=l.dTotal;
+    if(Math.abs(tot)>=mat && l.pct!=null && Math.abs(l.pct)>=0.03) push(k,"total",`${nome} ${nf(Math.abs(l.pct)*100,0)}% ${cmpAdj(gen,tot>0)} na planilha (${tot>0?"+":"−"}${mi(Math.abs(tot))})`, tot, { pct:l.pct });
+    // janelas de meses
+    if(!explicado || shiftS!=null){
+      // depois de um deslocamento, compara a planilha com o Gabarito já alinhado
+      const Gs=shiftS!=null? G.map((_,t)=> t-shiftS>=0&&t-shiftS<N? G[t-shiftS] : 0) : G, nota=shiftS!=null? " (descontado o deslocamento)" : "";
+      const segs=cmpJanelas(P,Gs), act=wG&&wP? Math.max(wG.fim,wP.fim)-Math.min(wG.ini,wP.ini)+1 : N;
+      segs.filter(s=>Math.abs(s.dif)>=mat && s.pct!=null && !(s.b-s.a+1>=0.7*act && Math.abs(tot)>=mat))
+        .sort((x,y)=>Math.abs(y.dif)-Math.abs(x.dif)).slice(0,2)
+        .forEach(s=>push(k,"janela",`${nome} ${nf(Math.abs(s.pct)*100,0)}% ${cmpAdj(gen,s.pct>0)} na planilha entre os meses ${s.a} e ${s.b}${nota}`, s.dif, { pct:s.pct, mes0:s.a, mes1:s.b }));
+    }
+  });
+  div.sort((x,y)=>y.impacto-x.impacto);
+  return { ok:true, N, desl:d, linhas, acum, metricas, divergencias:div.slice(0,10), diag, avisos:plan.avisos||[], tma:o.tma,
+    zero: linhas.every(l=>Math.max(...l.dif.map(Math.abs))<1) };
+}
+
+/* ---------- sugestões de ajuste das premissas ---------- */
+function comparaSugestoes(cmp, st, f){
+  const out=[]; if(!cmp||!cmp.ok) return out;
+  const F=st.fin, ob=cmp.diag.obra, rc=cmp.diag.receita, tr=cmp.diag.terreno, D=cmp.divergencias;
+  const add=(k,rot,det,set,aprox)=>out.push({ k, rot, det, set, aprox:!!aprox });
+  const r=(v,d)=>Math.round(v*Math.pow(10,d))/Math.pow(10,d);
+  let obraFimDif=0;
+  const dDes=D.find(d=>d.linha==="obra"&&d.tipo==="desloca"), dIni=D.find(d=>d.linha==="obra"&&d.tipo==="inicio"), dPra=D.find(d=>d.linha==="obra"&&d.tipo==="prazo");
+  if(dDes){ obraFimDif=dDes.meses; add("prelanc","Início da obra",`Meses até o lançamento: ${F.prelanc} → ${Math.max(0,F.prelanc+dDes.meses)} (a obra e as vendas andam juntas)`,[["fin.prelanc",Math.max(0,Math.round(F.prelanc+dDes.meses))]]) }
+  if(dIni){ obraFimDif+=dIni.meses; add("prelanc","Início da obra",`Meses até o lançamento: ${F.prelanc} → ${Math.max(0,F.prelanc+dIni.meses)}`,[["fin.prelanc",Math.max(0,Math.round(F.prelanc+dIni.meses))]]) }
+  if(dPra){ obraFimDif+=dPra.meses; add("obra","Prazo de obra",`Prazo de obra: ${F.obra} → ${Math.max(1,F.obra+dPra.meses)} meses`,[["fin.obra",Math.max(1,Math.round(F.obra+dPra.meses))]]) }
+  if(ob && ob.curva && D.some(d=>d.linha==="obra"&&d.tipo==="curva")){
+    // pico da curva S que melhor reproduz o formato da planilha na janela de obra
+    const L=cmp.linhas.find(l=>l.k==="obra"), i0=ob.ini[1], i1=ob.fim[1], n=Math.max(2,i1-i0+1), alvo=L.plan.slice(i0,i1+1).map(v=>Math.max(0,v)), sa=cmpSoma(alvo)||1;
+    let bp=0.5, be=Infinity; for(let p=0.2;p<=0.8001;p+=0.025){ const w=flxForma(n,0,1,p); const e=w.reduce((s,v,t)=>s+Math.abs(v-(alvo[t]||0)/sa),0); if(e<be){ be=e; bp=p } }
+    add("curva","Curva de obra",`Curva S com pico em ${Math.round(bp*100)}% do prazo`,[["flx.curva.modo","s"],["flx.curva.ini",0],["flx.curva.pico",r(bp,3)],["flx.curva.fim",1]]);
+  }
+  if(ob && ob.incc!=null){ const novo=Math.max(-0.1,Math.min(0.3,F.incc+ob.incc)); add("incc","INCC",`INCC: ${nf(F.incc*100,1)}% → ${nf(novo*100,1)}% a.a.`,[["fin.incc",r(novo,4)]],true) }
+  const totObra=D.find(d=>d.linha==="obra"&&d.tipo==="total");
+  if(totObra && ob.incc==null){
+    if(st.orc && st.orc.modo==="param") add("fator","Custo de obra",`Obra ${nf(Math.abs(totObra.pct)*100,0)}% ${totObra.pct>0?"maior":"menor"} na planilha: ajuste os coeficientes do orçamento paramétrico`,null);
+    else add("fator","Custo de obra",`Custo ÷ CUB: ${nf(F.fator,2)} → ${nf(F.fator*(1+totObra.pct),2)} ×`,[["fin.fator",r(F.fator*(1+totObra.pct),3)]],true);
+  }
+  const totTer=D.find(d=>d.linha==="terreno"&&d.tipo==="total");
+  if(totTer && tr){ const novo=Math.max(0,(tr.total[1]-(f.outorga||0))/(1+F.itbi)); add("terreno","Terreno",`Terreno: ${mi(F.terreno)} → ${mi(novo)} (com ITBI e outorga da planilha)`,[["fin.terreno",Math.round(novo)]]) }
+  const pico=D.find(d=>d.linha==="receita"&&d.tipo==="pico");
+  if(pico && rc){
+    const k=pico.meses-obraFimDif;
+    if(k!==0){
+      if(st.flx.receb.modo==="det") add("repasse","Repasse do banco",`Repasse: ${st.flx.receb.repasseMes} → ${Math.max(0,st.flx.receb.repasseMes+k)} meses após as chaves`,[["flx.receb.repasseMes",Math.max(0,Math.round(st.flx.receb.repasseMes+k))]]);
+      else add("repasse","Mês das chaves",`No recebimento simples o saldo entra nas chaves; use o detalhado para atrasar o repasse em ${cmpMeses(k)}.`,null);
+    }
+  }
+  if(st.flx.receb.modo==="det" && rc){
+    const rl=cmp.linhas.find(l=>l.k==="receita"), t=f.launch;
+    if(rl && t>=0 && rl.gab[t]>0 && rl.plan[t]>0 && Math.abs(rl.plan[t]/rl.gab[t]-1)>0.15 && Math.abs(rl.plan[t]-rl.gab[t])>0.004*Math.abs(rl.totalG)){
+      const novo=Math.max(0,Math.min(0.6,st.flx.receb.ato*rl.plan[t]/rl.gab[t])); add("ato","Ato (sinal)",`Ato: ${nf(st.flx.receb.ato*100,1)}% → ${nf(novo*100,1)}% do preço`,[["flx.receb.ato",r(novo,4)]],true) }
+  }
+  return out;
+}
+/* grava uma sugestão no estudo; devolve quantos campos mudaram */
+function comparaAplicar(st, sug){
+  if(!sug || !sug.set) return 0; let n=0;
+  sug.set.forEach(([path,v])=>{ const ks=path.split("."), last=ks.pop(); let o=st; for(const k of ks){ if(o==null) return; o=o[k] } if(o && o[last]!==v){ o[last]=v; n++ } });
+  return n;
+}
+
+/* ---------- modelo de arquivo ---------- */
+const CMP_MODELO_CAB = ["Mês","Receitas","Obra","Terreno","Indiretos","Saldo"];
+function comparaModeloCSV(){ return plaCSVTexto(CMP_MODELO_CAB, [[0,"0,00","0,00","13.500.000,00","180.000,00","-13.680.000,00"]]) }
 
 /* ================= contexto urbano do OpenStreetMap (cálculo puro: Node, Worker e página) =================
    Uma única consulta ao Overpass traz edificações, vias, calçadas, ciclovias, água (rios, lagos, mar), praia, verde,
@@ -12574,6 +13617,104 @@ function paretoPrioridade(list, key="lucro"){
   // em largura (não em profundidade): primeiro os pontos do meio de cada metade
   const fila=[[0,n-1]]; while(fila.length){ const [lo,hi]=fila.shift(); if(hi-lo<2) continue; const mid=(lo+hi)>>1; add(mid); fila.push([lo,mid],[mid,hi]) }
   return out;
+}
+
+/* ================= leitura de planilhas (CSV / matriz de XLSX) para os importadores =================
+   Cálculo puro, sem DOM. Usado por calibravendas.js (tabela de vendas) e comparafluxo.js (fluxo da empresa).
+   - plaCSV(texto)                → matriz de textos (separador ; , ou tab detectado; aspas; BOM)
+   - plaNum(v, {pontoDecimal})    → número em formato brasileiro (1.234,56 · R$ 1.234 · (1.234,00) · 12%)
+   - plaMes(v)                    → mês absoluto (ano×12+mês) de datas ("jan/27", "01/2027", "2027-01", Date) ou null
+   - plaCabecalho(matriz)         → {iHead, cab, dados}: acha a linha de cabeçalho
+   - plaMapaAuto(cab, campos)     → {chave: índice da coluna | -1}, por nome (sem acento, aliases)
+   - plaCSVTexto(cab, linhas)     → texto CSV (;) com BOM, para os modelos de arquivo */
+
+const plaNorm = s => String(s==null? "" : s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/²/g,"2").replace(/[^a-z0-9]+/g," ").trim();
+
+function plaCSV(texto){
+  let t = String(texto||"").replace(/^﻿/,"");
+  const first = t.split(/\r?\n/).find(l=>l.trim()) || "";
+  // separador: o que mais aparece na primeira linha útil, fora das aspas
+  const cnt = { ";":0, ",":0, "\t":0 }; { let q=false; for(const ch of first){ if(ch==='"') q=!q; else if(!q && ch in cnt) cnt[ch]++ } }
+  const sep = cnt[";"]>=cnt["\t"] && cnt[";"]>=cnt[","] && cnt[";"]>0 ? ";" : cnt["\t"]>cnt[","] ? "\t" : cnt[","]>0 ? "," : ";";
+  const rows=[]; let row=[], cell="", q=false;
+  for(let i=0;i<t.length;i++){
+    const ch=t[i];
+    if(q){ if(ch==='"'){ if(t[i+1]==='"'){ cell+='"'; i++ } else q=false } else cell+=ch }
+    else if(ch==='"') q=true;
+    else if(ch===sep){ row.push(cell); cell="" }
+    else if(ch==="\n"||ch==="\r"){ if(ch==="\r" && t[i+1]==="\n") i++; row.push(cell); cell=""; rows.push(row); row=[] }
+    else cell+=ch;
+  }
+  if(cell!==""||row.length){ row.push(cell); rows.push(row) }
+  return rows.map(r=>r.map(c=>c.trim())).filter(r=>r.some(c=>c!==""));
+}
+
+/* número em formato brasileiro; null se não for número */
+function plaNum(v, o={}){
+  if(v==null||v==="") return null;
+  if(typeof v==="number") return isFinite(v)? v : null;
+  if(v instanceof Date) return null;
+  let s=String(v).trim().replace(/R\$|\s| /g,"").replace(/−/g,"-"); if(!s) return null;
+  let neg=false, pc=false;
+  if(/^\(.*\)$/.test(s)){ neg=true; s=s.slice(1,-1) }
+  if(s.endsWith("%")){ pc=true; s=s.slice(0,-1) }
+  if(s.startsWith("-")){ neg=!neg; s=s.slice(1) } else if(s.startsWith("+")) s=s.slice(1);
+  if(s.endsWith("-")){ neg=!neg; s=s.slice(0,-1) }
+  if(!s||/[^\d.,]/.test(s)) return null;
+  const lc=s.lastIndexOf(","), lp=s.lastIndexOf(".");
+  if(lc>=0 && lp>=0){ s = lc>lp? s.replace(/\./g,"").replace(",",".") : s.replace(/,/g,"") }
+  else if(lc>=0){ s = /^\d{1,3}(,\d{3}){2,}$/.test(s)? s.replace(/,/g,"") : s.replace(",",".") }
+  else if(lp>=0){
+    if(/^\d{1,3}(\.\d{3})+$/.test(s)){ const ponto = o.pontoDecimal && /^\d{1,3}\.\d{3}$/.test(s) && +s.split(".")[0] < 1000 && +s.replace(".","") > 1000; if(!ponto) s=s.replace(/\./g,"") }
+    else if((s.match(/\./g)||[]).length>1) return null;
+  }
+  const x=parseFloat(s); if(!isFinite(x)) return null;
+  return (neg? -x : x) / (pc? 100 : 1);
+}
+
+const PLA_MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+/* mês absoluto (ano×12+mês−1) de uma data; aceita Date, "jan/27", "janeiro/2027", "01/2027", "2027-01", "01/03/2027" */
+function plaMes(v){
+  if(v==null||v==="") return null;
+  if(v instanceof Date){ if(isNaN(v)) return null; const u=new Date(v.getTime()+12*36e5); return u.getUTCFullYear()*12+u.getUTCMonth() }   // +12 h: sem o salto de fuso das datas do XLSX
+  const s=plaNorm(v).replace(/ /g,"/"); if(!s) return null;
+  let m;
+  if((m=s.match(/^([a-z]{3})[a-z]*\/?(\d{2}|\d{4})$/))){ const i=PLA_MESES.indexOf(m[1]); if(i>=0){ let y=+m[2]; if(y<100) y+=2000; return y*12+i } }
+  if((m=s.match(/^(\d{4})\/?(\d{1,2})(\/\d{1,2})?$/))){ const mm=+m[2]; if(mm>=1&&mm<=12) return +m[1]*12+mm-1 }
+  if((m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/))){ const mm=+m[2]; let y=+m[3]; if(y<100) y+=2000; if(mm>=1&&mm<=12) return y*12+mm-1 }
+  if((m=s.match(/^(\d{1,2})\/(\d{2}|\d{4})$/))){ const mm=+m[1]; let y=+m[2]; if(y<100) y+=2000; if(mm>=1&&mm<=12) return y*12+mm-1 }
+  return null;
+}
+
+/* acha o cabeçalho: entre as 12 primeiras linhas, a que tem mais células de texto (não numéricas) */
+function plaCabecalho(matriz){
+  let best=0, bestN=-1;
+  for(let i=0;i<Math.min(12,matriz.length);i++){
+    const n=matriz[i].filter(c=>c!=null && String(c).trim()!=="" && plaNum(c)==null).length;
+    if(n>bestN){ bestN=n; best=i }
+  }
+  const cab=(matriz[best]||[]).map(c=>String(c==null? "" : c).trim());
+  return { iHead:best, cab, dados:matriz.slice(best+1) };
+}
+
+/* campos = [{k, alias:[…]}] em ordem de prioridade; devolve {k: coluna} (cada coluna serve a um campo só) */
+function plaMapaAuto(cab, campos){
+  const H=cab.map(plaNorm), usada=new Set(), out={};
+  campos.forEach(c=>{
+    let melhor=-1, ms=0;
+    H.forEach((h,i)=>{ if(!h||usada.has(i)) return;
+      c.alias.forEach(a=>{ const n=plaNorm(a); let s=0;
+        if(h===n) s=4; else if(h.startsWith(n+" ")||h.endsWith(" "+n)) s=3; else if((" "+h+" ").includes(" "+n+" ")) s=2; else if(n.length>=4 && h.includes(n)) s=1;
+        if(s>ms){ ms=s; melhor=i } }) });
+    out[c.k]=melhor; if(melhor>=0) usada.add(melhor);
+  });
+  return out;
+}
+
+/* texto CSV com ; e vírgula decimal (modelos de arquivo) */
+function plaCSVTexto(cab, linhas){
+  const cel = v => { if(v==null) return ""; if(typeof v==="number") return String(+v.toFixed(4)).replace(".",","); const s=String(v); return /[;"\n]/.test(s)? `"${s.replace(/"/g,'""')}"` : s };
+  return "﻿" + [cab, ...linhas].map(r=>r.map(cel).join(";")).join("\r\n") + "\r\n";
 }
 
 /* ================= relevo: inclinação do terreno a partir de modelo digital de elevação (Fase B, item 2) =================
@@ -16512,6 +17653,36 @@ addCard("cen", { key:"apresentacao", order:20, sub:"entregar", html:()=>SEC("Apr
   {key:"apresentacao", id:"cardApres", open:true, sum:"tela cheia · link",
    info:"Apresentar: passo a passo em tela cheia (maquete 3D, potencial, produto, vendas e números-chave). Copiar link: quem abre vê o estudo como está agora, sem poder editar; nada é enviado a servidor e o estudo salvo no aparelho dele não muda."}) });
 
+/* ================= Fase E: leitura de arquivos CSV/XLSX para os importadores (calibração e comparação de fluxo) =================
+   plaLerArquivo(file) → Promise<{matriz, nome, aba?}>. CSV em UTF-8 ou Windows-1252 (Excel em português); XLSX/XLS/ODS pelo SheetJS
+   (versão fixa, cdnjs, carregado só na primeira vez). Cálculo da leitura em src/calc/planilha.js. */
+const XLSX_URL = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+const PLA_ACCEPT = ".csv,.txt,.tsv,.xlsx,.xls,.xlsm,.ods,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+async function plaLerArquivo(file){
+  if(!file) throw new Error("Nenhum arquivo escolhido.");
+  if(file.size>8*1024*1024) throw new Error("Arquivo grande demais (máximo 8 MB).");
+  const nome=file.name||"arquivo", ext=(nome.split(".").pop()||"").toLowerCase(), buf=await file.arrayBuffer();
+  if(/^(xlsx|xls|xlsm|ods)$/.test(ext)){
+    try{ await loadScript(XLSX_URL) }catch(e){ throw new Error("Não consegui carregar o leitor de planilhas. Salve como CSV e tente de novo.") }
+    const wb=XLSX.read(buf,{type:"array", cellDates:true});
+    for(const aba of wb.SheetNames){
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[aba],{header:1, raw:true, defval:""}).filter(r=>r.some(c=>c!==""&&c!=null));
+      if(rows.length>=2) return { matriz:rows, nome, aba };
+    }
+    throw new Error("A planilha não tem dados.");
+  }
+  let texto; try{ texto=new TextDecoder("utf-8",{fatal:true}).decode(buf) }catch(e){ texto=new TextDecoder("windows-1252").decode(buf) }
+  const matriz=plaCSV(texto); if(matriz.length<2) throw new Error("O arquivo não tem dados (preciso do cabeçalho e de pelo menos uma linha).");
+  return { matriz, nome };
+}
+/* baixa um modelo de arquivo (CSV) pelo mesmo caminho dos demais downloads */
+const plaBaixarModelo = (nome, texto) => saveFile(nome, texto);
+/* <select> para ligar um campo a uma coluna do arquivo */
+function plaSelect(id, dataAttr, chave, rot, cab, atual, obrig){
+  return `<div class="fld"><label class="fl" for="${id}">${rot}${obrig?" *":""}</label><select class="sel" id="${id}" ${dataAttr}="${chave}">
+    <option value="-1">— não usar —</option>${cab.map((h,i)=>`<option value="${i}" ${atual===i?"selected":""}>${esc(h||("Coluna "+(i+1)))}</option>`).join("")}</select></div>`;
+}
+
 /* ================= conta e acesso (app web em gabarito.rixel.com.br) =================
    Quem decide se a pessoa pode usar o Gabarito é a RIXEL. O navegador não guarda nenhum token da Rixel no caminho principal:
      (A) "Entrar com a Rixel" → /api/rixel/iniciar (PKCE) → Rixel → /api/rixel/callback → cookie HttpOnly da sessão do Gabarito.
@@ -17395,6 +18566,131 @@ if(_acessoPagina) ACT.acessoStudy = async b=>{
 };
 }
 
+/* ================= Fase E (interface): calibrar os prêmios com uma tabela de vendas real =================
+   Card "Calibrar com tabela de vendas" na Viabilidade › Vendas (fechado por padrão). Cálculo em src/calc/calibravendas.js;
+   leitura de arquivos em src/ui/arquivos.js. Os dados importados ficam só na memória da página (VCAL); o estudo guarda apenas
+   S.vcal.info (quando/quanto da última calibração aplicada). Nada muda nos números até "Aplicar ao estudo" (Ctrl+Z desfaz). */
+extendDEF("vcal", { info:null });
+{ const st=document.createElement("style"); st.id="calCSS"; st.textContent=`
+.calOr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.calOr>div{padding:5px 7px;border-radius:9px;background:var(--surface-2);display:grid;gap:1px;min-width:0}
+.calOr b{font-family:var(--f-display);font-size:11px;color:var(--muted);font-weight:600}
+.calOr span{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);white-space:nowrap}
+.calOr em{font-family:var(--f-mono);font-size:11.5px;font-style:normal;font-weight:600;color:var(--ink)}
+.calOr .sem em{color:var(--muted);font-weight:400}
+.calAv{color:var(--warn);font-size:11.5px;line-height:1.35}`; document.head.appendChild(st) }
+
+const VCAL = { dados:[], cab:[], nome:"", mapa:{}, off:2, ln:null, res:null, opts:{ tetoAuto:true, usaOrient:true, usaVista:true }, sig:"" };
+const calP = v => v==null||!isFinite(v)? "—" : Math.abs(v)<0.00005? "0,0%" : (v>0?"+":"−")+nf(Math.abs(v)*100,1)+"%";
+const calPP = v => v==null||!isFinite(v)? "—" : nf(v*100,1)+"%";
+const calSig = () => JSON.stringify([S.venda.andarPct, S.venda.andarTeto, S.venda.orient, S.venda.vistaPct, S.venda.cobPct, S.produto.mix.map(u=>[u.nome,u.preco]), S.produto.cob.preco]);
+
+function calRecalc(){
+  if(!VCAL.dados.length){ VCAL.ln=VCAL.res=null; return }
+  VCAL.ln=calibLinhas(VCAL.dados, VCAL.mapa, { offset:VCAL.off });
+  VCAL.res=calibraPremios(VCAL.ln.linhas, { ...VCAL.opts, atual:S.venda });
+  VCAL.sig=calSig();
+}
+
+/* ---------- marcação ---------- */
+function calResSVG(pa){
+  if(!pa.length) return "";
+  const W=360, H=116, pl=30, pr=6, pt=8, pb=18, mx=Math.max(0.03, ...pa.map(a=>Math.abs(a.res)))*1.1, bw=(W-pl-pr)/pa.length, y0=pt+(H-pt-pb)/2, sy=v=>(H-pt-pb)/2*v/mx;
+  const lab=(v)=>`${v>0?"+":v<0?"−":""}${nf(Math.abs(v)*100,0)}%`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Resíduo médio por andar: preço real contra o previsto">
+    <line x1="${pl}" x2="${W-pr}" y1="${y0}" y2="${y0}" stroke="var(--line)"/>
+    ${[mx,-mx].map(v=>`<text x="${pl-4}" y="${(y0-sy(v)+3).toFixed(1)}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${lab(v)}</text>`).join("")}
+    ${pa.map((a,i)=>{ const h=sy(a.res), x=pl+i*bw+Math.min(1,bw*0.12); const ruim=Math.abs(a.res)>0.03;
+      return `<rect x="${x.toFixed(1)}" y="${(h>=0? y0-h : y0).toFixed(1)}" width="${Math.max(1,bw-Math.min(2,bw*0.24)).toFixed(1)}" height="${Math.max(0.6,Math.abs(h)).toFixed(1)}" rx="1" fill="${ruim?"var(--bad)":"var(--accent)"}" fill-opacity="${ruim?.75:.55}"><title>${a.andar}º andar: ${calP(a.res)} (${a.n} un.)</title></rect>` }).join("")}
+    <text x="${pl}" y="${H-4}" font-size="9" fill="var(--muted)">${pa[0].andar}º</text><text x="${W-pr}" y="${H-4}" font-size="9" text-anchor="end" fill="var(--muted)">${pa[pa.length-1].andar}º andar</text></svg>`;
+}
+function calBody(){
+  const imp=`<div class="row"><label class="btn sm ${VCAL.dados.length?"ghost":"pri"}" style="cursor:pointer">${VCAL.dados.length?"Trocar tabela":"Importar tabela"}<input type="file" id="calFile" accept="${PLA_ACCEPT}" hidden></label>
+    <button type="button" class="btn sm ghost" data-act="calModelo">Baixar modelo</button>${VCAL.dados.length?`<button type="button" class="btn sm ghost" data-act="calLimpa">Limpar</button>`:""}</div>`;
+  const info=S.vcal&&S.vcal.info, ult=info? `<p class="note">Última calibração aplicada: ${info.n} unidades · R² ${calPP(info.r2)} · ${esc(info.origem||"")} · ${new Date(info.quando).toLocaleDateString("pt-BR")}</p>` : "";
+  if(!VCAL.dados.length) return imp + `<p class="note">CSV ou XLSX: unidade, andar, área privativa e preço.</p>` + ult;
+  const r=VCAL.res, ln=VCAL.ln;
+  const mapaAdv = ADV(
+    KV(CAL_CAMPOS.map(c=>plaSelect("calMap-"+c.k,"data-cal",c.k,c.rot,VCAL.cab,VCAL.mapa[c.k],c.obrig)).join("")) +
+    `<div class="grp">Ajuste</div>` +
+    ["tetoAuto|Detectar o teto do prêmio por andar","usaOrient|Calibrar a orientação","usaVista|Calibrar a vista (se a tabela trouxer)"].map(s=>{ const [k,l]=s.split("|"); return `<label class="sw"><input type="checkbox" data-cal-opt="${k}" ${VCAL.opts[k]?"checked":""}><span class="tg"></span><span>${l}</span></label>` }).join("") +
+    (ln.descartadas.length? `<div class="grp">Linhas descartadas (${ln.descartadas.length})</div><div class="note" style="max-height:110px;overflow:auto">${ln.descartadas.slice(0,30).map(d=>`linha ${d.linha}: ${esc(d.motivo)}`).join("<br>")}${ln.descartadas.length>30?"<br>…":""}</div>` : ""),
+    { key:"cal" });
+  const cab=`<p class="note">${esc(VCAL.nome)} · ${ln.linhas.length} linhas válidas${ln.descartadas.length?` · ${ln.descartadas.length} descartadas`:""}</p>`;
+  if(!r || !r.ok) return imp + cab + `<p class="calAv">${esc(r? r.motivo : "Sem dados.")} Confira as colunas em “Mais opções”.</p>` + ln.avisos.map(a=>`<p class="calAv">${esc(a)}</p>`).join("") + mapaAdv;
+  const V=S.venda, P=S.produto;
+  const met=`<div class="mets"><div class="met"><div class="l">Ajuste (R²)${INFO("R²")}</div><div class="v">${calPP(r.r2)}</div><div class="s">${r.n} unidades · ${r.tipologias.length+(r.cob?1:0)} tipologia${r.tipologias.length+(r.cob?1:0)>1?"s":""}</div></div>
+    <div class="met"><div class="l">Erro médio${INFO("Erro médio de previsão do preço por m², com a fórmula do Gabarito: preço base × (1 + prêmios). “Atual” usa os prêmios que o estudo tem hoje, com o preço base refeito para a tabela.")}</div><div class="v">${calPP(r.erroMedio)}</div><div class="s">${r.erroAtual!=null? "atual "+calPP(r.erroAtual) : "&nbsp;"}</div></div></div>`;
+  const a=r.andar;
+  const tab=`<table class="tbl multi" style="table-layout:fixed"><tr><th style="width:42%"></th><th>Atual</th><th>Calibrado</th></tr>
+    <tr><td>Por andar</td><td>${calP(V.andarPct)}</td><td>${a? `<span title="±${nf(a.ep*100,2)} ponto percentual (erro-padrão)">${calP(a.pct)}</span>` : "—"}</td></tr>
+    <tr><td>Teto do andar</td><td>${calP(V.andarTeto)}</td><td>${a? (a.teto!=null? calP(a.teto)+` <span class="note">no ${a.K+1}º</span>` : `sem teto até o ${a.aMax}º`) : "—"}</td></tr>
+    <tr><td>Vista (até ±)</td><td>${calP(V.vistaPct)}</td><td>${r.vista? calP(Math.max(0,r.vista.pct)) : "sem dado"}</td></tr>
+    <tr><td>Cobertura${INFO("A cobertura é calibrada como grupo próprio: o preço por m² dela já carrega o prêmio. Por isso o prêmio extra fica em 0%.")}</td><td>${nf(P.cob.preco,0)}/m²</td><td>${r.cob? nf(r.cob.base,0)+`/m² <span class="note">${calP(r.cob.premio)}</span>` : "sem dado"}</td></tr>
+    <tr><td>Sol${INFO("O prêmio de sol não é calibrável sem as horas de sol da tabela de referência. O do estudo continua valendo.")}</td><td>${calP(V.solPct)}/h</td><td class="note" style="font-family:var(--f-body)">mantido</td></tr></table>`;
+  const or=`<div class="grp">Orientação (melhor fachada)${INFO("Prêmio de cada direção, em relação à média da tabela. Direções sem dados na tabela (—) ficam como estão no estudo.")}</div><div class="calOr">${CAL_DIRS.map(d=>{ const c=r.orient[d]; return `<div class="${c.v==null?"sem":""}" title="${c.n} unidades"><b>${d}</b><span>${calP(V.orient[d])}</span><em>${c.v==null?"—":calP(c.v)}</em></div>` }).join("")}</div>`;
+  const usados=new Set(), tip=r.tipologias.map(t=>{ const j=(t.nome==="Todas")? -1 : calibCasaMix(t.nome,P.mix,usados); if(j>=0) usados.add(j); return `<tr><td>${esc(t.nome)}</td><td>${t.n}</td><td>${j>=0? nf(P.mix[j].preco,0) : "—"}</td><td>${nf(t.base,0)}</td></tr>` }).join("");
+  const tipT=`<div class="grp">Preço base (R$/m², 1º andar)</div><table class="tbl multi" style="table-layout:fixed"><tr><th style="width:34%"></th><th>Un.</th><th>Mix atual</th><th>Calibrado</th></tr>${tip}</table>`;
+  const sem=calibSemMix(S,r), avs=[...r.avisos, ...ln.avisos, ...(sem.length? [`Sem correspondência no mix do estudo: ${sem.join(", ")}.`] : []), ...(r.usouOrient && r.semOrient? [`${r.semOrient} unidade${r.semOrient>1?"s":""} sem orientação reconhecida.`] : [])];
+  const grf=`<div class="grp">Resíduo médio por andar${INFO("Resíduo")}</div>${calResSVG(r.porAndar)}`;
+  const acts=`<div class="row"><button type="button" class="btn pri sm" data-act="calAplicar">Aplicar ao estudo</button><button type="button" class="btn sm" data-act="calPadrao">Salvar como padrão da empresa</button>${vendaPadraoEmpresa()?`<button type="button" class="btn sm ghost" data-act="calPadraoUsa">Usar padrão da empresa</button>`:""}</div>`;
+  return imp + cab + met + tab + or + tipT + grf + avs.map(t=>`<p class="calAv">${esc(t)}</p>`).join("") + acts + ult + mapaAdv;
+}
+function calRender(){ setHTML("calBox", calBody()); setSum("vCal", calSum()) }
+function calSum(){
+  const r=VCAL.res, info=S.vcal&&S.vcal.info;
+  if(r&&r.ok) return `R² <b>${calPP(r.r2)}</b> · ${r.n} un.`;
+  return info? `calibrado: ${info.n} un. · R² ${calPP(info.r2)}` : "sem tabela";
+}
+
+/* ---------- ações ---------- */
+async function calCarregar(file){
+  try{
+    const r=await plaLerArquivo(file), h=plaCabecalho(r.matriz);
+    VCAL.nome=r.nome+(r.aba?` (${r.aba})`:""); VCAL.cab=h.cab; VCAL.dados=h.dados; VCAL.off=h.iHead+2; VCAL.mapa=calibMapa(h.cab);
+    calRecalc(); calRender();
+    const m=VCAL.mapa; if(!(m.area>=0)||!(m.preco>=0||m.precoM2>=0)) toast("Não achei área e preço: ligue as colunas em “Mais opções”.");
+  }catch(e){ toast(e&&e.message||"Não consegui ler o arquivo") }
+}
+Object.assign(ACT, {
+  calModelo: ()=>plaBaixarModelo("modelo-tabela-de-vendas.csv", calibModeloCSV()),
+  calLimpa: ()=>{ VCAL.dados=[]; VCAL.cab=[]; VCAL.res=VCAL.ln=null; VCAL.nome=""; calRender() },
+  calAplicar: ()=>{
+    const r=VCAL.res; if(!r||!r.ok) return;
+    const mud=calibAplicar(S, r);
+    if(!mud.length){ toast("Nada a mudar: o estudo já está com esses prêmios"); return }
+    S.vcal.info={ quando:new Date().toISOString(), n:r.n, r2:r.r2, origem:VCAL.nome };
+    VCAL.sig=""; renderTab(); update(); toast(`Calibrado: ${mud.length} ajuste${mud.length>1?"s":""}. Ctrl+Z desfaz.`);
+  },
+  calPadrao: ()=>{
+    const r=VCAL.res; if(!r||!r.ok) return;
+    const tmp=clone(S); calibAplicar(tmp, r);
+    if(vendaSalvarPadrao(tmp, { n:r.n, r2:r.r2, origem:VCAL.nome })){ calRender(); toast("Prêmios salvos como padrão da empresa: estudos novos começam com eles") } else toast("Não foi possível gravar neste navegador");
+  },
+  calPadraoUsa: ()=>{ if(vendaAplicarPadrao(S)){ VCAL.sig=""; renderTab(); update(); toast("Padrão da empresa aplicado ao estudo") } },
+});
+
+/* padrão da empresa: vale para estudos novos (DEF) e para o estudo que ainda não tem prêmios próprios salvos */
+{ const p=vendaPadraoEmpresa(), sv=LS.get("gabarito.v2");
+  if(p){ ["andarPct","andarTeto","vistaPct","cobPct"].forEach(k=>{ if(typeof p[k]==="number"){ DEF.venda[k]=p[k]; if(!(sv&&sv.venda&&typeof sv.venda[k]==="number")) S.venda[k]=p[k] } });
+    if(p.orient){ DEF.venda.orient={...DEF.venda.orient,...p.orient}; if(!(sv&&sv.venda&&sv.venda.orient)) S.venda.orient={...S.venda.orient,...p.orient} } } }
+
+addCard("viab", { key:"vCal", sub:"vendas", order:46,
+  html: ()=>SEC("Calibrar com tabela de vendas", `<div id="calBox">${calBody()}</div>`, { key:"vCal", info:"Calibrar prêmios", sum:calSum() }),
+  after: ()=>{
+    const box=document.getElementById("calBox"); if(!box) return;
+    box.addEventListener("change", async e=>{ const t=e.target;
+      if(t.id==="calFile"){ await calCarregar(t.files&&t.files[0]); t.value="" }
+      else if(t.dataset.cal){ VCAL.mapa[t.dataset.cal]=+t.value; calRecalc(); calRender() }
+      else if(t.dataset.calOpt){ VCAL.opts[t.dataset.calOpt]=t.checked; calRecalc(); calRender() } });
+  },
+  live: (m,f,fast)=>{
+    setSum("vCal", calSum());
+    if(fast || !VCAL.dados.length || !finVis("calBox")) return;
+    if(calSig()!==VCAL.sig){ calRecalc(); calRender() }
+  }
+});
+
 /* ================= 1.2 cômodos: desenho, edição das divisões e inspetor =================
    Desenho (chamado pelo tipoBody do plan2d, também nos Andares e no PDF): paredes em poché (a unidade cheia na cor da
    parede e cada cômodo recuado pela meia-parede), vãos de porta com folha e arco, janelas na fachada, mobiliário
@@ -17549,6 +18845,123 @@ ACT.comUsar = b=>{ const C=S.comodos, v=C.variantes[+b.dataset.i]; if(!v) return
 ACT.comDel = b=>{ const C=S.comodos, i=+b.dataset.i, v=C.variantes[i]; if(!v) return; if(!b.dataset.arm){ b.dataset.arm=1; b.textContent="excluir?"; b.style.opacity=1; b.style.color="var(--bad)"; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.arm; b.textContent="×"; b.style.opacity=".6"; b.style.color="" } },4000); return } C.variantes.splice(i,1); (C.tipos||[]).forEach(t=>{ if(t.sel===i) t.sel=-1; else if(t.sel>i) t.sel-- }); save(); renderTab(); toast(`${v.nome} excluída`) };
 ACT.comAuto = b=>{ const t=comTipoEntry(b.dataset.k); t.cortes={}; t.sel=-1; update(); renderTab(); toast(`${t.nome}: divisões automáticas`) };
 HOOK.pdf.push(ctx=>comPdf(ctx));
+
+/* ================= Fase E (interface): comparar o fluxo do Gabarito com a planilha da empresa =================
+   Card "Comparar com planilha" na Viabilidade › Riscos (fechado por padrão). Cálculo em src/calc/comparafluxo.js;
+   leitura de arquivos em src/ui/arquivos.js. A planilha importada fica só na memória da página (CMPU); a comparação é
+   refeita a cada cálculo (premissas mudam → o gráfico acompanha). Nada muda no estudo até "Aplicar" numa sugestão (Ctrl+Z desfaz). */
+{ const st=document.createElement("style"); st.id="cmpCSS"; st.textContent=`
+.cmpLeg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--muted);margin-top:2px}
+.cmpLeg i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+.cmpLi{grid-template-columns:auto minmax(0,1fr) auto}
+.cmpLi .tt{font-size:12px;line-height:1.35;font-weight:500}
+.cmpLi .ss{font-size:10.5px}`; document.head.appendChild(st) }
+
+const CMPU = { dados:[], cab:[], nome:"", mapa:{}, plan:null, cmp:null, sug:[], desl:0, serie:"acum" };
+const cmpMi = v => (v<0?"−":"")+mi(Math.abs(v)).replace("R$ ","");
+const cmpTir = v => v==null? "—" : pct(v);
+
+function cmpLer(){
+  if(!CMPU.dados.length){ CMPU.plan=null; return }
+  CMPU.plan=comparaLer(CMPU.dados, CMPU.mapa);
+}
+function cmpCalc(f){
+  CMPU.cmp=null; CMPU.sug=[];
+  if(!CMPU.plan || !CMPU.plan.ok || !f) return;
+  CMPU.cmp=comparaFluxo(CMPU.plan, f, { desl:CMPU.desl, tma:S.fin.tma });
+  CMPU.sug=comparaSugestoes(CMPU.cmp, S, f);
+}
+
+/* ---------- gráfico: duas linhas sobrepostas ---------- */
+function cmpChart(c){
+  const ser=CMPU.serie==="acum"? { gab:c.acum.gab, plan:c.acum.plan } : (c.linhas.find(l=>l.k===CMPU.serie)||c.linhas[c.linhas.length-1]);
+  const G=ser.gab, P=ser.plan, N=G.length, W=360, H=150, pl=40, pr=6, pt=8, pb=20;
+  const all=[...G,...P], mn=Math.min(0,...all), mx=Math.max(0,...all), sx=i=>pl+(W-pl-pr)*i/Math.max(1,N-1), sy=v=>pt+(H-pt-pb)*(1-(v-mn)/((mx-mn)||1));
+  const path=a=>a.map((v,i)=>(i?"L":"M")+sx(i).toFixed(1)+","+sy(v).toFixed(1)).join("");
+  const shade=c.divergencias.filter(d=>d.mes0!=null&&d.mes1!=null&&d.tipo==="janela"&&(CMPU.serie==="acum"||d.linha===CMPU.serie)).map(d=>`<rect x="${sx(d.mes0).toFixed(1)}" y="${pt}" width="${Math.max(2,sx(d.mes1)-sx(d.mes0)).toFixed(1)}" height="${H-pt-pb}" fill="var(--warn)" fill-opacity=".1"/>`).join("");
+  const ticks=[mn,(mn+mx)/2,mx].map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${sy(v).toFixed(1)}" y2="${sy(v).toFixed(1)}" stroke="var(--line)" stroke-dasharray="2 3"/><text x="${pl-4}" y="${(sy(v)+3).toFixed(1)}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${nf(v/1e6,1)}</text>`).join("");
+  const z=mn<0&&mx>0? `<line x1="${pl}" x2="${W-pr}" y1="${sy(0).toFixed(1)}" y2="${sy(0).toFixed(1)}" stroke="var(--ink)" stroke-opacity=".5"/>` : "";
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Fluxo do Gabarito e da planilha, sobrepostos">${shade}${ticks}${z}
+    <path d="${path(G)}" fill="none" stroke="var(--accent)" stroke-width="2"/><path d="${path(P)}" fill="none" stroke="var(--mark)" stroke-width="2" stroke-dasharray="5 3"/>
+    <text x="${pl}" y="${H-5}" font-size="9" fill="var(--muted)">mês 0</text><text x="${W-pr}" y="${H-5}" font-size="9" text-anchor="end" fill="var(--muted)">mês ${N-1} · R$ mi</text></svg>
+    <div class="cmpLeg"><span><i style="border-color:var(--accent)"></i>Gabarito</span><span><i style="border-color:var(--mark);border-top-style:dashed"></i>Planilha</span>${shade?`<span style="color:var(--warn)">trecho divergente</span>`:""}</div>`;
+}
+
+function cmpBody(){
+  const imp=`<div class="row"><label class="btn sm ${CMPU.dados.length?"ghost":"pri"}" style="cursor:pointer">${CMPU.dados.length?"Trocar planilha":"Importar planilha"}<input type="file" id="cmpFile" accept="${PLA_ACCEPT}" hidden></label>
+    <button type="button" class="btn sm ghost" data-act="fluxoModelo">Baixar modelo</button>${CMPU.dados.length?`<button type="button" class="btn sm ghost" data-act="fluxoLimpa">Limpar</button>`:""}</div>`;
+  if(!CMPU.dados.length) return imp + `<p class="note">CSV ou XLSX: mês, receitas, custos e saldo.</p>`;
+  const p=CMPU.plan, nome=`<p class="note">${esc(CMPU.nome)}${p&&p.ok?` · ${p.nLinhas} linhas · ${p.T} meses`:""}</p>`;
+  const adv=ADV(
+    KV(CMP_CAMPOS.map(c=>plaSelect("cmpMap-"+c.k,"data-cmp",c.k,c.rot,CMPU.cab,CMPU.mapa[c.k],c.k==="saldo")).join("")) +
+    `<div class="fld"><label class="fl" for="cmpDesl">Deslocar a planilha${INFO("Meses somados ao mês de cada linha da planilha: use quando ela começa em outra data (positivo = a planilha começa antes do Gabarito; negativo = depois).")}</label><div class="inp"><input id="cmpDesl" type="number" step="1" inputmode="numeric" data-cmp-desl="1" value="${CMPU.desl}"><em>meses</em></div></div>`, { key:"cmp" });
+  if(!p || !p.ok) return imp + nome + `<p class="calAv">${esc(p? p.motivo : "Sem dados.")} Confira as colunas em “Mais opções”.</p>` + adv;
+  return imp + nome + `<div id="cmpRes"></div>` + adv;
+}
+/* parte viva: métricas, gráfico, divergências e sugestões */
+function cmpResHTML(){
+  const c=CMPU.cmp, p=CMPU.plan; if(!c) return "";
+  const g=c.metricas.gab, q=c.metricas.plan;
+  const d=(a,b,inv)=>{ const x=a-b, bom=inv? x<0 : x>0; return `<span style="color:${Math.abs(x)<1?"var(--muted)":bom?"var(--ok)":"var(--bad)"}">${x>=0?"+":"−"}${cmpMi(Math.abs(x))}</span>` };
+  const dt=(a,b)=> a==null||b==null? "—" : `${a-b>=0?"+":"−"}${nf(Math.abs(a-b)*100,1)} p.p.`;
+  const tab=`<table class="tbl multi" style="table-layout:fixed"><tr><th style="width:26%"></th><th>Gabarito</th><th>Planilha</th><th>Diferença</th></tr>
+    <tr><td>Lucro</td><td>${cmpMi(g.lucro)}</td><td>${cmpMi(q.lucro)}</td><td>${d(q.lucro,g.lucro)}</td></tr>
+    <tr><td>TIR a.a.</td><td>${cmpTir(g.tirA)}</td><td>${cmpTir(q.tirA)}</td><td>${dt(q.tirA,g.tirA)}</td></tr>
+    <tr><td>VPL</td><td>${cmpMi(g.vpl)}</td><td>${cmpMi(q.vpl)}</td><td>${d(q.vpl,g.vpl)}</td></tr>
+    <tr><td>Exposição</td><td>${cmpMi(-g.exp)}</td><td>${cmpMi(-q.exp)}</td><td>${d(-q.exp,-g.exp,true)}</td></tr>
+    <tr><td>Payback</td><td>${g.pay==null?"—":"mês "+g.pay}</td><td>${q.pay==null?"—":"mês "+q.pay}</td><td>${g.pay==null||q.pay==null?"—":(q.pay-g.pay>=0?"+":"−")+Math.abs(q.pay-g.pay)+" m"}</td></tr></table>`;
+  const rot={receita:"Receitas", obra:"Obra", terreno:"Terreno", indiretos:"Indiretos"};
+  const opts=[["acum","Caixa acumulado"],...c.linhas.filter(l=>l.k!=="saldo").map(l=>[l.k,rot[l.k]||l.nome])];
+  const seg=`<div class="seg" role="group" aria-label="Linha do gráfico" style="display:flex;flex-wrap:wrap">${opts.map(([k,l])=>`<button type="button" data-act="fluxoSerie" data-v="${k}" aria-pressed="${CMPU.serie===k}">${l}</button>`).join("")}</div>`;
+  const imp=v=>{ const r=Math.abs(v)/Math.max(1,Math.abs(g.lucro)); return r>0.05?"bad":r>0.01?"warn":"ok" };
+  const divs=c.divergencias.length? `<div class="grp">Divergências${INFO("Ordenadas pelo valor em jogo. “Entre os meses” é um trecho em que a linha difere mais de 6%.")}</div><div class="list">${c.divergencias.slice(0,6).map(x=>`<div class="li cmpLi"><span class="dot ${imp(x.impacto)}" aria-hidden="true"></span><span class="tt">${esc(x.msg)}</span><span class="ss">${cmpMi(x.impacto)}</span></div>`).join("")}</div>`
+    : `<p class="note">${c.zero? "Os dois fluxos são iguais." : "Sem divergências relevantes: as diferenças ficam abaixo de 3% por linha."}</p>`;
+  const sug=CMPU.sug.length? `<div class="grp">Ajustes sugeridos${INFO("Quando a diferença é explicável por uma premissa do Gabarito, o ajuste aparece aqui. “aprox.” = efeito estimado; confira o gráfico depois de aplicar.")}</div><div class="list">${CMPU.sug.map((s,i)=>`<div class="li cmpLi"><span class="dot ok" aria-hidden="true"></span><span class="tt">${esc(s.rot)}${s.aprox?` <span class="pill">aprox.</span>`:""}<span class="ss" style="display:block">${esc(s.det)}</span></span>${s.set?`<button type="button" class="btn sm" data-act="fluxoAplica" data-i="${i}">Aplicar</button>`:`<span class="pill">só aviso</span>`}</div>`).join("")}</div>` : "";
+  const av=[...new Set([...(p.avisos||[]),...(c.avisos||[])])].map(a=>`<p class="calAv">${esc(a)}</p>`).join("");
+  return tab + `<div class="grp">Fluxo sobreposto</div>` + seg + cmpChart(c) + divs + sug + av;
+}
+function cmpSum(){
+  const c=CMPU.cmp; if(!c) return CMPU.dados.length? "revise as colunas" : "sem planilha";
+  return c.zero? "fluxos iguais" : `<b>${c.divergencias.length}</b> divergência${c.divergencias.length===1?"":"s"} · TIR ${cmpTir(c.metricas.plan.tirA)} × ${cmpTir(c.metricas.gab.tirA)}`;
+}
+
+/* ---------- ações ---------- */
+function cmpAtualiza(){
+  const L=window._last; if(L) cmpCalc(L.f);
+  setSum("cmpPlan", cmpSum());
+  if(CMPU.cmp && document.getElementById("cmpRes")) setHTML("cmpRes", cmpResHTML());
+}
+async function cmpCarregar(file){
+  try{
+    const r=await plaLerArquivo(file), h=plaCabecalho(r.matriz);
+    CMPU.nome=r.nome+(r.aba?` (${r.aba})`:""); CMPU.cab=h.cab; CMPU.dados=h.dados; CMPU.mapa=comparaMapa(h.cab); CMPU.desl=0;
+    cmpLer(); const e=document.getElementById("cmpBox"); if(e) e.innerHTML=cmpBody(); cmpAtualiza();
+    if(CMPU.plan && !CMPU.plan.ok) toast(CMPU.plan.motivo);
+  }catch(e){ toast(e&&e.message||"Não consegui ler o arquivo") }
+}
+Object.assign(ACT, {
+  fluxoModelo: ()=>plaBaixarModelo("modelo-fluxo-da-planilha.csv", comparaModeloCSV()),
+  fluxoLimpa: ()=>{ CMPU.dados=[]; CMPU.cab=[]; CMPU.plan=CMPU.cmp=null; CMPU.sug=[]; CMPU.nome=""; const e=document.getElementById("cmpBox"); if(e) e.innerHTML=cmpBody(); setSum("cmpPlan", cmpSum()) },
+  fluxoSerie: b=>{ CMPU.serie=b.dataset.v; setHTML("cmpRes", cmpResHTML()) },
+  fluxoAplica: b=>{ const s=CMPU.sug[+b.dataset.i]; if(!s) return; const n=comparaAplicar(S, s); if(!n){ toast("Esse valor já está no estudo"); return } renderTab(); update(); toast(`${s.rot}: aplicado. Ctrl+Z desfaz.`) },
+});
+
+addCard("viab", { key:"cmpPlan", sub:"risco", order:70,
+  html: ()=>SEC("Comparar com planilha", `<div id="cmpBox">${cmpBody()}</div>`, { key:"cmpPlan", info:"Comparar com planilha", sum:cmpSum() }),
+  after: ()=>{
+    const box=document.getElementById("cmpBox"); if(!box) return;
+    box.addEventListener("change", async e=>{ const t=e.target;
+      if(t.id==="cmpFile"){ await cmpCarregar(t.files&&t.files[0]); t.value="" }
+      else if(t.dataset.cmp){ CMPU.mapa[t.dataset.cmp]=+t.value; cmpLer(); box.innerHTML=cmpBody(); cmpAtualiza() }
+      else if(t.dataset.cmpDesl){ CMPU.desl=Math.round(+t.value||0); cmpAtualiza() } });
+    if(CMPU.plan && CMPU.plan.ok) cmpAtualiza();
+  },
+  live: (m,f,fast)=>{
+    if(fast || !CMPU.dados.length){ setSum("cmpPlan", cmpSum()); return }
+    cmpCalc(f); setSum("cmpPlan", cmpSum());
+    if(finVis("cmpRes")) setHTML("cmpRes", cmpResHTML());
+  }
+});
 
 /* ================= contexto urbano (interface): desenho 2D e 3D das camadas do OpenStreetMap =================
    Cálculo puro em src/calc/contexto.js (S.contexto.dados). Aqui:
@@ -19031,6 +20444,10 @@ const GLOSS_DATA = {
   "Alavancas": { t:"Alavancas do negócio", d:"Quanto o resultado muda se uma só coisa melhorar um pouco: mais eficiência, preço maior, terreno mais barato, obra mais barata ou um andar a mais. Mostra onde vale a pena concentrar o esforço. Cada linha muda apenas aquilo e recalcula o fluxo de caixa; as outras premissas ficam como estão.", ex:"No estudo exemplo, +5% no preço de venda rende cerca de +R$ 4,5 mi de lucro e +3,7 p.p. de margem. Os passos (5%, 10%…) ficam em Mais opções." },
   "Potencial do terreno": { t:"Potencial do terreno", d:"O quanto o lote comporta dentro do CA e do gabarito. O privativo possível usa a eficiência global do estudo (privativa ÷ área total construída), que já carrega garagem, térreo e lazer. A conta só pela eficiência do andar (privativa ÷ pavimento tipo) ignora tudo isso e superestima.", f:"área construída possível × eficiência global" },
   "Plano ajustado": { t:"Plano ajustado", d:"Superfície reta que melhor representa o terreno em volta do lote. É calculada por mínimos quadrados, descartando pontos muito fora (prédios, árvores). Dá a inclinação e a direção da descida." },
+  "Calibrar prêmios": { t:"Calibrar com tabela de vendas", d:"Ajusta, por regressão, o preço base de cada tipologia e os prêmios de andar, orientação, vista e cobertura a uma tabela de vendas real de um lançamento parecido. O <b>prêmio de sol não é calibrado</b>: ele pede as horas de sol da tabela de referência, que não vêm no arquivo; o do estudo continua valendo. Nada muda até você tocar em “Aplicar ao estudo”.", f:"ln(preço/m²) = base da tipologia + prêmio por andar + orientação (+ vista)" },
+  "R²": { t:"R² (qualidade do ajuste)", d:"Quanto da variação dos preços da tabela o modelo explica, de 0 a 100%. Acima de 85% é um bom ajuste; abaixo de 50%, o preço depende de coisas que o modelo não enxerga." },
+  "Resíduo": { t:"Resíduo", d:"Diferença entre o preço real da tabela e o que o modelo prevê para a unidade. Barras altas num andar mostram onde o modelo erra." },
+  "Comparar com planilha": { t:"Comparar com a planilha da empresa", d:"Alinha mês a mês o fluxo de caixa da sua planilha com o do Gabarito e mostra onde divergem: total de cada linha, trechos de meses, deslocamento no tempo, mês do recebimento das chaves e correção pelo INCC. Quando a diferença é explicável, sugere o ajuste da premissa (você aplica; Ctrl+Z desfaz). Recorte do Gabarito: receitas = recebimentos; obra = obra + movimento de terra; terreno = terreno + ITBI + outorga; indiretos = projetos, marketing, corretagem, impostos, permuta financeira e juros (líquido do financiamento)." },
 };
 
 /* ================= desfazer / refazer =================
