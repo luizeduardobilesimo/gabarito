@@ -2144,9 +2144,9 @@ function finance(st, m, adj={}){
   // cronograma
   const launch=Math.round(F.prelanc), N=Math.max(1,Math.round(F.obra)), chaves=launch+N, V=Math.max(1,Math.round(F.venda));
   const RD = st.flx && st.flx.receb && st.flx.receb.modo==="det" ? st.flx.receb : null;   // recebimento detalhado (src/calc/fluxo.js)
-  const T=Math.max(chaves, launch+V)+2 + (RD? flxMesesExtra(RD) : 0);
+  const T=Math.max(chaves, launch+V)+2 + (RD? flxMesesExtra(RD) : 0) + softMesesExtra(st);   // + meses da assistência pós-obra (src/calc/indiretos.js)
   const z=()=>new Array(T).fill(0);
-  const c={terreno:z(),outorga:z(),projetos:z(),obra:z(),terra:z(),mkt:z(),corret:z(),imp:z(),permFin:z(),juros:z(),receb:z(),finIn:z(),finOut:z(),vendas:z(),distr:z()};
+  const c={terreno:z(),outorga:z(),projetos:z(),obra:z(),terra:z(),mkt:z(),corret:z(),imp:z(),soft:z(),permFin:z(),juros:z(),receb:z(),finIn:z(),finOut:z(),vendas:z(),distr:z()};
   const fI = mm => Math.pow(1+F.incc, mm/12);
   c.terreno[0] = terreno+itbi; c.outorga[Math.min(3,T-1)] = outorga;
   for(let k=0;k<Math.max(1,launch);k++) c.projetos[k] = projetos/Math.max(1,launch);
@@ -2156,6 +2156,7 @@ function finance(st, m, adj={}){
     if(curva.sis && !adj.noHooks) c.obraSis = curva.sis.map(s=>({k:s.k, nome:s.nome, cor:s.cor, v:s.w.map((x,k)=>(obra+adm+conting)*x*fI(launch+k)), mes0:launch})) }
   else { let wsum=0; const w=[]; for(let k=0;k<N;k++){ w[k]=Math.sin(Math.PI*(k+.5)/N); wsum+=w[k] }
   for(let k=0;k<N;k++) c.obra[launch+k] = (obra+adm+conting)*w[k]/wsum*fI(launch+k) }
+  const SC = softCustos(st, {obra, vgv, terreno, launch, N, chaves, T, fI}); c.soft = SC.mes;   // registro, seguros, IPTU, jurídico, pós-obra, gestão (desligados por padrão)
   const mStart=Math.max(0,launch-2), mLen=V+2; for(let k=0;k<mLen;k++) c.mkt[mStart+k] = vgv*F.mkt/mLen;
   const sold=[]; for(let k=0;k<V;k++) sold[k]=(k===0?F.vendaLanc:0)+(1-F.vendaLanc)/V;
   const soldCum=z(); let sc=0, dist=null;
@@ -2179,10 +2180,10 @@ function finance(st, m, adj={}){
     }
   }
   const cf=z();
-  for(let i=0;i<T;i++) cf[i] = c.receb[i] + c.finIn[i] - c.terreno[i]-c.outorga[i]-c.projetos[i]-c.obra[i]-c.terra[i]-c.mkt[i]-c.corret[i]-c.imp[i]-c.permFin[i]-c.juros[i]-c.finOut[i];
+  for(let i=0;i<T;i++) cf[i] = c.receb[i] + c.finIn[i] - c.terreno[i]-c.outorga[i]-c.projetos[i]-c.obra[i]-c.terra[i]-c.mkt[i]-c.corret[i]-c.imp[i]-c.soft[i]-c.permFin[i]-c.juros[i]-c.finOut[i];
   const sum=a=>a.reduce((s,v)=>s+v,0);
-  const S_={receita:sum(c.receb), terreno:sum(c.terreno), outorga:sum(c.outorga), projetos:sum(c.projetos), obraTot:sum(c.obra), terra:sum(c.terra), mkt:sum(c.mkt), corret:sum(c.corret), imp:sum(c.imp), permFin:sum(c.permFin), juros:sum(c.juros)};
-  const custo = S_.terreno+S_.outorga+S_.projetos+S_.obraTot+S_.terra+S_.mkt+S_.corret+S_.imp+S_.permFin+S_.juros;
+  const S_={receita:sum(c.receb), terreno:sum(c.terreno), outorga:sum(c.outorga), projetos:sum(c.projetos), obraTot:sum(c.obra), terra:sum(c.terra), mkt:sum(c.mkt), corret:sum(c.corret), imp:sum(c.imp), soft:sum(c.soft), permFin:sum(c.permFin), juros:sum(c.juros)};
+  const custo = S_.terreno+S_.outorga+S_.projetos+S_.obraTot+S_.terra+S_.mkt+S_.corret+S_.imp+S_.soft+S_.permFin+S_.juros;
   const lucro = S_.receita - custo, margem = S_.receita? lucro/S_.receita : 0;
   const margemVGV = vgv>0? lucro/vgv : 0;   // convenção do mercado: lucro ÷ VGV (a margem s/ receita nominal fica em `margem`)
   const npv = r => cf.reduce((s,v,i)=>s+v/Math.pow(1+r,i),0);
@@ -2194,7 +2195,7 @@ function finance(st, m, adj={}){
   const maxTerreno = terreno + (lucro - F.margemAlvo*vgv)/(1+F.itbi);   // a margem alvo é sobre o VGV
   // `terreno` (abaixo, vindo de S_) = preço + ITBI desembolsados; terrenoPreco e terrenoITBI separam os dois
   const out = {eqA,lazerC,extraC,obra,vgvB,permV,vgv,vRes,vLoja,terreno,itbi,outorga,terra,projetos,adm,conting,...S_,terrenoPreco:terreno,terrenoITBI:itbi,finOn:!!F.finOn,custo,lucro,margem,margemReceita:margem,margemVGV,cf,cumA,c,tirA,vpl,exp:minCum,pay,maxTerreno,chaves,launch,lim,
-    orc, distratoV: dist? dist.loss : 0, distrato: dist, recebModo: RD? "det" : "simples", curvaModo: curva? st.flx.curva.modo : "sen"};
+    softItens:SC.itens, orc, distratoV: dist? dist.loss : 0, distrato: dist, recebModo: RD? "det" : "simples", curvaModo: curva? st.flx.curva.modo : "sen"};
   if(!adj.noHooks) runHooks("finance", out, st, m, adj);
   return out;
 }
@@ -3594,6 +3595,173 @@ function torreAjustaMix(mix, alvo, max=20){
   // completa enquanto couber: soma em quem está mais atrás da proporção
   for(;;){ let b=-1; mix.forEach((u,j)=>{ if(usa[j] && q[j]<max && s+u.area<=alvo+1e-6 && (b<0 || prop(j)<prop(b))) b=j }); if(b<0) break; q[b]++; s+=mix[b].area }
   return q;
+}
+
+/* ---- calc/calibracusto.js ---- */
+/* ================= Fase E: calibrar o custo da obra com obras reais =================
+   Cálculo puro (roda na página, no Worker e nos testes; nada de DOM). A interface está em src/ui/calibracusto.js.
+
+   O estudo estima a obra como  (área equivalente) × CUB × fator,  com
+     área equivalente = torre/tipo + lazer coberto + garagem × eqGar   (o que o app faz em finance(): eqA = … + garA × fin.eqGar)
+   Cada obra realizada dá uma equação:  custo ÷ CUB(da obra) = fator × (torre + lazer) + (fator × eqGar) × garagem.
+   Com uma obra só dá para ajustar o fator (eqGar fica como está). Com duas ou mais, os dois saem de mínimos quadrados
+   ponderados (erro relativo: uma obra grande não "engole" uma pequena).
+
+   S.ccal = { obras:[{nome, ref:"AAAA-MM", uf, padrao, cub, priv, torre, garagem, lazer, custo}] }   (cub vazio/0 = tabela do estado e padrão)
+
+   ccalCusto(obras, cubDe, opts) → {
+     n, modo ("fator" | "fator+garagem" | null), fator, eqGar, r2 (null com 1 obra), erroMedio, erros:[{nome, real, previsto, erro, cub, nota?}],
+     ignoradas:[{nome, motivo}], avisos:[texto], anterior:{fator, eqGar} }
+   "Padrão da empresa": localStorage "gabarito.custo.padrao" ({fator, eqGar, obras, salvo}) — a interface não muda quando isso for para o Supabase (docs/BACKEND.md).  */
+extendDEF("ccal", { obras: [] });
+
+/* limites do ajuste e faixa usual da NBR 12.721 (coeficiente de equivalência de garagem); tudo configurável aqui, nada espalhado no código */
+const CCAL_FAIXAS = {
+  eqGar: { min: 0.3, max: 1.2 },          // o ajuste não sai daqui (se sair, o peso trava no limite e o fator é refeito)
+  eqGarNBR: { min: 0.5, max: 1.0 },       // faixa usual: fora dela, aviso
+  fator: { min: 0.6, max: 2.5 },          // fora disso é quase certo erro de unidade/área: aviso
+  colineares: 1e-6                         // determinante relativo abaixo disso = garagem proporcional à torre em todas as obras
+};
+const CCAL_CAMPOS = ["nome", "ref", "uf", "padrao", "cub", "priv", "torre", "garagem", "lazer", "custo"];
+const ccalObraVazia = () => ({ nome: "", ref: "", uf: "", padrao: "", cub: 0, priv: 0, torre: 0, garagem: 0, lazer: 0, custo: 0 });
+
+function ccalCusto(obras, cubDe, opts = {}){
+  const L = CCAL_FAIXAS, ant = { fator: opts.fator != null ? opts.fator : 1.2, eqGar: opts.eqGar != null ? opts.eqGar : 0.8 };
+  const avisos = [], ignoradas = [], usadas = [];
+  (obras || []).forEach((o, i) => {
+    const nome = o.nome || `Obra ${i + 1}`, x1 = (+o.torre || 0) + (+o.lazer || 0), x2 = +o.garagem || 0, custo = +o.custo || 0;
+    let c = typeof cubDe === "function" ? cubDe(o) : (+o.cub || 0), nota = null;
+    if(c && typeof c === "object"){ nota = c.aviso || null; c = c.v }
+    if(!(custo > 0)) return ignoradas.push({ nome, motivo: "sem custo realizado" });
+    if(!(x1 + x2 > 0)) return ignoradas.push({ nome, motivo: "sem áreas de torre, garagem ou lazer" });
+    if(!(c > 0)) return ignoradas.push({ nome, motivo: "sem CUB (informe o valor ou o estado e o padrão)" });
+    usadas.push({ nome, x1, x2, custo, cub: c, y: custo / c, nota });
+  });
+  const n = usadas.length;
+  const res = { n, modo: null, fator: ant.fator, eqGar: ant.eqGar, r2: null, erroMedio: null, erros: [], ignoradas, avisos, anterior: ant };
+  if(!n) return res;
+
+  const ajusta1 = eq => { let num = 0, den = 0;                       // fator com eqGar fixo: mínimos quadrados relativos
+    usadas.forEach(u => { const a = u.x1 + eq * u.x2; num += a / u.y; den += (a / u.y) * (a / u.y) });
+    return den > 0 ? num / den : null };
+  let fator = null, eqGar = ant.eqGar, modo = "fator";
+  if(n >= 2){
+    let s11 = 0, s12 = 0, s22 = 0, t1 = 0, t2 = 0;                    // normais com pesos 1/y²
+    usadas.forEach(u => { const w = 1 / (u.y * u.y); s11 += w * u.x1 * u.x1; s12 += w * u.x1 * u.x2; s22 += w * u.x2 * u.x2; t1 += w * u.x1 * u.y; t2 += w * u.x2 * u.y });
+    const det = s11 * s22 - s12 * s12;
+    if(s11 > 0 && s22 > 0 && det / (s11 * s22) > L.colineares){
+      const a = (t1 * s22 - t2 * s12) / det, b = (s11 * t2 - s12 * t1) / det;
+      if(a > 0 && b > 0){
+        const e = b / a;
+        if(e < L.eqGar.min || e > L.eqGar.max){
+          eqGar = Math.min(L.eqGar.max, Math.max(L.eqGar.min, e)); fator = ajusta1(eqGar);
+          avisos.push(`O peso da garagem ajustado (${ccalNum(e)}) ficou fora do limite ${ccalNum(L.eqGar.min)}–${ccalNum(L.eqGar.max)}; travei em ${ccalNum(eqGar)} e refiz o fator. Confira as áreas de garagem das obras.`);
+        } else { eqGar = e; fator = a }
+        modo = "fator+garagem";
+        if(n === 2) avisos.push("Com 2 obras o ajuste é exato (R² = 1 não prova nada). Quanto mais obras, mais confiável.");
+      } else avisos.push("As obras não permitiram separar o peso da garagem (resultado negativo): ajustei só o fator.");
+    } else avisos.push("Garagem proporcional à torre em todas as obras: não dá para separar o peso da garagem. Ajustei só o fator.");
+  } else avisos.push("Com uma obra só ajusto o fator; o peso da garagem fica como está. Com duas ou mais obras ajusto os dois.");
+  if(fator == null) fator = ajusta1(eqGar);
+  if(!(fator > 0)){ avisos.push("Não consegui ajustar com esses dados."); return res }
+
+  if(fator < L.fator.min || fator > L.fator.max) avisos.push(`Fator ${ccalNum(fator)}× fora do usual (${ccalNum(L.fator.min)}–${ccalNum(L.fator.max)}×): confira áreas, custos e o CUB de cada obra.`);
+  if(modo === "fator+garagem" && (eqGar < L.eqGarNBR.min || eqGar > L.eqGarNBR.max)) avisos.push(`Peso da garagem ${ccalNum(eqGar)} fora da faixa usual da NBR 12.721 (${ccalNum(L.eqGarNBR.min)}–${ccalNum(L.eqGarNBR.max)}).`);
+  usadas.forEach(u => { if(u.nota) avisos.push(`${u.nome}: ${u.nota}`) });
+
+  // erro por obra, R² (sobre o custo em R$) e erro médio absoluto
+  const prev = usadas.map(u => u.cub * fator * (u.x1 + eqGar * u.x2));
+  res.erros = usadas.map((u, i) => ({ nome: u.nome, real: u.custo, previsto: prev[i], erro: prev[i] / u.custo - 1, cub: u.cub, nota: u.nota }));
+  res.erroMedio = res.erros.reduce((s, e) => s + Math.abs(e.erro), 0) / n;
+  if(n >= 2){ const media = usadas.reduce((s, u) => s + u.custo, 0) / n, sst = usadas.reduce((s, u) => s + (u.custo - media) ** 2, 0), sse = usadas.reduce((s, u, i) => s + (u.custo - prev[i]) ** 2, 0);
+    res.r2 = sst > 0 ? 1 - sse / sst : null }
+  Object.assign(res, { modo, fator, eqGar });
+  return res;
+}
+const ccalNum = (v, d = 2) => (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toString().replace(".", ",");
+
+/* aplica o resultado ao estudo (fator sempre; eqGar só quando foi ajustado). Devolve o que mudou */
+function ccalAplica(st, res){
+  if(!res || !res.modo) return null;
+  const mud = { fator: [st.fin.fator, Math.round(res.fator * 1000) / 1000] };
+  st.fin.fator = mud.fator[1];
+  if(res.modo === "fator+garagem"){ mud.eqGar = [st.fin.eqGar, Math.round(res.eqGar * 1000) / 1000]; st.fin.eqGar = mud.eqGar[1] }
+  return mud;
+}
+
+/* modo paramétrico: escala os 3 coeficientes de maior peso do orçamento (fundação, estrutura, vedações, fachada, instalações, elevadores,
+   acabamentos) para que o direto do orçamento bata com o que "CUB × fator calibrado" daria neste estudo. s limitado a [0,5; 2]. */
+const CCAL_COEF = ["fund", "estr", "ved", "fach", "inst", "elev", "acab"];
+function ccalParam(st, m, res){
+  if(!res || !res.modo || !m) return null;
+  const o = orcCalc(st, m), K = o.coef, C = o.C;
+  const eqA = m.tiposA + m.duplexA + m.hallA + m.lojaA + m.aticoA + (m.lzExtraA || 0) + m.garA * (res.modo === "fator+garagem" ? res.eqGar : st.fin.eqGar) + (m.sacBal || 0) * 0.5;
+  const alvo = eqA * C * res.fator;                                    // direto que o modo CUB × fator daria
+  const pesos = CCAL_COEF.map(k => ({ k, v: (o.itens.find(i => i.k === k) || {}).param || 0 })).sort((a, b) => b.v - a.v).slice(0, 3).filter(p => p.v > 0);
+  const top = pesos.reduce((s, p) => s + p.v, 0); if(!(top > 0)) return null;
+  const soma = o.direto / (1 + K.cant), s = Math.min(2, Math.max(0.5, 1 + (alvo / (1 + K.cant) - soma) / top));
+  const coef = { ...K }; pesos.forEach(p => { coef[p.k] = K[p.k] * s; if(p.k === "inst") coef.instUn = K.instUn * s });
+  return { chaves: pesos.map(p => p.k), s, coef, alvo, antes: o.direto };
+}
+
+/* ---------- importação CSV (planilha exportada) ---------- */
+const ccalNorm = s => String(s == null ? "" : s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9/]+/g, " ").trim();
+const CCAL_ALIAS = {
+  nome: ["nome", "obra", "empreendimento"], ref: ["mes", "mes/ano", "ref", "data", "competencia", "mes ano"], uf: ["uf", "estado"], padrao: ["padrao", "cub padrao", "padrao cub"],
+  cub: ["cub", "cub r$/m2", "cub m2", "cub r m2", "valor do cub"], priv: ["priv", "privativa", "area privativa", "area priv"], torre: ["torre", "tipo", "torre/tipo", "area torre", "area tipo", "area da torre"],
+  garagem: ["garagem", "subsolo", "garagem/subsolo", "area garagem", "area de garagem"], lazer: ["lazer", "lazer coberto", "area lazer", "area de lazer coberto"], custo: ["custo", "custo total", "custo realizado", "custo final"]
+};
+/* "r8n" · "R 8-N" · "pp4 n" → "R8-N" (texto que não reconhece volta em maiúsculas) */
+function ccalPadrao(s){ const t = String(s == null ? "" : s).toUpperCase().replace(/[^A-Z0-9]/g, ""), m = /^(R1|R8|R16|PP4)([BNA])$/.exec(t);
+  return m ? (m[1] === "PP4" ? "PP-4" : m[1]) + "-" + m[2] : t === "PIS" ? "PIS" : String(s == null ? "" : s).trim().toUpperCase() }
+/* "03/2026" · "2026-03" · "mar/2026" → "2026-03" (texto que não reconhece volta como veio) */
+function ccalRef(s){
+  const t = ccalNorm(s); let m;
+  if((m = /^(\d{4})[-/ ](\d{1,2})$/.exec(t))) return m[1] + "-" + String(m[2]).padStart(2, "0");
+  if((m = /^(\d{1,2})[-/ ](\d{4})$/.exec(t))) return m[2] + "-" + String(m[1]).padStart(2, "0");
+  if((m = /^([a-z]{3})[a-z]*[-/ ](\d{4})$/.exec(t))){ const i = CUB_MESES.indexOf(m[1]); if(i >= 0) return m[2] + "-" + String(i + 1).padStart(2, "0") }
+  return String(s == null ? "" : s).trim();
+}
+/* número da planilha: "5.200" · "32.500.000" · "2.650,00" · "2650.5" · "R$ 1,5" */
+function ccalNumBR(s){
+  if(typeof s === "number") return s;
+  let t = String(s == null ? "" : s).trim().replace(/[R$\s]/g, ""); if(!t) return null;
+  if(t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  else if(/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+  const v = parseFloat(t); return isFinite(v) ? v : null;
+}
+function ccalParse(text){
+  const t = String(text || "").replace(/^﻿/, "").trim(); if(!t) return [];
+  const lines = t.split(/\r?\n/).filter(l => l.trim()); if(lines.length < 2) return [];
+  const sep = (lines[0].match(/;/g) || []).length >= (lines[0].match(/,/g) || []).length && (lines[0].match(/;/g) || []).length ? ";" : (lines[0].match(/\t/g) || []).length ? "\t" : ",";
+  const head = lines[0].split(sep).map(ccalNorm), col = {};
+  Object.keys(CCAL_ALIAS).forEach(k => { const i = head.findIndex(h => CCAL_ALIAS[k].map(ccalNorm).includes(h)); if(i >= 0) col[k] = i });
+  if(col.custo == null) return [];
+  return lines.slice(1).map(l => {
+    const c = l.split(sep), g = k => col[k] == null ? "" : String(c[col[k]] == null ? "" : c[col[k]]).trim().replace(/^"|"$/g, ""), n = k => ccalNumBR(g(k)) || 0;
+    const o = { ...ccalObraVazia(), nome: g("nome"), ref: ccalRef(g("ref")), uf: g("uf").toUpperCase(), padrao: ccalPadrao(g("padrao")), cub: n("cub"), priv: n("priv"), torre: n("torre"), garagem: n("garagem"), lazer: n("lazer"), custo: n("custo") };
+    return o;
+  }).filter(o => o.custo > 0 || o.torre > 0 || o.garagem > 0);
+}
+const CCAL_MODELO_CSV = "nome;mes;uf;padrao;cub;privativa;torre;garagem;lazer;custo\nEdifício Exemplo;2025-06;SC;R8-N;2650,00;5200;8400;3100;450;32500000\n";
+
+/* ---------- padrão da empresa (localStorage; o Supabase troca só estas funções) ---------- */
+function ccalPadraoEmpresa(){ const v = LS.get("gabarito.custo.padrao"); return v && typeof v === "object" && v.fator > 0 ? v : null }
+function ccalSalvarPadrao(st, res){
+  if(!res || !res.modo) return false;
+  const reg = { fator: Math.round(res.fator * 1000) / 1000, eqGar: res.modo === "fator+garagem" ? Math.round(res.eqGar * 1000) / 1000 : st.fin.eqGar, obras: clone((st.ccal && st.ccal.obras) || []), n: res.n, salvo: new Date().toISOString() };
+  try{ localStorage.setItem("gabarito.custo.padrao", JSON.stringify(reg)) }catch(e){ return false }
+  DEF.fin.fator = reg.fator; DEF.fin.eqGar = reg.eqGar;                  // vale para estudos novos
+  return true;
+}
+function ccalAplicarPadrao(st){
+  const p = ccalPadraoEmpresa(); if(!p) return false;
+  st.fin.fator = p.fator; st.fin.eqGar = p.eqGar; if(Array.isArray(p.obras) && !(st.ccal.obras || []).length) st.ccal.obras = clone(p.obras);
+  return true;
+}
+{ // padrão da empresa vale para estudos novos e para estudos antigos que nunca gravaram esses campos (no Worker/Node não há localStorage: vale o padrão do app)
+  const p = ccalPadraoEmpresa(), sv = LS.get("gabarito.v2");
+  if(p){ ["fator", "eqGar"].forEach(k => { if(typeof p[k] === "number"){ DEF.fin[k] = p[k]; if(!(sv && sv.fin && typeof sv.fin[k] === "number")) S.fin[k] = p[k] } }) }
 }
 
 /* ---- calc/calibravendas.js ---- */
@@ -5080,35 +5248,91 @@ async function ctxBuscaResiliente(o){
 
 /* ---- calc/cub.js ---- */
 /* ================= CUB por estado e padrão (NBR 12721) =================
-   Valores embutidos = REFERÊNCIAS APROXIMADAS (ilustrativas). Atualize com o boletim mensal do Sinduscon do estado:
-   importe um CSV/JSON (cubParse) — as linhas importadas substituem as embutidas do mesmo estado. */
+   Fase E: a tabela embutida traz o CUB/m² PUBLICADO pelos Sinduscons (valores de ago/2026 e set/2026, com mês de referência e fonte por linha).
+   - Linha com tabela completa (SC, RS, PR, SP, MG): todos os padrões vêm do boletim do Sinduscon.
+   - Linha só com o R8-N publicado (RJ, DF, MT, MS, BA, PE, CE, PA): os outros padrões são ESTIMADOS pela razão típica sobre o R8-N (campo `est`).
+   - Linha sem boletim confiável (ES, GO, AM): valor antigo, marcado como `ilustrativo`.
+   Atualize com o boletim mensal do Sinduscon do estado: importe um CSV/JSON (cubParse) — as linhas importadas substituem as embutidas do mesmo estado.
+   CUB_VERSAO = data em que esta tabela embutida foi conferida (a interface mostra "CUB <UF> <padrão> · <mês/ano> · <fonte>"). */
+const CUB_VERSAO = "2026-10-13";
 const CUB_PADROES = [
-  ["R1-N","R1-N · residência unifamiliar normal"], ["R1-A","R1-A · residência unifamiliar alto"],
-  ["PP-4-N","PP-4-N · prédio popular 4 pav."], ["R8-N","R8-N · residencial 8 pav. normal"], ["R8-A","R8-A · residencial 8 pav. alto"],
-  ["R16-N","R16-N · residencial 16 pav. normal"], ["R16-A","R16-A · residencial 16 pav. alto"]
+  ["R8-N","R8-N · residencial 8 pav. normal"], ["R16-N","R16-N · residencial 16 pav. normal"], ["PP-4-N","PP-4-N · prédio popular 4 pav."],
+  ["R1-N","R1-N · residência unifamiliar normal"], ["R8-A","R8-A · residencial 8 pav. alto"], ["R16-A","R16-A · residencial 16 pav. alto"],
+  ["R1-A","R1-A · residência unifamiliar alto"], ["R8-B","R8-B · residencial 8 pav. baixo"], ["PP-4-B","PP-4-B · prédio popular 4 pav. baixo"],
+  ["R1-B","R1-B · residência unifamiliar baixo"], ["PIS","PIS · projeto de interesse social"]
 ];
-// razão típica de cada padrão sobre o R8-N (ordem de grandeza dos boletins; ilustrativa)
-const CUB_RAZAO = { "R1-N":1.21, "R1-A":1.62, "PP-4-N":1.04, "R8-N":1, "R8-A":1.22, "R16-N":0.97, "R16-A":1.27 };
-// R8-N aproximado por estado (R$/m², referência set/2026 — ilustrativo)
-const CUB_BASE = [
-  ["SC","Santa Catarina",3159],["PR","Paraná",2650],["RS","Rio Grande do Sul",2980],["SP","São Paulo",2380],["RJ","Rio de Janeiro",2450],
-  ["MG","Minas Gerais",2390],["ES","Espírito Santo",2280],["DF","Distrito Federal",2290],["GO","Goiás",2330],["MT","Mato Grosso",2420],
-  ["MS","Mato Grosso do Sul",2310],["BA","Bahia",2140],["PE","Pernambuco",2120],["CE","Ceará",2050],["AM","Amazonas",2370],["PA","Pará",2260]
+// razão típica de cada padrão sobre o R8-N (média dos boletins completos de SC, RS, PR, SP e MG em ago–set/2026)
+const CUB_RAZAO = { "R1-B":0.971, "R1-N":1.209, "R1-A":1.51, "PP-4-B":0.903, "PP-4-N":1.144, "R8-B":0.856, "R8-N":1, "R8-A":1.218, "R16-N":0.972, "R16-A":1.263, "PIS":0.679 };
+/* boletins completos (R$/m², CUB 2006 sem desoneração) */
+const CUB_COMPLETO = [
+  ["SC","Santa Catarina","2026-08","Sinduscon Grande Florianópolis · dados de ago/2026, uso em set/2026","https://www.sindusconbc.com.br/wp-content/uploads/2026/09/PLANILHA-COMPLETA-CUB-2006-SETEMBRO-2026.pdf",
+    {"R1-B":2872.77,"R1-N":3434.48,"R1-A":4189.22,"PP-4-B":2613.45,"PP-4-N":3168.98,"R8-B":2472.02,"R8-N":2800.40,"R8-A":3330.06,"R16-N":2704.32,"R16-A":3467.78,"PIS":1988.45}],
+  ["PR","Paraná","2026-09","Sinduscon-PR","https://sindusconpr.com.br/wp-content/uploads/2026/10/2026-9-Tabela-CUB-m2.pdf",
+    {"R1-B":2681.59,"R1-N":3365.21,"R1-A":4109.51,"PP-4-B":2459.78,"PP-4-N":3144.71,"R8-B":2327.91,"R8-N":2738.93,"R8-A":3328.10,"R16-N":2657.44,"R16-A":3388.41,"PIS":1869.10}],
+  ["RS","Rio Grande do Sul","2026-09","Sinduscon-RS","https://sinduscon-rs.com.br/wp-content/uploads/2026/10/PRECOS-E-CUSTOS-DA-CONSTRUCAO-DE-SETEMBRO-2026-REV.pdf",
+    {"R1-B":2567.33,"R1-N":3452.09,"R1-A":4664.55,"PP-4-B":2447.10,"PP-4-N":3383.58,"R8-B":2322.15,"R8-N":2943.73,"R8-A":3789.65,"R16-N":2887.83,"R16-A":3862.64,"PIS":1862.93}],
+  ["SP","São Paulo","2026-09","Sinduscon-SP","https://portaldori.com.br/2026/10/05/sinduscon-divulga-tabelas-de-custo-unitario-basico-no-estado-de-sao-paulo-referencia-setembro-de-2026/",
+    {"R1-B":2193.39,"R1-N":2690.33,"R1-A":3255.86,"PP-4-B":2048.82,"PP-4-N":2553.75,"R8-B":1950.93,"R8-N":2238.58,"R8-A":2627.86,"R16-N":2175.77,"R16-A":2845.25,"PIS":1523.85}],
+  ["MG","Minas Gerais","2026-09","Sinduscon-MG","https://sinduscon-mg.org.br/wp-content/uploads/2026/10/tabela_cub_setembro_2026.pdf",
+    {"R1-B":2552.62,"R1-N":3118.02,"R1-A":3884.77,"PP-4-B":2404.94,"PP-4-N":2946.78,"R8-B":2265.98,"R8-N":2561.78,"R8-A":3137.48,"R16-N":2492.07,"R16-A":3222.70,"PIS":1767.64}]
 ];
-const CUB_TAB = CUB_BASE.map(([uf,nome,r8])=>({ uf, nome, ref:"2026-09", fonte:"Sinduscon-"+uf, ilustrativo:true,
-  v: Object.fromEntries(Object.entries(CUB_RAZAO).map(([p,k])=>[p, Math.round(r8*k)])) }));
+/* só o R8-N publicado (via MySide, que reproduz o Sinduscon do estado): [uf, nome, R8-N, ref, fonte, url] */
+const CUB_SO_R8N = [
+  ["RJ","Rio de Janeiro",2476.31,"2026-09","Sinduscon-RJ (via MySide)","https://myside.com.br/guia-imoveis/cub-rj"],
+  ["DF","Distrito Federal",2416.71,"2026-09","Sinduscon-DF (via MySide)","https://myside.com.br/guia-imoveis/cub-df"],
+  ["MT","Mato Grosso",3314.80,"2026-09","Sinduscon-MT (via MySide)","https://myside.com.br/guia-imoveis/cub-mt"],
+  ["MS","Mato Grosso do Sul",1873.74,"2026-08","Sinduscon-MS (via MySide)","https://myside.com.br/guia-imoveis/cub-ms"],
+  ["BA","Bahia",2218.68,"2026-08","Sinduscon-BA (via MySide)","https://myside.com.br/guia-imoveis/cub-ba"],
+  ["PE","Pernambuco",2240.23,"2026-09","Sinduscon-PE (via MySide)","https://myside.com.br/guia-imoveis/cub-pe"],
+  ["CE","Ceará",2458.13,"2026-08","Sinduscon-CE (via MySide)","https://myside.com.br/guia-imoveis/cub-ce"],
+  ["PA","Pará",2374.18,"2026-09","Sinduscon-PA (via MySide)","https://myside.com.br/guia-imoveis/cub-pa"]
+];
+/* sem boletim confiável: valor antigo, ilustrativo */
+const CUB_ILUSTR = [["ES","Espírito Santo",2280],["GO","Goiás",2330],["AM","Amazonas",2370]];
+const CUB_ORDEM = ["SC","PR","RS","SP","RJ","MG","ES","DF","GO","MT","MS","BA","PE","CE","AM","PA"];
+const cubDeR8N = r8 => Object.fromEntries(Object.entries(CUB_RAZAO).map(([p,k])=>[p, p==="R8-N" ? r8 : Math.round(r8*k*100)/100]));
+const CUB_TAB = CUB_ORDEM.map(uf=>{
+  const c = CUB_COMPLETO.find(x=>x[0]===uf); if(c) return { uf, nome:c[1], ref:c[2], fonte:c[3], url:c[4], ilustrativo:false, est:[], v:{...c[5]} };
+  const o = CUB_SO_R8N.find(x=>x[0]===uf); if(o) return { uf, nome:o[1], ref:o[3], fonte:o[4], url:o[5], ilustrativo:false, est:Object.keys(CUB_RAZAO).filter(p=>p!=="R8-N"), v:cubDeR8N(o[2]) };
+  const i = CUB_ILUSTR.find(x=>x[0]===uf); return { uf, nome:i[1], ref:"", fonte:"estimativa interna (sem boletim conferido)", url:"", ilustrativo:true, est:Object.keys(CUB_RAZAO), v:cubDeR8N(i[2]) };
+});
+/* "2026-10-13" → "13/10/2026" */
+const cubVersaoTxt = () => CUB_VERSAO.split("-").reverse().join("/");
+const CUB_MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+/* "2026-08" → "ago/2026"; texto livre passa direto */
+function cubRefTxt(ref){ const m = /^(\d{4})-(\d{2})$/.exec(String(ref||"")); return m && +m[2]>=1 && +m[2]<=12 ? CUB_MESES[+m[2]-1]+"/"+m[1] : String(ref||"") }
 
-/* tabela efetiva: embutida + importada (a importada vence por estado; padrões ausentes caem na embutida) */
+/* tabela efetiva: embutida + importada (a importada vence por estado e por padrão; padrões ausentes caem na embutida) */
 function cubLista(st){
   const imp = (st && st.orc && Array.isArray(st.orc.cubTab)) ? st.orc.cubTab : [];
-  const out = CUB_TAB.map(r=>({...r, v:{...r.v}}));
+  const out = CUB_TAB.map(r=>({...r, v:{...r.v}, est:[...(r.est||[])]}));
   imp.forEach(r=>{ if(!r || !r.uf) return; const uf=String(r.uf).toUpperCase(); let e=out.find(x=>x.uf===uf);
-    if(!e){ e={uf, nome:r.nome||uf, ref:"", fonte:"", ilustrativo:false, v:{}}; out.push(e) }
-    e.v = {...e.v, ...(r.v||{})}; e.ref = r.ref||e.ref; e.fonte = r.fonte||e.fonte||("Sinduscon-"+uf); e.ilustrativo = false; e.nome = r.nome||e.nome });
+    if(!e){ e={uf, nome:r.nome||uf, ref:"", fonte:"", url:"", ilustrativo:false, est:[], v:{}}; out.push(e) }
+    Object.keys(r.v||{}).forEach(p=>{ e.est = e.est.filter(x=>x!==p) });
+    e.v = {...e.v, ...(r.v||{})}; e.ref = r.ref||e.ref; e.fonte = r.fonte||e.fonte||("Sinduscon-"+uf); e.url = r.url||""; e.ilustrativo = false; e.nome = r.nome||e.nome });
   return out;
 }
 function cubLinha(st, uf){ const l=cubLista(st); return l.find(r=>r.uf===uf) || l[0] }
 function cubValor(st, uf, padrao){ const r=cubLinha(st, uf); return r && r.v[padrao] || null }
+/* "CUB SC R8-N · ago/2026 · Sinduscon Grande Florianópolis (estimado pela razão sobre o R8-N | ilustrativo)" — texto único da interface, do PDF e dos avisos */
+function cubDescricao(st, uf, padrao){
+  const r = cubLinha(st, uf); if(!r) return "";
+  const est = r.ilustrativo ? "ilustrativo" : (r.est||[]).includes(padrao) ? "estimado pela razão sobre o R8-N" : "";
+  return `CUB ${r.uf} ${padrao} · ${r.ref? cubRefTxt(r.ref) : "sem mês de referência"} · ${r.fonte||"sem fonte"}${est? " ("+est+")" : ""}`;
+}
+/* estado do estudo: o campo orc.uf; quando a zona/cidade escolhida em Regras é de outro estado, essa é a sugestão (null = sem sugestão) */
+function cubUfSugerida(st){
+  const id = st && st.regrasRef && st.regrasRef.id; if(!id || typeof cidadeAcha!=="function") return null;
+  const c = cidadeAcha(id); const uf = c && c.uf ? String(c.uf).toUpperCase() : null;
+  return uf && uf !== (st.orc && st.orc.uf) && cubLista(st).some(r=>r.uf===uf) ? uf : null;
+}
+/* "Seguir a tabela do estado": com orc.cubAuto ligado, fin.cub passa a ser o CUB do estado e padrão escolhidos. Devolve true se mudou */
+function cubSincroniza(st){
+  if(!st || !st.orc || !st.orc.cubAuto) return false;
+  const v = cubValor(st, st.orc.uf, st.orc.padrao); if(!v) return false;
+  const novo = Math.round(v*100)/100; if(Math.abs((st.fin.cub||0)-novo) < 0.005) return false;
+  st.fin.cub = novo; return true;
+}
 
 /* importação: CSV longo (uf;padrao;valor;ref;fonte), CSV largo (uf;ref;fonte;R8-N;R16-N…) ou JSON (lista ou {UF:{padrão:valor}}) */
 function cubNum(s){ if(typeof s==="number") return s; s=String(s||"").trim().replace(/[R$\s]/g,""); if(/,\d{1,2}$/.test(s)) s=s.replace(/\./g,"").replace(",","."); else s=s.replace(/,/g,""); const v=parseFloat(s); return isFinite(v)? v : null }
@@ -5980,6 +6204,73 @@ function histNums(m, f){
   return { units:m.units, priv:m.priv, vagas:m.vagas, vagasReq:m.vagasReq, ca:m.CA, h:m.H, vgv:f.vgv, custo:f.custo, lucro:f.lucro, margem:f.margem, tir:f.tirA, exp:-f.exp };
 }
 
+/* ---- calc/indiretos.js ---- */
+/* ================= Fase E: custos indiretos que faltavam (colinha de viabilidade) =================
+   Registro/cartório, seguros, IPTU durante a obra, jurídico, assistência técnica pós-obra e taxa de gestão.
+   Cálculo puro (roda na página, no Worker e nos testes). Todos nascem em 0 (desligados): os estudos já salvos e os de referência
+   não mudam. "Usar sugeridos da colinha" (soft Sugeridos) liga todos de uma vez com os valores de mercado abaixo.
+
+   S.soft = { registro, seguros, iptu, juridico, pos, gestao }   (frações; 0 = desligado)
+   softCustos(st, ctx) → { total, itens:[{k,nome,base,valor}], mes:[R$ por mês do fluxo] } — a finance() soma `mes` ao fluxo de caixa.
+
+   Quando cada um sai do caixa:
+     registro  50% no mês anterior ao lançamento (registro da incorporação) e 50% nas chaves (instituição do condomínio e matrículas)
+     seguros   igual por mês durante a obra, corrigido pelo INCC (acompanha o custo da obra)
+     iptu      igual por mês, do mês 0 até as chaves
+     juridico  igual por mês, do mês 0 até as chaves
+     gestao    igual por mês durante a obra
+     pos       igual por mês nos SOFT_POS_MESES meses seguintes às chaves, corrigido pelo INCC (o fluxo ganha esses meses a mais) */
+const SOFT_POS_MESES = 12;
+/* itens: base = sobre o que o percentual incide (vgv = VGV líquido da permuta física · obra = obra sem INCC · terreno = preço do terreno, por ano) */
+const SOFT_ITENS = [
+  { k: "registro", rot: "Registro e cartório", nome: "Registro e cartório",           base: "vgv",     un: "% VGV",          step: 0.05, q: "cartório incorporação matrícula emolumentos",
+    desc: "Registro da incorporação, instituição do condomínio e matrículas das unidades. Metade sai antes do lançamento e metade nas chaves. Os emolumentos variam por estado." },
+  { k: "seguros",  rot: "Seguros",             nome: "Seguros da obra",               base: "obra",    un: "% obra",         step: 0.05, q: "risco de engenharia garantia",
+    desc: "Seguro de risco de engenharia e garantias da obra. Sai ao longo da obra." },
+  { k: "iptu",     rot: "IPTU na obra",        nome: "IPTU durante a obra",           base: "terreno", un: "% terreno a.a.", step: 0.1,  q: "imposto predial lote",
+    desc: "IPTU do terreno da compra até as chaves, sobre o preço do terreno (% ao ano). Zero quando o terreno vem só por permuta." },
+  { k: "juridico", rot: "Jurídico",            nome: "Jurídico",                      base: "vgv",     un: "% VGV",          step: 0.05, q: "advogado contratos",
+    desc: "Assessoria jurídica da incorporação: contratos, distratos e regularizações. Distribuído até as chaves." },
+  { k: "pos",      rot: "Assistência pós-obra", nome: "Assistência técnica pós-obra", base: "obra",    un: "% obra",         step: 0.1,  q: "garantia pós-entrega reparos",
+    desc: "Reserva para reparos e assistência técnica depois da entrega (garantia). Sai nos 12 meses seguintes às chaves." },
+  { k: "gestao",   rot: "Taxa de gestão",      nome: "Taxa de gestão",                base: "vgv",     un: "% VGV",          step: 0.1,  q: "gestão do empreendimento overhead",
+    desc: "Gestão do empreendimento pela incorporadora (equipe própria, overhead). A administração da obra já está em “Administração” (% obra): evite contar a mesma coisa duas vezes." }
+];
+/* valores sugeridos (referências de mercado — conferir com cartório, corretora de seguros e contabilidade da empresa) e faixas usuais citadas no ⓘ */
+const SOFT_SUGERIDOS = { registro: 0.004, seguros: 0.003, iptu: 0.01, juridico: 0.003, pos: 0.01, gestao: 0.015 };
+const SOFT_FAIXAS = {
+  registro: [0.003, 0.006], seguros: [0.002, 0.005], iptu: [0.005, 0.015], juridico: [0.002, 0.005], pos: [0.005, 0.015], gestao: [0.01, 0.03]
+};
+extendDEF("soft", { registro: 0, seguros: 0, iptu: 0, juridico: 0, pos: 0, gestao: 0 });
+
+/* meses que o fluxo precisa ganhar além das chaves */
+function softMesesExtra(st){ return st && st.soft && +st.soft.pos > 0 ? SOFT_POS_MESES : 0 }
+
+/* ctx = { obra (sem INCC), vgv (líquido), terreno (preço), launch, N (prazo de obra), chaves, T (meses do fluxo), fI(mês) }  */
+function softCustos(st, ctx){
+  const K = st && st.soft; if(!K) return { total: 0, itens: [], mes: new Array(ctx.T).fill(0) };
+  const { obra, vgv, terreno, launch, N, chaves, T } = ctx, fI = ctx.fI || (() => 1);
+  const mes = new Array(T).fill(0), itens = [];
+  const clampM = i => Math.max(0, Math.min(T - 1, Math.round(i)));
+  const espalha = (valor, de, ate, corr) => { const a = clampM(de), b = Math.max(a, clampM(ate)), n = b - a + 1;
+    for(let i = a; i <= b; i++) mes[i] += valor / n * (corr ? corr(i) : 1) };
+  const soma = (k, nome, base, calc) => { const p = +K[k] || 0; if(!(p > 0)) return; const antes = mes.reduce((s, v) => s + v, 0); calc(p); itens.push({ k, nome, base, valor: mes.reduce((s, v) => s + v, 0) - antes }) };
+  SOFT_ITENS.forEach(it => {
+    soma(it.k, it.nome, it.base, p => {
+      if(it.k === "registro"){ const v = vgv * p; mes[clampM(launch - 1)] += v / 2; mes[clampM(chaves)] += v / 2 }
+      else if(it.k === "seguros") espalha(obra * p, launch, launch + N - 1, fI)
+      else if(it.k === "iptu") espalha(terreno * p * (chaves / 12), 0, chaves - 1)
+      else if(it.k === "juridico") espalha(vgv * p, 0, chaves - 1)
+      else if(it.k === "gestao") espalha(vgv * p, launch, launch + N - 1)
+      else if(it.k === "pos") espalha(obra * p, chaves, chaves + SOFT_POS_MESES - 1, fI)
+    });
+  });
+  return { total: mes.reduce((s, v) => s + v, 0), itens, mes };
+}
+/* liga todos com os valores sugeridos (devolve o que mudou, para a interface avisar) */
+function softSugeridos(st){ Object.assign(st.soft, SOFT_SUGERIDOS); return st }
+function softLigado(st){ return !!st.soft && Object.keys(SOFT_SUGERIDOS).some(k => +st.soft[k] > 0) }
+
 /* ---- calc/mvt.js ---- */
 /* ================= vector tile (MVT/protobuf) — decodificador mínimo, puro =================
    Serve de reserva quando o Overpass não responde: o tile vetorial do OpenFreeMap traz as vias com nome e classe.
@@ -6292,6 +6583,7 @@ function normasResumo(itens){ const c={ok:0,warn:0,bad:0,na:0}; (itens||[]).forE
 extendDEF("orc", {
   modo: "cub",                 // "cub" = CUB × fator (padrão, método atual) · "param" = soma dos sistemas
   uf: "SC", padrao: "R8-N",    // tabela CUB (referência)
+  cubAuto: false,              // true = fin.cub segue a tabela do estado e padrão (cubSincroniza em calc/cub.js); desligado: o CUB é o digitado
   solo: "medio",               // bom | medio | ruim
   fachada: "porcelanato",      // textura | porcelanato | vidro
   acab: "normal",              // economico | normal | alto | luxo
@@ -6781,7 +7073,7 @@ function relevoPrevia(st, o={}){
      margemVGV   lucro ÷ VGV (convenção do mercado — margem principal) · margemReceita = lucro ÷ receita nominal
      vc, vcCUB   preço médio R$/m² privativo ÷ (CUB × fator)  ·  ÷ CUB puro
      terrenoPctVGV  (preço do terreno + permuta física + permuta financeira) ÷ VGV de tabela — sem ITBI
-     softPctVGV  indiretos ÷ VGV líquido: projetos, administração, contingência, corretagem, marketing, RET, ITBI, outorga e juros
+     softPctVGV  indiretos ÷ VGV líquido: projetos, administração, contingência, corretagem, marketing, RET, ITBI, outorga, juros e os itens de src/calc/indiretos.js
      custoM2ATC  obra (sem INCC e sem indiretos) ÷ ATC
      tirVsAlvo   TIR − TIR alvo (null sem TIR)
      tipologia / tipologiaNome / faixaEfic   tipologia detectada para a faixa de eficiência (ver saudeTipologia)
@@ -6861,7 +7153,7 @@ function saudeNegocio(st, m, f){
   // terreno: permuta física e financeira contam como terreno equivalente; denominador = VGV de tabela (o total do empreendimento)
   const terrenoEq = (f.terrenoPreco != null ? f.terrenoPreco : F.terreno) + (f.permV || 0) + (f.permFin || 0);
   const terrenoPctVGV = saudeDiv(terrenoEq, f.vgvB);
-  const soft = (f.projetos || 0) + (f.adm || 0) + (f.conting || 0) + (f.corret || 0) + (f.mkt || 0) + (f.imp || 0) + (f.itbi || 0) + (f.outorga || 0) + (f.juros || 0);
+  const soft = (f.projetos || 0) + (f.adm || 0) + (f.conting || 0) + (f.corret || 0) + (f.mkt || 0) + (f.imp || 0) + (f.itbi || 0) + (f.outorga || 0) + (f.juros || 0) + (f.soft || 0);   // f.soft = registro, seguros, IPTU, jurídico, pós-obra e gestão (src/calc/indiretos.js; 0 quando desligados)
   const softPctVGV = saudeDiv(soft, f.vgv);
   const custoM2ATC = saudeDiv(f.obra, atc);
   const tipologia = saudeTipologia(st, m), faixaEfic = (M.efic && M.efic[tipologia]) || SAUDE_SUGERIDAS.efic[tipologia];
@@ -6897,8 +7189,18 @@ function saudeAplicarPadrao(st){
 const SAUDE_ORDEM = { ruim: 0, atencao: 1, ok: 2, otimo: 3 };
 function saudePior(niveis){ return niveis.reduce((a, b) => SAUDE_ORDEM[b] < SAUDE_ORDEM[a] ? b : a, "otimo") }
 
+/* Lucro após imprevistos (informativo, não muda o lucro principal): se a contingência do estudo (S.fin.conting) está abaixo da meta de imprevistos
+   (S.metas.imprev.min–max), a diferença × obra (com a correção do INCC que a obra já leva) sai do lucro. Devolve a faixa { min, max }. */
+function saudeImprevistos(st, f){
+  const M = (st.metas && st.metas.imprev) || SAUDE_SUGERIDAS.imprev, base = (f.obra || 0) + (f.adm || 0) + (f.conting || 0);
+  const incc = base > 0 ? (f.obraTot || base) / base : 1;
+  const calc = meta => { const extra = Math.max(0, meta - (st.fin.conting || 0)) * (f.obra || 0) * incc, lucro = f.lucro - extra;
+    return { meta, extra, lucro, margemVGV: saudeDiv(lucro, f.vgv) } };
+  return { min: calc(M.min), max: calc(M.max) };
+}
+
 /* o resultado acompanha o `f` (barato; roda também na sensibilidade com os ajustes de cada rodada) */
-HOOK.finance.push((f, st, m) => { f.saude = saudeNegocio(st, m, f) });
+HOOK.finance.push((f, st, m) => { f.saude = saudeNegocio(st, m, f); f.imprevistos = saudeImprevistos(st, f) });
 
 /* ---- calc/serial.js ---- */
 /* ================= serialização do modelo (Web Worker ↔ página) =================
@@ -9336,9 +9638,9 @@ function finance(st, m, adj={}){
   // cronograma
   const launch=Math.round(F.prelanc), N=Math.max(1,Math.round(F.obra)), chaves=launch+N, V=Math.max(1,Math.round(F.venda));
   const RD = st.flx && st.flx.receb && st.flx.receb.modo==="det" ? st.flx.receb : null;   // recebimento detalhado (src/calc/fluxo.js)
-  const T=Math.max(chaves, launch+V)+2 + (RD? flxMesesExtra(RD) : 0);
+  const T=Math.max(chaves, launch+V)+2 + (RD? flxMesesExtra(RD) : 0) + softMesesExtra(st);   // + meses da assistência pós-obra (src/calc/indiretos.js)
   const z=()=>new Array(T).fill(0);
-  const c={terreno:z(),outorga:z(),projetos:z(),obra:z(),terra:z(),mkt:z(),corret:z(),imp:z(),permFin:z(),juros:z(),receb:z(),finIn:z(),finOut:z(),vendas:z(),distr:z()};
+  const c={terreno:z(),outorga:z(),projetos:z(),obra:z(),terra:z(),mkt:z(),corret:z(),imp:z(),soft:z(),permFin:z(),juros:z(),receb:z(),finIn:z(),finOut:z(),vendas:z(),distr:z()};
   const fI = mm => Math.pow(1+F.incc, mm/12);
   c.terreno[0] = terreno+itbi; c.outorga[Math.min(3,T-1)] = outorga;
   for(let k=0;k<Math.max(1,launch);k++) c.projetos[k] = projetos/Math.max(1,launch);
@@ -9348,6 +9650,7 @@ function finance(st, m, adj={}){
     if(curva.sis && !adj.noHooks) c.obraSis = curva.sis.map(s=>({k:s.k, nome:s.nome, cor:s.cor, v:s.w.map((x,k)=>(obra+adm+conting)*x*fI(launch+k)), mes0:launch})) }
   else { let wsum=0; const w=[]; for(let k=0;k<N;k++){ w[k]=Math.sin(Math.PI*(k+.5)/N); wsum+=w[k] }
   for(let k=0;k<N;k++) c.obra[launch+k] = (obra+adm+conting)*w[k]/wsum*fI(launch+k) }
+  const SC = softCustos(st, {obra, vgv, terreno, launch, N, chaves, T, fI}); c.soft = SC.mes;   // registro, seguros, IPTU, jurídico, pós-obra, gestão (desligados por padrão)
   const mStart=Math.max(0,launch-2), mLen=V+2; for(let k=0;k<mLen;k++) c.mkt[mStart+k] = vgv*F.mkt/mLen;
   const sold=[]; for(let k=0;k<V;k++) sold[k]=(k===0?F.vendaLanc:0)+(1-F.vendaLanc)/V;
   const soldCum=z(); let sc=0, dist=null;
@@ -9371,10 +9674,10 @@ function finance(st, m, adj={}){
     }
   }
   const cf=z();
-  for(let i=0;i<T;i++) cf[i] = c.receb[i] + c.finIn[i] - c.terreno[i]-c.outorga[i]-c.projetos[i]-c.obra[i]-c.terra[i]-c.mkt[i]-c.corret[i]-c.imp[i]-c.permFin[i]-c.juros[i]-c.finOut[i];
+  for(let i=0;i<T;i++) cf[i] = c.receb[i] + c.finIn[i] - c.terreno[i]-c.outorga[i]-c.projetos[i]-c.obra[i]-c.terra[i]-c.mkt[i]-c.corret[i]-c.imp[i]-c.soft[i]-c.permFin[i]-c.juros[i]-c.finOut[i];
   const sum=a=>a.reduce((s,v)=>s+v,0);
-  const S_={receita:sum(c.receb), terreno:sum(c.terreno), outorga:sum(c.outorga), projetos:sum(c.projetos), obraTot:sum(c.obra), terra:sum(c.terra), mkt:sum(c.mkt), corret:sum(c.corret), imp:sum(c.imp), permFin:sum(c.permFin), juros:sum(c.juros)};
-  const custo = S_.terreno+S_.outorga+S_.projetos+S_.obraTot+S_.terra+S_.mkt+S_.corret+S_.imp+S_.permFin+S_.juros;
+  const S_={receita:sum(c.receb), terreno:sum(c.terreno), outorga:sum(c.outorga), projetos:sum(c.projetos), obraTot:sum(c.obra), terra:sum(c.terra), mkt:sum(c.mkt), corret:sum(c.corret), imp:sum(c.imp), soft:sum(c.soft), permFin:sum(c.permFin), juros:sum(c.juros)};
+  const custo = S_.terreno+S_.outorga+S_.projetos+S_.obraTot+S_.terra+S_.mkt+S_.corret+S_.imp+S_.soft+S_.permFin+S_.juros;
   const lucro = S_.receita - custo, margem = S_.receita? lucro/S_.receita : 0;
   const margemVGV = vgv>0? lucro/vgv : 0;   // convenção do mercado: lucro ÷ VGV (a margem s/ receita nominal fica em `margem`)
   const npv = r => cf.reduce((s,v,i)=>s+v/Math.pow(1+r,i),0);
@@ -9386,7 +9689,7 @@ function finance(st, m, adj={}){
   const maxTerreno = terreno + (lucro - F.margemAlvo*vgv)/(1+F.itbi);   // a margem alvo é sobre o VGV
   // `terreno` (abaixo, vindo de S_) = preço + ITBI desembolsados; terrenoPreco e terrenoITBI separam os dois
   const out = {eqA,lazerC,extraC,obra,vgvB,permV,vgv,vRes,vLoja,terreno,itbi,outorga,terra,projetos,adm,conting,...S_,terrenoPreco:terreno,terrenoITBI:itbi,finOn:!!F.finOn,custo,lucro,margem,margemReceita:margem,margemVGV,cf,cumA,c,tirA,vpl,exp:minCum,pay,maxTerreno,chaves,launch,lim,
-    orc, distratoV: dist? dist.loss : 0, distrato: dist, recebModo: RD? "det" : "simples", curvaModo: curva? st.flx.curva.modo : "sen"};
+    softItens:SC.itens, orc, distratoV: dist? dist.loss : 0, distrato: dist, recebModo: RD? "det" : "simples", curvaModo: curva? st.flx.curva.modo : "sen"};
   if(!adj.noHooks) runHooks("finance", out, st, m, adj);
   return out;
 }
@@ -10780,6 +11083,172 @@ function torreAjustaMix(mix, alvo, max=20){
   // completa enquanto couber: soma em quem está mais atrás da proporção
   for(;;){ let b=-1; mix.forEach((u,j)=>{ if(usa[j] && q[j]<max && s+u.area<=alvo+1e-6 && (b<0 || prop(j)<prop(b))) b=j }); if(b<0) break; q[b]++; s+=mix[b].area }
   return q;
+}
+
+/* ================= Fase E: calibrar o custo da obra com obras reais =================
+   Cálculo puro (roda na página, no Worker e nos testes; nada de DOM). A interface está em src/ui/calibracusto.js.
+
+   O estudo estima a obra como  (área equivalente) × CUB × fator,  com
+     área equivalente = torre/tipo + lazer coberto + garagem × eqGar   (o que o app faz em finance(): eqA = … + garA × fin.eqGar)
+   Cada obra realizada dá uma equação:  custo ÷ CUB(da obra) = fator × (torre + lazer) + (fator × eqGar) × garagem.
+   Com uma obra só dá para ajustar o fator (eqGar fica como está). Com duas ou mais, os dois saem de mínimos quadrados
+   ponderados (erro relativo: uma obra grande não "engole" uma pequena).
+
+   S.ccal = { obras:[{nome, ref:"AAAA-MM", uf, padrao, cub, priv, torre, garagem, lazer, custo}] }   (cub vazio/0 = tabela do estado e padrão)
+
+   ccalCusto(obras, cubDe, opts) → {
+     n, modo ("fator" | "fator+garagem" | null), fator, eqGar, r2 (null com 1 obra), erroMedio, erros:[{nome, real, previsto, erro, cub, nota?}],
+     ignoradas:[{nome, motivo}], avisos:[texto], anterior:{fator, eqGar} }
+   "Padrão da empresa": localStorage "gabarito.custo.padrao" ({fator, eqGar, obras, salvo}) — a interface não muda quando isso for para o Supabase (docs/BACKEND.md).  */
+extendDEF("ccal", { obras: [] });
+
+/* limites do ajuste e faixa usual da NBR 12.721 (coeficiente de equivalência de garagem); tudo configurável aqui, nada espalhado no código */
+const CCAL_FAIXAS = {
+  eqGar: { min: 0.3, max: 1.2 },          // o ajuste não sai daqui (se sair, o peso trava no limite e o fator é refeito)
+  eqGarNBR: { min: 0.5, max: 1.0 },       // faixa usual: fora dela, aviso
+  fator: { min: 0.6, max: 2.5 },          // fora disso é quase certo erro de unidade/área: aviso
+  colineares: 1e-6                         // determinante relativo abaixo disso = garagem proporcional à torre em todas as obras
+};
+const CCAL_CAMPOS = ["nome", "ref", "uf", "padrao", "cub", "priv", "torre", "garagem", "lazer", "custo"];
+const ccalObraVazia = () => ({ nome: "", ref: "", uf: "", padrao: "", cub: 0, priv: 0, torre: 0, garagem: 0, lazer: 0, custo: 0 });
+
+function ccalCusto(obras, cubDe, opts = {}){
+  const L = CCAL_FAIXAS, ant = { fator: opts.fator != null ? opts.fator : 1.2, eqGar: opts.eqGar != null ? opts.eqGar : 0.8 };
+  const avisos = [], ignoradas = [], usadas = [];
+  (obras || []).forEach((o, i) => {
+    const nome = o.nome || `Obra ${i + 1}`, x1 = (+o.torre || 0) + (+o.lazer || 0), x2 = +o.garagem || 0, custo = +o.custo || 0;
+    let c = typeof cubDe === "function" ? cubDe(o) : (+o.cub || 0), nota = null;
+    if(c && typeof c === "object"){ nota = c.aviso || null; c = c.v }
+    if(!(custo > 0)) return ignoradas.push({ nome, motivo: "sem custo realizado" });
+    if(!(x1 + x2 > 0)) return ignoradas.push({ nome, motivo: "sem áreas de torre, garagem ou lazer" });
+    if(!(c > 0)) return ignoradas.push({ nome, motivo: "sem CUB (informe o valor ou o estado e o padrão)" });
+    usadas.push({ nome, x1, x2, custo, cub: c, y: custo / c, nota });
+  });
+  const n = usadas.length;
+  const res = { n, modo: null, fator: ant.fator, eqGar: ant.eqGar, r2: null, erroMedio: null, erros: [], ignoradas, avisos, anterior: ant };
+  if(!n) return res;
+
+  const ajusta1 = eq => { let num = 0, den = 0;                       // fator com eqGar fixo: mínimos quadrados relativos
+    usadas.forEach(u => { const a = u.x1 + eq * u.x2; num += a / u.y; den += (a / u.y) * (a / u.y) });
+    return den > 0 ? num / den : null };
+  let fator = null, eqGar = ant.eqGar, modo = "fator";
+  if(n >= 2){
+    let s11 = 0, s12 = 0, s22 = 0, t1 = 0, t2 = 0;                    // normais com pesos 1/y²
+    usadas.forEach(u => { const w = 1 / (u.y * u.y); s11 += w * u.x1 * u.x1; s12 += w * u.x1 * u.x2; s22 += w * u.x2 * u.x2; t1 += w * u.x1 * u.y; t2 += w * u.x2 * u.y });
+    const det = s11 * s22 - s12 * s12;
+    if(s11 > 0 && s22 > 0 && det / (s11 * s22) > L.colineares){
+      const a = (t1 * s22 - t2 * s12) / det, b = (s11 * t2 - s12 * t1) / det;
+      if(a > 0 && b > 0){
+        const e = b / a;
+        if(e < L.eqGar.min || e > L.eqGar.max){
+          eqGar = Math.min(L.eqGar.max, Math.max(L.eqGar.min, e)); fator = ajusta1(eqGar);
+          avisos.push(`O peso da garagem ajustado (${ccalNum(e)}) ficou fora do limite ${ccalNum(L.eqGar.min)}–${ccalNum(L.eqGar.max)}; travei em ${ccalNum(eqGar)} e refiz o fator. Confira as áreas de garagem das obras.`);
+        } else { eqGar = e; fator = a }
+        modo = "fator+garagem";
+        if(n === 2) avisos.push("Com 2 obras o ajuste é exato (R² = 1 não prova nada). Quanto mais obras, mais confiável.");
+      } else avisos.push("As obras não permitiram separar o peso da garagem (resultado negativo): ajustei só o fator.");
+    } else avisos.push("Garagem proporcional à torre em todas as obras: não dá para separar o peso da garagem. Ajustei só o fator.");
+  } else avisos.push("Com uma obra só ajusto o fator; o peso da garagem fica como está. Com duas ou mais obras ajusto os dois.");
+  if(fator == null) fator = ajusta1(eqGar);
+  if(!(fator > 0)){ avisos.push("Não consegui ajustar com esses dados."); return res }
+
+  if(fator < L.fator.min || fator > L.fator.max) avisos.push(`Fator ${ccalNum(fator)}× fora do usual (${ccalNum(L.fator.min)}–${ccalNum(L.fator.max)}×): confira áreas, custos e o CUB de cada obra.`);
+  if(modo === "fator+garagem" && (eqGar < L.eqGarNBR.min || eqGar > L.eqGarNBR.max)) avisos.push(`Peso da garagem ${ccalNum(eqGar)} fora da faixa usual da NBR 12.721 (${ccalNum(L.eqGarNBR.min)}–${ccalNum(L.eqGarNBR.max)}).`);
+  usadas.forEach(u => { if(u.nota) avisos.push(`${u.nome}: ${u.nota}`) });
+
+  // erro por obra, R² (sobre o custo em R$) e erro médio absoluto
+  const prev = usadas.map(u => u.cub * fator * (u.x1 + eqGar * u.x2));
+  res.erros = usadas.map((u, i) => ({ nome: u.nome, real: u.custo, previsto: prev[i], erro: prev[i] / u.custo - 1, cub: u.cub, nota: u.nota }));
+  res.erroMedio = res.erros.reduce((s, e) => s + Math.abs(e.erro), 0) / n;
+  if(n >= 2){ const media = usadas.reduce((s, u) => s + u.custo, 0) / n, sst = usadas.reduce((s, u) => s + (u.custo - media) ** 2, 0), sse = usadas.reduce((s, u, i) => s + (u.custo - prev[i]) ** 2, 0);
+    res.r2 = sst > 0 ? 1 - sse / sst : null }
+  Object.assign(res, { modo, fator, eqGar });
+  return res;
+}
+const ccalNum = (v, d = 2) => (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toString().replace(".", ",");
+
+/* aplica o resultado ao estudo (fator sempre; eqGar só quando foi ajustado). Devolve o que mudou */
+function ccalAplica(st, res){
+  if(!res || !res.modo) return null;
+  const mud = { fator: [st.fin.fator, Math.round(res.fator * 1000) / 1000] };
+  st.fin.fator = mud.fator[1];
+  if(res.modo === "fator+garagem"){ mud.eqGar = [st.fin.eqGar, Math.round(res.eqGar * 1000) / 1000]; st.fin.eqGar = mud.eqGar[1] }
+  return mud;
+}
+
+/* modo paramétrico: escala os 3 coeficientes de maior peso do orçamento (fundação, estrutura, vedações, fachada, instalações, elevadores,
+   acabamentos) para que o direto do orçamento bata com o que "CUB × fator calibrado" daria neste estudo. s limitado a [0,5; 2]. */
+const CCAL_COEF = ["fund", "estr", "ved", "fach", "inst", "elev", "acab"];
+function ccalParam(st, m, res){
+  if(!res || !res.modo || !m) return null;
+  const o = orcCalc(st, m), K = o.coef, C = o.C;
+  const eqA = m.tiposA + m.duplexA + m.hallA + m.lojaA + m.aticoA + (m.lzExtraA || 0) + m.garA * (res.modo === "fator+garagem" ? res.eqGar : st.fin.eqGar) + (m.sacBal || 0) * 0.5;
+  const alvo = eqA * C * res.fator;                                    // direto que o modo CUB × fator daria
+  const pesos = CCAL_COEF.map(k => ({ k, v: (o.itens.find(i => i.k === k) || {}).param || 0 })).sort((a, b) => b.v - a.v).slice(0, 3).filter(p => p.v > 0);
+  const top = pesos.reduce((s, p) => s + p.v, 0); if(!(top > 0)) return null;
+  const soma = o.direto / (1 + K.cant), s = Math.min(2, Math.max(0.5, 1 + (alvo / (1 + K.cant) - soma) / top));
+  const coef = { ...K }; pesos.forEach(p => { coef[p.k] = K[p.k] * s; if(p.k === "inst") coef.instUn = K.instUn * s });
+  return { chaves: pesos.map(p => p.k), s, coef, alvo, antes: o.direto };
+}
+
+/* ---------- importação CSV (planilha exportada) ---------- */
+const ccalNorm = s => String(s == null ? "" : s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9/]+/g, " ").trim();
+const CCAL_ALIAS = {
+  nome: ["nome", "obra", "empreendimento"], ref: ["mes", "mes/ano", "ref", "data", "competencia", "mes ano"], uf: ["uf", "estado"], padrao: ["padrao", "cub padrao", "padrao cub"],
+  cub: ["cub", "cub r$/m2", "cub m2", "cub r m2", "valor do cub"], priv: ["priv", "privativa", "area privativa", "area priv"], torre: ["torre", "tipo", "torre/tipo", "area torre", "area tipo", "area da torre"],
+  garagem: ["garagem", "subsolo", "garagem/subsolo", "area garagem", "area de garagem"], lazer: ["lazer", "lazer coberto", "area lazer", "area de lazer coberto"], custo: ["custo", "custo total", "custo realizado", "custo final"]
+};
+/* "r8n" · "R 8-N" · "pp4 n" → "R8-N" (texto que não reconhece volta em maiúsculas) */
+function ccalPadrao(s){ const t = String(s == null ? "" : s).toUpperCase().replace(/[^A-Z0-9]/g, ""), m = /^(R1|R8|R16|PP4)([BNA])$/.exec(t);
+  return m ? (m[1] === "PP4" ? "PP-4" : m[1]) + "-" + m[2] : t === "PIS" ? "PIS" : String(s == null ? "" : s).trim().toUpperCase() }
+/* "03/2026" · "2026-03" · "mar/2026" → "2026-03" (texto que não reconhece volta como veio) */
+function ccalRef(s){
+  const t = ccalNorm(s); let m;
+  if((m = /^(\d{4})[-/ ](\d{1,2})$/.exec(t))) return m[1] + "-" + String(m[2]).padStart(2, "0");
+  if((m = /^(\d{1,2})[-/ ](\d{4})$/.exec(t))) return m[2] + "-" + String(m[1]).padStart(2, "0");
+  if((m = /^([a-z]{3})[a-z]*[-/ ](\d{4})$/.exec(t))){ const i = CUB_MESES.indexOf(m[1]); if(i >= 0) return m[2] + "-" + String(i + 1).padStart(2, "0") }
+  return String(s == null ? "" : s).trim();
+}
+/* número da planilha: "5.200" · "32.500.000" · "2.650,00" · "2650.5" · "R$ 1,5" */
+function ccalNumBR(s){
+  if(typeof s === "number") return s;
+  let t = String(s == null ? "" : s).trim().replace(/[R$\s]/g, ""); if(!t) return null;
+  if(t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  else if(/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+  const v = parseFloat(t); return isFinite(v) ? v : null;
+}
+function ccalParse(text){
+  const t = String(text || "").replace(/^﻿/, "").trim(); if(!t) return [];
+  const lines = t.split(/\r?\n/).filter(l => l.trim()); if(lines.length < 2) return [];
+  const sep = (lines[0].match(/;/g) || []).length >= (lines[0].match(/,/g) || []).length && (lines[0].match(/;/g) || []).length ? ";" : (lines[0].match(/\t/g) || []).length ? "\t" : ",";
+  const head = lines[0].split(sep).map(ccalNorm), col = {};
+  Object.keys(CCAL_ALIAS).forEach(k => { const i = head.findIndex(h => CCAL_ALIAS[k].map(ccalNorm).includes(h)); if(i >= 0) col[k] = i });
+  if(col.custo == null) return [];
+  return lines.slice(1).map(l => {
+    const c = l.split(sep), g = k => col[k] == null ? "" : String(c[col[k]] == null ? "" : c[col[k]]).trim().replace(/^"|"$/g, ""), n = k => ccalNumBR(g(k)) || 0;
+    const o = { ...ccalObraVazia(), nome: g("nome"), ref: ccalRef(g("ref")), uf: g("uf").toUpperCase(), padrao: ccalPadrao(g("padrao")), cub: n("cub"), priv: n("priv"), torre: n("torre"), garagem: n("garagem"), lazer: n("lazer"), custo: n("custo") };
+    return o;
+  }).filter(o => o.custo > 0 || o.torre > 0 || o.garagem > 0);
+}
+const CCAL_MODELO_CSV = "nome;mes;uf;padrao;cub;privativa;torre;garagem;lazer;custo\nEdifício Exemplo;2025-06;SC;R8-N;2650,00;5200;8400;3100;450;32500000\n";
+
+/* ---------- padrão da empresa (localStorage; o Supabase troca só estas funções) ---------- */
+function ccalPadraoEmpresa(){ const v = LS.get("gabarito.custo.padrao"); return v && typeof v === "object" && v.fator > 0 ? v : null }
+function ccalSalvarPadrao(st, res){
+  if(!res || !res.modo) return false;
+  const reg = { fator: Math.round(res.fator * 1000) / 1000, eqGar: res.modo === "fator+garagem" ? Math.round(res.eqGar * 1000) / 1000 : st.fin.eqGar, obras: clone((st.ccal && st.ccal.obras) || []), n: res.n, salvo: new Date().toISOString() };
+  try{ localStorage.setItem("gabarito.custo.padrao", JSON.stringify(reg)) }catch(e){ return false }
+  DEF.fin.fator = reg.fator; DEF.fin.eqGar = reg.eqGar;                  // vale para estudos novos
+  return true;
+}
+function ccalAplicarPadrao(st){
+  const p = ccalPadraoEmpresa(); if(!p) return false;
+  st.fin.fator = p.fator; st.fin.eqGar = p.eqGar; if(Array.isArray(p.obras) && !(st.ccal.obras || []).length) st.ccal.obras = clone(p.obras);
+  return true;
+}
+{ // padrão da empresa vale para estudos novos e para estudos antigos que nunca gravaram esses campos (no Worker/Node não há localStorage: vale o padrão do app)
+  const p = ccalPadraoEmpresa(), sv = LS.get("gabarito.v2");
+  if(p){ ["fator", "eqGar"].forEach(k => { if(typeof p[k] === "number"){ DEF.fin[k] = p[k]; if(!(sv && sv.fin && typeof sv.fin[k] === "number")) S.fin[k] = p[k] } }) }
 }
 
 /* ================= Fase E: calibrar os prêmios da tabela de vendas com uma tabela real =================
@@ -12260,35 +12729,91 @@ async function ctxBuscaResiliente(o){
 }
 
 /* ================= CUB por estado e padrão (NBR 12721) =================
-   Valores embutidos = REFERÊNCIAS APROXIMADAS (ilustrativas). Atualize com o boletim mensal do Sinduscon do estado:
-   importe um CSV/JSON (cubParse) — as linhas importadas substituem as embutidas do mesmo estado. */
+   Fase E: a tabela embutida traz o CUB/m² PUBLICADO pelos Sinduscons (valores de ago/2026 e set/2026, com mês de referência e fonte por linha).
+   - Linha com tabela completa (SC, RS, PR, SP, MG): todos os padrões vêm do boletim do Sinduscon.
+   - Linha só com o R8-N publicado (RJ, DF, MT, MS, BA, PE, CE, PA): os outros padrões são ESTIMADOS pela razão típica sobre o R8-N (campo `est`).
+   - Linha sem boletim confiável (ES, GO, AM): valor antigo, marcado como `ilustrativo`.
+   Atualize com o boletim mensal do Sinduscon do estado: importe um CSV/JSON (cubParse) — as linhas importadas substituem as embutidas do mesmo estado.
+   CUB_VERSAO = data em que esta tabela embutida foi conferida (a interface mostra "CUB <UF> <padrão> · <mês/ano> · <fonte>"). */
+const CUB_VERSAO = "2026-10-13";
 const CUB_PADROES = [
-  ["R1-N","R1-N · residência unifamiliar normal"], ["R1-A","R1-A · residência unifamiliar alto"],
-  ["PP-4-N","PP-4-N · prédio popular 4 pav."], ["R8-N","R8-N · residencial 8 pav. normal"], ["R8-A","R8-A · residencial 8 pav. alto"],
-  ["R16-N","R16-N · residencial 16 pav. normal"], ["R16-A","R16-A · residencial 16 pav. alto"]
+  ["R8-N","R8-N · residencial 8 pav. normal"], ["R16-N","R16-N · residencial 16 pav. normal"], ["PP-4-N","PP-4-N · prédio popular 4 pav."],
+  ["R1-N","R1-N · residência unifamiliar normal"], ["R8-A","R8-A · residencial 8 pav. alto"], ["R16-A","R16-A · residencial 16 pav. alto"],
+  ["R1-A","R1-A · residência unifamiliar alto"], ["R8-B","R8-B · residencial 8 pav. baixo"], ["PP-4-B","PP-4-B · prédio popular 4 pav. baixo"],
+  ["R1-B","R1-B · residência unifamiliar baixo"], ["PIS","PIS · projeto de interesse social"]
 ];
-// razão típica de cada padrão sobre o R8-N (ordem de grandeza dos boletins; ilustrativa)
-const CUB_RAZAO = { "R1-N":1.21, "R1-A":1.62, "PP-4-N":1.04, "R8-N":1, "R8-A":1.22, "R16-N":0.97, "R16-A":1.27 };
-// R8-N aproximado por estado (R$/m², referência set/2026 — ilustrativo)
-const CUB_BASE = [
-  ["SC","Santa Catarina",3159],["PR","Paraná",2650],["RS","Rio Grande do Sul",2980],["SP","São Paulo",2380],["RJ","Rio de Janeiro",2450],
-  ["MG","Minas Gerais",2390],["ES","Espírito Santo",2280],["DF","Distrito Federal",2290],["GO","Goiás",2330],["MT","Mato Grosso",2420],
-  ["MS","Mato Grosso do Sul",2310],["BA","Bahia",2140],["PE","Pernambuco",2120],["CE","Ceará",2050],["AM","Amazonas",2370],["PA","Pará",2260]
+// razão típica de cada padrão sobre o R8-N (média dos boletins completos de SC, RS, PR, SP e MG em ago–set/2026)
+const CUB_RAZAO = { "R1-B":0.971, "R1-N":1.209, "R1-A":1.51, "PP-4-B":0.903, "PP-4-N":1.144, "R8-B":0.856, "R8-N":1, "R8-A":1.218, "R16-N":0.972, "R16-A":1.263, "PIS":0.679 };
+/* boletins completos (R$/m², CUB 2006 sem desoneração) */
+const CUB_COMPLETO = [
+  ["SC","Santa Catarina","2026-08","Sinduscon Grande Florianópolis · dados de ago/2026, uso em set/2026","https://www.sindusconbc.com.br/wp-content/uploads/2026/09/PLANILHA-COMPLETA-CUB-2006-SETEMBRO-2026.pdf",
+    {"R1-B":2872.77,"R1-N":3434.48,"R1-A":4189.22,"PP-4-B":2613.45,"PP-4-N":3168.98,"R8-B":2472.02,"R8-N":2800.40,"R8-A":3330.06,"R16-N":2704.32,"R16-A":3467.78,"PIS":1988.45}],
+  ["PR","Paraná","2026-09","Sinduscon-PR","https://sindusconpr.com.br/wp-content/uploads/2026/10/2026-9-Tabela-CUB-m2.pdf",
+    {"R1-B":2681.59,"R1-N":3365.21,"R1-A":4109.51,"PP-4-B":2459.78,"PP-4-N":3144.71,"R8-B":2327.91,"R8-N":2738.93,"R8-A":3328.10,"R16-N":2657.44,"R16-A":3388.41,"PIS":1869.10}],
+  ["RS","Rio Grande do Sul","2026-09","Sinduscon-RS","https://sinduscon-rs.com.br/wp-content/uploads/2026/10/PRECOS-E-CUSTOS-DA-CONSTRUCAO-DE-SETEMBRO-2026-REV.pdf",
+    {"R1-B":2567.33,"R1-N":3452.09,"R1-A":4664.55,"PP-4-B":2447.10,"PP-4-N":3383.58,"R8-B":2322.15,"R8-N":2943.73,"R8-A":3789.65,"R16-N":2887.83,"R16-A":3862.64,"PIS":1862.93}],
+  ["SP","São Paulo","2026-09","Sinduscon-SP","https://portaldori.com.br/2026/10/05/sinduscon-divulga-tabelas-de-custo-unitario-basico-no-estado-de-sao-paulo-referencia-setembro-de-2026/",
+    {"R1-B":2193.39,"R1-N":2690.33,"R1-A":3255.86,"PP-4-B":2048.82,"PP-4-N":2553.75,"R8-B":1950.93,"R8-N":2238.58,"R8-A":2627.86,"R16-N":2175.77,"R16-A":2845.25,"PIS":1523.85}],
+  ["MG","Minas Gerais","2026-09","Sinduscon-MG","https://sinduscon-mg.org.br/wp-content/uploads/2026/10/tabela_cub_setembro_2026.pdf",
+    {"R1-B":2552.62,"R1-N":3118.02,"R1-A":3884.77,"PP-4-B":2404.94,"PP-4-N":2946.78,"R8-B":2265.98,"R8-N":2561.78,"R8-A":3137.48,"R16-N":2492.07,"R16-A":3222.70,"PIS":1767.64}]
 ];
-const CUB_TAB = CUB_BASE.map(([uf,nome,r8])=>({ uf, nome, ref:"2026-09", fonte:"Sinduscon-"+uf, ilustrativo:true,
-  v: Object.fromEntries(Object.entries(CUB_RAZAO).map(([p,k])=>[p, Math.round(r8*k)])) }));
+/* só o R8-N publicado (via MySide, que reproduz o Sinduscon do estado): [uf, nome, R8-N, ref, fonte, url] */
+const CUB_SO_R8N = [
+  ["RJ","Rio de Janeiro",2476.31,"2026-09","Sinduscon-RJ (via MySide)","https://myside.com.br/guia-imoveis/cub-rj"],
+  ["DF","Distrito Federal",2416.71,"2026-09","Sinduscon-DF (via MySide)","https://myside.com.br/guia-imoveis/cub-df"],
+  ["MT","Mato Grosso",3314.80,"2026-09","Sinduscon-MT (via MySide)","https://myside.com.br/guia-imoveis/cub-mt"],
+  ["MS","Mato Grosso do Sul",1873.74,"2026-08","Sinduscon-MS (via MySide)","https://myside.com.br/guia-imoveis/cub-ms"],
+  ["BA","Bahia",2218.68,"2026-08","Sinduscon-BA (via MySide)","https://myside.com.br/guia-imoveis/cub-ba"],
+  ["PE","Pernambuco",2240.23,"2026-09","Sinduscon-PE (via MySide)","https://myside.com.br/guia-imoveis/cub-pe"],
+  ["CE","Ceará",2458.13,"2026-08","Sinduscon-CE (via MySide)","https://myside.com.br/guia-imoveis/cub-ce"],
+  ["PA","Pará",2374.18,"2026-09","Sinduscon-PA (via MySide)","https://myside.com.br/guia-imoveis/cub-pa"]
+];
+/* sem boletim confiável: valor antigo, ilustrativo */
+const CUB_ILUSTR = [["ES","Espírito Santo",2280],["GO","Goiás",2330],["AM","Amazonas",2370]];
+const CUB_ORDEM = ["SC","PR","RS","SP","RJ","MG","ES","DF","GO","MT","MS","BA","PE","CE","AM","PA"];
+const cubDeR8N = r8 => Object.fromEntries(Object.entries(CUB_RAZAO).map(([p,k])=>[p, p==="R8-N" ? r8 : Math.round(r8*k*100)/100]));
+const CUB_TAB = CUB_ORDEM.map(uf=>{
+  const c = CUB_COMPLETO.find(x=>x[0]===uf); if(c) return { uf, nome:c[1], ref:c[2], fonte:c[3], url:c[4], ilustrativo:false, est:[], v:{...c[5]} };
+  const o = CUB_SO_R8N.find(x=>x[0]===uf); if(o) return { uf, nome:o[1], ref:o[3], fonte:o[4], url:o[5], ilustrativo:false, est:Object.keys(CUB_RAZAO).filter(p=>p!=="R8-N"), v:cubDeR8N(o[2]) };
+  const i = CUB_ILUSTR.find(x=>x[0]===uf); return { uf, nome:i[1], ref:"", fonte:"estimativa interna (sem boletim conferido)", url:"", ilustrativo:true, est:Object.keys(CUB_RAZAO), v:cubDeR8N(i[2]) };
+});
+/* "2026-10-13" → "13/10/2026" */
+const cubVersaoTxt = () => CUB_VERSAO.split("-").reverse().join("/");
+const CUB_MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+/* "2026-08" → "ago/2026"; texto livre passa direto */
+function cubRefTxt(ref){ const m = /^(\d{4})-(\d{2})$/.exec(String(ref||"")); return m && +m[2]>=1 && +m[2]<=12 ? CUB_MESES[+m[2]-1]+"/"+m[1] : String(ref||"") }
 
-/* tabela efetiva: embutida + importada (a importada vence por estado; padrões ausentes caem na embutida) */
+/* tabela efetiva: embutida + importada (a importada vence por estado e por padrão; padrões ausentes caem na embutida) */
 function cubLista(st){
   const imp = (st && st.orc && Array.isArray(st.orc.cubTab)) ? st.orc.cubTab : [];
-  const out = CUB_TAB.map(r=>({...r, v:{...r.v}}));
+  const out = CUB_TAB.map(r=>({...r, v:{...r.v}, est:[...(r.est||[])]}));
   imp.forEach(r=>{ if(!r || !r.uf) return; const uf=String(r.uf).toUpperCase(); let e=out.find(x=>x.uf===uf);
-    if(!e){ e={uf, nome:r.nome||uf, ref:"", fonte:"", ilustrativo:false, v:{}}; out.push(e) }
-    e.v = {...e.v, ...(r.v||{})}; e.ref = r.ref||e.ref; e.fonte = r.fonte||e.fonte||("Sinduscon-"+uf); e.ilustrativo = false; e.nome = r.nome||e.nome });
+    if(!e){ e={uf, nome:r.nome||uf, ref:"", fonte:"", url:"", ilustrativo:false, est:[], v:{}}; out.push(e) }
+    Object.keys(r.v||{}).forEach(p=>{ e.est = e.est.filter(x=>x!==p) });
+    e.v = {...e.v, ...(r.v||{})}; e.ref = r.ref||e.ref; e.fonte = r.fonte||e.fonte||("Sinduscon-"+uf); e.url = r.url||""; e.ilustrativo = false; e.nome = r.nome||e.nome });
   return out;
 }
 function cubLinha(st, uf){ const l=cubLista(st); return l.find(r=>r.uf===uf) || l[0] }
 function cubValor(st, uf, padrao){ const r=cubLinha(st, uf); return r && r.v[padrao] || null }
+/* "CUB SC R8-N · ago/2026 · Sinduscon Grande Florianópolis (estimado pela razão sobre o R8-N | ilustrativo)" — texto único da interface, do PDF e dos avisos */
+function cubDescricao(st, uf, padrao){
+  const r = cubLinha(st, uf); if(!r) return "";
+  const est = r.ilustrativo ? "ilustrativo" : (r.est||[]).includes(padrao) ? "estimado pela razão sobre o R8-N" : "";
+  return `CUB ${r.uf} ${padrao} · ${r.ref? cubRefTxt(r.ref) : "sem mês de referência"} · ${r.fonte||"sem fonte"}${est? " ("+est+")" : ""}`;
+}
+/* estado do estudo: o campo orc.uf; quando a zona/cidade escolhida em Regras é de outro estado, essa é a sugestão (null = sem sugestão) */
+function cubUfSugerida(st){
+  const id = st && st.regrasRef && st.regrasRef.id; if(!id || typeof cidadeAcha!=="function") return null;
+  const c = cidadeAcha(id); const uf = c && c.uf ? String(c.uf).toUpperCase() : null;
+  return uf && uf !== (st.orc && st.orc.uf) && cubLista(st).some(r=>r.uf===uf) ? uf : null;
+}
+/* "Seguir a tabela do estado": com orc.cubAuto ligado, fin.cub passa a ser o CUB do estado e padrão escolhidos. Devolve true se mudou */
+function cubSincroniza(st){
+  if(!st || !st.orc || !st.orc.cubAuto) return false;
+  const v = cubValor(st, st.orc.uf, st.orc.padrao); if(!v) return false;
+  const novo = Math.round(v*100)/100; if(Math.abs((st.fin.cub||0)-novo) < 0.005) return false;
+  st.fin.cub = novo; return true;
+}
 
 /* importação: CSV longo (uf;padrao;valor;ref;fonte), CSV largo (uf;ref;fonte;R8-N;R16-N…) ou JSON (lista ou {UF:{padrão:valor}}) */
 function cubNum(s){ if(typeof s==="number") return s; s=String(s||"").trim().replace(/[R$\s]/g,""); if(/,\d{1,2}$/.test(s)) s=s.replace(/\./g,"").replace(",","."); else s=s.replace(/,/g,""); const v=parseFloat(s); return isFinite(v)? v : null }
@@ -13152,6 +13677,72 @@ function histNums(m, f){
   return { units:m.units, priv:m.priv, vagas:m.vagas, vagasReq:m.vagasReq, ca:m.CA, h:m.H, vgv:f.vgv, custo:f.custo, lucro:f.lucro, margem:f.margem, tir:f.tirA, exp:-f.exp };
 }
 
+/* ================= Fase E: custos indiretos que faltavam (colinha de viabilidade) =================
+   Registro/cartório, seguros, IPTU durante a obra, jurídico, assistência técnica pós-obra e taxa de gestão.
+   Cálculo puro (roda na página, no Worker e nos testes). Todos nascem em 0 (desligados): os estudos já salvos e os de referência
+   não mudam. "Usar sugeridos da colinha" (soft Sugeridos) liga todos de uma vez com os valores de mercado abaixo.
+
+   S.soft = { registro, seguros, iptu, juridico, pos, gestao }   (frações; 0 = desligado)
+   softCustos(st, ctx) → { total, itens:[{k,nome,base,valor}], mes:[R$ por mês do fluxo] } — a finance() soma `mes` ao fluxo de caixa.
+
+   Quando cada um sai do caixa:
+     registro  50% no mês anterior ao lançamento (registro da incorporação) e 50% nas chaves (instituição do condomínio e matrículas)
+     seguros   igual por mês durante a obra, corrigido pelo INCC (acompanha o custo da obra)
+     iptu      igual por mês, do mês 0 até as chaves
+     juridico  igual por mês, do mês 0 até as chaves
+     gestao    igual por mês durante a obra
+     pos       igual por mês nos SOFT_POS_MESES meses seguintes às chaves, corrigido pelo INCC (o fluxo ganha esses meses a mais) */
+const SOFT_POS_MESES = 12;
+/* itens: base = sobre o que o percentual incide (vgv = VGV líquido da permuta física · obra = obra sem INCC · terreno = preço do terreno, por ano) */
+const SOFT_ITENS = [
+  { k: "registro", rot: "Registro e cartório", nome: "Registro e cartório",           base: "vgv",     un: "% VGV",          step: 0.05, q: "cartório incorporação matrícula emolumentos",
+    desc: "Registro da incorporação, instituição do condomínio e matrículas das unidades. Metade sai antes do lançamento e metade nas chaves. Os emolumentos variam por estado." },
+  { k: "seguros",  rot: "Seguros",             nome: "Seguros da obra",               base: "obra",    un: "% obra",         step: 0.05, q: "risco de engenharia garantia",
+    desc: "Seguro de risco de engenharia e garantias da obra. Sai ao longo da obra." },
+  { k: "iptu",     rot: "IPTU na obra",        nome: "IPTU durante a obra",           base: "terreno", un: "% terreno a.a.", step: 0.1,  q: "imposto predial lote",
+    desc: "IPTU do terreno da compra até as chaves, sobre o preço do terreno (% ao ano). Zero quando o terreno vem só por permuta." },
+  { k: "juridico", rot: "Jurídico",            nome: "Jurídico",                      base: "vgv",     un: "% VGV",          step: 0.05, q: "advogado contratos",
+    desc: "Assessoria jurídica da incorporação: contratos, distratos e regularizações. Distribuído até as chaves." },
+  { k: "pos",      rot: "Assistência pós-obra", nome: "Assistência técnica pós-obra", base: "obra",    un: "% obra",         step: 0.1,  q: "garantia pós-entrega reparos",
+    desc: "Reserva para reparos e assistência técnica depois da entrega (garantia). Sai nos 12 meses seguintes às chaves." },
+  { k: "gestao",   rot: "Taxa de gestão",      nome: "Taxa de gestão",                base: "vgv",     un: "% VGV",          step: 0.1,  q: "gestão do empreendimento overhead",
+    desc: "Gestão do empreendimento pela incorporadora (equipe própria, overhead). A administração da obra já está em “Administração” (% obra): evite contar a mesma coisa duas vezes." }
+];
+/* valores sugeridos (referências de mercado — conferir com cartório, corretora de seguros e contabilidade da empresa) e faixas usuais citadas no ⓘ */
+const SOFT_SUGERIDOS = { registro: 0.004, seguros: 0.003, iptu: 0.01, juridico: 0.003, pos: 0.01, gestao: 0.015 };
+const SOFT_FAIXAS = {
+  registro: [0.003, 0.006], seguros: [0.002, 0.005], iptu: [0.005, 0.015], juridico: [0.002, 0.005], pos: [0.005, 0.015], gestao: [0.01, 0.03]
+};
+extendDEF("soft", { registro: 0, seguros: 0, iptu: 0, juridico: 0, pos: 0, gestao: 0 });
+
+/* meses que o fluxo precisa ganhar além das chaves */
+function softMesesExtra(st){ return st && st.soft && +st.soft.pos > 0 ? SOFT_POS_MESES : 0 }
+
+/* ctx = { obra (sem INCC), vgv (líquido), terreno (preço), launch, N (prazo de obra), chaves, T (meses do fluxo), fI(mês) }  */
+function softCustos(st, ctx){
+  const K = st && st.soft; if(!K) return { total: 0, itens: [], mes: new Array(ctx.T).fill(0) };
+  const { obra, vgv, terreno, launch, N, chaves, T } = ctx, fI = ctx.fI || (() => 1);
+  const mes = new Array(T).fill(0), itens = [];
+  const clampM = i => Math.max(0, Math.min(T - 1, Math.round(i)));
+  const espalha = (valor, de, ate, corr) => { const a = clampM(de), b = Math.max(a, clampM(ate)), n = b - a + 1;
+    for(let i = a; i <= b; i++) mes[i] += valor / n * (corr ? corr(i) : 1) };
+  const soma = (k, nome, base, calc) => { const p = +K[k] || 0; if(!(p > 0)) return; const antes = mes.reduce((s, v) => s + v, 0); calc(p); itens.push({ k, nome, base, valor: mes.reduce((s, v) => s + v, 0) - antes }) };
+  SOFT_ITENS.forEach(it => {
+    soma(it.k, it.nome, it.base, p => {
+      if(it.k === "registro"){ const v = vgv * p; mes[clampM(launch - 1)] += v / 2; mes[clampM(chaves)] += v / 2 }
+      else if(it.k === "seguros") espalha(obra * p, launch, launch + N - 1, fI)
+      else if(it.k === "iptu") espalha(terreno * p * (chaves / 12), 0, chaves - 1)
+      else if(it.k === "juridico") espalha(vgv * p, 0, chaves - 1)
+      else if(it.k === "gestao") espalha(vgv * p, launch, launch + N - 1)
+      else if(it.k === "pos") espalha(obra * p, chaves, chaves + SOFT_POS_MESES - 1, fI)
+    });
+  });
+  return { total: mes.reduce((s, v) => s + v, 0), itens, mes };
+}
+/* liga todos com os valores sugeridos (devolve o que mudou, para a interface avisar) */
+function softSugeridos(st){ Object.assign(st.soft, SOFT_SUGERIDOS); return st }
+function softLigado(st){ return !!st.soft && Object.keys(SOFT_SUGERIDOS).some(k => +st.soft[k] > 0) }
+
 /* ================= vector tile (MVT/protobuf) — decodificador mínimo, puro =================
    Serve de reserva quando o Overpass não responde: o tile vetorial do OpenFreeMap traz as vias com nome e classe.
    mvtLer(bytes, {camadas?}) → { camada: { extent, feats:[{tipo:1|2|3, props:{…}, geom:[[ [x,y]… ]…]}] } }
@@ -13461,6 +14052,7 @@ function normasResumo(itens){ const c={ok:0,warn:0,bad:0,na:0}; (itens||[]).forE
 extendDEF("orc", {
   modo: "cub",                 // "cub" = CUB × fator (padrão, método atual) · "param" = soma dos sistemas
   uf: "SC", padrao: "R8-N",    // tabela CUB (referência)
+  cubAuto: false,              // true = fin.cub segue a tabela do estado e padrão (cubSincroniza em calc/cub.js); desligado: o CUB é o digitado
   solo: "medio",               // bom | medio | ruim
   fachada: "porcelanato",      // textura | porcelanato | vidro
   acab: "normal",              // economico | normal | alto | luxo
@@ -13946,7 +14538,7 @@ function relevoPrevia(st, o={}){
      margemVGV   lucro ÷ VGV (convenção do mercado — margem principal) · margemReceita = lucro ÷ receita nominal
      vc, vcCUB   preço médio R$/m² privativo ÷ (CUB × fator)  ·  ÷ CUB puro
      terrenoPctVGV  (preço do terreno + permuta física + permuta financeira) ÷ VGV de tabela — sem ITBI
-     softPctVGV  indiretos ÷ VGV líquido: projetos, administração, contingência, corretagem, marketing, RET, ITBI, outorga e juros
+     softPctVGV  indiretos ÷ VGV líquido: projetos, administração, contingência, corretagem, marketing, RET, ITBI, outorga, juros e os itens de src/calc/indiretos.js
      custoM2ATC  obra (sem INCC e sem indiretos) ÷ ATC
      tirVsAlvo   TIR − TIR alvo (null sem TIR)
      tipologia / tipologiaNome / faixaEfic   tipologia detectada para a faixa de eficiência (ver saudeTipologia)
@@ -14026,7 +14618,7 @@ function saudeNegocio(st, m, f){
   // terreno: permuta física e financeira contam como terreno equivalente; denominador = VGV de tabela (o total do empreendimento)
   const terrenoEq = (f.terrenoPreco != null ? f.terrenoPreco : F.terreno) + (f.permV || 0) + (f.permFin || 0);
   const terrenoPctVGV = saudeDiv(terrenoEq, f.vgvB);
-  const soft = (f.projetos || 0) + (f.adm || 0) + (f.conting || 0) + (f.corret || 0) + (f.mkt || 0) + (f.imp || 0) + (f.itbi || 0) + (f.outorga || 0) + (f.juros || 0);
+  const soft = (f.projetos || 0) + (f.adm || 0) + (f.conting || 0) + (f.corret || 0) + (f.mkt || 0) + (f.imp || 0) + (f.itbi || 0) + (f.outorga || 0) + (f.juros || 0) + (f.soft || 0);   // f.soft = registro, seguros, IPTU, jurídico, pós-obra e gestão (src/calc/indiretos.js; 0 quando desligados)
   const softPctVGV = saudeDiv(soft, f.vgv);
   const custoM2ATC = saudeDiv(f.obra, atc);
   const tipologia = saudeTipologia(st, m), faixaEfic = (M.efic && M.efic[tipologia]) || SAUDE_SUGERIDAS.efic[tipologia];
@@ -14062,8 +14654,18 @@ function saudeAplicarPadrao(st){
 const SAUDE_ORDEM = { ruim: 0, atencao: 1, ok: 2, otimo: 3 };
 function saudePior(niveis){ return niveis.reduce((a, b) => SAUDE_ORDEM[b] < SAUDE_ORDEM[a] ? b : a, "otimo") }
 
+/* Lucro após imprevistos (informativo, não muda o lucro principal): se a contingência do estudo (S.fin.conting) está abaixo da meta de imprevistos
+   (S.metas.imprev.min–max), a diferença × obra (com a correção do INCC que a obra já leva) sai do lucro. Devolve a faixa { min, max }. */
+function saudeImprevistos(st, f){
+  const M = (st.metas && st.metas.imprev) || SAUDE_SUGERIDAS.imprev, base = (f.obra || 0) + (f.adm || 0) + (f.conting || 0);
+  const incc = base > 0 ? (f.obraTot || base) / base : 1;
+  const calc = meta => { const extra = Math.max(0, meta - (st.fin.conting || 0)) * (f.obra || 0) * incc, lucro = f.lucro - extra;
+    return { meta, extra, lucro, margemVGV: saudeDiv(lucro, f.vgv) } };
+  return { min: calc(M.min), max: calc(M.max) };
+}
+
 /* o resultado acompanha o `f` (barato; roda também na sensibilidade com os ajustes de cada rodada) */
-HOOK.finance.push((f, st, m) => { f.saude = saudeNegocio(st, m, f) });
+HOOK.finance.push((f, st, m) => { f.saude = saudeNegocio(st, m, f); f.imprevistos = saudeImprevistos(st, f) });
 
 /* ================= serialização do modelo (Web Worker ↔ página) =================
    O resultado de compute() viaja do Worker para a página por structured clone. Ele aceita objetos, arrays,
@@ -16793,7 +17395,7 @@ async function exportPDF(){
   h2("Quadro de áreas");
   rows([["Subsolos",m2(m.gSub)],["Térreo",m2(m.embA)],["Garagem elevada",m2(m.gAc)],["Pavimentos das torres",m2(m.tiposA)],...(m.duplexA?[["Duplex",m2(m.duplexA)]]:[]),...(P.atico?[["Ático técnico",m2(m.aticoA)]]:[]),["Área construída total",m2(m.constr)],["Área computável",m2(m.comp)],["Área privativa vendável",m2(m.priv)],["Privativa / construída",pct(m.priv/Math.max(1,m.constr))]],{bold:["Área construída total","Área privativa vendável"]});
   h2("DRE do empreendimento");
-  rows([["VGV de tabela",brl(f.vgvB)],...(f.permV?[["(-) Permuta física","-"+brl(f.permV)]]:[]),["Receita nominal",brl(f.receita)],["Terreno + ITBI","-"+brl(f.terreno)],...(f.outorga?[["Outorga onerosa","-"+brl(f.outorga)]]:[]),["Obra + adm. + contingência, com INCC","-"+brl(f.obraTot)],...(f.terra?[["Movimento de terra","-"+brl(f.terra)]]:[]),["Projetos e aprovações","-"+brl(f.projetos)],["Corretagem + marketing","-"+brl(f.corret+f.mkt)],["Impostos (RET)","-"+brl(f.imp)],...(f.permFin?[["Permuta financeira","-"+brl(f.permFin)]]:[]),...(f.juros?[["Juros do financiamento","-"+brl(f.juros)]]:[]),["Lucro",brl(f.lucro)],["Margem sobre o VGV",pct(sd.margemVGV)],["Margem sobre a receita nominal",pct(f.margem)],["TIR anual",f.tirA==null?"-":pct(f.tirA)],["VPL (TMA "+pct(F.tma,1)+")",brl(f.vpl)],["Exposição máxima",brl(-f.exp)],["Payback",f.pay==null?"-":"mês "+f.pay],["Terreno máximo p/ margem "+pct(F.margemAlvo,0)+" s/ VGV",brl(f.maxTerreno)]],{bold:["Lucro","Receita nominal"]});
+  rows([["VGV de tabela",brl(f.vgvB)],...(f.permV?[["(-) Permuta física","-"+brl(f.permV)]]:[]),["Receita nominal",brl(f.receita)],["Terreno + ITBI","-"+brl(f.terreno)],...(f.outorga?[["Outorga onerosa","-"+brl(f.outorga)]]:[]),["Obra + adm. + contingência, com INCC","-"+brl(f.obraTot)],...(f.terra?[["Movimento de terra","-"+brl(f.terra)]]:[]),["Projetos e aprovações","-"+brl(f.projetos)],...(f.soft?[["Outros indiretos (registro, seguros, IPTU, jurídico, pós-obra, gestão)","-"+brl(f.soft)]]:[]),["Corretagem + marketing","-"+brl(f.corret+f.mkt)],["Impostos (RET)","-"+brl(f.imp)],...(f.permFin?[["Permuta financeira","-"+brl(f.permFin)]]:[]),...(f.juros?[["Juros do financiamento","-"+brl(f.juros)]]:[]),["Lucro",brl(f.lucro)],["Margem sobre o VGV",pct(sd.margemVGV)],["Margem sobre a receita nominal",pct(f.margem)],...(f.imprevistos&&f.imprevistos.min.extra>0?[["Lucro após imprevistos de "+pct(f.imprevistos.min.meta,0)+" a "+pct(f.imprevistos.max.meta,0),brl(f.imprevistos.min.lucro)+" a "+brl(f.imprevistos.max.lucro)]]:[]),["TIR anual",f.tirA==null?"-":pct(f.tirA)],["VPL (TMA "+pct(F.tma,1)+")",brl(f.vpl)],["Exposição máxima",brl(-f.exp)],["Payback",f.pay==null?"-":"mês "+f.pay],["Terreno máximo p/ margem "+pct(F.margemAlvo,0)+" s/ VGV",brl(f.maxTerreno)]],{bold:["Lucro","Receita nominal"]});
   // fluxo
   doc.addPage(); head(S.nome); h2("Fluxo de caixa acumulado");
   { const x0=M+14, w=PW-2*M-14, h=60, cum=f.cumA, n=cum.length, mn=Math.min(0,...cum), mx=Math.max(0,...cum), sx=i=>x0+w*i/(n-1), sy=v=>y+h*(mx-v)/((mx-mn)||1);
@@ -18691,6 +19293,202 @@ addCard("viab", { key:"vCal", sub:"vendas", order:46,
   }
 });
 
+/* ================= Fase E (custos): interface da calibração, dos indiretos extras e da tabela CUB do estado =================
+   Cálculo em src/calc/{calibracusto,indiretos,cub}.js; aqui só marcação e ações.
+   - Card "Calibrar com obras reais" (Viabilidade › Premissas, fechado): obras realizadas → fator sobre o CUB e peso da garagem, com erro por obra e R²;
+     "Aplicar ao estudo", "Salvar como padrão da empresa" (localStorage gabarito.custo.padrao; o Supabase troca só ccalSalvarPadrao/ccalPadraoEmpresa),
+     importação de CSV ou XLSX (SheetJS do cdnjs, só quando o arquivo é planilha) e modelo de CSV.
+   (Leitor próprio e pequeno, com prefixo ccal: depois do merge pode passar a usar plaCSV/plaNum de src/calc/planilha.js e a leitura de planilhas de src/ui/arquivos.js.)
+   - softCamposHTML(): seis indiretos que faltavam, dentro de Premissas › Custos indiretos › Mais opções, com "Usar sugeridos da colinha".
+   - FX.cub / FX.cubMan e ACT.cubUf: "Seguir a tabela do estado" (orc.cubAuto) e a sugestão de estado pela zona escolhida em Regras. */
+const CCAL_UI = { abertas: new Set() };
+{ const st = document.createElement("style"); st.id = "ccalCSS"; st.textContent = `
+.ccal-o{border-top:1px solid var(--line);padding:2px 0}
+.ccal-o>summary{cursor:pointer;display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:7px 0;list-style:none;font-size:13px}
+.ccal-o>summary::-webkit-details-marker{display:none}
+.ccal-o>summary .ccal-v{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+.ccal-o[open]>summary{color:var(--ink)}
+.ccal-o .row{margin-top:8px}
+.ccal-warn+.row,.ccal-err+.row{margin-top:10px}
+.ccal-err td:nth-child(2),.ccal-err td:nth-child(3){font-family:var(--f-mono);font-size:12px;text-align:right;white-space:nowrap}
+.ccal-warn{color:var(--warn);font-size:12px;margin:4px 0 0}
+#ccalRes .mets{grid-template-columns:repeat(3,minmax(0,1fr))}
+#ccalRes .met{padding:8px 10px}
+#ccalRes .met .v{font-size:16px}`; document.head.appendChild(st) }
+
+/* ---------------- indiretos extras (Premissas › Custos indiretos › Mais opções) ---------------- */
+function softAjuda(it){
+  const [a, b] = SOFT_FAIXAS[it.k], f = v => nf(v * 100, v * 100 % 1 ? 1 : 0);
+  return `${it.desc} Faixa usual de mercado: ${f(a)} a ${f(b)} ${it.un}. Sugerido na colinha: ${nf(SOFT_SUGERIDOS[it.k] * 100, 1)}%. Confira com o seu cartório, corretora de seguros e contabilidade.`;
+}
+function softCamposHTML(){
+  const campos = SOFT_ITENS.map(it => NUM(`soft.${it.k}`, it.rot, it.un, { pct: true, step: it.step, min: 0, help: softAjuda(it), q: it.q + " indiretos soft costs" })).join("");
+  return GRP(`Outros indiretos ${INFO("Outros indiretos")}`) + KV(campos) +
+    `<div class="row"><button type="button" class="btn sm" data-act="softSug">Usar sugeridos da colinha</button><button type="button" class="btn sm ghost" data-act="softZera">Zerar</button></div><p class="note" id="softNote"></p>`;
+}
+function softNota(f){
+  const e = document.getElementById("softNote"); if(!e) return;
+  const t = f.soft > 0 ? `Somam <b>${mi(f.soft)}</b> · ${pct(f.soft / Math.max(1, f.vgv), 1)} do VGV` : "Desligados (0%): não entram no resultado";
+  if(e.innerHTML !== t) e.innerHTML = t;
+}
+
+/* ---------------- tabela CUB: efeitos e ações ---------------- */
+Object.assign(FX, {
+  /* mudou estado, padrão ou "seguir a tabela": o CUB do estudo acompanha quando está ligado */
+  cub: live => { cubSincroniza(S); FX.upd(live) },
+  /* digitou o CUB à mão: sai do "seguir a tabela" */
+  cubMan: live => { const era = S.orc.cubAuto; if(era) S.orc.cubAuto = false; FX.upd(live); if(era && !live) renderTab() },
+  /* qualquer campo da calibração: guarda e recalcula só o resultado (nada do estudo muda até "Aplicar") */
+  ccal: () => { (S.ccal.obras || []).forEach(o => { o.ref = ccalRef(o.ref) }); save(); if(window._last) ccalLive(window._last.m, window._last.f) }
+});
+Object.assign(ACT, {
+  cubUf: b => { S.orc.uf = b.dataset.v; cubSincroniza(S); update(); renderTab(); toast(`Estado da tabela CUB: ${S.orc.uf}`) },
+  cubDoEstado: () => { S.orc.cubAuto = true; if(!cubSincroniza(S)) save(); update(); renderTab(); toast(`CUB do estudo agora segue ${S.orc.uf} ${S.orc.padrao}`) }
+});
+
+/* ---------------- calibrar com obras reais ---------------- */
+function ccalCubDe(o){
+  if(+o.cub > 0) return +o.cub;
+  const uf = o.uf || S.orc.uf, pad = o.padrao || S.orc.padrao, v = cubValor(S, uf, pad), r = cubLinha(S, uf); if(!v) return null;
+  const nota = [];
+  if(!o.ref) nota.push("sem o mês da obra");
+  else if(r.ref && o.ref !== r.ref) nota.push(`a tabela é de ${cubRefTxt(r.ref)}, a obra é de ${cubRefTxt(o.ref)}`);
+  if(r.ilustrativo) nota.push("valor ilustrativo"); else if((r.est || []).includes(pad)) nota.push("padrão estimado");
+  return nota.length ? { v, aviso: `usei o CUB ${r.uf} ${pad} da tabela (${nota.join("; ")}). Informe o CUB do mês da obra para ficar preciso.` } : v;
+}
+const ccalCalc = () => ccalCusto(S.ccal.obras || [], ccalCubDe, { fator: S.fin.fator, eqGar: S.fin.eqGar });
+
+function ccalLinhaHTML(o, i){
+  const p = k => `ccal.obras.${i}.${k}`, ufs = [["", `do estudo (${S.orc.uf})`], ...cubLista(S).map(r => [r.uf, r.uf])], pads = [["", `do estudo (${S.orc.padrao})`], ...CUB_PADROES.map(x => [x[0], x[0]])];
+  return `<details class="ccal-o" data-ci="${i}" ${CCAL_UI.abertas.has(i) ? "open" : ""}><summary><span id="ccal-t-${i}">${esc(o.nome || "Obra " + (i + 1))}</span><span class="ccal-v" id="ccal-s-${i}"></span></summary>
+    ${KV(TXT(p("nome"), "Nome", { fx: "ccal" }) + TXT(p("ref"), "Mês/ano (AAAA-MM)", { fx: "ccal", ph: "2025-06" }) +
+      finSEL(p("uf"), ufs, "Estado do CUB", { fx: "ccal" }) + finSEL(p("padrao"), pads, "Padrão do CUB", { fx: "ccal" }) +
+      NUM(p("cub"), "CUB do mês", "R$/m²", { step: 1, zero: true, ph: "da tabela", fx: "ccal", help: "Vazio = o da tabela para o estado e padrão (mês mais recente). Informe o CUB do mês da obra para ficar preciso." }) +
+      NUM(p("custo"), "Custo realizado", "R$", { step: 100000, zero: true, fx: "ccal" }) +
+      NUM(p("priv"), "Área privativa", "m²", { step: 10, zero: true, fx: "ccal" }) + NUM(p("torre"), "Torre/tipo", "m²", { step: 10, zero: true, fx: "ccal" }) +
+      NUM(p("garagem"), "Garagem/subsolo", "m²", { step: 10, zero: true, fx: "ccal" }) + NUM(p("lazer"), "Lazer coberto", "m²", { step: 10, zero: true, fx: "ccal" }))}
+    <div class="row"><button type="button" class="btn sm ghost" data-act="ccalDel" data-i="${i}">Remover obra</button></div></details>`;
+}
+function ccalHTML(){
+  const obras = S.ccal.obras || [], emp = !!ccalPadraoEmpresa();
+  const lista = obras.map(ccalLinhaHTML).join("");
+  const body = `<div id="ccalRes"></div><div id="ccalList">${lista}</div>
+    <div class="row"><button type="button" class="btn sm" data-act="ccalAdd">+ Adicionar obra</button></div>` +
+    ADV(`<div class="row"><label class="btn sm ghost" style="cursor:pointer">Importar CSV ou XLSX<input type="file" id="ccalFile" accept=".csv,.txt,.xlsx,.xls,text/csv" hidden></label><button type="button" class="btn sm ghost" data-act="ccalModelo">Baixar modelo CSV</button></div>
+      ${emp ? `<div class="row"><button type="button" class="btn sm ghost" data-act="ccalEmpresa">Usar padrão da empresa</button></div>` : ""}`, { key: "ccal" });
+  return SEC("Calibrar com obras reais", finQ("calibrar obras reais custo fator garagem equivalência eqgar cub", body),
+    { key: "ccal", cls: "fq", info: "Calibração do custo", sum: "" });
+}
+const ccalN = (v, d = 2) => nf(v, d);
+function ccalResHTML(res, m){
+  const F = S.fin, obras = S.ccal.obras || [], par = S.orc.modo === "param";
+  const ign = res.ignoradas.map(i => `<div class="ccal-warn">${esc(i.nome)}: ${esc(i.motivo)} — fora do ajuste.</div>`).join("");
+  if(!res.n) return `<p class="note">${obras.length ? "Nenhuma obra com custo, área e CUB." : "Informe uma ou mais obras para ajustar o custo."}</p>${ign}`;
+  const igual = Math.abs(F.fator - res.fator) < 0.0005 && (res.modo !== "fator+garagem" || Math.abs(F.eqGar - res.eqGar) < 0.0005);
+  const tiles = `<div class="mets">
+    <div class="met"><div class="l">Fator ÷ CUB${INFO("Custo ÷ CUB")}</div><div class="v">${ccalN(res.fator)}×</div><div class="s">agora ${ccalN(F.fator)}×</div></div>
+    <div class="met"><div class="l">Peso garagem${INFO("Peso da garagem")}</div><div class="v">${res.modo === "fator+garagem" ? ccalN(res.eqGar) : "mantido"}</div><div class="s">agora ${ccalN(F.eqGar)}</div></div>
+    <div class="met"><div class="l">Ajuste${INFO("R²")}</div><div class="v">${res.r2 == null ? "—" : ccalN(res.r2, 3)}</div><div class="s">erro ${pct(res.erroMedio, 1)}</div></div></div>`;
+  const cor = e => Math.abs(e) > 0.1 ? "var(--bad)" : Math.abs(e) > 0.05 ? "var(--warn)" : "var(--ok)";
+  const tab = `<table class="tbl ccal-err"><tr><th>Obra</th><th>Real</th><th>Previsto</th><th>Erro</th></tr>${res.erros.map(e => `<tr><td>${esc(e.nome)}</td><td>${mi(e.real)}</td><td>${mi(e.previsto)}</td><td style="color:${cor(e.erro)}">${e.erro >= 0 ? "+" : "−"}${nf(Math.abs(e.erro) * 100, 1)}%</td></tr>`).join("")}</table>`;
+  const av = res.avisos.map(a => `<div class="ccal-warn">${esc(a)}</div>`).join("");
+  let pnote = "";
+  if(par && m){ const p = ccalParam(S, m, res); if(p) pnote = `<p class="note">Orçamento paramétrico: escala ${p.chaves.map(k => ORC_SIS.find(s => s.k === k).nome.toLowerCase()).join(", ")} em ×${ccalN(p.s)}.</p>` }
+  const emp = ccalPadraoEmpresa();
+  return tiles + tab + av + ign + pnote +
+    `<div class="row"><button type="button" class="btn pri sm" data-act="ccalAplica" ${igual ? "disabled" : ""}>${igual ? "Aplicado ao estudo" : "Aplicar ao estudo"}</button><button type="button" class="btn sm ghost" data-act="ccalSalva">Salvar como padrão da empresa</button></div>` +
+    (emp ? `<p class="note">Padrão da empresa: ${ccalN(emp.fator)}× · garagem ${ccalN(emp.eqGar)} · ${emp.n} obra${emp.n === 1 ? "" : "s"}</p>` : "");
+}
+function ccalLive(m, f){
+  const obras = S.ccal.obras || [], res = ccalCalc();
+  obras.forEach((o, i) => { const t = document.getElementById("ccal-t-" + i), s = document.getElementById("ccal-s-" + i);
+    if(t) t.textContent = o.nome || "Obra " + (i + 1);
+    if(s) s.textContent = o.custo > 0 ? `${mi(o.custo)}${o.priv > 0 ? " · " + brl(o.custo / o.priv) + "/m²" : ""}` : "" });
+  setSum("ccal", !obras.length ? "nenhuma obra" : res.n ? `${res.n} obra${res.n === 1 ? "" : "s"} · fator <b>${ccalN(res.fator)}×</b>${res.modo === "fator+garagem" ? ` · garagem ${ccalN(res.eqGar)}` : ""}` : `${obras.length} obra${obras.length === 1 ? "" : "s"} incompleta${obras.length === 1 ? "" : "s"}`);
+  const el = document.getElementById("ccalRes");
+  if(el && !(document.activeElement && el.contains(document.activeElement))){ const h = ccalResHTML(res, m); if(el.innerHTML !== h) el.innerHTML = h }
+  CCAL_UI.res = res;
+  if(f){ softNota(f);
+    if(f.soft > 0) setSum("ind", `<b>${pct(S.fin.projetos + S.fin.adm + S.fin.conting, 0)}</b> da obra · ITBI ${pct(S.fin.itbi, 1)} · outros ${mi(f.soft)}`) }
+}
+function ccalAfter(){
+  const fi = document.getElementById("ccalFile");
+  if(fi) fi.onchange = async () => {
+    const file = fi.files[0]; fi.value = ""; if(!file) return;
+    try{
+      let txt;
+      if(/\.xlsx?$/i.test(file.name)){
+        await loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+        const wb = XLSX.read(await file.arrayBuffer(), { type: "array" }), ws = wb.Sheets[wb.SheetNames[0]];
+        txt = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" }).map(l => l.map(c => String(c).replace(/;/g, ",")).join(";")).join("\n");
+      } else txt = await file.text();
+      const novas = ccalParse(txt);
+      if(!novas.length){ toast("Não encontrei obras: precisa de uma coluna “custo” e das áreas (use o modelo CSV)"); return }
+      S.ccal.obras = [...(S.ccal.obras || []), ...novas]; update(); renderTab(); toast(`${novas.length} obra${novas.length === 1 ? "" : "s"} importada${novas.length === 1 ? "" : "s"}`);
+    }catch(e){ console.error(e); toast("Não consegui ler esse arquivo") }
+  };
+  TB.querySelectorAll("details.ccal-o").forEach(d => d.addEventListener("toggle", () => { const i = +d.dataset.ci; if(d.open) CCAL_UI.abertas.add(i); else CCAL_UI.abertas.delete(i) }));
+}
+Object.assign(ACT, {
+  softSug: () => { softSugeridos(S); update(); renderTab(); toast("Indiretos da colinha ligados com os valores sugeridos (Ctrl+Z desfaz)") },
+  softZera: () => { Object.keys(SOFT_SUGERIDOS).forEach(k => { S.soft[k] = 0 }); update(); renderTab(); toast("Outros indiretos desligados") },
+  ccalAdd: () => { const l = S.ccal.obras = S.ccal.obras || []; l.push({ ...ccalObraVazia(), nome: "Obra " + (l.length + 1) }); CCAL_UI.abertas.add(l.length - 1); save(); renderTab();
+    const d = TB.querySelector(`details.ccal-o[data-ci="${l.length - 1}"]`); if(d){ const sec = d.closest("details.sec"); if(sec) sec.open = true; d.scrollIntoView({ block: "nearest" }) } },
+  ccalDel: b => { if(!b.dataset.arm){ b.dataset.arm = 1; b.textContent = "Confirmar"; b.classList.add("on"); return }
+    const i = +b.dataset.i; S.ccal.obras.splice(i, 1); CCAL_UI.abertas = new Set(); save(); renderTab() },
+  ccalAplica: () => { const res = ccalCalc(); const mud = ccalAplica(S, res); if(!mud){ toast("Sem obras válidas para aplicar"); return }
+    let extra = "";
+    if(S.orc.modo === "param" && window._last){ const p = ccalParam(S, window._last.m, res); if(p){ S.orc.coef = p.coef; extra = ` · coeficientes ×${ccalN(p.s)}` } }
+    update(); renderTab(); toast(`Fator ${ccalN(mud.fator[1])}×${mud.eqGar ? " · garagem " + ccalN(mud.eqGar[1]) : ""}${extra} (Ctrl+Z desfaz)`) },
+  ccalSalva: () => { const res = ccalCalc(); if(ccalSalvarPadrao(S, res)){ renderTab(); toast("Calibração salva como padrão da empresa — estudos novos começam com ela") } else toast("Não foi possível gravar neste navegador") },
+  ccalEmpresa: () => { if(ccalAplicarPadrao(S)){ update(); renderTab(); toast("Padrão da empresa aplicado") } },
+  ccalModelo: () => { saveFile("obras-reais-modelo.csv", "﻿" + CCAL_MODELO_CSV) }
+});
+addCard("viab", { key: "ccal", sub: "prem", order: 70, html: ccalHTML, live: (m, f) => ccalLive(m, f), after: ccalAfter });
+
+/* ---------------- peças usadas por src/ui/financeiro.js (tabela CUB, lucro após imprevistos, DRE e PDF) ---------------- */
+function finCubSug(){
+  const uf = cubUfSugerida(S);
+  return uf ? `<div class="row sb"><span class="note">A zona escolhida em Regras é de ${uf}.</span><button type="button" class="btn sm ghost" data-act="cubUf" data-v="${uf}">Usar ${uf}</button></div>` : "";
+}
+function cubInfoHTML(r, val, C){
+  if(!r) return "";
+  const pad = S.orc.padrao, imp = (S.orc.cubTab || []).some(x => String(x.uf).toUpperCase() === r.uf);
+  const [cls, txt] = r.ilustrativo ? ["warn", "ilustrativo"] : (r.est || []).includes(pad) ? ["warn", "estimado"] : ["ok", imp ? "importado" : "publicado"];
+  const link = r.url ? ` <a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:var(--accent)">fonte</a>` : "";
+  const dif = val && Math.abs(val - C) > 0.5;
+  return `<div class="row sb" style="align-items:baseline"><span style="font-family:var(--f-mono);font-size:13px">${val ? brl(val) + "/m²" : "padrão sem valor"}</span><span class="pill ${cls}">${txt}</span></div>
+    <p class="note">${esc(cubDescricao(S, r.uf, pad))}${link}</p>
+    ${dif ? `<div class="row sb"><span class="note">em uso: ${brl(C)}</span>${S.orc.cubAuto ? "" : `<button type="button" class="btn sm ghost" data-act="cubDoEstado">Seguir a tabela</button>`}</div>` : ""}`;
+}
+function finImprevHTML(f){
+  const i = f.imprevistos; if(!i) return "";
+  if(!(i.min.extra > 0) && !(i.max.extra > 0)) return `<div class="s">após imprevistos: a contingência já cobre ${pct(i.max.meta, 0)}</div>`;
+  return `<div class="s">após imprevistos ${pct(i.min.meta, 0)}–${pct(i.max.meta, 0)}${INFO("Lucro após imprevistos")}: <b>${mi(i.min.lucro)}</b> a <b>${mi(i.max.lucro)}</b></div>`;
+}
+function finSoftDRE(f){
+  if(!(f.soft > 0)) return "";
+  return `<tr class="neg"><td>Outros indiretos</td><td>−${brl(f.soft)}</td></tr>` +
+    (f.softItens || []).map(i => `<tr><td style="padding-left:12px;color:var(--muted)">${esc(i.nome)}</td><td style="color:var(--muted)">${brl(i.valor)}</td></tr>`).join("");
+}
+function finImprevDRE(f){
+  const i = f.imprevistos; if(!i) return "";
+  if(!(i.min.extra > 0) && !(i.max.extra > 0)) return "";
+  const lin = x => `<tr><td style="padding-left:12px;color:var(--muted)">Lucro após imprevistos de ${pct(x.meta, 0)}</td><td style="color:var(--muted)">${brl(x.lucro)} · ${pct(x.margemVGV)}</td></tr>`;
+  return lin(i.min) + (i.max.meta > i.min.meta ? lin(i.max) : "");
+}
+/* página do PDF (chamada por financeiro.js): só quando há obras válidas */
+function ccalPdf(ctx){
+  const obras = S.ccal.obras || []; if(!obras.length) return;
+  const res = ccalCalc(); if(!res.n) return;
+  const { h2, rows } = ctx, e = v => `${v >= 0 ? "+" : "-"}${nf(Math.abs(v) * 100, 1)}%`;
+  h2("Calibracao do custo com obras reais");
+  rows([["Obras usadas", String(res.n)], ["Fator sobre o CUB", `${ccalN(res.fator)} x (estudo: ${ccalN(S.fin.fator)} x)`],
+    ["Peso da garagem", res.modo === "fator+garagem" ? `${ccalN(res.eqGar)} (estudo: ${ccalN(S.fin.eqGar)})` : "mantido (so uma obra ou garagem proporcional)"],
+    ["R2 / erro medio", `${res.r2 == null ? "-" : ccalN(res.r2, 3)} / ${pct(res.erroMedio, 1)}`],
+    ...res.erros.map(x => [x.nome, `real ${mi(x.real)} | previsto ${mi(x.previsto)} | ${e(x.erro)}`])]);
+}
+
 /* ================= 1.2 cômodos: desenho, edição das divisões e inspetor =================
    Desenho (chamado pelo tipoBody do plan2d, também nos Andares e no PDF): paredes em poché (a unidade cheia na cor da
    parede e cada cômodo recuado pela meia-parede), vãos de porta com folha e arco, janelas na fachada, mobiliário
@@ -19765,7 +20563,7 @@ function finResHTML(){
 function finTopHTML(m, f){
   const F=S.fin, parts=[["Terreno e outorga",f.terreno+f.outorga,"var(--m-sub)"],["Obra e indiretos",f.obraTot+f.projetos+f.terra,"var(--m-ter)"],["Vendas, impostos, juros",f.corret+f.mkt+f.imp+f.permFin+f.juros,"var(--mark)"],["Lucro",Math.max(0,f.lucro),"var(--ok)"]];
   const tot=parts.reduce((s,p)=>s+p[1],0)||1;
-  return `<div class="mets"><div class="met big"><div class="l">Lucro</div><div class="v" style="color:${f.lucro<0?"var(--bad)":"var(--ink)"}">${mi(f.lucro)}</div><div class="s">${TERMO("VGV")} ${mi(f.vgv)} · custo ${mi(f.custo)}</div></div>
+  return `<div class="mets"><div class="met big"><div class="l">Lucro</div><div class="v" style="color:${f.lucro<0?"var(--bad)":"var(--ink)"}">${mi(f.lucro)}</div><div class="s">${TERMO("VGV")} ${mi(f.vgv)} · custo ${mi(f.custo)}</div>${finImprevHTML(f)}</div>
     <div class="met"><div class="l">Margem s/ VGV${INFO("Margem s/ VGV")}</div><div class="v" style="color:${finSCol(f.margemVGV)}">${pct(f.margemVGV)}</div><div class="s">meta ${pct(F.margemAlvo,0)} · s/ receita ${pct(f.margem)}</div></div>
     <div class="met"><div class="l">TIR a.a.${INFO("TIR")}</div><div class="v" style="color:${f.tirA==null||f.tirA<F.tma?"var(--bad)":f.tirA<S.metas.tir.alvo?"var(--warn)":"var(--ink)"}">${finTir(f.tirA)}</div><div class="s">${TERMO("TIR alvo","alvo")} ${pct(S.metas.tir.alvo,0)} · ${TERMO("TMA")} ${pct(F.tma,0)}</div></div>
     <div class="met"><div class="l">VPL${INFO("VPL")}</div><div class="v" style="color:${f.vpl<0?"var(--bad)":"var(--ink)"}">${mi(f.vpl)}</div><div class="s">à ${TERMO("TMA")} de ${pct(F.tma,0)}</div></div>
@@ -19776,9 +20574,9 @@ function finTopHTML(m, f){
 function finDREHTML(m, f){
   const ln=(l,v)=> v? `<tr class="neg"><td>${l}</td><td>−${brl(v)}</td></tr>` : "", sub=(l,v)=>`<tr><td style="padding-left:12px;color:var(--muted)">${l}</td><td style="color:var(--muted)">${v}</td></tr>`;
   return `<tr><td>VGV de tabela</td><td>${brl(f.vgvB)}</td></tr>${f.permV?`<tr class="neg"><td>(−) Permuta física</td><td>−${brl(f.permV)}</td></tr>`:""}<tr><td>Receita nominal</td><td>${brl(f.receita)}</td></tr>${f.distratoV?sub("já descontados os distratos","−"+brl(f.distratoV)):""}
-    ${ln("Terreno + ITBI",f.terreno)}${ln("Outorga onerosa",f.outorga)}${ln(f.orc? "Obra + administração + contingência, com INCC (orçamento por sistema)" : `Obra + administração + contingência, com INCC (${m2(f.eqA)} equiv.)`,f.obraTot)}${f.lazerC?sub("inclui lazer: equipamentos e áreas descobertas",brl(f.lazerC)):""}${ln("Movimento de terra",f.terra)}${ln("Projetos e aprovações",f.projetos)}
+    ${ln("Terreno + ITBI",f.terreno)}${ln("Outorga onerosa",f.outorga)}${ln(f.orc? "Obra + administração + contingência, com INCC (orçamento por sistema)" : `Obra + administração + contingência, com INCC (${m2(f.eqA)} equiv.)`,f.obraTot)}${f.lazerC?sub("inclui lazer: equipamentos e áreas descobertas",brl(f.lazerC)):""}${ln("Movimento de terra",f.terra)}${ln("Projetos e aprovações",f.projetos)}${finSoftDRE(f)}
     ${ln("Corretagem + marketing",f.corret+f.mkt)}${ln("Impostos (RET)",f.imp)}${ln("Permuta financeira",f.permFin)}${ln("Juros do financiamento",f.juros)}
-    <tr class="tot ${f.lucro<0?"neg":"pos"}"><td>Lucro</td><td>${brl(f.lucro)}</td></tr><tr><td>Margem s/ VGV</td><td>${pct(f.margemVGV)}</td></tr>${sub("margem s/ receita nominal",pct(f.margem))}<tr><td>Custo total / m² privativo</td><td>${brl(f.custo/Math.max(1,m.priv))}</td></tr><tr><td>Obra / m² construído</td><td>${brl(f.obraTot/Math.max(1,m.constr))}</td></tr><tr><td>Lucro ÷ custo</td><td>${pct(f.lucro/Math.max(1,f.custo))}</td></tr><tr><td>Terreno máximo p/ margem alvo (${pct(S.fin.margemAlvo,0)} s/ VGV)</td><td>${brl(f.maxTerreno)}</td></tr>`;
+    <tr class="tot ${f.lucro<0?"neg":"pos"}"><td>Lucro</td><td>${brl(f.lucro)}</td></tr><tr><td>Margem s/ VGV</td><td>${pct(f.margemVGV)}</td></tr>${sub("margem s/ receita nominal",pct(f.margem))}<tr><td>Custo total / m² privativo</td><td>${brl(f.custo/Math.max(1,m.priv))}</td></tr><tr><td>Obra / m² construído</td><td>${brl(f.obraTot/Math.max(1,m.constr))}</td></tr><tr><td>Lucro ÷ custo</td><td>${pct(f.lucro/Math.max(1,f.custo))}</td></tr>${finImprevDRE(f)}<tr><td>Terreno máximo p/ margem alvo (${pct(S.fin.margemAlvo,0)} s/ VGV)</td><td>${brl(f.maxTerreno)}</td></tr>`;
 }
 
 /* ---------------- Premissas ---------------- */
@@ -19788,7 +20586,7 @@ function finPremHTML(){
     (P.cob && P.cob.on? NUM("produto.cob.preco","Preço cobertura","R$/m²",{step:50, min:0, q:"preço venda cobertura"}) : "");
   const busca = `<div class="inp fbusca"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg><input class="t" id="vqFind" placeholder="Buscar premissa — CUB, INCC, corretagem…" aria-label="Buscar premissa" autocomplete="off"></div><p class="note" id="vqNada" hidden>Nenhuma premissa encontrada.</p>`;
   return RES("Resultado", `<div class="fmini" id="finMini"></div>`, {aside:"", asideId:"vStat"}) + busca +
-    SEC("Terreno e obra", KV(NUM("fin.terreno","Terreno (à vista)","R$",{step:10000,wide:true,q:"compra lote"}) + NUM("fin.cub","CUB referência","R$/m²",{step:1,help:"CUB"}) +
+    SEC("Terreno e obra", KV(NUM("fin.terreno","Terreno (à vista)","R$",{step:10000,wide:true,q:"compra lote"}) + NUM("fin.cub","CUB referência","R$/m²",{step:1,help:"CUB",fx:"cubMan"}) +
         (par? "" : NUM("fin.fator","Custo ÷ CUB","×",{step:0.01,help:"Custo ÷ CUB"}))) +
         `<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="vendas" data-open="terAlt">Comparar compra, permuta e SPE →</button></div>`,
       {key:"essObra", open:true, sum:""}) +
@@ -19797,7 +20595,7 @@ function finPremHTML(){
     finOrcHTML() +
     SEC("Custos indiretos", KV(NUM("fin.itbi","ITBI + escritura","%",{pct:true,step:0.5,help:"ITBI"}) + NUM("fin.projetos","Projetos e taxas","% obra",{pct:true,step:0.5,q:"aprovação"}) +
         NUM("fin.adm","Administração","% obra",{pct:true,step:0.5}) + NUM("fin.conting","Contingência","% obra",{pct:true,step:0.5,q:"reserva"})) +
-        ADV(KV(NUM("fin.decorLazer","Lazer: equipamentos","R$/m²",{step:50,q:"mobiliário decoração lazer"}) + NUM("fin.custoDesc","Lazer descoberto","R$/m²",{step:50,q:"piscina deck paisagismo"})), {key:"ind"}),
+        ADV(KV(NUM("fin.decorLazer","Lazer: equipamentos","R$/m²",{step:50,q:"mobiliário decoração lazer"}) + NUM("fin.custoDesc","Lazer descoberto","R$/m²",{step:50,q:"piscina deck paisagismo"})) + softCamposHTML(), {key:"ind"}),
       {key:"ind", cls:"fq", sum:""}) +
     SEC("Receita e comissões", KV(NUM("fin.corret","Corretagem","%",{pct:true,step:0.5,q:"comissão"}) + NUM("fin.mkt","Marketing","%",{pct:true,step:0.5,q:"publicidade stand"}) +
         NUM("fin.imp","Impostos (RET)","%",{pct:true,step:0.25,help:"RET",q:"tributos"}) + NUM("fin.reaj","Reajuste da tabela","% a.a.",{pct:true,step:0.5})) +
@@ -19848,9 +20646,9 @@ function finOrcHTML(){
       NUM("orc.coef.acab","Acabamentos","% CUB",{pct:true,step:0.5,help:"Por m² acabado (garagem 25%), × padrão"}) +
       NUM("orc.coef.cant","Canteiro e adm.","% sist.",{pct:true,step:0.5,help:"Canteiro e administração da obra, sobre a soma dos sistemas"})) +
       `<div class="row"><button type="button" class="btn sm ghost" data-act="orcReset">Restaurar coeficientes</button></div>` : "";
-  const cub = GRP(`Tabela CUB ${INFO("CSV: uf;padrao;valor;ref;fonte (uma linha por padrão) ou uma coluna por padrão (uf;ref;fonte;R8-N;R16-N…). JSON com os mesmos campos.")}`) + KV(
-      finSEL("orc.uf", lista.map(r=>[r.uf, `${r.uf} · ${r.nome}`]), "Estado", {rr:true, fx:"save", q:"cub sinduscon"}) +
-      finSEL("orc.padrao", CUB_PADROES, "Padrão", {rr:true, fx:"save", q:"cub r8 r16"})) +
+  const cub = GRP(`Tabela CUB ${INFO("Tabela embutida conferida em "+cubVersaoTxt()+" (mês e fonte de cada estado abaixo; onde só o R8-N foi publicado os outros padrões são estimados). CSV: uf;padrao;valor;ref;fonte (uma linha por padrão) ou uma coluna por padrão (uf;ref;fonte;R8-N;R16-N…). JSON com os mesmos campos.")}`) + KV(
+      finSEL("orc.uf", lista.map(r=>[r.uf, `${r.uf} · ${r.nome}`]), "Estado", {rr:true, fx:"cub", q:"cub sinduscon"}) +
+      finSEL("orc.padrao", CUB_PADROES, "Padrão", {rr:true, fx:"cub", q:"cub r8 r16"})) + SW("orc.cubAuto","Seguir a tabela do estado",{fx:"cub", rr:true}) + finCubSug() +
     `<div id="cubInfo"></div><div class="row"><button type="button" class="btn sm" data-act="cubUsar">Usar como CUB de referência</button><label class="btn sm ghost" style="cursor:pointer">Importar CSV/JSON<input type="file" id="cubFile" accept=".csv,.json,.txt,text/csv,application/json" hidden></label>${(O.cubTab||[]).length?`<button type="button" class="btn sm ghost" data-act="cubLimpa">Voltar à tabela embutida</button>`:""}</div>`;
   return SEC("Orçamento da obra",
     finCampoSeg("Método", "orçamento paramétrico sistema cub fator", SEG("orc.modo",[["cub","CUB × fator"],["param","Paramétrico"]],{full:true,label:"Método do orçamento"})) +
@@ -19887,8 +20685,7 @@ function finOrcLive(m, f){
     sub("cant", mi(v("cant").param));
   }
   const r=cubLinha(S,O.uf), val=r && r.v[O.padrao];
-  setHTML("cubInfo", r? `<div class="row sb" style="align-items:baseline"><span style="font-family:var(--f-mono);font-size:13px">${val? brl(val)+"/m²" : "padrão sem valor"}</span><span class="note">${esc(r.fonte||"")}${r.ref?" · ref. "+esc(r.ref):""}</span></div>
-    ${r.ilustrativo?`<span class="pill warn">ilustrativo — atualize com o boletim</span>`:`<span class="pill ok">importado</span>`}${val && Math.abs(val-C)>0.5?` <span class="note">em uso: ${brl(C)}</span>`:""}` : "");
+  setHTML("cubInfo", cubInfoHTML(r, val, C));
 }
 
 /* ---------------- Riscos ---------------- */
@@ -20070,7 +20867,7 @@ function finViabLive(m, f, fast){
   if(document.getElementById("f-fin-terreno")){
     setSub("fin.terreno",`${brl(F.terreno/Math.max(1,m.A))}/m² · ${pct(F.terreno/Math.max(1,f.vgvB))} do VGV · máx. ${mi(f.maxTerreno)}`);
     setSub("fin.fator",`${brl(F.cub*F.fator)}/m² equiv.`);
-    if(S.orc.modo!=="param"){ const r=cubLinha(S,S.orc.uf), v=r&&r.v[S.orc.padrao]; setSub("fin.cub", v? `${S.orc.padrao} ${r.uf}: ${nf(v,0)}${r.ilustrativo?" · ilustrativo":""}` : "") }
+    if(S.orc.modo!=="param"){ const r=cubLinha(S,S.orc.uf), v=r&&r.v[S.orc.padrao]; setSub("fin.cub", v? `${S.orc.padrao} ${r.uf}${r.ref?" · "+cubRefTxt(r.ref):""}: ${nf(v,0)}${r.ilustrativo?" · ilustrativo":(r.est||[]).includes(S.orc.padrao)?" · estimado":""}` : "") }
     setSub("fin.incc",`efeito ${mi(f.obraTot-(f.obra+f.adm+f.conting))}`);
     S.produto.mix.forEach((u,i)=>setSub(`produto.mix.${i}.preco`, `${(m.unitRows[i]||{}).n||0} un. · ${mi(((m.unitRows[i]||{}).area||0)*u.preco)}`));
     if(F.finOn) setSub("fin.finPct",`limite ${mi(f.lim)} · juros ${mi(f.juros)}`);
@@ -20131,7 +20928,8 @@ HOOK.pdf.push(async ctx=>{
   rows([...o.itens.filter(i=>i.total>0).map(i=>[i.nome+(i.extra?` (inclui ${mi(i.extra)} de outros módulos)`:""), `${mi(i.total)} · ${pct(i.total/Math.max(1,o.total),1)}`]),
     ["Total da obra (sem INCC)", mi(tot)], ["Custo por m² construído", `${brl(tot/Math.max(1,m.constr))} · ${nf(tot/Math.max(1,m.constr)/Math.max(1,C),2)} CUB`],
     [par? "Diferença para CUB x fator" : "Paramétrico (comparação)", par? `${finPP(o.total/Math.max(1,o.cubFator+o.lazer+o.extraT)-1)}%` : mi(o.total)]], {bold:["Total da obra (sem INCC)"]});
-  { const r=cubLinha(S,O.uf); rows([["CUB de referência", `${brl(C)}/m² · tabela ${O.uf} ${O.padrao}: ${r&&r.v[O.padrao]? brl(r.v[O.padrao]) : "-"}`], ["Fonte da tabela CUB", `${r? (r.fonte||"")+(r.ref?" "+r.ref:"") : "-"}${r&&r.ilustrativo?" (ilustrativo - atualize com o boletim)":""}`]]) }
+  { const r=cubLinha(S,O.uf); rows([["CUB de referência", `${brl(C)}/m² · tabela ${O.uf} ${O.padrao}: ${r&&r.v[O.padrao]? brl(r.v[O.padrao]) : "-"}`], ["Fonte da tabela CUB", cubDescricao(S,O.uf,O.padrao)+" · tabela embutida de "+cubVersaoTxt()]]) }
+  ccalPdf(ctx);
   const RD=S.flx.receb, CV=S.flx.curva;
   h2("Fluxo: curva de obra e recebimento");
   rows([["Curva de obra", {sen:"senoidal", s:`curva S (início ${pct(CV.ini,0)}, pico ${pct(CV.pico,0)}, fim ${pct(CV.fim,0)} do prazo)`, sis:`por sistema (início ${pct(CV.ini,0)}, fim ${pct(CV.fim,0)})`}[CV.modo]||"senoidal"],
@@ -20445,9 +21243,14 @@ const GLOSS_DATA = {
   "Potencial do terreno": { t:"Potencial do terreno", d:"O quanto o lote comporta dentro do CA e do gabarito. O privativo possível usa a eficiência global do estudo (privativa ÷ área total construída), que já carrega garagem, térreo e lazer. A conta só pela eficiência do andar (privativa ÷ pavimento tipo) ignora tudo isso e superestima.", f:"área construída possível × eficiência global" },
   "Plano ajustado": { t:"Plano ajustado", d:"Superfície reta que melhor representa o terreno em volta do lote. É calculada por mínimos quadrados, descartando pontos muito fora (prédios, árvores). Dá a inclinação e a direção da descida." },
   "Calibrar prêmios": { t:"Calibrar com tabela de vendas", d:"Ajusta, por regressão, o preço base de cada tipologia e os prêmios de andar, orientação, vista e cobertura a uma tabela de vendas real de um lançamento parecido. O <b>prêmio de sol não é calibrado</b>: ele pede as horas de sol da tabela de referência, que não vêm no arquivo; o do estudo continua valendo. Nada muda até você tocar em “Aplicar ao estudo”.", f:"ln(preço/m²) = base da tipologia + prêmio por andar + orientação (+ vista)" },
-  "R²": { t:"R² (qualidade do ajuste)", d:"Quanto da variação dos preços da tabela o modelo explica, de 0 a 100%. Acima de 85% é um bom ajuste; abaixo de 50%, o preço depende de coisas que o modelo não enxerga." },
+  "R²": { t:"R² (qualidade do ajuste)", d:"Quanto da variação dos dados (preços da tabela de vendas ou custos das obras) o modelo explica, de 0 a 100%. Acima de 85% é um bom ajuste; abaixo de 50%, o resultado depende de coisas que o modelo não enxerga. Com poucos dados (ex.: só duas obras) o ajuste fica exato por construção e o R² não prova nada." },
   "Resíduo": { t:"Resíduo", d:"Diferença entre o preço real da tabela e o que o modelo prevê para a unidade. Barras altas num andar mostram onde o modelo erra." },
   "Comparar com planilha": { t:"Comparar com a planilha da empresa", d:"Alinha mês a mês o fluxo de caixa da sua planilha com o do Gabarito e mostra onde divergem: total de cada linha, trechos de meses, deslocamento no tempo, mês do recebimento das chaves e correção pelo INCC. Quando a diferença é explicável, sugere o ajuste da premissa (você aplica; Ctrl+Z desfaz). Recorte do Gabarito: receitas = recebimentos; obra = obra + movimento de terra; terreno = terreno + ITBI + outorga; indiretos = projetos, marketing, corretagem, impostos, permuta financeira e juros (líquido do financiamento)." },
+  "Tabela CUB": { t:"Tabela CUB embutida", d:"Valores do CUB/m² publicados pelos Sinduscons, com mês de referência e fonte em cada estado. Onde só o R8-N foi conferido, os outros padrões são estimados pela razão típica; sem boletim conferido o valor é ilustrativo. Importe o boletim do mês para atualizar." },
+  "Calibração do custo": { t:"Calibração do custo", d:"Ajusta o fator sobre o CUB e o peso da garagem com o que obras suas já custaram. Com uma obra ajusta só o fator; com duas ou mais, os dois. Quanto mais obras e mais diferentes entre si, mais confiável.", f:"custo ÷ CUB = fator × (torre + lazer + peso × garagem)" },
+  "Peso da garagem": { t:"Peso da garagem (equivalência)", d:"Quanto a garagem custa em relação à área da torre, para aplicar o CUB. Subsolo com contenção pesa mais. A faixa usual da NBR 12.721 fica entre 0,5 e 1,0.", f:"área equivalente = torre + lazer + peso × garagem" },
+  "Lucro após imprevistos": { t:"Lucro após imprevistos", d:"O lucro se a contingência chegasse à meta de imprevistos (5% a 10% da obra, em Metas e referências). Só informa: não muda o lucro do estudo." },
+  "Outros indiretos": { t:"Outros custos indiretos", d:"Registro e cartório, seguros, IPTU durante a obra, jurídico, assistência técnica pós-obra e taxa de gestão. Começam em zero; “Usar sugeridos da colinha” liga todos com valores de mercado, que você deve conferir com a sua contabilidade." },
 };
 
 /* ================= desfazer / refazer =================

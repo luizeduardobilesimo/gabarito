@@ -354,7 +354,7 @@ Execução de 05/10/2026 (protótipo local, 9 agentes em paralelo sobre a funda�
 
 - [x] Prêmios de venda pela tabela real: importador CSV/XLSX (modelo para baixar), regressão de base por tipologia, andar (com teto), orientação, vista e cobertura, aplicar ao estudo e salvar como padrão da empresa. Sol não é calibrável sem as horas de sol da referência.
 - [x] Comparar o fluxo com a planilha da empresa: importador, métricas dos dois lados, maiores divergências e sugestões de ajuste das premissas.
-- [ ] CUB atual por UF, calibração do custo com obras reais (fator e peso da garagem) e indiretos que faltavam (em andamento).
+- [x] CUB publicado pelos Sinduscons por UF (com mês e fonte; "Seguir a tabela do estado" desligado), calibração do custo com obras reais (fator e peso da garagem), indiretos que faltavam (desligados, com "Usar sugeridos") e lucro após imprevistos. **Decisão pendente do Luiz:** o estudo padrão usa CUB 3.159 (média residencial de SC); com o R8-N real de SC (2.800,40) o lucro do exemplo sobe de R$ 19,8 mi para R$ 26,0 mi — esperar a calibração com obras reais antes de trocar.
 - Aguardando o Luiz: tabela de vendas de um lançamento da região, planilha de viabilidade, custos de obras recentes.
 
 ## Próxima etapa — Evolução v2 (08/10/2026)
