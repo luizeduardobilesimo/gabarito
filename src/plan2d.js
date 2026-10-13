@@ -11,8 +11,12 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
   const path=p=>{ g.beginPath(); p.forEach((q,i)=>{ const [x,y]=w2s(q); i?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath() };
   const fillP=(p,col,a=1)=>{ if(!p||!p.length) return; path(p); g.globalAlpha=a; g.fillStyle=col; g.fill(); g.globalAlpha=1 };
   const strokeP=(p,col,lw=1,dash)=>{ if(!p||!p.length) return; path(p); g.setLineDash(dash||[]); g.strokeStyle=col; g.lineWidth=lw; g.stroke(); g.setLineDash([]) };
+  // rótulos com fundo não se sobrepõem: se encostar num já desenhado, desce/sobe até achar espaço (fica no lugar se não houver)
+  const placed=[], hits=(r)=>placed.some(q=>r[0]<q[2]&&r[2]>q[0]&&r[1]<q[3]&&r[3]>q[1]);
   const label=(t,[x,y],o={})=>{ g.font=(o.w||"500")+" "+(o.size||11)+"px "+css(o.font||"--f-mono"); g.textAlign="center"; g.textBaseline="middle";
-    if(o.bg!==false){ const tw=g.measureText(t).width+8; g.fillStyle=css("--surface"); g.globalAlpha=.85; g.fillRect(x-tw/2,y-8,tw,16); g.globalAlpha=1 } g.fillStyle=o.col||css("--ink"); g.fillText(t,x,y) };
+    if(o.bg!==false){ const tw=g.measureText(t).width+8, box=yy=>[x-tw/2-2,yy-9,x+tw/2+2,yy+9];
+      const dy=[0,18,-18,36,-36,54,-54].find(d=>!hits(box(y+d))); if(dy!==undefined) y+=dy; placed.push(box(y));
+      g.fillStyle=css("--surface"); g.globalAlpha=.85; g.fillRect(x-tw/2,y-8,tw,16); g.globalAlpha=1 } g.fillStyle=o.col||css("--ink"); g.fillText(t,x,y) };
   const arrow=(p1,p2,col,lw=2,head=7,both=false)=>{ const A=w2s(p1),B=w2s(p2), ang=Math.atan2(B[1]-A[1],B[0]-A[0]); g.strokeStyle=col; g.fillStyle=col; g.lineWidth=lw; g.setLineDash([]); g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke();
     const hd=(P,a)=>{ g.beginPath(); g.moveTo(P[0],P[1]); g.lineTo(P[0]-head*Math.cos(a-0.45),P[1]-head*Math.sin(a-0.45)); g.lineTo(P[0]-head*Math.cos(a+0.45),P[1]-head*Math.sin(a+0.45)); g.closePath(); g.fill() };
     hd(B,ang); if(both) hd(A,ang+Math.PI) };
