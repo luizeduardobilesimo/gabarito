@@ -115,7 +115,10 @@ Object.assign(ACT,{
   blcCopBx: b=>{ const {i,k}=blcIK(b); if(!blcCopiaBaixo(S,i,k)) return; BLC.k[i]=k; update(); toast("Contorno copiado do bloco de baixo — Ctrl+Z desfaz") },
   blcRecua: b=>{ const {i,k}=blcIK(b), inp=document.getElementById(`blcRec-${i}-${k}`), d=Math.max(0, +String(inp? inp.value : BLC.rec).replace(",",".")||0);
     if(!(d>0)){ toast("Informe quantos metros recuar"); return } BLC.rec=d;
-    if(!blcRecua(S,i,k,d)){ toast(`Um recuo de ${nf(d,1)} m não cabe nessa forma`); return } BLC.k[i]=k; update(); toast(`Fachadas recuadas ${nf(d,1)} m ${k? "em relação ao bloco de baixo" : ""} — Ctrl+Z desfaz`) },
+    // C3: a fachada onde o núcleo (e a escada extra) encosta não recua — o núcleo sobe inteiro (Mais opções › recuar todas)
+    const m=blcM(), l=m && m.tipo && m.tipo[i], nuc = l && l.core && l.core.length ? [l.coreOut||l.core, ...(l.coreExtra||[])] : undefined;
+    const nb=blcRecua(S,i,k,d,{nucleos:nuc}); if(!nb){ toast(`Um recuo de ${nf(d,1)} m não cabe nessa forma`); return } BLC.k[i]=k; update();
+    toast(`Fachadas recuadas ${nf(d,1)} m${k? " em relação ao bloco de baixo" : ""}${nb.preservados? " — a do núcleo ficou no lugar" : ""} · Ctrl+Z desfaz`) },
   blcMix: ()=>{ const m=blcM(), R=m && blcResumo(S,m); if(!R || !R.muda) return; S.produto.mix.forEach((u,j)=>u.qtd=R.q[j]); update();
     toast(`Mix ajustado: ${R.q.reduce((s,n)=>s+n,0)} unidades por andar — Ctrl+Z desfaz`) },
   blcMais: ()=>{ const b=blcB(BLC.sel); if(b){ entEscala(b, Math.sqrt(1.1)); update() } },
@@ -190,7 +193,8 @@ function blcCss(){ if(document.getElementById("blcCss")) return; const s=documen
 .blc-ac{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .blc-ac .blc-rm{margin-left:auto}
 .blc-ac .inp input{text-align:right}
-.blc-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 6px}`; document.head.appendChild(s) }
+.blc-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 6px}
+.blc-al{margin:8px 2px 0;font-size:11.5px;line-height:1.45}`; document.head.appendChild(s) }
 
 /* ---------- desenho na implantação (destaques e alças) ---------- */
 HOOK.draw2d.push((g, ctx)=>{
@@ -269,8 +273,8 @@ function blcSecHTML(){
   blcCss(); const on=blcAtivo(S), salvas=(S.blocos.torres||[]).filter(t=>t && t.blocos && t.blocos.length).length;
   const body = ROW(`Forma${INFO("Automática: a torre sai das regras e do mix (recuos, faixa de cada torre, área do mix ÷ eficiência). Desenhada: você personaliza a planta de cada torre — copiando a automática, com um formato pronto (retângulo, L, U, T, H, pátio) ou editando na implantação — e pode empilhar blocos (embasamento largo, tipo, cobertura recuada). A planta desenhada não encolhe: recuos, TO, CA, gabarito, balanço, núcleo e distância entre torres viram avisos. Voltar para Automática guarda as formas.","forma das torres")}`,
       SEG("blocos.modo",[["auto","Automática"],["desenhada","Desenhada"]],{label:"Forma das torres"}))
-    + (on ? `<div class="list" id="blcList"></div><div id="blcGeral"></div>`
-          : salvas ? `<p class="note">${salvas} forma${salvas>1?"s":""} guardada${salvas>1?"s":""} — volta${salvas>1?"m":""} ao escolher Desenhada.</p>` : "");
+    + (on ? `<div class="list" id="blcList"></div><div id="blcGeral"></div>${ADV(SW("alas.recuaTodas", `Recuar recua todas as fachadas${INFO("Por padrão, “Recuar” não mexe na fachada onde o núcleo (escada e elevadores) encosta: o núcleo sobe inteiro até o topo e o recuo o cortaria. Ligado, recua todas as fachadas — confira o aviso de núcleo cortado.","recuar")}`, {fx:"save"}), {key:"blc-opc"})}`
+          : salvas ?`<p class="note">${salvas} forma${salvas>1?"s":""} guardada${salvas>1?"s":""} — volta${salvas>1?"m":""} ao escolher Desenhada.</p>` : "");
   return SEC("Forma das torres", body, {key:"pr-forma", sum:blcSum(), info:"Planta das torres: automática pelas regras ou desenhada por você, torre a torre, numa pilha de blocos."});
 }
 /* avisos curtos de uma torre e de um bloco (o texto completo fica nos avisos do estudo) */
@@ -281,6 +285,15 @@ function blcCurtos(I){ if(!I) return []; const o=[];
   const bal=(I.bl||[]).reduce((s,b)=>s+(b.bal>0.5? b.bal : 0),0); if(bal>0.5) o.push(`${m2(bal)} em balanço entre blocos`); return o }
 function blcCurtosB(b){ if(!b) return []; const o=[]; if(b.foraRecuo>0.5) o.push(`${m2(b.foraRecuo)} sobre os recuos`); if(b.bal>0.5) o.push(`${m2(b.bal)} em balanço`); if(!b.nucleo) o.push("corta o núcleo"); return o }
 const BLC_INFO_PILHA = "A torre é uma pilha de blocos, de baixo para cima. Cada bloco vale do andar em que começa até o anterior ao próximo; o de cima vai até o total de andares da torre. O bloco marcado TIPO (o de mais andares) recebe o pavimento tipo detalhado; os outros repetem o mesmo núcleo com as unidades distribuídas pela área. “+ Bloco” copia o de cima e começa no meio dele; “Recuar” afasta as fachadas do bloco de baixo.";
+/* C3: uma linha sobre o pavimento tipo da torre (por alas, aproximado ou retangular) */
+const BLC_INFO_ALAS = "Planta em L, U, T, H ou com pátio: o pavimento tipo é montado por alas — corredor contínuo pelo eixo de cada ala (dobra nos cantos, cruza nos nós), núcleo onde a distância até a escada é menor e gasta menos fachada, unidades do mix com fachada e porta no corredor. Se a unidade mais distante passar do limite da saída única, entra uma escada extra (antecâmara + escada) na ponta da ala.";
+function blcAlasTxt(l){ const A=l && l.alas; if(!A) return null;
+  const esc = A.esc2 ? ` · ${A.esc2>1? A.esc2+" escadas extras" : "escada extra"}` : "";
+  const onde = A.nucleo==="nó" ? (/^[TH]$/.test(A.forma)? "no encontro das alas" : "no canto") : A.nucleo==="meio" ? "no meio da ala" : "na ponta da ala";
+  return `por alas · ${A.forma} · núcleo ${onde}${esc} · ${A.dist!=null? nf(A.dist,0)+" m até a escada" : ""}` }
+function blcAlasLinha(m, i){ const l=m.tipo && m.tipo[i]; if(!l) return "";
+  if(l.alasFalha) return `<p class="note blc-al" style="color:var(--warn)">Pavimento tipo aproximado: ${esc(l.alasFalha)}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>`;
+  const t=blcAlasTxt(l); return t ? `<p class="note blc-al"${l.alas.dist>l.alas.lim+1e-6? ' style="color:var(--warn)"' : ""}>Tipo ${t}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>` : "" }
 /* linhas dos blocos de uma torre (de cima para baixo) */
 function blcBlocosHTML(i, m, I){
   const L=blcLst(i), t=m.T[i]||{}, N=t.pav||1, kAt=blcK(i), maxA=Math.max(1, ...L.map((_,k)=>(blcFx(m,i,k)||{}).A||0));
@@ -318,9 +331,60 @@ function blcLive(m){
         <button type="button" class="pr-ic lbl" data-act="blcEdit" data-i="${i}" title="Selecionar e editar na implantação" aria-label="Editar a ${nome.toLowerCase()} na implantação">Editar</button>
         <button type="button" class="pr-ic chev" data-act="blcTog" data-i="${i}" aria-expanded="${open}" aria-label="${open?"Fechar":"Abrir"} ${nome}" title="${open?"Fechar":"Blocos, formatos e opções"}">${PR_IC.chev}</button></div>
       ${open? `<div class="pr-rb"><div class="blc-hd"><span class="fl">${nb>1? "Blocos · de cima para baixo" : "Bloco único"}${INFO(BLC_INFO_PILHA,"pilha de blocos")}</span></div>
-        <div class="blc-pl">${blcBlocosHTML(i, m, I)}</div>
+        <div class="blc-pl">${blcBlocosHTML(i, m, I)}</div>${blcAlasLinha(m, i)}
         <div class="pr-rf"><button type="button" class="btn sm" data-act="blcAdd" data-i="${i}" title="Novo bloco no topo, cópia do de cima, começando no meio dele">+ Bloco</button>${nb===1? `<button type="button" class="btn sm ghost" data-act="blcRefaz" data-i="${i}" title="Copia de novo a forma automática">Refazer da automática</button>` : ""}${prRm("blcDel", i, "forma da "+nome.toLowerCase(), "Apagar forma")}</div></div>` : ""}</div>` }).join(""));
   const R=blcResumo(S,m), G2=(m.blcGeral||[]).filter(a=>!/^O mix ocupa/.test(a));
   setHTML("blcGeral", (R? `<div class="row sb"><span class="note"${R.desvio?' style="color:var(--warn)"':""}>O mix ocupa ${pct(R.ocupa,0)} do pavimento ${m.T.some(t=>t.desenhada && (t.faixas||[]).length>1)? "tipo " : ""}desenhado</span>${R.muda? `<button type="button" class="btn sm" data-act="blcMix" title="Muda a quantidade de unidades por andar para o mix voltar ao tamanho original (no bloco tipo; os outros blocos acompanham)">Ajustar mix</button>` : ""}</div>` : "")
     + (G2.length? `<div class="blc-av">${G2.map(a=>`<p>${esc(a)}</p>`).join("")}</div>` : ""));
 }
+
+/* ---------- C3: Projeto › Pavimento tipo — alas (só com planta desenhada em L/U/T/H/pátio) ---------- */
+const blcTemAlas = m => !!(m && m.tipo && m.tipo.some(l=>l && (l.alas || l.alasFalha)));
+function blcAlasCard(){
+  const m=blcM(), mt=(l,v,s,c)=>`<div class="met"><div class="l">${l}</div><div class="v"${c?` style="color:var(--${c})"`:""}>${v}</div>${s?`<div class="s">${s}</div>`:""}</div>`;
+  const rows=(m && m.tipo || []).map((l,i)=>{ if(!l) return ""; const nm=m.T.length>1? `Torre ${i+1} · ` : "";
+    if(l.alasFalha) return `<p class="note" style="color:var(--warn)">${nm}aproximado: ${esc(l.alasFalha)}</p>`;
+    const A=l.alas; if(!A) return ""; const alto=A.dist>A.lim+1e-6;
+    return `${m.T.length>1? `<p class="fl" style="margin:4px 0 2px">Torre ${i+1}</p>` : ""}<div class="mets">${mt("Forma", A.forma, `${A.alas} trechos de corredor`)}${mt(`Até a escada${INFO("Distância a percorrer da porta da unidade mais distante até a escada, pelo corredor (IN 09 CBMSC; limite da saída única sem chuveiros: 30 m).","distância a percorrer")}`, nf(A.dist||0,1)+" m", `limite ${nf(A.lim||30,0)} m`, alto? "warn" : "")}${mt("Escadas", 1+(A.esc2||0), A.esc2? "extra na ponta da ala" : "no núcleo")}${mt("Livre", m2(A.livreA||0), "sem uso")}</div>` }).join("");
+  return SEC("Alas do pavimento tipo", (rows || `<p class="note">Sem planta em alas.</p>`)
+    + ADV(SW("alas.on", `Layout por ala${INFO(BLC_INFO_ALAS,"pavimento por alas")}`) + SW("alas.esc2", `Escada extra quando passar do limite${INFO("Com a unidade mais distante além do limite da saída única, entra até duas escadas extras (antecâmara + escada) na ponta das alas mais distantes. Elas descem até o térreo e viram obstáculo nas garagens.","escada extra")}`), {key:"alas-opc"}),
+    {key:"pr-alas", sum: blcAlasSum(m), info:BLC_INFO_ALAS});
+}
+function blcAlasSum(m){ const L=(m && m.tipo||[]).filter(l=>l && l.alas); if(!L.length) return S.alas && S.alas.on===false? "desligado" : "aproximado";
+  return L.map(l=>`${l.alas.forma} · ${nf(l.alas.dist||0,0)} m${l.alas.esc2? ` · +${l.alas.esc2} esc.` : ""}`).join(" | ") }
+addCard("projeto", { key:"alas", order:52, sub:"tipo", when:()=>blcAtivo(S) && blcTemAlas(blcM()), html:blcAlasCard, live:m=>setSum("pr-alas", blcAlasSum(m)) });
+
+/* ---------- C3: relatório PDF — "Forma das torres" (só no modo Desenhada) ---------- */
+function blcPlantaImg(m, i, f, W=1100, H=760){
+  const pl=f.oco? f.oco.pts : f.plate; if(!pl || pl.length<3 || typeof drawPlan!=="function") return null;
+  const cv=document.createElement("canvas"); cv.width=W; cv.height=H; const g=cv.getContext("2d");
+  const V=fitView([pl], W/2, H/2, 1.18); g.scale(2,2); g.fillStyle="#fff"; g.fillRect(0,0,W/2,H/2);
+  drawPlan(g, W/2, H/2, V, "andar", m, {andar:{tipo:"tipo", j:f.de-1, key:"p"+f.de}, tower:i, bg:false});
+  return cv.toDataURL("image/jpeg", 0.9);
+}
+HOOK.pdf.push(async ctx=>{
+  const m=ctx.m; if(!blcAtivo(S) || !m || !m.T || !m.T.some(t=>t.desenhada)) return;
+  const doc=ctx.doc, M=ctx.M, PW=ctx.PW, ink=ctx.ink||[28,39,41], mut=ctx.mut||[93,106,106], warn=[150,100,0];
+  ctx.newPage(); ctx.h2("Forma das torres");
+  m.T.forEach((t,i)=>{ if(!t.desenhada) return;
+    const I=(m.blc||[]).find(x=>x.i===i)||{}, l=m.tipo && m.tipo[i], fx=(t.faixas||[]).filter(f=>f.blc);
+    const blocos=(fx.length? fx : [{de:1, ate:t.pav, n:t.pav, A:t.A, plate:t.plate, oco:t.oco, ref:true, bk:t.blcRef||0, un:t.units/Math.max(1,t.pav)}]).slice().reverse();
+    if(ctx.y()>215) ctx.newPage();
+    doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...ink);
+    doc.text(ctx.T(`Torre ${i+1} · ${t.pav} pavimentos · ${blocos.length>1? blocos.length+" blocos" : "bloco único"}`), M, ctx.y()); doc.setFont("helvetica","normal"); ctx.setY(ctx.y()+5);
+    const un=f=>f.un!=null? f.un : (f.qtd||[]).reduce((s,n)=>s+n,0);
+    ctx.rows(blocos.map(f=>{ const b=(I.bl||[]).find(x=>x.k===f.bk)||{}, av=[b.bal>0.5? `balanço ${nf(b.bal,0)} m²` : "", b.nucleo===false? "corta o núcleo" : "", b.foraRecuo>0.5? `${nf(b.foraRecuo,0)} m² sobre os recuos` : ""].filter(Boolean);
+      return [`Bloco ${blcRot(f)}${f.ref? " (tipo)" : ""}`, `${f.n} andar${f.n>1?"es":""} · ${nf(f.A,0)} m² · ${nf(un(f),0)} un/andar${av.length? " · "+av.join(" · ") : ""}`, av.length? "warn" : "ok"] })
+      .concat(l && (l.alas || l.alasFalha) ? [["Pavimento tipo", l.alas? blcAlasTxt(l) : "aproximado ("+l.alasFalha+")", l.alas && !(l.alas.dist>l.alas.lim+1e-6)? "ok" : "warn"]] : []));
+    // plantas: uma por bloco (de baixo para cima), com o núcleo
+    const um1=blocos.length===1, imgs=withLight(()=>blocos.slice().reverse().map(f=>({f, url:blcPlantaImg(m, i, f, um1? 1400 : 1100, um1? 700 : 760)}))).filter(x=>x.url);
+    const um=um1, w=um? PW-2*M : (PW-2*M-6)/2, h=w*(um? 0.5 : 760/1100);
+    imgs.forEach((x,k)=>{ const col=um? 0 : k%2; if(col===0 && ctx.y()+h+8>285) ctx.newPage(); const X=M+col*(w+6), Y=ctx.y();
+      doc.addImage(x.url,"JPEG",X,Y,w,h); doc.setDrawColor(200); doc.rect(X,Y,w,h);
+      doc.setFontSize(8); doc.setTextColor(...mut); doc.text(ctx.T(`Bloco ${blcRot(x.f)} · ${nf(x.f.A,0)} m²`), X+2, Y+h+3.6);
+      if(col===1 || k===imgs.length-1) ctx.setY(Y+h+8) });
+    const av=(I.av||[]); if(av.length){ doc.setFontSize(8.5); doc.setTextColor(...warn);
+      av.forEach(a=>{ const L=doc.splitTextToSize(ctx.T(a), PW-2*M); if(ctx.y()+L.length*4>285) ctx.newPage(); doc.text(L, M, ctx.y()); ctx.setY(ctx.y()+L.length*4+1) }); doc.setTextColor(...ink) }
+    ctx.setY(ctx.y()+4);
+  });
+});

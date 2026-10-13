@@ -166,7 +166,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     // cômodos (src/ui/comodos.js): paredes, portas, janelas, mobiliário — a sacada embutida vira cômodo
     const com = typeof comDraw==="function" && S.comodos && S.comodos.on && lay.units.some(u=>u.com);
     lay.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length || (com && u.com && u.sac.tipo!=="balanco")) return; fillP(u.sac.poly, css("--c-sac"), u.sac.tipo==="balanco"?0.9:0.75); strokeP(u.sac.poly, css("--ink"), 1, u.sac.tipo==="balanco"? null : [3,2]) });
-    fillP(lay.corridor,css("--surface"),1); strokeP(lay.corridor,css("--ink"),0.8);
+    fillP(lay.corridor,css("--surface"),1); (lay.corrAneis||[lay.corridor]).forEach(r=>strokeP(r,css("--ink"),0.8));   // C3: corredor em anel (pátio) sem a "ponte"
     (lay.hallEnds||[]).forEach(h=>{ fillP(h,css("--surface"),1); strokeP(h,css("--ink"),0.6) });
     if(com) comDraw(g, lay, {w2s, V, css, pal, names, ti, W, H, edit: mode==="tipo"});
     coreDraw(lay, false);

@@ -364,14 +364,14 @@ function comUnidade(u, lay, st, ctx){
   const P=comLimpa(u.poly); if(P.length<3 || G.area(P)<12) return null;
   const mks=comModelosTeste(st, u.nome, u.alvo), cfg=comTipoCfg(st, u.nome)||{}, ov=cfg.cortes||{};
   const C=st.comodos||DEF.comodos;
-  const sig=JSON.stringify([P.map(q=>[+q[0].toFixed(3),+q[1].toFixed(3)]), u.fac, u.alvo, u.sac&&[u.sac.tipo,+u.sac.area.toFixed(2)], mks, ov, C.min, C.jan, ctx.sig, !!cfg.lavabo]);
+  const sig=JSON.stringify([P.map(q=>[+q[0].toFixed(3),+q[1].toFixed(3)]), u.fac, u.ux||0, u.alvo, u.sac&&[u.sac.tipo,+u.sac.area.toFixed(2)], mks, ov, C.min, C.jan, ctx.sig, !!cfg.lavabo]);
   const hit=_comCache.get(sig); if(hit) return hit;
   const sigA=sig.replace(JSON.stringify(ov), "{}")+"|auto";   // a escolha da variação não depende dos ajustes manuais
   const finaliza=b=>{ b.movel=comMoveis(b); b.erros=b.alertas.filter(a=>a.nivel==="erro").length; b.avisos=b.alertas.filter(a=>a.nivel==="aviso").length;
     b.soma=b.rooms.reduce((s,r)=>s+r.area,0); b.ok=b.erros===0; if(_comCache.size>600) _comCache.clear(); return b };
   const auto=_comCache.get(sigA);
   if(auto && Object.keys(ov).length){ const L=comGera(P, u, auto.mk, {...auto.prm, cortes:ov}, ctx, st); if(L){ const b=finaliza({...L, frame:auto.frame, prm:auto.prm, nVar:auto.nVar}); _comCache.set(sig, b); return b } }
-  const ux=lay.ux, vy=lay.vy, frames=[];
+  const ux=u.ux||lay.ux, vy=u.vy||lay.vy, frames=[];   // C3: unidade de uma ala traz o referencial da ala
   // fachada principal (oposta ao corredor)
   frames.push({fr:"f", ax:ux, dn: u.fac==="max"? [-vy[0],-vy[1]] : [vy[0],vy[1]]});
   // fachada lateral (unidade de ponta): a zona social fica do lado do corredor
