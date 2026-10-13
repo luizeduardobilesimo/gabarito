@@ -246,6 +246,7 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.15)}
 .tag{font-size:10.5px;padding:3px 8px;border-radius:7px;border:1px solid var(--line);background:var(--surface);cursor:pointer;white-space:nowrap}
 .tag[aria-pressed="true"]{background:var(--mark);border-color:var(--mark);color:#1c1606}
 .tag.alt[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.tag.vei[aria-pressed="true"]{background:color-mix(in srgb,var(--bad) 14%,var(--surface));border-color:var(--bad);color:var(--bad)}
 .compass{display:grid;place-items:center}
 .compass svg{width:100%;max-width:178px;height:auto;aspect-ratio:1}
 .compass .cd{cursor:pointer}
@@ -749,7 +750,7 @@ html.auth-on body{overflow:hidden}
 const DEF = {
   v: 2,
   nome: "Estudo Rua Exemplo, 120",
-  lote: { pts: [[0,0],[34,0],[36,52],[-1.5,54]], front: [0], principal: 0, rec: [{},{},{},{}], acessoPed: 0.35, acessoVei: 0.85, norte: 0, lat: -28.68, lon: -49.37, geo: false, desnivel: 0, custoTerra: 55 },
+  lote: { pts: [[0,0],[34,0],[36,52],[-1.5,54]], front: [0], principal: 0, rec: [{},{},{},{}], acessoPed: 0.35, acessoVei: 0.85, ladoVei: null, norte: 0, lat: -28.68, lon: -49.37, geo: false, desnivel: 0, custoTerra: 55 },
   regras: {
     cidade: "Exemplo (zona central fictícia)",
     caBas: 2, caMax: 4, outorgaRS: 350,
@@ -818,6 +819,8 @@ function merge(base, o){
   if(Array.isArray(o.entorno)) base.entorno=o.entorno;
   if(o.cfd){ ['emissor','semente'].forEach(k=>{ if(k in o.cfd) base.cfd[k]=o.cfd[k] }); if(Array.isArray(o.cfd.linhasAlt)) base.cfd.linhasAlt=o.cfd.linhasAlt }
   if(base.lote && o.lote && Array.isArray(o.lote.rec)) base.lote.rec=o.lote.rec;
+  /* lado do acesso de veículos (índice do lado; null = frente principal). Estudos antigos não têm o campo → frente principal */
+  if(base.lote && o.lote && 'ladoVei' in o.lote) base.lote.ladoVei = Number.isInteger(o.lote.ladoVei) && o.lote.ladoVei>=0 ? o.lote.ladoVei : null;
   /* georreferência (S.lote.geo): estudos antigos só contam como posicionados se já tinham coordenadas próprias ou contexto do OSM */
   if(base.lote && (!o.lote || o.lote.geo===undefined)){ const d=DEF.lote, ol=o.lote||{};
     base.lote.geo = (ol.lat!==undefined && +ol.lat!==d.lat) || (ol.lon!==undefined && +ol.lon!==d.lon) || !!(o.contexto && o.contexto.dados) || (Array.isArray(o.entorno) && o.entorno.some(e=>e&&e.osm)) }
@@ -1242,7 +1245,8 @@ function rampExt(st, m, dir){
 function vertical(st, m){
   const P=st.produto, E=st.estudo, T=m.ter||{}, nS=P.subsolos, nA=P.garAcima, alt=E.rampaTipo==="alternada" && !(T.drive0&&T.drive0.semAlt);
   const V={strips:[], segs:[], floors:{}, warn:[], ok:true};
-  const fd=T.fd||frontDir(st), lat=T.lat||[fd[1],-fd[0]];
+  // referencial do lado de veículos (S.lote.ladoVei); sem escolha é o da frente principal
+  const fd=T.vfd||T.fd||frontDir(st), lat=T.vlat||T.lat||[fd[1],-fd[0]];
   V.fd=fd; V.lat=lat;
   const floorOf=k=> k<0? m.sub : k>0? m.emb : (T.gar||[]);
   const keyOf=k=> k<0? "s"+(-k) : k>0? "g"+k : "ter";
@@ -1672,7 +1676,7 @@ function garagens(st, m, opt){
   const T=m.ter;
   if(T.gar && T.gar.length){
     const fT=V.floors.ter||{blocks:[],landings:[],portals:[],ramps:[]};
-    const portals=[]; if(T.driveEnd) portals.push({p:T.driveEnd, heading:T.fd, tipo:"chega", label:"entrada de veículos"});
+    const portals=[]; if(T.driveEnd) portals.push({p:T.driveEnd, heading:T.driveHead||T.fd, tipo:"chega", label:"entrada de veículos"});
     const blocks=[...fT.blocks.filter(b=>G.polysOverlap(b,T.gar))];
     const keep=[...(T.keep||[])];
     // rampa colocada à mão dentro da garagem do térreo: a boca precisa estar ligada
@@ -1776,14 +1780,17 @@ HOOK.compute.push(garPos);
 /* estudo do acesso: posições do acesso de veículos × tipo de rampa */
 function acessoCandidatos(st){
   const pos=[0.1,0.25,0.4,0.6,0.75,0.9], tipos=st.produto.subsolos>1||st.produto.garAcima>1? ["reta","alternada"] : ["reta"], out=[];
-  pos.forEach(p=>tipos.forEach(t=>out.push({acessoVei:p, rampaTipo:t})));
-  // elevador de carros como alternativa (lotes estreitos): na frente, no meio e no fim da testada
-  if(st.produto.subsolos||st.produto.garAcima) [0.1,0.5,0.9].forEach(p=>out.push({acessoVei:p, rampaTipo:"elevador"}));
-  if(!out.some(c=>Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo)) out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, atual:true});
+  // todos os lados na rua (a frente principal primeiro; ladoVei null = frente principal) — src/calc/acesso.js
+  const pr=acPrincipal(st), cur=ladoVeiIdx(st);
+  acLadosRua(st).forEach(i=>{ const lv = i===pr? null : i;
+    pos.forEach(p=>tipos.forEach(t=>out.push({acessoVei:p, rampaTipo:t, ladoVei:lv, lado:i})));
+    // elevador de carros como alternativa (lotes estreitos): na frente, no meio e no fim da testada
+    if(st.produto.subsolos||st.produto.garAcima) [0.1,0.5,0.9].forEach(p=>out.push({acessoVei:p, rampaTipo:"elevador", ladoVei:lv, lado:i})) });
+  if(!out.some(c=>c.lado===cur && Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo)) out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, ladoVei:cur===pr? null : cur, lado:cur, atual:true});
   return out;
 }
 function acessoAvalia(st, c, full){
-  const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null;
+  const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null; if(c.ladoVei!==undefined) s.lote.ladoVei=c.ladoVei;
   const m=compute(s, full? {} : {quick:true});
   const ec=m.elevCarros;
   return {vagas:m.vagasLay||0, ok:m.vert.ok && Object.values(m.gar||{}).every(l=>!l||l.ok!==false) && (!ec || ec.ok), warn:m.vert.warn.length+(ec? ec.avisos.length : 0),
@@ -1957,15 +1964,19 @@ function frontStalls(st, m){ // vagas externas na frente (uso comercial), perpen
   const E=st.estudo, L=st.lote.pts, ac=m.acesso, i=ac.edge, a=L[i], b=L[(i+1)%L.length], len=Math.hypot(b[0]-a[0],b[1]-a[1]); if(len<6) return {vagas:[],count:0};
   const ux=[(b[0]-a[0])/len,(b[1]-a[1])/len], vy=frontDir(st), W=E.vagaL, C=E.vagaC, o0=G.dot(a,ux), v0=G.dot(a,vy);
   const uVei=G.dot(ac.vei,ux)-o0, uPed=G.dot(ac.ped,ux)-o0, out=[];
-  const T=m.ter||{}, dv=T.drive0&&T.drive0.dv, lat=T.lat, inDrive=p=>dv&&lat&&(()=>{ const ls=p.map(q=>G.dot(q,lat)); return Math.max(...ls)>dv[0]-0.6 && Math.min(...ls)<dv[1]+0.6 })();
-  for(let u=0.6; u+W<=len-0.6; u+=W){ if(!dv && u+W>uVei-3.5 && u<uVei+3.5) { u=uVei+3.5-W; continue } if(u+W>uPed-1.6 && u<uPed+1.6){ u=uPed+1.6-W; continue } if(inDrive(G.rect(ux,vy,o0+u,v0+0.05,W,C))) continue;
+  const T=m.ter||{}, lv=ac.edgeV!=null && ac.edgeV!==i; // veículos por outro lado: a frente principal fica só com as vagas e os pedestres
+  const dv=!lv&&T.drive0&&T.drive0.dv, lat=T.lat, dVz=lv? [...(T.drive||[]), ...(T.driveRua||[])].map(p=>scaleBy(p,1.08)) : [];
+  const inDrive=p=> lv? dVz.some(d=>G.polysOverlap(p,d)) : dv&&lat&&(()=>{ const ls=p.map(q=>G.dot(q,lat)); return Math.max(...ls)>dv[0]-0.6 && Math.min(...ls)<dv[1]+0.6 })();
+  for(let u=0.6; u+W<=len-0.6; u+=W){ if(!dv && !lv && u+W>uVei-3.5 && u<uVei+3.5) { u=uVei+3.5-W; continue } if(u+W>uPed-1.6 && u<uPed+1.6){ u=uPed+1.6-W; continue } if(inDrive(G.rect(ux,vy,o0+u,v0+0.05,W,C))) continue;
     const p=G.rect(ux,vy,o0+u,v0+0.05,W,C); if(G.polyInPoly(p,L) && !(m.emb.length && G.polysOverlap(p,m.emb))) out.push({poly:p, c:G.centroid(p)}) }
   return {vagas:out, count:out.length};
 }
 function accessPoints(st){
   const L=st.lote.pts, i=st.lote.front.includes(st.lote.principal)? st.lote.principal : (st.lote.front[0]||0), a=L[i], b=L[(i+1)%L.length];
-  const at=t=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
-  return {ped:at(st.lote.acessoPed), vei:at(st.lote.acessoVei), edge:i};
+  const at=(t,a,b)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+  // veículos: no lado escolhido (S.lote.ladoVei, src/calc/acesso.js); sem escolha, na frente principal
+  const iv = typeof ladoVeiIdx==="function" ? ladoVeiIdx(st) : i, av=L[iv], bv=L[(iv+1)%L.length];
+  return {ped:at(st.lote.acessoPed,a,b), vei:at(st.lote.acessoVei,av,bv), edge:i, edgeV:iv};
 }
 function maxPav(st){ let best=0; for(let n=1;n<=70;n++){ const m=massing(st,{pav:n}); if(m.H<=(m.hLim??st.regras.hMax)+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1)) best=n; } return best }
 function status(m, st){
@@ -2007,14 +2018,16 @@ function terreoZones(st, m, lz, extra=0){
   const out={lojas:[],hall:[],hallBand:[],pass:[],cols:[],colsGar:[],walk:[],drive:[],gar:[],driveEnd:null,drive0:null,keep:[],warn:[],lanes:null};
   if(!emb.length) return out;
   const fd=frontDir(st), lat=[fd[1],-fd[0]], [dmn,dmx]=G.extent(emb,fd), [lmn,lmx]=G.extent(emb,lat);
-  Object.assign(out,{fd,lat,dmn,dmx,lmn,lmx});
+  Object.assign(out,{fd,lat,dmn,dmx,lmn,lmx,vfd:fd,vlat:lat});
   const W2=(l,d)=>[lat[0]*l+fd[0]*d, lat[1]*l+fd[1]*d];
   const box=(d0,d1,l0,l1)=>{ if(d1-d0<0.05||l1-l0<0.05) return []; const b=G.band(emb,fd,d0,d1); return b.length? G.band(b,lat,l0,l1) : [] };
   const hasRamp = P.subsolos>0 || P.garAcima>0; let garOn = !!P.garTerOn; const needVeh = hasRamp || garOn;
   const lojaF=clamp(P.lojaTerreo,0,0.9), d1 = lojaF>0? G.cutAt(emb,fd,lojaF) : dmn;
+  // carro por outro lado do lote (esquina, passante): a faixa de veículos é resolvida no referencial DAQUELE lado, depois do hall (src/calc/acesso.js)
+  const VL = needVeh && m.acesso && m.acesso.edgeV!=null && m.acesso.edgeV!==m.acesso.edge;
   // acesso de veículos: faixas das rampas (descida / subida) lado a lado e, se houver garagem no térreo, a faixa de acesso a ela
   let dv=null, dl=null, dEnd=dmn;
-  if(needVeh){ dl=driveLayout(st, lmn, lmx, G.dot(m.acesso.vei,lat), m, fd, lat); out.drive0=dl;
+  if(needVeh && !VL){ dl=driveLayout(st, lmn, lmx, G.dot(m.acesso.vei,lat), m, fd, lat); out.drive0=dl;
     if(dl){ dv=dl.dv; out.lanes=dl.laneIv||null;
       if(dl.semAlt) out.warn.push("As rampas alternadas não cabem ao lado dos núcleos — o estudo usou rampas retas empilhadas.");
       if(dl.semFaixa){ garOn=false; out.semFaixa=true; out.warn.push("Não há largura para a faixa de acesso à garagem do térreo ao lado das rampas sem passar pelos núcleos — a garagem do térreo foi desligada neste estudo."); }
@@ -2040,6 +2053,10 @@ function terreoZones(st, m, lz, extra=0){
     if(dv && ivs[0][1]>dv[0] && ivs[0][0]<dv[1] && p<dvEnd){ if(!(dl&&dl.naoCabe) && dvBox.length && (G.polysOverlap(dvBox,cs.core)||G.polysOverlap(dvBox,cs.lobby||[]))) out.warn.push(`O acesso de veículos passa sobre o núcleo da torre ${cs.i+1} — mova o acesso na etapa Terreno.`); ivs=ivSub(ivs,dv) }
     const lc=(Math.min(...ls)+Math.max(...ls))/2;
     ivs.forEach(iv=>cols.push({iv, front:p-1<d1, near:p-0.8, back:Math.min(dmx,q+0.8), torre:cs.i, corr:[clamp(lc-1.3,iv[0],iv[1]-0.5), clamp(lc+1.3,iv[0]+0.5,iv[1])]})) });
+  // carro por outro lado: faixa de veículos no referencial do lado escolhido, sem passar pelas lojas, pelo hall nem pelos caminhos até os núcleos
+  let VD=null;
+  if(VL){ const r=terreoVeiLateral(st, m, out, {emb, fd, lat, dmn, dmx, lmn, lmx, d1, d2, garOn, hasRamp, cols, box});
+    VD=r; dl=r.dl; if(r.semFaixa){ garOn=false; d2=dmx; out.d2=d2 } }
   // passagem de pedestres pelas lojas
   let pass=null;
   if(lojaF>0 && d1-dmn>1){ let pc=clamp(G.dot(m.acesso.ped,lat), lmn+1.5, lmx-1.5);
@@ -2062,8 +2079,9 @@ function terreoZones(st, m, lz, extra=0){
   if(dv){ const end = garOn? Math.max(d2, Math.min(dEnd,d2)) : Math.max(dEnd, dmn+PATAMAR); const p=box(dmn,Math.min(dmx,end),dv[0],dv[1]); if(p.length) out.drive.push(p);
     if(garOn && out.lanes){ const lc=(out.lanes[0]+out.lanes[1])/2; out.driveEnd=W2(lc, d2-0.2); out.keep.push(G.rect(lat,fd,out.lanes[0],d2,out.lanes[1]-out.lanes[0],6)) } }
   if(garOn && dmx-d2>3){ out.gar=box(d2,dmx,lmn,lmx) }
+  if(VD) terreoVeiFecha(out, VD, garOn);
   const sa=a=>a.reduce((s,p)=>s+G.area(p),0);
-  out.lojaA=sa(out.lojas); out.hallA=sa(out.hall); out.driveA=sa(out.drive); out.gTer=Math.max(0,G.area(out.gar)-sa(out.colsGar)-sa(out.walk));
+  out.lojaA=sa(out.lojas); out.hallA=sa(out.hall); out.driveA=sa(out.drive); out.gTer=Math.max(0,G.area(out.gar)-sa(out.colsGar)-sa(out.walk)-(VD&&garOn&&out.gar.length? sa(out.drive) : 0));
   if(HT>out.hallDisp+1 && !garOn) out.warn.push("O hall e o lazer do térreo pedem mais área do que o térreo tem.");
   if(garOn && out.gTer<1 && HT>0) out.warn.push("O hall e o lazer ocupam todo o térreo — não sobra garagem.");
   return out;
@@ -2093,7 +2111,7 @@ function lazerLayout(st, m){
     const r=packItems(T.hallBand,[...coreOb,strip,...(T.drive||[]),...(m.ramp?[m.ramp.poly]:[])],by("terreo",false),ax); out.terreo=r.placed; out.miss.push(...r.miss) }
   else out.miss.push(...by("terreo",false));
   // térreo descoberto: nos recuos (jardins)
-  { const r=packItems([st.lote.pts],[m.emb,...(T.drive||[]).map(p=>scaleBy(p,1.6)),...(m.vf?m.vf.vagas.map(v=>v.poly):[])],by("terreo",true),ax); out.terreoDesc=r.placed; out.miss.push(...r.miss) }
+  { const r=packItems([st.lote.pts],[m.emb,...(T.drive||[]).map(p=>scaleBy(p,1.6)),...(T.driveRua||[]).map(p=>scaleBy(p,1.3)),...(m.vf?m.vf.vagas.map(v=>v.poly):[])],by("terreo",true),ax); out.terreoDesc=r.placed; out.miss.push(...r.miss) }
   // laje do embasamento: em volta das torres
   { const r=packItems([m.emb], m.T.map(t=>scaleBy(t.plate,1.18)), by("emb"), ax); out.emb=r.placed; out.miss.push(...r.miss) }
   // pavimento de lazer e rooftop: na torre 1
@@ -2596,6 +2614,84 @@ function fieldFrame(kind){ // origem, eixos e tamanho de célula no referencial 
   if(kind==="vento") return {o:[WIND.a0,WIND.b0], fx:WIND.f, fy:WIND.pp, cs:WIND.cs, nx:WIND.nx, ny:WIND.ny};
   const s=_sunCache; return {o:[s.x0,s.y0], fx:[1,0], fy:[0,1], cs:s.cs, nx:s.nx, ny:s.ny};
 }
+
+/* ---- calc/acesso.js ---- */
+/* ================= acesso de veículos por qualquer frente do lote (cálculo puro: Node, Worker e página) =================
+   S.lote.ladoVei = índice do lado por onde o carro entra (null = frente principal, como sempre foi).
+   Só vale um lado que dá para a rua (S.lote.front); qualquer outro valor cai na frente principal.
+   A frente principal continua recebendo lojas, hall, passagem de pedestres e vagas na frente; o lado de veículos recebe
+   a faixa das rampas e da garagem do térreo, com a rampa começando 5 m depois do alinhamento DAQUELE lado.
+   acPrincipal(st)        → índice da frente principal (mesma regra de frontDir/accessPoints)
+   ladoVeiIdx(st)         → índice do lado de veículos já resolvido
+   acLateral(st)          → true quando o carro entra por um lado diferente da frente principal
+   veiDir(st)             → normal para dentro do lote no lado de veículos
+   acNormal(pts, i)       → normal para dentro do lado i (lote anti-horário)
+   acSubRect(p, lat, fd, a, b, d0, d1) → partes de p fora do retângulo {a ≤ p·lat ≤ b, d0 ≤ p·fd ≤ d1}
+   acLadosRua(st)         → lados na rua, a frente principal primeiro (usados no estudo do melhor acesso) */
+function acPrincipal(st){ const L=st.lote; return L.front.includes(L.principal)? L.principal : (L.front[0] ?? 0) }
+function ladoVeiIdx(st){
+  const L=st.lote, v=L.ladoVei;
+  return (v!=null && Number.isInteger(+v) && +v>=0 && +v<L.pts.length && L.front.includes(+v)) ? +v : acPrincipal(st);
+}
+const acLateral = st => ladoVeiIdx(st)!==acPrincipal(st);
+function acNormal(pts, i){ const a=pts[i], b=pts[(i+1)%pts.length]; if(!a||!b) return [0,1];
+  const dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1; return [-dy/l, dx/l] }
+const veiDir = st => acNormal(st.lote.pts, ladoVeiIdx(st));
+function acSubRect(p, lat, fd, a, b, d0, d1){
+  if(!p || p.length<3) return [];
+  const BIG=1e6, out=[G.band(p,lat,-BIG,a), G.band(p,lat,b,BIG)], mid=G.band(p,lat,a,b);
+  if(mid.length){ out.push(G.band(mid,fd,-BIG,d0), G.band(mid,fd,d1,BIG)) }
+  return out.filter(q=>q.length>2 && G.area(q)>0.25);
+}
+/* térreo com o carro entrando por outro lado (chamado por terreoZones, src/programa.js, depois do hall e das colunas até os núcleos).
+   As faixas (rampas + faixa da garagem do térreo) são arrumadas por driveLayout no referencial do lado de veículos; o que é de pedestre
+   (lojas, faixa de circulação junto a elas, hall até d2 quando há garagem no térreo e o caminho até cada núcleo) entra como obstáculo. */
+function terreoVeiLateral(st, m, out, c){
+  const P=st.produto, E=st.estudo, {emb, fd, lat, dmn, dmx, lmn, lmx, d1, d2, garOn, hasRamp, cols}=c;
+  const iv=m.acesso.edgeV, vfd=veiDir(st), vlat=[vfd[1],-vfd[0]], [vdmn,vdmx]=G.extent(emb,vfd), [vlmn,vlmx]=G.extent(emb,vlat);
+  Object.assign(out,{vfd, vlat, vdmn, vdmx, vlmn, vlmx, veiLado:iv});
+  const W2V=(l,d)=>[vlat[0]*l+vfd[0]*d, vlat[1]*l+vfd[1]*d];
+  const R=(l0,l1,d0,d1_)=> l1-l0>0.05 && d1_-d0>0.05 ? G.rect(lat,fd,l0,d0,l1-l0,d1_-d0) : null, BIG=500;
+  // reserva de pedestres: com garagem no térreo, tudo até o fim do hall; sem ela, as lojas e a faixa de circulação junto a elas
+  const reservaDe=gOn=>{ const dFront = gOn? d2 : Math.min(dmx, d1+2.6), rs=[R(lmn-BIG, lmx+BIG, dmn-BIG, dFront+0.3)];
+    cols.forEach(k=>{ if(gOn) rs.push(R(k.corr[0]-0.3, k.corr[1]+0.3, d1, Math.max(d1,k.near)+0.3), R(k.iv[0], k.iv[1], Math.max(d1,k.near), k.back));
+      else rs.push(R(k.iv[0], k.iv[1], d1, k.back)) });
+    return rs.filter(Boolean) };
+  const roda=(rs,o)=>driveLayout(st, vlmn, vlmx, G.dot(m.acesso.vei,vlat), {...m, obst:[...(m.obst||[]), ...rs]}, vfd, vlat, o);
+  let res=reservaDe(garOn), dl=roda(res);
+  // a faixa da garagem do térreo não coube atrás do hall: sem ela o hall ocupa o térreo todo e o carro só precisa poupar as lojas e os caminhos
+  if(garOn && dl && (dl.semFaixa || dl.naoCabe)){ const r2=reservaDe(false), d2_=roda(r2, {semFaixa:true}); if(d2_ && (!d2_.naoCabe || dl.naoCabe)){ dl=d2_; res=r2 } }
+  out.drive0=dl;
+  const r={dl, vfd, vlat, vdmn, vdmx, W2V, reserva:res, poly:[], rua:[]};
+  if(!dl) return r;
+  const Ln=`L${iv+1}`;
+  if(dl.semAlt) out.warn.push("As rampas alternadas não cabem ao lado dos núcleos — o estudo usou rampas retas empilhadas.");
+  if(dl.semFaixa){ r.semFaixa=true; out.semFaixa=true; out.warn.push(`Pela ${Ln}, não há largura para a faixa da garagem do térreo ao lado das rampas sem passar pelos núcleos ou pelo hall — a garagem do térreo foi desligada neste estudo.`) }
+  if(dl.naoCabe) out.warn.push(`Pela ${Ln}, as rampas não cabem sem passar pelos núcleos, pelo hall ou pelas lojas. Tente “Encontrar o melhor acesso”, outra posição no lado, rampas alternadas ou o acesso pela frente principal.`);
+  const dv=dl.dv, gOn=garOn && !dl.semFaixa; out.lanes=dl.laneIv||null;
+  out.veiReal=W2V((dv[0]+dv[1])/2, G.dot(m.acesso.vei,vfd)); out.veiShift=dl.shift||0;
+  const RX=rampExt(st, m, vfd); out.rx=RX;
+  const dEndV = hasRamp && !E.rampa ? Math.min(vdmx, RX.s0 + Math.max(P.subsolos? RX.LD:0, P.garAcima? RX.LU:0)) : vdmn+PATAMAR;
+  // com garagem no térreo o acesso é o pátio até o início das rampas (≥ 5 m do alinhamento); sem ela, vai até o fim das rampas
+  const aE = gOn ? Math.min(vdmx, Math.max(vdmn+1, hasRamp && !E.rampa ? RX.s0 : RX.lotFront+PATAMAR)) : Math.min(vdmx, Math.max(dEndV, vdmn+PATAMAR));
+  Object.assign(r, {dv, aE, lotF:RX.lotFront});
+  const b=G.band(emb,vfd,vdmn,aE), p=b.length? G.band(b,vlat,dv[0],dv[1]) : []; r.poly = p.length>2? p : [];
+  const rua=G.band(G.band(st.lote.pts,vfd,RX.lotFront,vdmn),vlat,dv[0],dv[1]); r.rua = rua.length>2 && G.area(rua)>0.25 ? [rua] : [];
+  if(!dl.naoCabe && r.poly.length) (m.coreSets||[]).forEach(cs=>{ if(G.polysOverlap(r.poly,cs.core)||G.polysOverlap(r.poly,cs.lobby||[])) out.warn.push(`O acesso de veículos passa sobre o núcleo da torre ${cs.i+1} — mova o acesso na etapa Terreno.`) });
+  return r;
+}
+/* fecha o térreo: grava o acesso, tira-o do hall/lojas e, com garagem no térreo, liga o pátio de entrada à garagem (portal + faixa sem vagas) */
+function terreoVeiFecha(out, r, garOn){
+  if(!r.dl || !r.poly.length) return;
+  out.drive.push(r.poly); out.driveRua=r.rua;
+  const DR=G.rect(r.vlat, r.vfd, r.dv[0], r.lotF-1, r.dv[1]-r.dv[0], r.aE-r.lotF+1);
+  const cut=list=>list.flatMap(p=> p && p.length && G.polysOverlap(p,DR) ? acSubRect(p, r.vlat, r.vfd, r.dv[0], r.dv[1], r.lotF-1, r.aE) : [p]);
+  ["lojas","hallBand","pass","cols","colsGar","walk","hall"].forEach(k=>{ out[k]=cut(out[k]||[]) });
+  if(garOn && out.lanes){ const lc=(out.lanes[0]+out.lanes[1])/2;
+    out.keep.push(r.poly, G.rect(r.vlat, r.vfd, out.lanes[0], r.aE, out.lanes[1]-out.lanes[0], 6));
+    out.driveEnd=r.W2V(lc, r.vdmn+1.4); out.driveHead=r.vfd }
+}
+function acLadosRua(st){ const pr=acPrincipal(st), n=st.lote.pts.length; return [pr, ...st.lote.front.filter(i=>i!==pr && i>=0 && i<n)] }
 
 /* ---- calc/alavancas.js ---- */
 /* ================= Fase D: Alavancas do negócio =================
@@ -4554,7 +4650,8 @@ HOOK.compute.push((m, st)=>{
    sugereAcesso(lote, ruas, sug)   → {i, nome, classe, igualPrincipal, pos}   (acesso de veículos pela via de MENOR hierarquia)
    regraPorLargura(largura, tab)   → {rec, ate} (tabela editável; ILUSTRATIVA — conferir na lei; desligada por padrão)
    frenteDetectar(st)              → proposta guardável em S.frentes.sug (nada muda no lote até o usuário confirmar)
-   frenteAplicar(st, sug, o)       → grava front, principal, acessoVei (e recuos, se a regra por largura estiver ligada)
+   frenteAplicar(st, sug, o)       → grava front, principal, ladoVei (carro pela via de menor hierarquia, sem trocar a principal), acessoVei
+                                     (e recuos, se a regra por largura estiver ligada)
    Estado: S.frentes = {sug, regra:{on, tab}} */
 extendDEF("frentes", { sug:null, regra:{ on:false, tab:[{ate:7, rec:4}, {ate:12, rec:5}, {ate:99, rec:6}] } });
 
@@ -4660,16 +4757,19 @@ function frenteDetectar(st, o={}){
     semVia: !vias.length };
 }
 const frenteValida = (st) => { const s=st.frentes && st.frentes.sug; return !!(s && s.h===frHash(st.lote.pts)) };
-/* grava a proposta no lote; nada além de front, principal, acessoVei e (se ligada) os recuos próprios das frentes */
+/* grava a proposta no lote; nada além de front, principal, ladoVei, acessoVei e (se ligada) os recuos próprios das frentes */
 function frenteAplicar(st, sug, o={}){
   if(!sug || !sug.front || !sug.front.length) return null;
-  const L=st.lote, r={ front:L.front.slice(), principal:L.principal };
+  const L=st.lote, r={ front:L.front.slice(), principal:L.principal, ladoVei:L.ladoVei ?? null };
   L.front=sug.front.slice(); L.principal = o.principal!=null && sug.front.includes(o.principal) ? o.principal : sug.principal;
-  const pos=frPosForaEsquina(L.pts, L.principal, L.front); if(pos!=null) L.acessoVei=pos;
+  // carro pela via de menor hierarquia SEM trocar a frente principal (S.lote.ladoVei, src/calc/acesso.js); igual à principal = padrão (null)
+  const ace=sug.acesso, iv = ace && L.front.includes(ace.i) && ace.i!==L.principal ? ace.i : null;
+  L.ladoVei=iv;
+  const pos=frPosForaEsquina(L.pts, iv ?? L.principal, L.front); if(pos!=null) L.acessoVei=pos;
   const reg=st.frentes && st.frentes.regra, recs=[];
   if(reg && reg.on){ if(!Array.isArray(L.rec)) L.rec=[]; while(L.rec.length<L.pts.length) L.rec.push({});
     sug.lados.forEach(l=>{ const g=regraPorLargura(+l.larg, reg.tab); if(!g || !L.front.includes(l.i)) return; L.rec[l.i]=Object.assign({}, L.rec[l.i], {e:g.rec, t:g.rec}); recs.push({i:l.i, rec:g.rec}) }) }
-  return { antes:r, front:L.front, principal:L.principal, acessoVei:L.acessoVei, recs };
+  return { antes:r, front:L.front, principal:L.principal, ladoVei:L.ladoVei, acessoVei:L.acessoVei, recs };
 }
 
 /* ---- calc/geo.js ---- */
@@ -6820,7 +6920,7 @@ HOOK.compute.push((m, st, opt)=>{
 const DEF = {
   v: 2,
   nome: "Estudo Rua Exemplo, 120",
-  lote: { pts: [[0,0],[34,0],[36,52],[-1.5,54]], front: [0], principal: 0, rec: [{},{},{},{}], acessoPed: 0.35, acessoVei: 0.85, norte: 0, lat: -28.68, lon: -49.37, geo: false, desnivel: 0, custoTerra: 55 },
+  lote: { pts: [[0,0],[34,0],[36,52],[-1.5,54]], front: [0], principal: 0, rec: [{},{},{},{}], acessoPed: 0.35, acessoVei: 0.85, ladoVei: null, norte: 0, lat: -28.68, lon: -49.37, geo: false, desnivel: 0, custoTerra: 55 },
   regras: {
     cidade: "Exemplo (zona central fictícia)",
     caBas: 2, caMax: 4, outorgaRS: 350,
@@ -6889,6 +6989,8 @@ function merge(base, o){
   if(Array.isArray(o.entorno)) base.entorno=o.entorno;
   if(o.cfd){ ['emissor','semente'].forEach(k=>{ if(k in o.cfd) base.cfd[k]=o.cfd[k] }); if(Array.isArray(o.cfd.linhasAlt)) base.cfd.linhasAlt=o.cfd.linhasAlt }
   if(base.lote && o.lote && Array.isArray(o.lote.rec)) base.lote.rec=o.lote.rec;
+  /* lado do acesso de veículos (índice do lado; null = frente principal). Estudos antigos não têm o campo → frente principal */
+  if(base.lote && o.lote && 'ladoVei' in o.lote) base.lote.ladoVei = Number.isInteger(o.lote.ladoVei) && o.lote.ladoVei>=0 ? o.lote.ladoVei : null;
   /* georreferência (S.lote.geo): estudos antigos só contam como posicionados se já tinham coordenadas próprias ou contexto do OSM */
   if(base.lote && (!o.lote || o.lote.geo===undefined)){ const d=DEF.lote, ol=o.lote||{};
     base.lote.geo = (ol.lat!==undefined && +ol.lat!==d.lat) || (ol.lon!==undefined && +ol.lon!==d.lon) || !!(o.contexto && o.contexto.dados) || (Array.isArray(o.entorno) && o.entorno.some(e=>e&&e.osm)) }
@@ -7309,7 +7411,8 @@ function rampExt(st, m, dir){
 function vertical(st, m){
   const P=st.produto, E=st.estudo, T=m.ter||{}, nS=P.subsolos, nA=P.garAcima, alt=E.rampaTipo==="alternada" && !(T.drive0&&T.drive0.semAlt);
   const V={strips:[], segs:[], floors:{}, warn:[], ok:true};
-  const fd=T.fd||frontDir(st), lat=T.lat||[fd[1],-fd[0]];
+  // referencial do lado de veículos (S.lote.ladoVei); sem escolha é o da frente principal
+  const fd=T.vfd||T.fd||frontDir(st), lat=T.vlat||T.lat||[fd[1],-fd[0]];
   V.fd=fd; V.lat=lat;
   const floorOf=k=> k<0? m.sub : k>0? m.emb : (T.gar||[]);
   const keyOf=k=> k<0? "s"+(-k) : k>0? "g"+k : "ter";
@@ -7739,7 +7842,7 @@ function garagens(st, m, opt){
   const T=m.ter;
   if(T.gar && T.gar.length){
     const fT=V.floors.ter||{blocks:[],landings:[],portals:[],ramps:[]};
-    const portals=[]; if(T.driveEnd) portals.push({p:T.driveEnd, heading:T.fd, tipo:"chega", label:"entrada de veículos"});
+    const portals=[]; if(T.driveEnd) portals.push({p:T.driveEnd, heading:T.driveHead||T.fd, tipo:"chega", label:"entrada de veículos"});
     const blocks=[...fT.blocks.filter(b=>G.polysOverlap(b,T.gar))];
     const keep=[...(T.keep||[])];
     // rampa colocada à mão dentro da garagem do térreo: a boca precisa estar ligada
@@ -7843,14 +7946,17 @@ HOOK.compute.push(garPos);
 /* estudo do acesso: posições do acesso de veículos × tipo de rampa */
 function acessoCandidatos(st){
   const pos=[0.1,0.25,0.4,0.6,0.75,0.9], tipos=st.produto.subsolos>1||st.produto.garAcima>1? ["reta","alternada"] : ["reta"], out=[];
-  pos.forEach(p=>tipos.forEach(t=>out.push({acessoVei:p, rampaTipo:t})));
-  // elevador de carros como alternativa (lotes estreitos): na frente, no meio e no fim da testada
-  if(st.produto.subsolos||st.produto.garAcima) [0.1,0.5,0.9].forEach(p=>out.push({acessoVei:p, rampaTipo:"elevador"}));
-  if(!out.some(c=>Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo)) out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, atual:true});
+  // todos os lados na rua (a frente principal primeiro; ladoVei null = frente principal) — src/calc/acesso.js
+  const pr=acPrincipal(st), cur=ladoVeiIdx(st);
+  acLadosRua(st).forEach(i=>{ const lv = i===pr? null : i;
+    pos.forEach(p=>tipos.forEach(t=>out.push({acessoVei:p, rampaTipo:t, ladoVei:lv, lado:i})));
+    // elevador de carros como alternativa (lotes estreitos): na frente, no meio e no fim da testada
+    if(st.produto.subsolos||st.produto.garAcima) [0.1,0.5,0.9].forEach(p=>out.push({acessoVei:p, rampaTipo:"elevador", ladoVei:lv, lado:i})) });
+  if(!out.some(c=>c.lado===cur && Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo)) out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, ladoVei:cur===pr? null : cur, lado:cur, atual:true});
   return out;
 }
 function acessoAvalia(st, c, full){
-  const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null;
+  const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null; if(c.ladoVei!==undefined) s.lote.ladoVei=c.ladoVei;
   const m=compute(s, full? {} : {quick:true});
   const ec=m.elevCarros;
   return {vagas:m.vagasLay||0, ok:m.vert.ok && Object.values(m.gar||{}).every(l=>!l||l.ok!==false) && (!ec || ec.ok), warn:m.vert.warn.length+(ec? ec.avisos.length : 0),
@@ -8023,15 +8129,19 @@ function frontStalls(st, m){ // vagas externas na frente (uso comercial), perpen
   const E=st.estudo, L=st.lote.pts, ac=m.acesso, i=ac.edge, a=L[i], b=L[(i+1)%L.length], len=Math.hypot(b[0]-a[0],b[1]-a[1]); if(len<6) return {vagas:[],count:0};
   const ux=[(b[0]-a[0])/len,(b[1]-a[1])/len], vy=frontDir(st), W=E.vagaL, C=E.vagaC, o0=G.dot(a,ux), v0=G.dot(a,vy);
   const uVei=G.dot(ac.vei,ux)-o0, uPed=G.dot(ac.ped,ux)-o0, out=[];
-  const T=m.ter||{}, dv=T.drive0&&T.drive0.dv, lat=T.lat, inDrive=p=>dv&&lat&&(()=>{ const ls=p.map(q=>G.dot(q,lat)); return Math.max(...ls)>dv[0]-0.6 && Math.min(...ls)<dv[1]+0.6 })();
-  for(let u=0.6; u+W<=len-0.6; u+=W){ if(!dv && u+W>uVei-3.5 && u<uVei+3.5) { u=uVei+3.5-W; continue } if(u+W>uPed-1.6 && u<uPed+1.6){ u=uPed+1.6-W; continue } if(inDrive(G.rect(ux,vy,o0+u,v0+0.05,W,C))) continue;
+  const T=m.ter||{}, lv=ac.edgeV!=null && ac.edgeV!==i; // veículos por outro lado: a frente principal fica só com as vagas e os pedestres
+  const dv=!lv&&T.drive0&&T.drive0.dv, lat=T.lat, dVz=lv? [...(T.drive||[]), ...(T.driveRua||[])].map(p=>scaleBy(p,1.08)) : [];
+  const inDrive=p=> lv? dVz.some(d=>G.polysOverlap(p,d)) : dv&&lat&&(()=>{ const ls=p.map(q=>G.dot(q,lat)); return Math.max(...ls)>dv[0]-0.6 && Math.min(...ls)<dv[1]+0.6 })();
+  for(let u=0.6; u+W<=len-0.6; u+=W){ if(!dv && !lv && u+W>uVei-3.5 && u<uVei+3.5) { u=uVei+3.5-W; continue } if(u+W>uPed-1.6 && u<uPed+1.6){ u=uPed+1.6-W; continue } if(inDrive(G.rect(ux,vy,o0+u,v0+0.05,W,C))) continue;
     const p=G.rect(ux,vy,o0+u,v0+0.05,W,C); if(G.polyInPoly(p,L) && !(m.emb.length && G.polysOverlap(p,m.emb))) out.push({poly:p, c:G.centroid(p)}) }
   return {vagas:out, count:out.length};
 }
 function accessPoints(st){
   const L=st.lote.pts, i=st.lote.front.includes(st.lote.principal)? st.lote.principal : (st.lote.front[0]||0), a=L[i], b=L[(i+1)%L.length];
-  const at=t=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
-  return {ped:at(st.lote.acessoPed), vei:at(st.lote.acessoVei), edge:i};
+  const at=(t,a,b)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+  // veículos: no lado escolhido (S.lote.ladoVei, src/calc/acesso.js); sem escolha, na frente principal
+  const iv = typeof ladoVeiIdx==="function" ? ladoVeiIdx(st) : i, av=L[iv], bv=L[(iv+1)%L.length];
+  return {ped:at(st.lote.acessoPed,a,b), vei:at(st.lote.acessoVei,av,bv), edge:i, edgeV:iv};
 }
 function maxPav(st){ let best=0; for(let n=1;n<=70;n++){ const m=massing(st,{pav:n}); if(m.H<=(m.hLim??st.regras.hMax)+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1)) best=n; } return best }
 function status(m, st){
@@ -8072,14 +8182,16 @@ function terreoZones(st, m, lz, extra=0){
   const out={lojas:[],hall:[],hallBand:[],pass:[],cols:[],colsGar:[],walk:[],drive:[],gar:[],driveEnd:null,drive0:null,keep:[],warn:[],lanes:null};
   if(!emb.length) return out;
   const fd=frontDir(st), lat=[fd[1],-fd[0]], [dmn,dmx]=G.extent(emb,fd), [lmn,lmx]=G.extent(emb,lat);
-  Object.assign(out,{fd,lat,dmn,dmx,lmn,lmx});
+  Object.assign(out,{fd,lat,dmn,dmx,lmn,lmx,vfd:fd,vlat:lat});
   const W2=(l,d)=>[lat[0]*l+fd[0]*d, lat[1]*l+fd[1]*d];
   const box=(d0,d1,l0,l1)=>{ if(d1-d0<0.05||l1-l0<0.05) return []; const b=G.band(emb,fd,d0,d1); return b.length? G.band(b,lat,l0,l1) : [] };
   const hasRamp = P.subsolos>0 || P.garAcima>0; let garOn = !!P.garTerOn; const needVeh = hasRamp || garOn;
   const lojaF=clamp(P.lojaTerreo,0,0.9), d1 = lojaF>0? G.cutAt(emb,fd,lojaF) : dmn;
+  // carro por outro lado do lote (esquina, passante): a faixa de veículos é resolvida no referencial DAQUELE lado, depois do hall (src/calc/acesso.js)
+  const VL = needVeh && m.acesso && m.acesso.edgeV!=null && m.acesso.edgeV!==m.acesso.edge;
   // acesso de veículos: faixas das rampas (descida / subida) lado a lado e, se houver garagem no térreo, a faixa de acesso a ela
   let dv=null, dl=null, dEnd=dmn;
-  if(needVeh){ dl=driveLayout(st, lmn, lmx, G.dot(m.acesso.vei,lat), m, fd, lat); out.drive0=dl;
+  if(needVeh && !VL){ dl=driveLayout(st, lmn, lmx, G.dot(m.acesso.vei,lat), m, fd, lat); out.drive0=dl;
     if(dl){ dv=dl.dv; out.lanes=dl.laneIv||null;
       if(dl.semAlt) out.warn.push("As rampas alternadas não cabem ao lado dos núcleos — o estudo usou rampas retas empilhadas.");
       if(dl.semFaixa){ garOn=false; out.semFaixa=true; out.warn.push("Não há largura para a faixa de acesso à garagem do térreo ao lado das rampas sem passar pelos núcleos — a garagem do térreo foi desligada neste estudo."); }
@@ -8105,6 +8217,10 @@ function terreoZones(st, m, lz, extra=0){
     if(dv && ivs[0][1]>dv[0] && ivs[0][0]<dv[1] && p<dvEnd){ if(!(dl&&dl.naoCabe) && dvBox.length && (G.polysOverlap(dvBox,cs.core)||G.polysOverlap(dvBox,cs.lobby||[]))) out.warn.push(`O acesso de veículos passa sobre o núcleo da torre ${cs.i+1} — mova o acesso na etapa Terreno.`); ivs=ivSub(ivs,dv) }
     const lc=(Math.min(...ls)+Math.max(...ls))/2;
     ivs.forEach(iv=>cols.push({iv, front:p-1<d1, near:p-0.8, back:Math.min(dmx,q+0.8), torre:cs.i, corr:[clamp(lc-1.3,iv[0],iv[1]-0.5), clamp(lc+1.3,iv[0]+0.5,iv[1])]})) });
+  // carro por outro lado: faixa de veículos no referencial do lado escolhido, sem passar pelas lojas, pelo hall nem pelos caminhos até os núcleos
+  let VD=null;
+  if(VL){ const r=terreoVeiLateral(st, m, out, {emb, fd, lat, dmn, dmx, lmn, lmx, d1, d2, garOn, hasRamp, cols, box});
+    VD=r; dl=r.dl; if(r.semFaixa){ garOn=false; d2=dmx; out.d2=d2 } }
   // passagem de pedestres pelas lojas
   let pass=null;
   if(lojaF>0 && d1-dmn>1){ let pc=clamp(G.dot(m.acesso.ped,lat), lmn+1.5, lmx-1.5);
@@ -8127,8 +8243,9 @@ function terreoZones(st, m, lz, extra=0){
   if(dv){ const end = garOn? Math.max(d2, Math.min(dEnd,d2)) : Math.max(dEnd, dmn+PATAMAR); const p=box(dmn,Math.min(dmx,end),dv[0],dv[1]); if(p.length) out.drive.push(p);
     if(garOn && out.lanes){ const lc=(out.lanes[0]+out.lanes[1])/2; out.driveEnd=W2(lc, d2-0.2); out.keep.push(G.rect(lat,fd,out.lanes[0],d2,out.lanes[1]-out.lanes[0],6)) } }
   if(garOn && dmx-d2>3){ out.gar=box(d2,dmx,lmn,lmx) }
+  if(VD) terreoVeiFecha(out, VD, garOn);
   const sa=a=>a.reduce((s,p)=>s+G.area(p),0);
-  out.lojaA=sa(out.lojas); out.hallA=sa(out.hall); out.driveA=sa(out.drive); out.gTer=Math.max(0,G.area(out.gar)-sa(out.colsGar)-sa(out.walk));
+  out.lojaA=sa(out.lojas); out.hallA=sa(out.hall); out.driveA=sa(out.drive); out.gTer=Math.max(0,G.area(out.gar)-sa(out.colsGar)-sa(out.walk)-(VD&&garOn&&out.gar.length? sa(out.drive) : 0));
   if(HT>out.hallDisp+1 && !garOn) out.warn.push("O hall e o lazer do térreo pedem mais área do que o térreo tem.");
   if(garOn && out.gTer<1 && HT>0) out.warn.push("O hall e o lazer ocupam todo o térreo — não sobra garagem.");
   return out;
@@ -8158,7 +8275,7 @@ function lazerLayout(st, m){
     const r=packItems(T.hallBand,[...coreOb,strip,...(T.drive||[]),...(m.ramp?[m.ramp.poly]:[])],by("terreo",false),ax); out.terreo=r.placed; out.miss.push(...r.miss) }
   else out.miss.push(...by("terreo",false));
   // térreo descoberto: nos recuos (jardins)
-  { const r=packItems([st.lote.pts],[m.emb,...(T.drive||[]).map(p=>scaleBy(p,1.6)),...(m.vf?m.vf.vagas.map(v=>v.poly):[])],by("terreo",true),ax); out.terreoDesc=r.placed; out.miss.push(...r.miss) }
+  { const r=packItems([st.lote.pts],[m.emb,...(T.drive||[]).map(p=>scaleBy(p,1.6)),...(T.driveRua||[]).map(p=>scaleBy(p,1.3)),...(m.vf?m.vf.vagas.map(v=>v.poly):[])],by("terreo",true),ax); out.terreoDesc=r.placed; out.miss.push(...r.miss) }
   // laje do embasamento: em volta das torres
   { const r=packItems([m.emb], m.T.map(t=>scaleBy(t.plate,1.18)), by("emb"), ax); out.emb=r.placed; out.miss.push(...r.miss) }
   // pavimento de lazer e rooftop: na torre 1
@@ -8658,6 +8775,83 @@ function fieldFrame(kind){ // origem, eixos e tamanho de célula no referencial 
   if(kind==="vento") return {o:[WIND.a0,WIND.b0], fx:WIND.f, fy:WIND.pp, cs:WIND.cs, nx:WIND.nx, ny:WIND.ny};
   const s=_sunCache; return {o:[s.x0,s.y0], fx:[1,0], fy:[0,1], cs:s.cs, nx:s.nx, ny:s.ny};
 }
+
+/* ================= acesso de veículos por qualquer frente do lote (cálculo puro: Node, Worker e página) =================
+   S.lote.ladoVei = índice do lado por onde o carro entra (null = frente principal, como sempre foi).
+   Só vale um lado que dá para a rua (S.lote.front); qualquer outro valor cai na frente principal.
+   A frente principal continua recebendo lojas, hall, passagem de pedestres e vagas na frente; o lado de veículos recebe
+   a faixa das rampas e da garagem do térreo, com a rampa começando 5 m depois do alinhamento DAQUELE lado.
+   acPrincipal(st)        → índice da frente principal (mesma regra de frontDir/accessPoints)
+   ladoVeiIdx(st)         → índice do lado de veículos já resolvido
+   acLateral(st)          → true quando o carro entra por um lado diferente da frente principal
+   veiDir(st)             → normal para dentro do lote no lado de veículos
+   acNormal(pts, i)       → normal para dentro do lado i (lote anti-horário)
+   acSubRect(p, lat, fd, a, b, d0, d1) → partes de p fora do retângulo {a ≤ p·lat ≤ b, d0 ≤ p·fd ≤ d1}
+   acLadosRua(st)         → lados na rua, a frente principal primeiro (usados no estudo do melhor acesso) */
+function acPrincipal(st){ const L=st.lote; return L.front.includes(L.principal)? L.principal : (L.front[0] ?? 0) }
+function ladoVeiIdx(st){
+  const L=st.lote, v=L.ladoVei;
+  return (v!=null && Number.isInteger(+v) && +v>=0 && +v<L.pts.length && L.front.includes(+v)) ? +v : acPrincipal(st);
+}
+const acLateral = st => ladoVeiIdx(st)!==acPrincipal(st);
+function acNormal(pts, i){ const a=pts[i], b=pts[(i+1)%pts.length]; if(!a||!b) return [0,1];
+  const dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1; return [-dy/l, dx/l] }
+const veiDir = st => acNormal(st.lote.pts, ladoVeiIdx(st));
+function acSubRect(p, lat, fd, a, b, d0, d1){
+  if(!p || p.length<3) return [];
+  const BIG=1e6, out=[G.band(p,lat,-BIG,a), G.band(p,lat,b,BIG)], mid=G.band(p,lat,a,b);
+  if(mid.length){ out.push(G.band(mid,fd,-BIG,d0), G.band(mid,fd,d1,BIG)) }
+  return out.filter(q=>q.length>2 && G.area(q)>0.25);
+}
+/* térreo com o carro entrando por outro lado (chamado por terreoZones, src/programa.js, depois do hall e das colunas até os núcleos).
+   As faixas (rampas + faixa da garagem do térreo) são arrumadas por driveLayout no referencial do lado de veículos; o que é de pedestre
+   (lojas, faixa de circulação junto a elas, hall até d2 quando há garagem no térreo e o caminho até cada núcleo) entra como obstáculo. */
+function terreoVeiLateral(st, m, out, c){
+  const P=st.produto, E=st.estudo, {emb, fd, lat, dmn, dmx, lmn, lmx, d1, d2, garOn, hasRamp, cols}=c;
+  const iv=m.acesso.edgeV, vfd=veiDir(st), vlat=[vfd[1],-vfd[0]], [vdmn,vdmx]=G.extent(emb,vfd), [vlmn,vlmx]=G.extent(emb,vlat);
+  Object.assign(out,{vfd, vlat, vdmn, vdmx, vlmn, vlmx, veiLado:iv});
+  const W2V=(l,d)=>[vlat[0]*l+vfd[0]*d, vlat[1]*l+vfd[1]*d];
+  const R=(l0,l1,d0,d1_)=> l1-l0>0.05 && d1_-d0>0.05 ? G.rect(lat,fd,l0,d0,l1-l0,d1_-d0) : null, BIG=500;
+  // reserva de pedestres: com garagem no térreo, tudo até o fim do hall; sem ela, as lojas e a faixa de circulação junto a elas
+  const reservaDe=gOn=>{ const dFront = gOn? d2 : Math.min(dmx, d1+2.6), rs=[R(lmn-BIG, lmx+BIG, dmn-BIG, dFront+0.3)];
+    cols.forEach(k=>{ if(gOn) rs.push(R(k.corr[0]-0.3, k.corr[1]+0.3, d1, Math.max(d1,k.near)+0.3), R(k.iv[0], k.iv[1], Math.max(d1,k.near), k.back));
+      else rs.push(R(k.iv[0], k.iv[1], d1, k.back)) });
+    return rs.filter(Boolean) };
+  const roda=(rs,o)=>driveLayout(st, vlmn, vlmx, G.dot(m.acesso.vei,vlat), {...m, obst:[...(m.obst||[]), ...rs]}, vfd, vlat, o);
+  let res=reservaDe(garOn), dl=roda(res);
+  // a faixa da garagem do térreo não coube atrás do hall: sem ela o hall ocupa o térreo todo e o carro só precisa poupar as lojas e os caminhos
+  if(garOn && dl && (dl.semFaixa || dl.naoCabe)){ const r2=reservaDe(false), d2_=roda(r2, {semFaixa:true}); if(d2_ && (!d2_.naoCabe || dl.naoCabe)){ dl=d2_; res=r2 } }
+  out.drive0=dl;
+  const r={dl, vfd, vlat, vdmn, vdmx, W2V, reserva:res, poly:[], rua:[]};
+  if(!dl) return r;
+  const Ln=`L${iv+1}`;
+  if(dl.semAlt) out.warn.push("As rampas alternadas não cabem ao lado dos núcleos — o estudo usou rampas retas empilhadas.");
+  if(dl.semFaixa){ r.semFaixa=true; out.semFaixa=true; out.warn.push(`Pela ${Ln}, não há largura para a faixa da garagem do térreo ao lado das rampas sem passar pelos núcleos ou pelo hall — a garagem do térreo foi desligada neste estudo.`) }
+  if(dl.naoCabe) out.warn.push(`Pela ${Ln}, as rampas não cabem sem passar pelos núcleos, pelo hall ou pelas lojas. Tente “Encontrar o melhor acesso”, outra posição no lado, rampas alternadas ou o acesso pela frente principal.`);
+  const dv=dl.dv, gOn=garOn && !dl.semFaixa; out.lanes=dl.laneIv||null;
+  out.veiReal=W2V((dv[0]+dv[1])/2, G.dot(m.acesso.vei,vfd)); out.veiShift=dl.shift||0;
+  const RX=rampExt(st, m, vfd); out.rx=RX;
+  const dEndV = hasRamp && !E.rampa ? Math.min(vdmx, RX.s0 + Math.max(P.subsolos? RX.LD:0, P.garAcima? RX.LU:0)) : vdmn+PATAMAR;
+  // com garagem no térreo o acesso é o pátio até o início das rampas (≥ 5 m do alinhamento); sem ela, vai até o fim das rampas
+  const aE = gOn ? Math.min(vdmx, Math.max(vdmn+1, hasRamp && !E.rampa ? RX.s0 : RX.lotFront+PATAMAR)) : Math.min(vdmx, Math.max(dEndV, vdmn+PATAMAR));
+  Object.assign(r, {dv, aE, lotF:RX.lotFront});
+  const b=G.band(emb,vfd,vdmn,aE), p=b.length? G.band(b,vlat,dv[0],dv[1]) : []; r.poly = p.length>2? p : [];
+  const rua=G.band(G.band(st.lote.pts,vfd,RX.lotFront,vdmn),vlat,dv[0],dv[1]); r.rua = rua.length>2 && G.area(rua)>0.25 ? [rua] : [];
+  if(!dl.naoCabe && r.poly.length) (m.coreSets||[]).forEach(cs=>{ if(G.polysOverlap(r.poly,cs.core)||G.polysOverlap(r.poly,cs.lobby||[])) out.warn.push(`O acesso de veículos passa sobre o núcleo da torre ${cs.i+1} — mova o acesso na etapa Terreno.`) });
+  return r;
+}
+/* fecha o térreo: grava o acesso, tira-o do hall/lojas e, com garagem no térreo, liga o pátio de entrada à garagem (portal + faixa sem vagas) */
+function terreoVeiFecha(out, r, garOn){
+  if(!r.dl || !r.poly.length) return;
+  out.drive.push(r.poly); out.driveRua=r.rua;
+  const DR=G.rect(r.vlat, r.vfd, r.dv[0], r.lotF-1, r.dv[1]-r.dv[0], r.aE-r.lotF+1);
+  const cut=list=>list.flatMap(p=> p && p.length && G.polysOverlap(p,DR) ? acSubRect(p, r.vlat, r.vfd, r.dv[0], r.dv[1], r.lotF-1, r.aE) : [p]);
+  ["lojas","hallBand","pass","cols","colsGar","walk","hall"].forEach(k=>{ out[k]=cut(out[k]||[]) });
+  if(garOn && out.lanes){ const lc=(out.lanes[0]+out.lanes[1])/2;
+    out.keep.push(r.poly, G.rect(r.vlat, r.vfd, out.lanes[0], r.aE, out.lanes[1]-out.lanes[0], 6));
+    out.driveEnd=r.W2V(lc, r.vdmn+1.4); out.driveHead=r.vfd }
+}
+function acLadosRua(st){ const pr=acPrincipal(st), n=st.lote.pts.length; return [pr, ...st.lote.front.filter(i=>i!==pr && i>=0 && i<n)] }
 
 /* ================= Fase D: Alavancas do negócio =================
    Cálculo puro (página, Worker e testes). Mexe numa coisa por vez e mostra quanto o resultado muda: lucro, margem s/ VGV (a margem
@@ -10605,7 +10799,8 @@ HOOK.compute.push((m, st)=>{
    sugereAcesso(lote, ruas, sug)   → {i, nome, classe, igualPrincipal, pos}   (acesso de veículos pela via de MENOR hierarquia)
    regraPorLargura(largura, tab)   → {rec, ate} (tabela editável; ILUSTRATIVA — conferir na lei; desligada por padrão)
    frenteDetectar(st)              → proposta guardável em S.frentes.sug (nada muda no lote até o usuário confirmar)
-   frenteAplicar(st, sug, o)       → grava front, principal, acessoVei (e recuos, se a regra por largura estiver ligada)
+   frenteAplicar(st, sug, o)       → grava front, principal, ladoVei (carro pela via de menor hierarquia, sem trocar a principal), acessoVei
+                                     (e recuos, se a regra por largura estiver ligada)
    Estado: S.frentes = {sug, regra:{on, tab}} */
 extendDEF("frentes", { sug:null, regra:{ on:false, tab:[{ate:7, rec:4}, {ate:12, rec:5}, {ate:99, rec:6}] } });
 
@@ -10711,16 +10906,19 @@ function frenteDetectar(st, o={}){
     semVia: !vias.length };
 }
 const frenteValida = (st) => { const s=st.frentes && st.frentes.sug; return !!(s && s.h===frHash(st.lote.pts)) };
-/* grava a proposta no lote; nada além de front, principal, acessoVei e (se ligada) os recuos próprios das frentes */
+/* grava a proposta no lote; nada além de front, principal, ladoVei, acessoVei e (se ligada) os recuos próprios das frentes */
 function frenteAplicar(st, sug, o={}){
   if(!sug || !sug.front || !sug.front.length) return null;
-  const L=st.lote, r={ front:L.front.slice(), principal:L.principal };
+  const L=st.lote, r={ front:L.front.slice(), principal:L.principal, ladoVei:L.ladoVei ?? null };
   L.front=sug.front.slice(); L.principal = o.principal!=null && sug.front.includes(o.principal) ? o.principal : sug.principal;
-  const pos=frPosForaEsquina(L.pts, L.principal, L.front); if(pos!=null) L.acessoVei=pos;
+  // carro pela via de menor hierarquia SEM trocar a frente principal (S.lote.ladoVei, src/calc/acesso.js); igual à principal = padrão (null)
+  const ace=sug.acesso, iv = ace && L.front.includes(ace.i) && ace.i!==L.principal ? ace.i : null;
+  L.ladoVei=iv;
+  const pos=frPosForaEsquina(L.pts, iv ?? L.principal, L.front); if(pos!=null) L.acessoVei=pos;
   const reg=st.frentes && st.frentes.regra, recs=[];
   if(reg && reg.on){ if(!Array.isArray(L.rec)) L.rec=[]; while(L.rec.length<L.pts.length) L.rec.push({});
     sug.lados.forEach(l=>{ const g=regraPorLargura(+l.larg, reg.tab); if(!g || !L.front.includes(l.i)) return; L.rec[l.i]=Object.assign({}, L.rec[l.i], {e:g.rec, t:g.rec}); recs.push({i:l.i, rec:g.rec}) }) }
-  return { antes:r, front:L.front, principal:L.principal, acessoVei:L.acessoVei, recs };
+  return { antes:r, front:L.front, principal:L.principal, ladoVei:L.ladoVei, acessoVei:L.acessoVei, recs };
 }
 
 /* ================= geo: coordenadas geográficas ↔ metros locais (item 4.3) =================
@@ -12891,7 +13089,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
   if(mode==="impl"){
     fillP(L,css("--m-lote"),BG?0.25:0.55); strokeP(L,css("--ink"),1.6);
     strokeP(m.sub,css("--muted"),1,[2,4]);
-    { const T=m.ter||{}; (T.lojas||[]).forEach(p=>fillP(p,css("--m-loja"),0.55)); (T.hall||[]).forEach(p=>fillP(p,css("--m-ter"),0.3)); (T.drive||[]).forEach(p=>fillP(p,css("--c-drive"),0.8)); fillP(T.gar,css("--m-gar"),0.45) }
+    { const T=m.ter||{}; (T.lojas||[]).forEach(p=>fillP(p,css("--m-loja"),0.55)); (T.hall||[]).forEach(p=>fillP(p,css("--m-ter"),0.3)); [...(T.drive||[]),...(T.driveRua||[])].forEach(p=>fillP(p,css("--c-drive"),0.8)); fillP(T.gar,css("--m-gar"),0.45) }
     strokeP(m.emb,css("--m-ter"),1.2);
     strokeP(m.torAll,css("--m-env"),1.1,[6,4]);
     entorno();
@@ -12913,7 +13111,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       if(opt.handles){ g.fillStyle=css("--accent"); g.globalAlpha=.55; g.beginPath(); g.arc(mx,my,4,0,7); g.fill(); g.globalAlpha=1 }
     });
     { const fd=frontDir(S), ac=m.acesso; const o=12; arrow([ac.ped[0]-fd[0]*o,ac.ped[1]-fd[1]*o],[ac.ped[0]+fd[0]*2,ac.ped[1]+fd[1]*2],css("--accent"),2.5,8); label("pedestres",w2s([ac.ped[0]-fd[0]*(o+3),ac.ped[1]-fd[1]*(o+3)]),{size:10,col:css("--accent")});
-      const vv=(m.ter&&m.ter.veiReal)||ac.vei; arrow([vv[0]-fd[0]*o,vv[1]-fd[1]*o],[vv[0]+fd[0]*2,vv[1]+fd[1]*2],css("--bad"),2.5,8); label("veículos",w2s([vv[0]-fd[0]*(o+3),vv[1]-fd[1]*(o+3)]),{size:10,col:css("--bad")}) }
+      const vv=(m.ter&&m.ter.veiReal)||ac.vei, vd=(m.ter&&m.ter.vfd)||fd; arrow([vv[0]-vd[0]*o,vv[1]-vd[1]*o],[vv[0]+vd[0]*2,vv[1]+vd[1]*2],css("--bad"),2.5,8); label(ac.edgeV!=null&&ac.edgeV!==ac.edge? `veículos · L${ac.edgeV+1}` : "veículos",w2s([vv[0]-vd[0]*(o+3),vv[1]-vd[1]*(o+3)]),{size:10,col:css("--bad")}) }
     if(opt.handles) L.forEach(q=>{ const [x,y]=w2s(q); g.fillStyle=css("--surface"); g.strokeStyle=css("--ink"); g.lineWidth=1.5; g.beginPath(); g.rect(x-4.5,y-4.5,9,9); g.fill(); g.stroke() });
     if(L.length>2 && !m.T.some(t=>t.plate.length && G.pip(G.centroid(L),t.plate))) label(`${nf(m.A,1)} m²`, w2s(G.centroid(L)), {w:"600",font:"--f-display",size:13,bg:false});
     else if(L.length>2) label(`Lote ${nf(m.A,1)} m²`, [w2s(G.centroid(L))[0], Math.max(...L.map(q=>w2s(q)[1]))-26], {size:11});
@@ -13028,6 +13226,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     (T.lojas||[]).forEach(p=>{ fillP(p,css("--m-loja"),0.6); strokeP(p,css("--ink"),1.2) });
     (T.hall||[]).forEach(p=>fillP(p,css("--m-ter"),0.32));
     (T.drive||[]).forEach(p=>{ fillP(p,css("--c-drive"),1); strokeP(p,css("--ink"),0.8) });
+    (T.driveRua||[]).forEach(p=>{ fillP(p,css("--c-drive"),0.7); strokeP(p,css("--ink"),0.6,[3,3]) });   // carro por outro lado: trecho no recuo, da rua até o prédio
     if(T.gar && T.gar.length){ fillP(T.gar,css("--surface"),1); if(m.gar && m.gar.ter) garBodyInner(m.gar.ter); else fillP(T.gar,css("--m-gar"),0.45) }
     (T.colsGar||[]).forEach(p=>{ fillP(p,css("--m-ter"),0.32); strokeP(p,css("--ink"),0.8) });
     (T.walk||[]).forEach(p=>{ fillP(p,css("--m-ter"),0.28); path(p); g.save(); g.clip(); g.strokeStyle=css("--surface"); g.lineWidth=Math.max(2,V.s*0.35); const c=w2s(G.centroid(p)); for(let k=-300;k<300;k+=Math.max(6,V.s*0.9)){ g.beginPath(); g.moveTo(c[0]-300,c[1]+k); g.lineTo(c[0]+300,c[1]+k); g.stroke() } g.restore(); strokeP(p,css("--ink"),0.6,[3,2]); if(V.s>6) label("passagem de pedestres", w2s(G.centroid(p)), {size:9}) });
@@ -13036,7 +13235,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     lzDraw(m.lzLay&&m.lzLay.terreoDesc);
     { const fT=m.vert&&m.vert.floors.ter; if(fT) rampsDraw(fT.ramps.filter(r=>!(m.gar&&m.gar.ter&&m.gar.ter.ramps.includes(r)))) }
     // rota de entrada: da rua até cada rampa e até a garagem do térreo
-    if(T.drive0 && m.vert){ const lf=G.extent(S.lote.pts,T.fd)[0], P_=(l,d)=>[T.lat[0]*l+T.fd[0]*d, T.lat[1]*l+T.fd[1]*d];
+    if(T.drive0 && m.vert){ const vf=T.vfd||T.fd, vl=T.vlat||T.lat, lf=G.extent(S.lote.pts,vf)[0], P_=(l,d)=>[vl[0]*l+vf[0]*d, vl[1]*l+vf[1]*d];   // referencial do lado de veículos
       if(m.vert.entradas) m.vert.entradas.forEach(e=>arrow(e.a,e.b,css("--mark"),3,10));
       else (m.vert.strips||[]).filter(s_=>s_.id==="DA"||s_.id==="UA").forEach(s_=>{ if(S.estudo.rampa) return; const a=P_(s_.lc,lf-2), b=P_(s_.lc,s_.d0+1.5); g.strokeStyle=css("--mark"); g.lineWidth=3; g.beginPath(); g.moveTo(...w2s(a)); g.lineTo(...w2s(b)); g.stroke(); arrow(a,b,css("--mark"),3,10) });
       if(T.driveEnd && T.lanes){ const lc=(T.lanes[0]+T.lanes[1])/2, a=P_(lc,lf-2); arrow(a,T.driveEnd,css("--mark"),3,10) }
@@ -13051,7 +13250,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       const hb=(T.hallBand||[]).slice().sort((a,b)=>G.area(b)-G.area(a))[0]; if(hb){ const [l0]=G.extent(hb,T.lat); const c=[T.lat[0]*(l0+1)+T.fd[0]*(T.d1+1.3), T.lat[1]*(l0+1)+T.fd[1]*(T.d1+1.3)]; g.font="500 10px "+css("--f-mono"); const tx=`hall e lazer ${m2(m.hallA)}`, cc=w2s(c); label(tx,[cc[0]+g.measureText(tx).width/2+4,cc[1]],{size:10}) }
       (T.drive||[]).forEach(p=>{ if(V.s>5 && !(m.vert && (m.vert.elev || m.vert.helix))) label("acesso de veículos", w2s(G.centroid(p)), {size:9}) });
     }
-    const fd=frontDir(S), ac=m.acesso; arrow([ac.ped[0]-fd[0]*8,ac.ped[1]-fd[1]*8],[ac.ped[0]+fd[0]*2,ac.ped[1]+fd[1]*2],css("--accent"),2.5,8); { const vv=T.veiReal||ac.vei; arrow([vv[0]-fd[0]*8,vv[1]-fd[1]*8],[vv[0]+fd[0]*2,vv[1]+fd[1]*2],css("--bad"),2.5,8) }
+    const fd=frontDir(S), ac=m.acesso; arrow([ac.ped[0]-fd[0]*8,ac.ped[1]-fd[1]*8],[ac.ped[0]+fd[0]*2,ac.ped[1]+fd[1]*2],css("--accent"),2.5,8); { const vv=T.veiReal||ac.vei, vd=T.vfd||fd; arrow([vv[0]-vd[0]*8,vv[1]-vd[1]*8],[vv[0]+vd[0]*2,vv[1]+vd[1]*2],css("--bad"),2.5,8) }
   }
   if(mode==="gar"){ if(opt.floorKey==="ter") terreoBody(); else garBody(opt.lay, opt.floor, opt.floorKey); northArrow() }
   if(mode==="andar"){
@@ -13586,10 +13785,11 @@ function aplicarLoteGeo(pairs, fonte){
   return true;
 }
 function normalizeLote(){ const L=S.lote; if(L.pts.length<3) return; ensureRec();
-  if(G.sArea(L.pts)<0){ const n=L.pts.length, mp=i=>((n-2-i)%n+n)%n; L.pts=L.pts.slice().reverse(); L.front=L.front.map(mp); L.principal=mp(L.principal); const r=L.rec.slice(); L.rec=r.map((_,i)=>r[mp(i)]) }
-  if(!L.front.includes(L.principal)) L.principal=L.front[0]??0 }
+  if(G.sArea(L.pts)<0){ const n=L.pts.length, mp=i=>((n-2-i)%n+n)%n; L.pts=L.pts.slice().reverse(); L.front=L.front.map(mp); L.principal=mp(L.principal); if(L.ladoVei!=null) L.ladoVei=mp(L.ladoVei); const r=L.rec.slice(); L.rec=r.map((_,i)=>r[mp(i)]) }
+  if(!L.front.includes(L.principal)) L.principal=L.front[0]??0;
+  if(L.ladoVei!=null && (!L.front.includes(L.ladoVei) || L.ladoVei===L.principal)) L.ladoVei=null }   // lado de veículos: só um lado na rua; o mesmo da principal = padrão
 function ensureRec(){ const L=S.lote; if(!Array.isArray(L.rec)) L.rec=[]; while(L.rec.length<L.pts.length) L.rec.push({}); if(L.rec.length>L.pts.length) L.rec.length=L.pts.length }
-function edgeInsert(mI){ const L=S.lote; ensureRec(); L.front=L.front.flatMap(i=> i===mI?[i,i+1]: i>mI?[i+1]:[i]); if(L.principal>mI) L.principal++; L.rec.splice(mI+1,0,{...L.rec[mI]}) }
+function edgeInsert(mI){ const L=S.lote; ensureRec(); L.front=L.front.flatMap(i=> i===mI?[i,i+1]: i>mI?[i+1]:[i]); if(L.principal>mI) L.principal++; if(L.ladoVei!=null && L.ladoVei>mI) L.ladoVei++; L.rec.splice(mI+1,0,{...L.rec[mI]}) }
 function resumo(){
   const {m,f}=window._last;
   return `${S.nome}\n${S.regras.cidade}\n\nTerreno: ${m2(m.A)}\nTorres: ${m.T.map((t,i)=>`T${i+1} ${t.pav} pav`).join(", ")}\nUnidades: ${m.units} (${m.unitRows.map(u=>`${u.n}× ${u.nome}`).join(", ")}${m.cobN?`, ${m.cobN} coberturas`:""})${m.lojaA?`\nLojas: ${m2(m.lojaPriv)}`:""}\nVagas: ${m.vagas} (exigidas ${m.vagasReq})\nAltura ${nf(m.H,1)} m | CA ${nf(m.CA,2)} | TO ${pct(m.TO,0)}\nÁrea construída ${m2(m.constr)} | Privativa ${m2(m.priv)}\n\nVGV (tabela): ${brl(f.vgv)}\nReceita nominal: ${brl(f.receita)}\nCusto total: ${brl(f.custo)}\nLucro: ${brl(f.lucro)} (margem ${pct(f.margem)})\nTIR: ${f.tirA==null?"—":pct(f.tirA)} a.a. | VPL: ${brl(f.vpl)}\nExposição máxima: ${brl(-f.exp)}\nTerreno máximo p/ margem ${pct(S.fin.margemAlvo,0)}: ${brl(f.maxTerreno)}`;
@@ -13684,10 +13884,10 @@ STEP_R.terreno = ()=>{
     RES("Lote", `<div class="mets m3" id="loteRes"></div>`) +
     SEC("Contorno do lote", `<div class="seg full" role="group" aria-label="Como informar o lote">${metodos.map(([k,l,t])=>`<button type="button" data-act="tmeth" data-v="${k}" aria-pressed="${TMETH===k}" title="${t}" style="padding:5px 4px">${l}</button>`).join("")}</div>${forms[TMETH]}`,
       {key:"contorno", open:true, sum:terrenoSum.contorno(), info:"Escolha como informar o lote: desenhando os cantos na implantação, por frente × fundo, colando coordenadas, sobre uma imagem calibrada ou no mapa de satélite. Depois, ajuste arrastando os vértices."}) +
-    SEC("Lados e frentes", `<div class="list" id="edges"></div>` + (typeof frHTML==="function" ? `<div id="frBox">${frHTML()}</div>` : "") + GRP("Acessos na frente principal") +
-      SLD("lote.acessoPed","Pedestres",0.05,0.95,0.01,"%",{pct:true,help:"Posição da entrada de pedestres ao longo da frente principal: 0% é o início do lado e 100% o fim."}) +
-      SLD("lote.acessoVei","Veículos",0.05,0.95,0.01,"%",{pct:true,sub:"",help:"Posição da entrada de veículos (rampas e faixa da garagem) ao longo da frente principal. Se cair sobre um núcleo, o acesso é deslocado."}),
-      {key:"lados", open:true, sum:terrenoSum.lados(), info:"Marque os lados que dão para a rua e a frente principal (amarela): ela recebe lojas, hall e acessos. A seta de cada lado abre o comprimento e os recuos próprios daquele lado."}) +
+    SEC("Lados e frentes", `<div class="list" id="edges"></div>` + (typeof frHTML==="function" ? `<div id="frBox">${frHTML()}</div>` : "") + GRP("Acessos") +
+      SLD("lote.acessoPed",`Pedestres · L${acPrincipal(S)+1}`,0.05,0.95,0.01,"%",{pct:true,help:"Posição da entrada de pedestres ao longo da frente principal: 0% é o início do lado e 100% o fim."}) +
+      SLD("lote.acessoVei",`Veículos · L${ladoVeiIdx(S)+1}`,0.05,0.95,0.01,"%",{pct:true,sub:"",help:"Posição da entrada de veículos (rampas e faixa da garagem) ao longo do lado marcado com “veículos” (padrão: a frente principal). Se cair sobre um núcleo, o hall ou as lojas, o acesso é deslocado."}),
+      {key:"lados", open:true, sum:terrenoSum.lados(), info:"Marque os lados que dão para a rua e a frente principal (amarela): ela recebe lojas, hall e pedestres. Com mais de um lado na rua (esquina, lote passante), o selo “veículos” escolhe por qual deles o carro entra — as rampas começam 5 m depois do alinhamento daquele lado e nunca cruzam o hall. A seta de cada lado abre o comprimento e os recuos próprios daquele lado."}) +
     SEC("Localização", `<div class="geoNote" id="geoNote" ${S.lote.geo?"hidden":""}><span class="note">Lote sem posição no mapa.</span><button class="btn sm pri" data-act="geoMapa">Posicionar no mapa</button></div>` + KV(NUM("lote.lat","Latitude","°",{step:0.0001,fx:"geo",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas e serve ao sol, ao entorno do OpenStreetMap e aos levantamentos em lat/lon ou UTM."})+NUM("lote.lon","Longitude","°",{step:0.0001,fx:"geo",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas."})+NUM("lote.norte","Norte","°",{step:1,help:"Rotação do norte em relação ao topo da planta."})),
       {key:"local", sum:terrenoSum.local()}) +
     (typeof topoCardHTML==="function" ? topoCardHTML() : SEC("Topografia", KV(NUM("lote.desnivel","Desnível frente→fundos","m",{step:0.1})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1}))+`<div class="fsub" id="sub-terra"></div>`, {key:"topografia"})) +
@@ -13705,7 +13905,7 @@ function terrenoLado(i, m){
   const Lt=S.lote, fr=Lt.front.includes(i), pr=Lt.principal===i, ab=LADOAB.has(i), r=Lt.rec[i]||{}, own=r.e!=null||r.t!=null, len=G.edgeLen(Lt.pts,i), ult=(i+1)%Lt.pts.length===0;
   const fld=(id,lab,inp)=>`<div class="fld"><label class="fl" for="${id}">${lab}</label>${inp}</div>`;
   return `<div class="edge${pr?" front":""}${ab?" open":""}"><b data-act="ladoAb" data-i="${i}">L${i+1}</b><span class="lv" data-act="ladoAb" data-i="${i}">${nf(len,2)} m${own?`<i>recuo próprio</i>`:""}${typeof frLadoTag==="function"? frLadoTag(i) : ""}</span>
-    <span class="ops"><button type="button" class="tag alt" data-act="front" data-i="${i}" aria-pressed="${fr}" title="${fr?"Lado na rua — clique para tirar":"Marcar como lado na rua"}">rua</button>${fr?`<button type="button" class="tag" data-act="princ" data-i="${i}" aria-pressed="${pr}" title="Frente principal: lojas, hall e acessos">principal</button>`:""}<button type="button" class="xp" data-act="ladoAb" data-i="${i}" aria-expanded="${ab}" aria-label="${ab?"Fechar":"Editar"} o lado L${i+1}" title="Comprimento e recuos do lado"></button></span>
+    <span class="ops"><button type="button" class="tag alt" data-act="front" data-i="${i}" aria-pressed="${fr}" title="${fr?"Lado na rua — clique para tirar":"Marcar como lado na rua"}">rua</button>${fr?`<button type="button" class="tag" data-act="princ" data-i="${i}" aria-pressed="${pr}" title="Frente principal: lojas, hall e pedestres">principal</button>`:""}${fr && Lt.front.length>1?`<button type="button" class="tag vei" data-act="ladoVei" data-i="${i}" aria-pressed="${ladoVeiIdx(S)===i}" title="${ladoVeiIdx(S)===i?"Os carros entram por este lado":"Fazer os carros entrarem por este lado"}">veículos</button>`:""}<button type="button" class="xp" data-act="ladoAb" data-i="${i}" aria-expanded="${ab}" aria-label="${ab?"Fechar":"Editar"} o lado L${i+1}" title="Comprimento e recuos do lado"></button></span>
     ${ab? `<div class="ed kv three">${fld("lado-len-"+i,"Comprimento",`<div class="inp"><input id="lado-len-${i}" type="number" step="0.01" min="0.1" data-len="${i}" value="${len.toFixed(2)}" ${ult?`disabled title="O último lado fecha o contorno: ajuste os outros"`:""}><em>m</em></div>`)}
       ${fld("lado-re-"+i,`Recuo emb.${INFO("Recuo do embasamento só neste lado. Vazio = regra geral (recuo frontal nas frentes; lateral/fundos nas divisas).")}`,`<div class="inp"><input id="lado-re-${i}" type="number" step="0.25" min="0" data-rec="${i}" data-rk="e" value="${r.e??""}" placeholder="${nf(fr?S.regras.recFrente:S.regras.recEmb,2)}"><em>m</em></div>`)}
       ${fld("lado-rt-"+i,"Recuo torre",`<div class="inp"><input id="lado-rt-${i}" type="number" step="0.25" min="0" data-rec="${i}" data-rk="t" value="${r.t??""}" placeholder="${nf(fr?S.regras.recFrente:m.afast,2)}"><em>m</em></div>`)}${typeof frLadoCampo==="function"? frLadoCampo(i) : ""}</div>` : ""}</div>`;
@@ -13726,7 +13926,7 @@ STEP_LIVE.terreno = (m)=>{
   setHTML("loteRes", met("Área", m2(m.A), `${n} lados`) + met("Perímetro", nf(G.perimeter(L),1)+" m", `${nfr} lado${nfr>1?"s":""} na rua`) + met("Frente principal", `L${pr+1}`, `${nf(G.edgeLen(L,pr),1)} m`));
   Object.entries(terrenoSum).forEach(([k,f])=>setSum(k, f()));
   { const gn=document.getElementById("geoNote"); if(gn) gn.hidden=!!S.lote.geo }
-  { const T=m.ter||{}; setSub("lote.acessoVei", T.drive0? `${T.drive0.dv? nf(T.drive0.dv[1]-T.drive0.dv[0],1)+" m de largura (rampas"+(T.lanes?" + faixa da garagem":"")+")" : ""}${T.veiShift? " · ajustado "+nf(Math.abs(T.veiShift),1)+" m para não passar pelos núcleos":""}` : "") }
+  { const T=m.ter||{}, ac=m.acesso||{}, lv=ac.edgeV!=null && ac.edgeV!==ac.edge; setSub("lote.acessoVei", T.drive0? `${T.drive0.dv? nf(T.drive0.dv[1]-T.drive0.dv[0],1)+" m de largura (rampas"+(T.lanes?" + faixa da garagem":"")+")" : ""}${T.veiShift? " · ajustado "+nf(Math.abs(T.veiShift),1)+(lv? " m para não passar pelo hall nem pelos núcleos" : " m para não passar pelos núcleos"):""}` : "") }
   if(typeof topoLive==="function") topoLive(m); else setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`);
   { const R=torOcupaResumo(S, m), ajuste=R && R.A>0 && R.muda && Math.abs(R.r-1)>0.03;
     setHTML("torOcupa", !R ? "" : !R.A ? "O contorno ficou vazio depois dos recuos." :
@@ -13741,8 +13941,12 @@ Object.assign(ACT,{
   bgCal: ()=>{ setView("impl"); setTool("calib"); toast("Clique em dois pontos de distância conhecida") },
   bgX: ()=>{ BG=null; if(TOOL==="img"||TOOL==="calib") setTool("edit"); toolSegSync(); redraw2d(); renderTab(); toast("Imagem removida") },
   coords: ()=>importCoords(document.getElementById("coords").value),
-  front: b=>{ const i=+b.dataset.i; const on=!S.lote.front.includes(i); S.lote.front = on? [...new Set([...S.lote.front,i])] : S.lote.front.filter(x=>x!==i); if(!S.lote.front.length){ S.lote.front=[i]; toast("O lote precisa de pelo menos uma frente") } update() },
-  princ: b=>{ S.lote.principal=+b.dataset.i; update() },
+  front: b=>{ const i=+b.dataset.i; const on=!S.lote.front.includes(i); S.lote.front = on? [...new Set([...S.lote.front,i])] : S.lote.front.filter(x=>x!==i); if(!S.lote.front.length){ S.lote.front=[i]; toast("O lote precisa de pelo menos uma frente") } renderTab() },
+  princ: b=>{ S.lote.principal=+b.dataset.i; renderTab() },
+  // lado do acesso de veículos (src/calc/acesso.js): a frente principal volta a ser o padrão (null)
+  ladoVei: b=>{ const i=+b.dataset.i, pr=acPrincipal(S); if(ladoVeiIdx(S)===i && i!==pr){ S.lote.ladoVei=null; toast(`Veículos de volta pela frente principal (L${pr+1})`) }
+    else { S.lote.ladoVei = i===pr? null : i; toast(`Veículos pela L${i+1} · rampas a 5 m do alinhamento desse lado (Ctrl+Z desfaz)`) }
+    S.estudo.rampa=null; renderTab() },
   lim: b=>{ setView("impl"); DRAW=[]; setTool("draw","lim:"+b.dataset.k); toast("Clique nos cantos do limite e feche no primeiro ponto") },
   limx: b=>{ if(!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on"); return } S.custom[b.dataset.k]=[]; renderTab(); update(); toast("Limite removido") },
   torAjMix: ()=>{ const m=window._last&&window._last.m, R=m&&torOcupaResumo(S, m); if(!R||!R.A) return;
@@ -14026,7 +14230,7 @@ function garLegExtra(sw){ const m=window._last&&window._last.m, q=m&&m.quadroVag
   return h }
 let RS=null;
 function rsHTML(){ const base=RS.cur? RS.cur.vagas : 0;
-  return RS.list.slice(0,4).map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${c.atual?"Atual":k===0?"Melhor acesso":"Opção "+(k+1)} · ${pct(c.acessoVei,0)} da frente</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">${c.rampaTipo==="elevador"? `Elevador de carros${c.cap?` · ${c.cap} carros/h`:""}${c.fila!=null&&isFinite(c.fila)?` · fila ${c.fila}`:""}` : c.rampaTipo==="alternada"? "Rampas alternadas" : c.rampaTipo==="reta"? "Rampas retas empilhadas" : (RAMPA_TIPOS[c.rampaTipo]||"")}${c.ok?"":" · com pendências"}</div>${c.atual?"":`<button class="btn sm ${k===0?"pri":""}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
+  return RS.list.slice(0,4).map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${c.atual?"Atual":k===0?"Melhor acesso":"Opção "+(k+1)} · ${c.lado!=null && S.lote.front.length>1? `L${c.lado+1}${c.lado===acPrincipal(S)?" (principal)":""} · ${pct(c.acessoVei,0)} do lado` : `${pct(c.acessoVei,0)} da frente`}</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">${c.rampaTipo==="elevador"? `Elevador de carros${c.cap?` · ${c.cap} carros/h`:""}${c.fila!=null&&isFinite(c.fila)?` · fila ${c.fila}`:""}` : c.rampaTipo==="alternada"? "Rampas alternadas" : c.rampaTipo==="reta"? "Rampas retas empilhadas" : (RAMPA_TIPOS[c.rampaTipo]||"")}${c.ok?"":" · com pendências"}</div>${c.atual?"":`<button class="btn sm ${k===0?"pri":""}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
     + `<div class="row sb"><span class="note">Atual: ${base} vagas ${INFO("Cada opção refaz todos os pavimentos com rotas verificadas (análise rápida); as quatro melhores são confirmadas com o cálculo completo.","o estudo de acesso")}</span><button class="btn sm ghost" data-act="rsClose">Fechar</button></div>` }
 Object.assign(ACT,{
   garFl: b=>{ FLOOR=b.dataset.k; if(VIEW!=="gar") setView("gar"); else { viewbarSegs(window._last.m); fit2d() } STEP_LIVE.projeto(window._last.m) },
@@ -14044,7 +14248,7 @@ Object.assign(ACT,{
     const fino=k=>{ const s_=document.getElementById("rsStat"); if(k<Math.min(4,RS.list.length)){ if(s_) s_.textContent=`confirmando a opção ${k+1} com o cálculo completo…`; setTimeout(()=>{ const c=RS.list[k]; Object.assign(c, acessoAvalia(S,c,true), {fino:true}); fino(k+1) },0); return }
       RS.list.sort((a,b)=>(b.fino?1:0)-(a.fino?1:0) || (b.ok-a.ok) || (b.vagas-a.vagas)); if(s_) s_.textContent=`${list.length} combinações analisadas`; const el=document.getElementById("rsList"); if(el) el.innerHTML=rsHTML() };
     step() },
-  rsApply: b=>{ const c=RS.list[+b.dataset.i]; S.lote.acessoVei=c.acessoVei; S.estudo.rampaTipo=c.rampaTipo; S.estudo.rampa=null; RS=null; renderTab(); setView("gar"); toast("Acesso e rampas aplicados") },
+  rsApply: b=>{ const c=RS.list[+b.dataset.i]; S.lote.acessoVei=c.acessoVei; S.estudo.rampaTipo=c.rampaTipo; S.estudo.rampa=null; if(c.ladoVei!==undefined) S.lote.ladoVei=c.ladoVei; RS=null; renderTab(); setView("gar"); toast(c.lado!=null && S.lote.front.length>1? `Acesso pela L${c.lado+1} e rampas aplicados` : "Acesso e rampas aplicados") },
   andar: b=>{ ANDAR=b.dataset.k; if(VIEW!=="andar") setView("andar"); else { viewbarSegs(window._last.m); redraw2d(); planLegend() } STEP_LIVE.projeto(window._last.m) },
   corte3d: ()=>{ S.corte=ANDAR; save(); setView("3d") },
 });
@@ -14386,7 +14590,7 @@ function planLegend(){
   const lzLeg = ()=> sw("var(--lz-c)","lazer coberto")+sw("var(--lz-agua)","piscina")+sw("var(--lz-deck)","lazer descoberto")+sw("var(--c-hall)","hall dos elevadores","border:1px dashed var(--ink)");
   const garLeg = ()=> sw("var(--m-gar)","vaga comum")+sw("var(--accent)","vaga PCD")+sw("var(--c-circ)","faixa de transferência PCD e corredor transversal")+sw("var(--ok)","vaga para idoso")+sw("transparent","vaga removida","border:1px dashed var(--bad)")+sw("var(--ink)","núcleos das torres e pilares")+sw("var(--mark)","rampa (seta = descida)")+ln("var(--bad)","caminho do carro",true)+(typeof garLegExtra==="function"? garLegExtra(sw) : "");
   const tipoLeg = ()=> S.produto.mix.map((u,i)=>sw(`var(--u${i%5+1})`,u.nome)).join("")+sw("var(--c-sac)","sacada")+sw("var(--surface)","corredor e hall")+sw("var(--c-esc)","escada")+sw("var(--c-ant)","antecâmara / hall da escada")+sw("var(--c-duto)","dutos / pressurização")+sw("var(--c-balc)","balcão aberto")+sw("var(--c-elev)","elevadores")+sw("var(--c-shaft)","shafts")+sw("var(--c-hserv)","hall de serviço")+sw("var(--c-lixo)","lixo / DML");
-  if(VIEW==="impl") h=sw("var(--m-lote)","lote")+sw("var(--m-loja)","lojas no térreo")+sw("var(--m-ter)","hall e lazer do térreo")+sw("var(--m-gar)","garagem do térreo")+sw("var(--m-tipo)","projeção das torres")+ln("var(--m-env)","limite máximo das torres (recuos)",true)+ln("var(--muted)","subsolo",true)+ln("var(--mark)","frente principal")+ln("var(--accent)","acesso de pedestres")+ln("var(--bad)","acesso de veículos")+sw("var(--muted)","entorno");
+  if(VIEW==="impl") h=sw("var(--m-lote)","lote")+sw("var(--m-loja)","lojas no térreo")+sw("var(--m-ter)","hall e lazer do térreo")+sw("var(--m-gar)","garagem do térreo")+sw("var(--m-tipo)","projeção das torres")+ln("var(--m-env)","limite máximo das torres (recuos)",true)+ln("var(--muted)","subsolo",true)+ln("var(--mark)","frente principal")+ln("var(--accent)","acesso de pedestres")+ln("var(--bad)",(()=>{ const ac=window._last&&window._last.m&&window._last.m.acesso; return ac&&ac.edgeV!=null&&ac.edgeV!==ac.edge? `acesso de veículos (lado L${ac.edgeV+1})` : "acesso de veículos" })())+sw("var(--c-drive)","faixa de veículos (rampas)")+sw("var(--muted)","entorno");
   else if((VIEW==="gar" && FLOOR==="ter") || (a&&a.tipo==="ter")) h=sw("var(--m-loja)","lojas")+sw("var(--m-ter)","hall social e lazer")+sw("var(--c-drive)","acesso de veículos")+lzLeg()+garLeg();
   else if(VIEW==="gar" || (a&&(a.tipo==="sub"||a.tipo==="ac"))) h=sw("var(--surface)","área do pavimento")+sw("var(--c-hall)","hall dos elevadores","border:1px dashed var(--ink)")+garLeg();
   else if(a&&(a.tipo==="lazemb"||a.tipo==="pavlaz"||a.tipo==="roof")) h=lzLeg()+sw("var(--c-esc)","escada")+sw("var(--c-elev)","elevadores");
@@ -17667,7 +17871,9 @@ function frResumo(s){
   if(s.acesso && s.front.length>1 && s.acesso.menor) t+=` · veículos pela L${s.acesso.i+1}`;
   return t;
 }
-function frIgual(s){ const L=S.lote, a=L.front.slice().sort((x,y)=>x-y).join(), b=s.front.slice().sort((x,y)=>x-y).join(); return a===b && L.principal===(FR.princ ?? s.principal) }
+function frIgual(s){ const L=S.lote, a=L.front.slice().sort((x,y)=>x-y).join(), b=s.front.slice().sort((x,y)=>x-y).join(), pr=FR.princ ?? s.principal;
+  const vei = s.acesso && s.front.includes(s.acesso.i) && s.acesso.i!==pr ? s.acesso.i : null;   // mesma regra de frenteAplicar
+  return a===b && L.principal===pr && (L.ladoVei ?? null)===vei }
 function frRegraHTML(){
   const R=S.frentes.regra;
   return ADV(`<div class="row">${SW("frentes.regra.on","Recuo pela largura da via",{rr:true})}${INFO("Opcional e desligado por padrão. Ao aplicar a sugestão, cada frente recebe o recuo da faixa que comporta a largura da via (recuo próprio do lado). Os valores da tabela são ILUSTRATIVOS: confira na lei do município e ajuste.")}</div>`
@@ -17676,7 +17882,7 @@ function frRegraHTML(){
 }
 function frHTML(){
   const s=frSug(), geo=!!S.lote.geo;
-  const btn=`<button class="btn sm${s?"":" pri"}" data-act="frDetectar" ${FR.busy?"disabled":""}>${FR.busy? "Buscando…" : s? "Detectar de novo" : "Detectar frentes pelas ruas"}</button>${INFO("Lê as ruas do OpenStreetMap junto ao lote e propõe quais lados são frente, qual é a principal (via de maior hierarquia), se o lote é de esquina ou passante e por qual rua deve entrar o carro (a de menor hierarquia). O modelo põe o acesso de veículos na frente principal: para entrar por outra rua, escolha-a como principal. Nada muda até você aplicar. A largura da via é estimada pela classe e pode ser corrigida em cada lado.")}`;
+  const btn=`<button class="btn sm${s?"":" pri"}" data-act="frDetectar" ${FR.busy?"disabled":""}>${FR.busy? "Buscando…" : s? "Detectar de novo" : "Detectar frentes pelas ruas"}</button>${INFO("Lê as ruas do OpenStreetMap junto ao lote e propõe quais lados são frente, qual é a principal (via de maior hierarquia), se o lote é de esquina ou passante e por qual rua deve entrar o carro (a de menor hierarquia). Ao aplicar, a frente principal fica com lojas, hall e pedestres e o carro entra pela rua de menor hierarquia (selo “veículos” no lado), sem trocar a principal. Nada muda até você aplicar. A largura da via é estimada pela classe e pode ser corrigida em cada lado.")}`;
   let h=`<div class="row" style="flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px">${btn}${s? `<button class="btn sm ghost" data-act="frDescartar" title="Descartar a proposta">Descartar</button>` : ""}</div>`;
   if(FR.msg) h+=`<p class="note" id="frMsg">${esc(FR.msg)}</p>`;
   else if(!geo && !s) h+=`<p class="note" id="frMsg">Posicione o lote no mapa para detectar.</p>`;
@@ -17713,7 +17919,7 @@ Object.assign(ACT,{
   frAplicar: ()=>{ const s=frSug(); if(!s) return;
     const r=frenteAplicar(S, s, {principal:FR.princ}); if(!r){ toast("Nada para aplicar"); return }
     if(typeof LADOAB!=="undefined") LADOAB.clear();
-    update(); renderTab(); toast(`Frentes aplicadas: ${r.front.map(i=>"L"+(i+1)).join(" e ")} · principal L${r.principal+1} (Ctrl+Z desfaz)`) },
+    update(); renderTab(); toast(`Frentes aplicadas: ${r.front.map(i=>"L"+(i+1)).join(" e ")} · principal L${r.principal+1}${r.ladoVei!=null? ` · veículos pela L${r.ladoVei+1}` : ""} (Ctrl+Z desfaz)`) },
 });
 
 /* ================= glossário: siglas e termos explicados no botão ⓘ e no painel "Glossário" =================
