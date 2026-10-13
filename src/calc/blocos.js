@@ -107,11 +107,16 @@ function blcLayFaixas(st, m){
   (m.T||[]).forEach((t,i)=>{ const ref=m.tipo && m.tipo[i]; if(!t.desenhada || !ref || !t.faixas || t.faixas.length<2) return;
     const tem = ref.core && ref.core.length, base = tem ? blcDentro(ref.core, t.plate) : 1;   // o quanto o núcleo cabe no próprio bloco de referência
     t.faixas.forEach(f=>{ if(f.plate===t.plate) return;
-      // núcleo cortado = o bloco perde parte do núcleo que o bloco de referência tem
-      f.nucleo = f.A>1 && tem ? Math.min(1, blcDentro(ref.core, f.plate) + (1-base)) : 0;
+      // núcleo cortado = o bloco perde parte do núcleo que o bloco de referência tem (C3: a segunda escada também sobe inteira)
+      f.nucleo = f.A>1 && tem ? Math.min(1, blcDentro(ref.core, f.plate) + (1-base), ...(ref.coreExtra||[]).map(p=>blcDentro(p, f.plate))) : 0;
       if(f.nTipo<1 || f.A<1) return;
       const list=[]; P.mix.forEach((u,j)=>{ for(let q=0;q<(f.qtd[j]||0);q++) list.push({nome:u.nome, alvo:u.area*f.r, sac:+u.sac||0}) });
-      f.lay=blcLayFaixa(f.plate, ref, list, {sacTipo:P.sacTipo, sacProf:P.sacProf}) }) });
+      const E=st.estudo, o={sacTipo:P.sacTipo, sacProf:P.sacProf};
+      // C3: bloco em L/U/T/H/pátio (ou referência por alas) → layout por ala com o mesmo núcleo e o corredor nas mesmas linhas
+      const la = typeof alasLayFaixa==="function" && f.nucleo>=0.999 ? alasLayFaixa(f.plate, f.oco||null, ref, list, {...o, corr:E.corrTipo, profMin:E.profMin, planta:E.tipoPlanta,
+        escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, nElev:ref.coreParts.filter(c=>c.kind==="elev").length||1}, st) : null;
+      // sem layout por ala: unidades por área em volta do núcleo, no corredor que passa na frente dele
+      f.lay = la || blcLayFaixa(f.plate, ref.alas ? {...ref, ux:ref.coreUx||ref.ux, vy:ref.coreVy||ref.vy, corridor:ref.corrNucleo||ref.corridor} : ref, list, o) }) });
 }
 /* layout do andar k (1 = primeiro pavimento da torre i): o da faixa (bloco) quando houver, senão o pavimento tipo */
 function torreLayAndar(m, i, k){ const t=m.T && m.T[i], f=t && (t.faixas||[]).find(f=>k>=f.de && k<=f.ate); return (f && f.lay) || (m.tipo && m.tipo[i]) || null }
@@ -120,6 +125,15 @@ function torrePlantaAndar(t, k){ const f=(t.faixas||[]).find(f=>k>=f.de && k<=f.
 /* perímetro de fachada de uma planta da torre (com pátio: borda + vazios, sem a "ponte" do polígono) */
 function blcPerim(t, p){ if(!p || p.length<3) return 0; const oco = t && t.oco && p===t.plate ? t.oco : t && ((t.faixas||[]).find(f=>f.plate===p && f.oco)||{}).oco;
   if(oco) return [oco.pts, ...oco.vazios].reduce((s,r)=>s+G.perimeter(r),0); return G.perimeter(p) }
+/* contorno com pátios do andar k (1 = primeiro pavimento) da torre t: {pts, vazios} ou null (planta sem pátio) */
+function blcAnelAndar(t, k){ const f=(t.faixas||[]).find(f=>k>=f.de && k<=f.ate); return (f && f.oco) || ((!f || f.plate===t.plate) && t.oco) || null }
+/* IFC (C3): perfil de uma laje — com pátio, IfcArbitraryProfileDefWithVoids (borda + um IfcPolyline por vazio, sem a "ponte"
+   do polígono); sem pátio, o IfcArbitraryClosedProfileDef de sempre. add(s) grava a entidade e devolve "#id"; num(v) formata */
+function blcIfcPerfil(add, num, outer, vazios){
+  const curva=r=>{ const pts=r.map(q=>add(`IFCCARTESIANPOINT((${num(q[0])},${num(q[1])}))`)); return add(`IFCPOLYLINE((${[...pts,pts[0]].join(",")}))`) };
+  const o=curva(outer), vz=(vazios||[]).filter(v=>v && v.length>2);
+  return vz.length ? add(`IFCARBITRARYPROFILEDEFWITHVOIDS(.AREA.,$,${o},(${vz.map(curva).join(",")}))`) : add(`IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,${o})`);
+}
 /* ---------- edição da pilha (puras; a interface chama e depois update()) ---------- */
 const blcClone = b => { const c={pts:b.pts.map(q=>[q[0],q[1]]), de:b.de}; if(b.vazios && b.vazios.length) c.vazios=b.vazios.map(v=>v.map(q=>[q[0],q[1]])); if(b.tipo) c.tipo=b.tipo; if(b.rot!=null) c.rot=b.rot; return c };
 /* "+ Bloco": novo bloco no topo, cópia do de cima, começando no meio da faixa de cima (null se ela tem um andar só) */
@@ -135,26 +149,51 @@ function blcCopiaBaixo(st, i, k){
   const c=blcClone(L[k-1]); c.de=L[k].de; L[k]=c; return c;
 }
 /* contorno deslocado d metros para dentro (d < 0: para fora), lado a lado (esquina em ponta). Vale para L, U, T, H…
-   desde que d seja menor que metade da ala mais estreita; senão devolve null */
+   desde que d seja menor que metade da ala mais estreita; senão devolve null. C3: d pode ser uma função (índice do lado →
+   distância), para recuar só algumas fachadas; dois lados colineares com recuos diferentes ganham um dente no vértice */
 function blcOffset(p, d){
-  if(!p || p.length<3) return null; const s=Math.sign(G.sArea(p))||1, ln=[];
+  if(!p || p.length<3) return null; const s=Math.sign(G.sArea(p))||1, ln=[], dd = typeof d==="function" ? d : ()=>d;
   for(let i=0;i<p.length;i++){ const a=p[i], b=p[(i+1)%p.length], dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy); if(l<1e-6) continue;
-    const u=[dx/l, dy/l], n=[-u[1]*s, u[0]*s]; const q=ln[ln.length-1]; if(q && Math.abs(q.u[0]*u[1]-q.u[1]*u[0])<1e-9 && q.u[0]*u[0]+q.u[1]*u[1]>0) continue;   // colinear com o anterior
-    ln.push({a:[a[0]+n[0]*d, a[1]+n[1]*d], u}) }
+    const u=[dx/l, dy/l], n=[-u[1]*s, u[0]*s], di=+dd(i)||0; const q=ln[ln.length-1]; if(q && Math.abs(q.u[0]*u[1]-q.u[1]*u[0])<1e-9 && q.u[0]*u[0]+q.u[1]*u[1]>0 && Math.abs(q.d-di)<1e-9) continue;   // colinear com o anterior
+    ln.push({a:[a[0]+n[0]*di, a[1]+n[1]*di], u, d:di, o:a}) }
   if(ln.length<3) return null;
-  const out=ln.map((B,i)=>{ const A=ln[(i-1+ln.length)%ln.length], cr=A.u[0]*B.u[1]-A.u[1]*B.u[0]; if(Math.abs(cr)<1e-9) return B.a.slice();
-    const t=((B.a[0]-A.a[0])*B.u[1]-(B.a[1]-A.a[1])*B.u[0])/cr; return [A.a[0]+A.u[0]*t, A.a[1]+A.u[1]*t] });
-  for(let i=0;i<out.length;i++){ const a=out[i], b=out[(i+1)%out.length]; if((b[0]-a[0])*ln[i].u[0]+(b[1]-a[1])*ln[i].u[1] <= 0.05) return null }   // lado sumiu ou inverteu
+  const out=[], dir=[];   // dir[k] = direção esperada do lado out[k] → out[k+1] (null = dente entre recuos diferentes)
+  ln.forEach((B,i)=>{ const A=ln[(i-1+ln.length)%ln.length], cr=A.u[0]*B.u[1]-A.u[1]*B.u[0];
+    if(Math.abs(cr)<1e-9){ if(Math.abs(A.d-B.d)>1e-9 && A.u[0]*B.u[0]+A.u[1]*B.u[1]>0){ const t=(B.o[0]-A.a[0])*A.u[0]+(B.o[1]-A.a[1])*A.u[1]; out.push([A.a[0]+A.u[0]*t, A.a[1]+A.u[1]*t]); dir.push(null) } out.push(B.a.slice()); dir.push(B.u); return }
+    const t=((B.a[0]-A.a[0])*B.u[1]-(B.a[1]-A.a[1])*B.u[0])/cr; out.push([A.a[0]+A.u[0]*t, A.a[1]+A.u[1]*t]); dir.push(B.u) });
+  for(let i=0;i<out.length;i++){ const a=out[i], b=out[(i+1)%out.length]; if(dir[i] && (b[0]-a[0])*dir[i][0]+(b[1]-a[1])*dir[i][1] <= 0.05) return null }   // lado sumiu ou inverteu
   for(let i=0;i<out.length;i++) for(let j=i+2;j<out.length;j++){ if(i===0 && j===out.length-1) continue; if(G.segInter(out[i],out[(i+1)%out.length],out[j],out[(j+1)%out.length])) return null }
-  const a0=G.area(p), a1=G.area(out); if(Math.sign(G.sArea(out))!==s || !(a1>1) || (d>0 && a1>=a0) || (d<0 && a1<=a0)) return null;
+  const ds=ln.map(l=>l.d), dentro=ds.every(x=>x>=0) && ds.some(x=>x>0), fora=ds.every(x=>x<=0) && ds.some(x=>x<0);
+  const a0=G.area(p), a1=G.area(out); if(Math.sign(G.sArea(out))!==s || !(a1>1) || (dentro && a1>=a0) || (fora && a1<=a0)) return null;
   return out;
 }
-/* "Recuar X m": o bloco k vira o bloco de baixo recuado X m em todas as fachadas (pátios crescem X m); o 1º bloco recua em si mesmo */
-function blcRecua(st, i, k, d){
+/* lados de p que, recuados di (função do índice), cortariam algum dos polígonos 'nucleos' (o núcleo e a segunda escada);
+   os lados colineares e contíguos a um lado preservado também ficam (a fachada do núcleo segue reta) */
+function blcLadosNucleo(p, di, nucleos){
+  const keep=new Set(), s=Math.sign(G.sArea(p))||1, n=p.length, NS=(nucleos||[]).filter(q=>q && q.length>2).map(q=>G.scaleToArea(q, G.area(q)*0.97));
+  if(!NS.length) return keep;
+  const lado=i=>{ const a=p[i], b=p[(i+1)%n], l=Math.hypot(b[0]-a[0], b[1]-a[1]); return l<1e-6 ? null : {a, b, l, u:[(b[0]-a[0])/l, (b[1]-a[1])/l]} };
+  for(let i=0;i<n;i++){ const e=lado(i), d=+di(i)||0; if(!e || !d) continue;
+    const nn=[-e.u[1]*s*Math.sign(d), e.u[0]*s*Math.sign(d)], D=Math.abs(d)+0.05, a=[e.a[0]+e.u[0]*0.05-nn[0]*0.05, e.a[1]+e.u[1]*0.05-nn[1]*0.05], b=[e.b[0]-e.u[0]*0.05-nn[0]*0.05, e.b[1]-e.u[1]*0.05-nn[1]*0.05];
+    const tira=[a, b, [b[0]+nn[0]*D, b[1]+nn[1]*D], [a[0]+nn[0]*D, a[1]+nn[1]*D]];
+    if(NS.some(q=>G.polysOverlap(tira, q))) keep.add(i) }
+  for(let mud=true; mud;){ mud=false; for(const i of [...keep]) [i-1, i+1].forEach(j0=>{ const j=(j0+n)%n; if(keep.has(j)) return; const A=lado(i), B=lado(j); if(!A || !B) return;
+      const par=Math.abs(A.u[0]*B.u[1]-A.u[1]*B.u[0])<1e-6 && A.u[0]*B.u[0]+A.u[1]*B.u[1]>0, lin=Math.abs((B.a[0]-A.a[0])*A.u[1]-(B.a[1]-A.a[1])*A.u[0])<0.05;
+      if(par && lin){ keep.add(j); mud=true } }) }
+  return keep;
+}
+/* núcleo atual da torre i (e a segunda escada, C3), do modelo calculado agora */
+function blcNucleos(st, i){ try{ const m=compute(st, {quick:true, layouts:false}), l=m.tipo && m.tipo[i]; return l && l.core && l.core.length ? [l.coreOut||l.core, ...(l.coreExtra||[])] : [] }catch(e){ return [] } }
+/* "Recuar X m": o bloco k vira o bloco de baixo recuado X m (pátios crescem X m); o 1º bloco recua em si mesmo.
+   C3: por padrão as fachadas onde o núcleo (ou a segunda escada) encosta NÃO recuam — o recuo cortaria o núcleo que sobe
+   inteiro; o.todas (ou S.alas.recuaTodas) recua todas. o.nucleos = polígonos do núcleo (senão, calcula o modelo) */
+function blcRecua(st, i, k, d, o={}){
   const L=((st.blocos.torres||[])[i]||{}).blocos, base=L && (k>0 ? L[k-1] : L[k]); if(!blcValido(base) || !L[k] || !(d>0)) return null;
-  const pts=blcOffset(base.pts, d); if(!pts) return null;
-  const nb={pts, de:L[k].de, tipo:"recuo"}; const vz=(base.vazios||[]).map(v=>blcOffset(v, -d)).filter(v=>v && entVazioOk({pts}, v)); if(vz.length) nb.vazios=vz;
-  L[k]=nb; return nb;
+  const todas = o.todas ?? !!(st.alas && st.alas.recuaTodas), nuc = todas ? [] : (o.nucleos || blcNucleos(st, i));
+  const kO=blcLadosNucleo(base.pts, ()=>d, nuc), pts=blcOffset(base.pts, kO.size ? j=>kO.has(j)? 0 : d : d); if(!pts) return null;
+  const nb={pts, de:L[k].de, tipo:"recuo"};
+  const vz=(base.vazios||[]).map(v=>{ const kv=blcLadosNucleo(v, ()=>-d, nuc); return blcOffset(v, kv.size ? j=>kv.has(j)? 0 : -d : -d) }).filter(v=>v && entVazioOk({pts}, v)); if(vz.length) nb.vazios=vz;
+  L[k]=nb; Object.defineProperty(nb, "preservados", {value:kO.size, enumerable:false}); return nb;
 }
 /* apaga o bloco k (a pilha se refaz: o de baixo estica até o próximo); o último bloco apagado devolve a torre à forma automática */
 function blcApagaBloco(st, i, k){ const L=((st.blocos.torres||[])[i]||{}).blocos; if(!L || !L[k]) return false; L.splice(k,1); if(L.length && k===0) L[0].de=1; return true }
@@ -287,7 +326,7 @@ function blcTorreAv(st, m, t, I, out, envAt){
     const l=m.tipo && m.tipo[i];
     if(l && l.core && l.core.length) I.nucleo = blcDentro(l.core, t.plate) >= 0.7;
     else if(m.tipo) I.nucleo=false;
-    if(!I.nucleo) out.push(`Na ${nm}, o núcleo (escada e elevadores) cai fora da planta ou num vão da forma — gire ou ajuste a forma; em L, U, T, H e pátio o pavimento tipo é aproximado.`);
+    if(!I.nucleo) out.push(`Na ${nm}, o núcleo (escada e elevadores) cai fora da planta ou num vão da forma — gire ou ajuste a forma; em L, U, T, H e pátio as alas precisam de largura para o núcleo e o corredor.`);
 }
 /* avisos e destaques das torres desenhadas: m.blc[k] (por torre desenhada), m.blcPares (torres próximas), m.blcGeral (índices e mix) */
 function blcAvisos(st, m){

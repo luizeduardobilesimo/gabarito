@@ -194,7 +194,8 @@ describe('C1 — avisos automáticos', () => {
   it('núcleo num vão da forma (U aberto) avisa; retângulo cheio não', () => {
     // U com as alas ao longo do eixo maior: o núcleo (no meio da planta, junto ao corredor) cai no vão
     const U = { pts: [[5, 5], [25, 5], [25, 45], [19, 45], [19, 13], [11, 13], [11, 45], [5, 45]], de: 1 };
-    const mix6 = st => { st.produto.mix = [{ nome: 'A', area: 60, qtd: 6, preco: 10000, sac: 0 }]; return st };
+    // C3: com o layout por ala (padrão) o núcleo vai para a base do U — aqui vale o pavimento tipo aproximado (S.alas.on = false)
+    const mix6 = st => { st.produto.mix = [{ nome: 'A', area: 60, qtd: 6, preco: 10000, sac: 0 }]; st.alas.on = false; return st };
     const m = A.compute(mix6(desenhada([U])), { layouts: false });
     expect(m.T[0].desenhada).toBe(true);
     expect(m.blc[0].nucleo).toBe(false);
@@ -377,14 +378,14 @@ describe('C2 — edição da pilha (puras)', () => {
   });
   it('"Recuar X m": retângulo e L recuados em todas as fachadas; recuo grande demais devolve null', () => {
     const st = pilha([{ pts: EMB, de: 1 }, { pts: EMB, de: 4 }]);
-    const nb = A.blcRecua(st, 0, 1, 3);
+    const nb = A.blcRecua(st, 0, 1, 3, { todas: true });   // C3: o padrão preserva a fachada do núcleo (tests/alas.test.js)
     expect(A.G.area(nb.pts)).toBeCloseTo(12 * 30, 6); expect(nb.de).toBe(4);
     expect(A.blcFora(nb.pts, EMB)).toBeCloseTo(0, 6);
     const off = A.blcOffset(ELE, 2);
     expect(A.G.area(off)).toBeCloseTo(14 * 6 + 4 * 20, 6);                          // ala de 10 → 6 e ala de 8 → 4
     [[8, 12], [22, 12], [22, 18], [12, 18], [12, 38], [8, 38]].forEach((q, k) => { expect(off[k][0]).toBeCloseTo(q[0], 9); expect(off[k][1]).toBeCloseTo(q[1], 9) });
     expect(A.blcOffset(ELE, 5)).toBe(null);                                          // a ala de 8 m some
-    expect(A.blcRecua(st, 0, 1, 20)).toBe(null);
+    expect(A.blcRecua(st, 0, 1, 20, { todas: true })).toBe(null);
   });
   it('apagar bloco: o de baixo estica até o próximo; o 1º apagado passa o andar inicial ao seguinte', () => {
     const st = tres(); A.blcApagaBloco(st, 0, 1);

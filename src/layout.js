@@ -3,6 +3,7 @@ const ESC_TIPOS = { ep:"Enclausurada protegida (EP)", pf_duto:"À prova de fuma�
 const CORE_F=2.4, CORE_B=2.7;
 // sequência das peças do núcleo em duas fileiras: frente (abre para o hall) e fundo (escada)
 function coreSeq(o){
+  if(o._seq) return o._seq;   // C3 (src/calc/alas.js): sequência própria (segunda escada, sem elevadores)
   const t=o.escTipo||"pf_duto", nE=Math.max(1,o.nElev||2), front=[], back=[];
   const grp=(second)=>{ const fr=[], bk=[];
     if(t==="pf_balcao"){ fr.push({k:"pass",nome:"acesso",w:2.2,door:"hall",door2:"balc"}); bk.push({k:"balc",nome:"balcão aberto",w:2.2,doorSide:"esc"},{k:"esc",nome:"escada",w:5.8}) }
