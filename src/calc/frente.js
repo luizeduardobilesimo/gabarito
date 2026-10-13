@@ -7,7 +7,8 @@
    sugereAcesso(lote, ruas, sug)   → {i, nome, classe, igualPrincipal, pos}   (acesso de veículos pela via de MENOR hierarquia)
    regraPorLargura(largura, tab)   → {rec, ate} (tabela editável; ILUSTRATIVA — conferir na lei; desligada por padrão)
    frenteDetectar(st)              → proposta guardável em S.frentes.sug (nada muda no lote até o usuário confirmar)
-   frenteAplicar(st, sug, o)       → grava front, principal, acessoVei (e recuos, se a regra por largura estiver ligada)
+   frenteAplicar(st, sug, o)       → grava front, principal, ladoVei (carro pela via de menor hierarquia, sem trocar a principal), acessoVei
+                                     (e recuos, se a regra por largura estiver ligada)
    Estado: S.frentes = {sug, regra:{on, tab}} */
 extendDEF("frentes", { sug:null, regra:{ on:false, tab:[{ate:7, rec:4}, {ate:12, rec:5}, {ate:99, rec:6}] } });
 
@@ -113,14 +114,17 @@ function frenteDetectar(st, o={}){
     semVia: !vias.length };
 }
 const frenteValida = (st) => { const s=st.frentes && st.frentes.sug; return !!(s && s.h===frHash(st.lote.pts)) };
-/* grava a proposta no lote; nada além de front, principal, acessoVei e (se ligada) os recuos próprios das frentes */
+/* grava a proposta no lote; nada além de front, principal, ladoVei, acessoVei e (se ligada) os recuos próprios das frentes */
 function frenteAplicar(st, sug, o={}){
   if(!sug || !sug.front || !sug.front.length) return null;
-  const L=st.lote, r={ front:L.front.slice(), principal:L.principal };
+  const L=st.lote, r={ front:L.front.slice(), principal:L.principal, ladoVei:L.ladoVei ?? null };
   L.front=sug.front.slice(); L.principal = o.principal!=null && sug.front.includes(o.principal) ? o.principal : sug.principal;
-  const pos=frPosForaEsquina(L.pts, L.principal, L.front); if(pos!=null) L.acessoVei=pos;
+  // carro pela via de menor hierarquia SEM trocar a frente principal (S.lote.ladoVei, src/calc/acesso.js); igual à principal = padrão (null)
+  const ace=sug.acesso, iv = ace && L.front.includes(ace.i) && ace.i!==L.principal ? ace.i : null;
+  L.ladoVei=iv;
+  const pos=frPosForaEsquina(L.pts, iv ?? L.principal, L.front); if(pos!=null) L.acessoVei=pos;
   const reg=st.frentes && st.frentes.regra, recs=[];
   if(reg && reg.on){ if(!Array.isArray(L.rec)) L.rec=[]; while(L.rec.length<L.pts.length) L.rec.push({});
     sug.lados.forEach(l=>{ const g=regraPorLargura(+l.larg, reg.tab); if(!g || !L.front.includes(l.i)) return; L.rec[l.i]=Object.assign({}, L.rec[l.i], {e:g.rec, t:g.rec}); recs.push({i:l.i, rec:g.rec}) }) }
-  return { antes:r, front:L.front, principal:L.principal, acessoVei:L.acessoVei, recs };
+  return { antes:r, front:L.front, principal:L.principal, ladoVei:L.ladoVei, acessoVei:L.acessoVei, recs };
 }

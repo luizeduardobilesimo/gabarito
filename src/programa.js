@@ -24,14 +24,16 @@ function terreoZones(st, m, lz, extra=0){
   const out={lojas:[],hall:[],hallBand:[],pass:[],cols:[],colsGar:[],walk:[],drive:[],gar:[],driveEnd:null,drive0:null,keep:[],warn:[],lanes:null};
   if(!emb.length) return out;
   const fd=frontDir(st), lat=[fd[1],-fd[0]], [dmn,dmx]=G.extent(emb,fd), [lmn,lmx]=G.extent(emb,lat);
-  Object.assign(out,{fd,lat,dmn,dmx,lmn,lmx});
+  Object.assign(out,{fd,lat,dmn,dmx,lmn,lmx,vfd:fd,vlat:lat});
   const W2=(l,d)=>[lat[0]*l+fd[0]*d, lat[1]*l+fd[1]*d];
   const box=(d0,d1,l0,l1)=>{ if(d1-d0<0.05||l1-l0<0.05) return []; const b=G.band(emb,fd,d0,d1); return b.length? G.band(b,lat,l0,l1) : [] };
   const hasRamp = P.subsolos>0 || P.garAcima>0; let garOn = !!P.garTerOn; const needVeh = hasRamp || garOn;
   const lojaF=clamp(P.lojaTerreo,0,0.9), d1 = lojaF>0? G.cutAt(emb,fd,lojaF) : dmn;
+  // carro por outro lado do lote (esquina, passante): a faixa de veículos é resolvida no referencial DAQUELE lado, depois do hall (src/calc/acesso.js)
+  const VL = needVeh && m.acesso && m.acesso.edgeV!=null && m.acesso.edgeV!==m.acesso.edge;
   // acesso de veículos: faixas das rampas (descida / subida) lado a lado e, se houver garagem no térreo, a faixa de acesso a ela
   let dv=null, dl=null, dEnd=dmn;
-  if(needVeh){ dl=driveLayout(st, lmn, lmx, G.dot(m.acesso.vei,lat), m, fd, lat); out.drive0=dl;
+  if(needVeh && !VL){ dl=driveLayout(st, lmn, lmx, G.dot(m.acesso.vei,lat), m, fd, lat); out.drive0=dl;
     if(dl){ dv=dl.dv; out.lanes=dl.laneIv||null;
       if(dl.semAlt) out.warn.push("As rampas alternadas não cabem ao lado dos núcleos — o estudo usou rampas retas empilhadas.");
       if(dl.semFaixa){ garOn=false; out.semFaixa=true; out.warn.push("Não há largura para a faixa de acesso à garagem do térreo ao lado das rampas sem passar pelos núcleos — a garagem do térreo foi desligada neste estudo."); }
@@ -57,6 +59,10 @@ function terreoZones(st, m, lz, extra=0){
     if(dv && ivs[0][1]>dv[0] && ivs[0][0]<dv[1] && p<dvEnd){ if(!(dl&&dl.naoCabe) && dvBox.length && (G.polysOverlap(dvBox,cs.core)||G.polysOverlap(dvBox,cs.lobby||[]))) out.warn.push(`O acesso de veículos passa sobre o núcleo da torre ${cs.i+1} — mova o acesso na etapa Terreno.`); ivs=ivSub(ivs,dv) }
     const lc=(Math.min(...ls)+Math.max(...ls))/2;
     ivs.forEach(iv=>cols.push({iv, front:p-1<d1, near:p-0.8, back:Math.min(dmx,q+0.8), torre:cs.i, corr:[clamp(lc-1.3,iv[0],iv[1]-0.5), clamp(lc+1.3,iv[0]+0.5,iv[1])]})) });
+  // carro por outro lado: faixa de veículos no referencial do lado escolhido, sem passar pelas lojas, pelo hall nem pelos caminhos até os núcleos
+  let VD=null;
+  if(VL){ const r=terreoVeiLateral(st, m, out, {emb, fd, lat, dmn, dmx, lmn, lmx, d1, d2, garOn, hasRamp, cols, box});
+    VD=r; dl=r.dl; if(r.semFaixa){ garOn=false; d2=dmx; out.d2=d2 } }
   // passagem de pedestres pelas lojas
   let pass=null;
   if(lojaF>0 && d1-dmn>1){ let pc=clamp(G.dot(m.acesso.ped,lat), lmn+1.5, lmx-1.5);
@@ -79,8 +85,9 @@ function terreoZones(st, m, lz, extra=0){
   if(dv){ const end = garOn? Math.max(d2, Math.min(dEnd,d2)) : Math.max(dEnd, dmn+PATAMAR); const p=box(dmn,Math.min(dmx,end),dv[0],dv[1]); if(p.length) out.drive.push(p);
     if(garOn && out.lanes){ const lc=(out.lanes[0]+out.lanes[1])/2; out.driveEnd=W2(lc, d2-0.2); out.keep.push(G.rect(lat,fd,out.lanes[0],d2,out.lanes[1]-out.lanes[0],6)) } }
   if(garOn && dmx-d2>3){ out.gar=box(d2,dmx,lmn,lmx) }
+  if(VD) terreoVeiFecha(out, VD, garOn);
   const sa=a=>a.reduce((s,p)=>s+G.area(p),0);
-  out.lojaA=sa(out.lojas); out.hallA=sa(out.hall); out.driveA=sa(out.drive); out.gTer=Math.max(0,G.area(out.gar)-sa(out.colsGar)-sa(out.walk));
+  out.lojaA=sa(out.lojas); out.hallA=sa(out.hall); out.driveA=sa(out.drive); out.gTer=Math.max(0,G.area(out.gar)-sa(out.colsGar)-sa(out.walk)-(VD&&garOn&&out.gar.length? sa(out.drive) : 0));
   if(HT>out.hallDisp+1 && !garOn) out.warn.push("O hall e o lazer do térreo pedem mais área do que o térreo tem.");
   if(garOn && out.gTer<1 && HT>0) out.warn.push("O hall e o lazer ocupam todo o térreo — não sobra garagem.");
   return out;
@@ -110,7 +117,7 @@ function lazerLayout(st, m){
     const r=packItems(T.hallBand,[...coreOb,strip,...(T.drive||[]),...(m.ramp?[m.ramp.poly]:[])],by("terreo",false),ax); out.terreo=r.placed; out.miss.push(...r.miss) }
   else out.miss.push(...by("terreo",false));
   // térreo descoberto: nos recuos (jardins)
-  { const r=packItems([st.lote.pts],[m.emb,...(T.drive||[]).map(p=>scaleBy(p,1.6)),...(m.vf?m.vf.vagas.map(v=>v.poly):[])],by("terreo",true),ax); out.terreoDesc=r.placed; out.miss.push(...r.miss) }
+  { const r=packItems([st.lote.pts],[m.emb,...(T.drive||[]).map(p=>scaleBy(p,1.6)),...(T.driveRua||[]).map(p=>scaleBy(p,1.3)),...(m.vf?m.vf.vagas.map(v=>v.poly):[])],by("terreo",true),ax); out.terreoDesc=r.placed; out.miss.push(...r.miss) }
   // laje do embasamento: em volta das torres
   { const r=packItems([m.emb], m.T.map(t=>scaleBy(t.plate,1.18)), by("emb"), ax); out.emb=r.placed; out.miss.push(...r.miss) }
   // pavimento de lazer e rooftop: na torre 1

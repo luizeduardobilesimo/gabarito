@@ -261,10 +261,11 @@ function aplicarLoteGeo(pairs, fonte){
   return true;
 }
 function normalizeLote(){ const L=S.lote; if(L.pts.length<3) return; ensureRec();
-  if(G.sArea(L.pts)<0){ const n=L.pts.length, mp=i=>((n-2-i)%n+n)%n; L.pts=L.pts.slice().reverse(); L.front=L.front.map(mp); L.principal=mp(L.principal); const r=L.rec.slice(); L.rec=r.map((_,i)=>r[mp(i)]) }
-  if(!L.front.includes(L.principal)) L.principal=L.front[0]??0 }
+  if(G.sArea(L.pts)<0){ const n=L.pts.length, mp=i=>((n-2-i)%n+n)%n; L.pts=L.pts.slice().reverse(); L.front=L.front.map(mp); L.principal=mp(L.principal); if(L.ladoVei!=null) L.ladoVei=mp(L.ladoVei); const r=L.rec.slice(); L.rec=r.map((_,i)=>r[mp(i)]) }
+  if(!L.front.includes(L.principal)) L.principal=L.front[0]??0;
+  if(L.ladoVei!=null && (!L.front.includes(L.ladoVei) || L.ladoVei===L.principal)) L.ladoVei=null }   // lado de veículos: só um lado na rua; o mesmo da principal = padrão
 function ensureRec(){ const L=S.lote; if(!Array.isArray(L.rec)) L.rec=[]; while(L.rec.length<L.pts.length) L.rec.push({}); if(L.rec.length>L.pts.length) L.rec.length=L.pts.length }
-function edgeInsert(mI){ const L=S.lote; ensureRec(); L.front=L.front.flatMap(i=> i===mI?[i,i+1]: i>mI?[i+1]:[i]); if(L.principal>mI) L.principal++; L.rec.splice(mI+1,0,{...L.rec[mI]}) }
+function edgeInsert(mI){ const L=S.lote; ensureRec(); L.front=L.front.flatMap(i=> i===mI?[i,i+1]: i>mI?[i+1]:[i]); if(L.principal>mI) L.principal++; if(L.ladoVei!=null && L.ladoVei>mI) L.ladoVei++; L.rec.splice(mI+1,0,{...L.rec[mI]}) }
 function resumo(){
   const {m,f}=window._last;
   return `${S.nome}\n${S.regras.cidade}\n\nTerreno: ${m2(m.A)}\nTorres: ${m.T.map((t,i)=>`T${i+1} ${t.pav} pav`).join(", ")}\nUnidades: ${m.units} (${m.unitRows.map(u=>`${u.n}× ${u.nome}`).join(", ")}${m.cobN?`, ${m.cobN} coberturas`:""})${m.lojaA?`\nLojas: ${m2(m.lojaPriv)}`:""}\nVagas: ${m.vagas} (exigidas ${m.vagasReq})\nAltura ${nf(m.H,1)} m | CA ${nf(m.CA,2)} | TO ${pct(m.TO,0)}\nÁrea construída ${m2(m.constr)} | Privativa ${m2(m.priv)}\n\nVGV (tabela): ${brl(f.vgv)}\nReceita nominal: ${brl(f.receita)}\nCusto total: ${brl(f.custo)}\nLucro: ${brl(f.lucro)} (margem ${pct(f.margem)})\nTIR: ${f.tirA==null?"—":pct(f.tirA)} a.a. | VPL: ${brl(f.vpl)}\nExposição máxima: ${brl(-f.exp)}\nTerreno máximo p/ margem ${pct(S.fin.margemAlvo,0)}: ${brl(f.maxTerreno)}`;
