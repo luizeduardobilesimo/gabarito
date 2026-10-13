@@ -1841,7 +1841,7 @@ function massing(st, opt={}){
   const T = torres.map((t,i)=>{
     const slot=slots[i]||[], maxP=G.scaleToArea(slot, G.area(slot)*k), maxA=G.area(maxP);
     // C1: torre desenhada (src/calc/blocos.js) — a planta é o bloco recortado pelo lote; recuos, TO e CA viram avisos
-    const bl = typeof blcTorre==="function" ? blcTorre(st, i, L) : null;
+    const bl = typeof blcTorre==="function" ? blcTorre(st, i, L, t.pav) : null;   // C2: pilha de blocos (plate = bloco de referência)
     const plate = bl ? bl.plate : ocupa ? maxP : G.scaleToArea(maxP, need), pA=G.area(plate);
     const fit = bl ? pA>1 && pA >= need-0.5 : ocupa ? pA>1 : maxA >= need-0.5 && pA>1;
     // fator das unidades: < 1 se o mix não couber; ocupando o contorno, as unidades crescem ou encolhem até preencher o andar
@@ -1850,11 +1850,11 @@ function massing(st, opt={}){
     const tipoFloors = t.pav - (hasCob?1:0);
     // faixas de andares (2.4): planta de cada andar recortada pelo recuo da sua cota; sem recuos progressivos é uma faixa só
     const zB = hEmb + (pavLz && i===0 ? P.pe : 0);
-    let faixas = prog && FO.escalonar && plate.length && !bl ? formaTorre({plate, pav:t.pav, zBase:zB, pe:P.pe, envBand:z=>slotIn(i, envAt(afAt(z))), afAt}) : [];
+    let faixas = prog && FO.escalonar && plate.length && !bl ? formaTorre({plate, pav:t.pav, zBase:zB, pe:P.pe, envBand:z=>slotIn(i, envAt(afAt(z))), afAt}) : bl ? blcFaixas(bl, zB, P.pe, afAt) : [];
     if(!faixas.length) faixas=[{de:1, ate:t.pav, n:t.pav, plate, A:pA, z0:zB, z1:zB+t.pav*P.pe, af:afAt(zB+t.pav*P.pe)}];
     faixas.forEach(f=>{ f.nTipo=Math.max(0, Math.min(f.ate, tipoFloors)-f.de+1);
       if(Math.abs(f.A-pA)<0.25){ f.qtd=P.mix.map(u=>u.qtd); f.r=r; f.priv=mixPriv*r; f.un=mixUn }
-      else { const x= f.A<1 ? {qtd:P.mix.map(()=>0), r:0} : formaMix(P.mix, f.A*P.efic, FO.rMin||0.9); f.qtd=x.qtd; f.r=x.r; f.priv=P.mix.reduce((s,u,j)=>s+u.area*x.qtd[j],0)*x.r; f.un=x.qtd.reduce((s,n)=>s+n,0) } });
+      else { const x= f.A<1 ? {qtd:P.mix.map(()=>0), r:0} : f.blc ? blcMixFaixa(P.mix, f.A*P.efic, r) : formaMix(P.mix, f.A*P.efic, (FO&&FO.rMin)||0.9); f.qtd=x.qtd; f.r=x.r; f.priv=P.mix.reduce((s,u,j)=>s+u.area*x.qtd[j],0)*x.r; f.un=x.qtd.reduce((s,n)=>s+n,0) } });
     const Atop = faixas[faixas.length-1].A, one = faixas.length===1;
     const floorPriv = Atop*P.efic;
     const rc = hasCob ? Math.min(1, (duplex? 2*floorPriv : floorPriv)/Math.max(1,cobPriv)) : 0;
@@ -1862,7 +1862,7 @@ function massing(st, opt={}){
     const duplexA = hasCob && duplex ? Math.min(Atop, Math.max(0, cobP-floorPriv)/P.efic) : 0;
     const Atot = one ? pA*t.pav : faixas.reduce((s,f)=>s+f.A*f.n,0);
     return {i, pav:t.pav, H:Hs[i], slot, maxP, maxA, plate, A:pA, Atop, Atot, faixas, fit, r, rc, hasCob, cobP, duplexA, tipoFloors,
-      ...(bl ? {desenhada:true, oco:bl.oco, blcForaLote:bl.foraLote} : {}),
+      ...(bl ? {desenhada:true, oco:bl.oco, blcForaLote:bl.foraLote, blcRef:bl.ref, blcIgn:bl.ign, Aproj:bl.Aproj} : {}),
       priv: (one ? tipoFloors*mixPriv*r : faixas.reduce((s,f)=>s+f.nTipo*f.priv,0)) + cobP,
       units: (one ? tipoFloors*mixUn : faixas.reduce((s,f)=>s+f.nTipo*f.un,0)) + (hasCob?P.cob.qtd:0) };
   });
@@ -1873,13 +1873,13 @@ function massing(st, opt={}){
   const tiposA = T.reduce((s,t)=>s+t.Atot,0), duplexA=T.reduce((s,t)=>s+t.duplexA,0);
   const aticoA = P.atico ? T.reduce((s,t)=>s+t.Atop*0.25,0) : 0;
   const unitsRes = T.reduce((s,t)=>s+t.units,0), privRes=T.reduce((s,t)=>s+t.priv,0);
-  const torProj = T.reduce((s,t)=>s+t.A,0);
+  const torProj = T.reduce((s,t)=>s+(t.Aproj||t.A),0);   // C2: maior projeção da pilha de blocos
   const H = Hmax;
   // aptos por tipologia (todas as torres)
   const unitRows = P.mix.map(u=>({nome:u.nome, alvo:u.area, n:0, area:0, preco:u.preco}));
   T.forEach(t=>t.faixas.forEach(f=>P.mix.forEach((u,j)=>{ unitRows[j].n += f.qtd[j]*f.nTipo; unitRows[j].area += f.qtd[j]*f.nTipo*u.area*f.r })));
   const cobN = T.reduce((s,t)=>s+(t.hasCob?P.cob.qtd:0),0), cobArea = T.reduce((s,t)=>s+t.cobP,0);
-  const minApto = !prog ? Math.min(...P.mix.map(u=>u.area*Math.min(...T.map(t=>t.r||1))))
+  const minApto = !prog && T.every(t=>t.faixas.length<2) ? Math.min(...P.mix.map(u=>u.area*Math.min(...T.map(t=>t.r||1))))
     : Math.min(...P.mix.map((u,j)=>u.area*Math.min(1, ...T.flatMap(t=>t.faixas.filter(f=>f.qtd[j]>0 && f.nTipo>0).map(f=>f.r||1)))));
   const hLim = typeof formaHLim==="function" ? formaHLim(st) : R.hMax;
   const env = prog ? formaEnvelope(envAt, afAt, hEmb, Math.max(hLim, Hmax), P.pe) : null;
@@ -1916,9 +1916,10 @@ function compute(st, opt={}){
     return tipoLayout(t.plate, list, {corr:E.corrTipo, profMin:E.profMin, nElev: +E.elevadores||nAuto, pos:E.nucleoPos, lado:E.nucleoLado, escada:E.escadaLado, planta:E.tipoPlanta,
       escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf});
   });
+  if(typeof blcLayFaixas==="function") blcLayFaixas(st, m);   // C2: blocos fora da referência → mesmo núcleo, unidades por área (f.lay)
   // sacadas em balanço somam área construída e privativa
   m.sacA=0; m.sacBal=0;
-  m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; const fl=t.tipoFloors; l.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } }) });
+  m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; (t.faixas.some(f=>f.lay)? t.faixas.map(f=>[f.lay||l, f.nTipo]) : [[l, t.tipoFloors]]).forEach(([ly,fl])=>ly.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } })) });
   m.coreSets = m.tipo.map((l,i)=>l && l.core && l.core.length? {i, core:l.core, lobby:l.lobby, lay:l} : null).filter(Boolean);
   m.cores = m.coreSets.map(c=>c.core); m.lobbies = m.coreSets.map(c=>c.lobby).filter(p=>p&&p.length);
   m.obst = [...m.cores, ...m.lobbies];
@@ -2637,12 +2638,19 @@ function alavancasCalc(st, m) {
    (índice = torre de S.produto.torres). Um bloco é um contorno que vale do andar 'de' até o próximo bloco; no C1 cada torre
    tem no máximo UM bloco (de = 1, vale para todos os andares — o total segue no stepper da torre). Em "desenhada", a torre
    com bloco usa o bloco como planta (recortado pelo lote, NÃO encolhido pelos recuos): recuo, TO, CA, gabarito, balanço,
-   núcleo e distância entre torres viram avisos. Torre sem bloco (ou modo "auto") = forma automática, como antes. */
+   núcleo e distância entre torres viram avisos. Torre sem bloco (ou modo "auto") = forma automática, como antes.
+
+   C2: pilha de blocos (blcPilha/blcTorre/blcFaixas). Cada bloco vira uma faixa de t.faixas (de, ate, plate, A, z0, z1, bk,
+   ref); o último estica até o total de andares do stepper. O bloco de referência (mais andares tipo) é t.plate e recebe o
+   pavimento tipo detalhado; os demais repetem o MESMO núcleo com unidades por área (blcLayFaixa → f.lay), mix por
+   blcMixFaixa (unidades do tamanho das do bloco de referência, quantidade pela área). Avisos por bloco: recuos na sua cota,
+   balanço sobre o bloco de baixo, núcleo cortado, bloco ignorado. Edição pura: blcMaisBloco, blcCopiaBaixo, blcRecua. */
 extendDEF("blocos", { modo:"auto", torres:[] });
 const BLC_FORMAS = [["ret","Retângulo"],["L","L"],["U","U"],["T","T"],["H","H"],["patio","Pátio"]];
 const blcAtivo = st => !!(st && st.blocos && st.blocos.modo==="desenhada");
-/* bloco da torre i (C1: o primeiro), só no modo desenhado */
-function blcBloco(st, i){ if(!blcAtivo(st)) return null; const t=(st.blocos.torres||[])[i], b=t && t.blocos && t.blocos[0]; return b && b.pts && b.pts.length>2 ? b : null }
+const blcValido = b => !!(b && b.pts && b.pts.length>2);
+/* bloco k da torre i (padrão: o primeiro), só no modo desenhado */
+function blcBloco(st, i, k=0){ if(!blcAtivo(st)) return null; const t=(st.blocos.torres||[])[i], b=t && t.blocos && t.blocos[k]; return blcValido(b) ? b : null }
 /* planta de um bloco: contorno recortado pelo lote; os vazios inteiros dentro viram polígono com ponte (entPoly) */
 function blcPlanta(b, L){
   const raw=b.pts, rawA=G.area(raw), out = L && L.length>2 ? G.clipToPoly(raw, L) : raw.slice();
@@ -2651,12 +2659,144 @@ function blcPlanta(b, L){
   const plate = vz.length ? entPoly({pts:out, vazios:vz}) : out;
   return {plate, A:G.area(plate), oco: vz.length? {pts:out, vazios:vz} : null, rawA, foraLote:Math.max(0, rawA-G.area(out))};
 }
-/* chamado pelo massing: planta desenhada da torre i (ou null = automática) */
-function blcTorre(st, i, L){ const b=blcBloco(st, i); return b ? {...blcPlanta(b, L), b} : null }
+/* C2 — pilha de blocos. A lista da torre fica ordenada por 'de'; o 1º bloco sempre começa no 1º andar e o ÚLTIMO estica
+   até o total de andares do stepper (Máx, otimizador e cenários seguem funcionando). Bloco que começa acima do total
+   (ou no mesmo andar que o anterior) fica de fora, com aviso. Bloco de referência = o que tem mais andares tipo (empate:
+   o mais baixo): é a planta da torre (t.plate), onde o pavimento tipo é detalhado; os demais repetem o mesmo núcleo. */
+function blcPilha(st, i, L, pav){
+  if(!blcAtivo(st)) return null;
+  const tw=(st.blocos.torres||[])[i], lst=((tw && tw.blocos)||[]).map((b,k)=>({b,k})).filter(x=>blcValido(x.b));
+  if(!lst.length) return null;
+  lst.sort((a,c)=>(+a.b.de||1)-(+c.b.de||1) || a.k-c.k);
+  const P=st.produto, N=Math.max(1, Math.round(+pav || +((P.torres[i]||{}).pav) || 1)), tf=N-(P.cob && P.cob.on && N>=2 ? 1 : 0);
+  const pil=[], ign=[];
+  lst.forEach((x,j)=>{ const de = j===0 ? 1 : Math.max(1, Math.round(+x.b.de||1)), ant=pil[pil.length-1];
+    if(ant && de<=ant.de){ ign.push({k:x.k, de, motivo:"repetido"}); return }
+    if(de>N){ ign.push({k:x.k, de, motivo:"acima"}); return }
+    pil.push({k:x.k, b:x.b, de}) });
+  pil.forEach((p,j)=>{ p.ate = j<pil.length-1 ? pil[j+1].de-1 : N; p.n=p.ate-p.de+1; p.nTipo=Math.max(0, Math.min(p.ate, tf)-p.de+1); Object.assign(p, blcPlanta(p.b, L)) });
+  let ref=pil[0]; pil.forEach(p=>{ if(p.A>1 && (ref.A<=1 || p.nTipo>ref.nTipo)) ref=p });
+  return {pil, ign, ref, N};
+}
+/* chamado pelo massing: planta desenhada da torre i (ou null = automática). plate/A/oco = bloco de referência;
+   pilha = blocos ativos (de, ate, planta); Aproj = maior projeção (TO); foraLote = soma dos blocos */
+function blcTorre(st, i, L, pav){
+  const R=blcPilha(st, i, L, pav); if(!R) return null; const r=R.ref;
+  return {plate:r.plate, A:r.A, oco:r.oco, rawA:r.rawA, foraLote:R.pil.reduce((s,p)=>s+p.foraLote,0), b:r.b, ref:r.k,
+    pilha:R.pil, ign:R.ign, Aproj:Math.max(...R.pil.map(p=>p.A))};
+}
+/* faixas de andares da pilha (massing): uma por bloco; com um bloco só devolve [] (o massing usa a faixa única, como no C1) */
+function blcFaixas(bl, zB, pe, afAt){
+  if(!bl || !bl.pilha || bl.pilha.length<2) return [];
+  return bl.pilha.map(p=>{ const z1=zB+p.ate*pe; return {de:p.de, ate:p.ate, n:p.n, plate:p.plate, A:p.A, z0:zB+(p.de-1)*pe, z1, af:afAt? afAt(z1) : 0,
+    blc:true, bk:p.k, ref:p.k===bl.ref, oco:p.oco, foraLote:p.foraLote} });
+}
+/* mix de um bloco que não é o de referência: unidades do MESMO tamanho das do bloco de referência (fator rRef) e a
+   quantidade por andar ajustada à área do bloco (proporção do mix mantida, ≥ 1 por tipologia usada); o fator final
+   fecha a conta para a privativa ser área × eficiência, como no C1 */
+function blcMixFaixa(mix, cap, rRef){
+  const rr = rRef>0 ? rRef : 1, q=torreAjustaMix(mix, cap/rr, 99), s=mix.reduce((a,u,j)=>a+(+u.area||0)*q[j],0);
+  return {qtd:q, r: s>0 && cap>0 ? cap/s : 0};
+}
+/* layout de um andar de outro bloco: o MESMO núcleo do bloco de referência (núcleo contínuo) e as unidades distribuídas
+   por área em volta dele, nos dois lados do corredor (que segue a linha do corredor do tipo). Puro. */
+function blcLayFaixa(plate, ref, list, o={}){
+  if(!plate || plate.length<3 || !ref || !ref.core || !ref.core.length) return null;
+  const ux=ref.ux, vy=ref.vy, [u0,u1]=G.extent(plate,ux), [v0,v1]=G.extent(plate,vy);
+  const sub=(va,vb,ua,ub)=>{ if(!(vb-va>0.05)) return []; const b=G.band(plate,vy,va,vb); return (ua===undefined||!b.length)? b : !(ub-ua>0.05) ? [] : G.band(b,ux,ua,ub) };
+  const core=ref.coreOut||ref.core, [ku0,ku1]=G.extent(core,ux), [kv0,kv1]=G.extent(core,vy);
+  let [c0,c1] = ref.corridor && ref.corridor.length>2 ? G.extent(ref.corridor, vy) : [(kv0+kv1)/2, (kv0+kv1)/2];
+  const corridor = sub(c0, c1, u0+0.01, u1-0.01), reg=[];
+  // um lado do corredor: inteiro, ou dividido em volta do núcleo (com o trecho atrás dele, se houver fundo)
+  const lado=(va,vb,fac)=>{ if(vb-va<1) return;
+    if(kv1>va+0.1 && kv0<vb-0.1){ reg.push({p:sub(va,vb,u0,ku0),fac}); reg.push({p:sub(va,vb,ku1,u1),fac});
+      if(fac==="max" && vb-kv1>3) reg.push({p:sub(kv1,vb,ku0,ku1),fac}); if(fac==="min" && kv0-va>3) reg.push({p:sub(va,kv0,ku0,ku1),fac}) }
+    else reg.push({p:sub(va,vb),fac}) };
+  lado(v0, c0, "min"); lado(c1, v1, "max");
+  const R=reg.filter(r=>r.p.length && G.area(r.p)>4).map(r=>({...r, A:G.area(r.p), list:[], used:0}));
+  const us=list.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo), totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
+  us.forEach(u=>{ let best=null, bs=-Infinity; R.forEach(r=>{ const s=r.A/totalA*totalAlvo-r.used-u.alvo*0.5; if(s>bs){ bs=s; best=r } }); if(best){ best.list.push(u); best.used+=u.alvo } });
+  const out=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6;
+  R.forEach(r=>{
+    if(!r.list.length){ out.push({poly:r.p, nome:"livre", alvo:0, area:r.A, livre:true}); return }
+    r.list.sort((a,b)=>a.i-b.i);
+    const tot=r.list.reduce((s,u)=>s+u.alvo,0); let a2=0; const [mn,mx]=G.extent(r.p,ux); let prev=mn;
+    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot), poly=G.band(r.p,ux,prev,cut);
+      const un={poly, nome:u.nome, alvo:u.alvo, area:G.area(poly), fac:r.fac};
+      if(u.sac>0 && poly.length){ const [pv0,pv1]=G.extent(poly,vy), wU=cut-prev, w=Math.max(1.2,Math.min(wU-1, u.sac/prof)), pr=u.sac/w, uc=(prev+cut)/2;
+        let va,vb; if(r.fac==="max"){ va= sacTipo==="balanco"? pv1 : pv1-pr; vb=va+pr } else { vb= sacTipo==="balanco"? pv0 : pv0+pr; va=vb-pr }
+        let sp=G.rect(ux,vy,uc-w/2,va,w,vb-va); if(sacTipo!=="balanco") sp=G.clipToPoly(sp, poly);
+        un.sac={poly:sp, area:G.area(sp), tipo:sacTipo} }
+      prev=cut; out.push(un) });
+  });
+  return {ux, vy, units:out, core:ref.core, lobby:ref.lobby, coreParts:ref.coreParts, coreDoors:ref.coreDoors, coreLines:ref.coreLines,
+    coreOut:ref.coreOut, coreReserva:ref.coreReserva, coreA:ref.coreA, coreKinds:ref.coreKinds, fachada:ref.fachada, corridor, dbl:ref.dbl, hallEnds:[], escSobra:0, blc:true};
+}
+/* compute (src/model.js, logo depois do pavimento tipo): layout por área dos blocos que não são o de referência + núcleo dentro? */
+function blcLayFaixas(st, m){
+  const P=st.produto;
+  (m.T||[]).forEach((t,i)=>{ const ref=m.tipo && m.tipo[i]; if(!t.desenhada || !ref || !t.faixas || t.faixas.length<2) return;
+    const tem = ref.core && ref.core.length, base = tem ? blcDentro(ref.core, t.plate) : 1;   // o quanto o núcleo cabe no próprio bloco de referência
+    t.faixas.forEach(f=>{ if(f.plate===t.plate) return;
+      // núcleo cortado = o bloco perde parte do núcleo que o bloco de referência tem
+      f.nucleo = f.A>1 && tem ? Math.min(1, blcDentro(ref.core, f.plate) + (1-base)) : 0;
+      if(f.nTipo<1 || f.A<1) return;
+      const list=[]; P.mix.forEach((u,j)=>{ for(let q=0;q<(f.qtd[j]||0);q++) list.push({nome:u.nome, alvo:u.area*f.r, sac:+u.sac||0}) });
+      f.lay=blcLayFaixa(f.plate, ref, list, {sacTipo:P.sacTipo, sacProf:P.sacProf}) }) });
+}
+/* layout do andar k (1 = primeiro pavimento da torre i): o da faixa (bloco) quando houver, senão o pavimento tipo */
+function torreLayAndar(m, i, k){ const t=m.T && m.T[i], f=t && (t.faixas||[]).find(f=>k>=f.de && k<=f.ate); return (f && f.lay) || (m.tipo && m.tipo[i]) || null }
 /* planta do andar k (1 = primeiro pavimento da torre) pela faixa a que ele pertence (2.4 escalonada; C2 pilha de blocos) */
 function torrePlantaAndar(t, k){ const f=(t.faixas||[]).find(f=>k>=f.de && k<=f.ate); return f && f.plate ? f.plate : t.plate }
 /* perímetro de fachada de uma planta da torre (com pátio: borda + vazios, sem a "ponte" do polígono) */
-function blcPerim(t, p){ if(!p || p.length<3) return 0; if(t && t.oco && p===t.plate) return [t.oco.pts, ...t.oco.vazios].reduce((s,r)=>s+G.perimeter(r),0); return G.perimeter(p) }
+function blcPerim(t, p){ if(!p || p.length<3) return 0; const oco = t && t.oco && p===t.plate ? t.oco : t && ((t.faixas||[]).find(f=>f.plate===p && f.oco)||{}).oco;
+  if(oco) return [oco.pts, ...oco.vazios].reduce((s,r)=>s+G.perimeter(r),0); return G.perimeter(p) }
+/* ---------- edição da pilha (puras; a interface chama e depois update()) ---------- */
+const blcClone = b => { const c={pts:b.pts.map(q=>[q[0],q[1]]), de:b.de}; if(b.vazios && b.vazios.length) c.vazios=b.vazios.map(v=>v.map(q=>[q[0],q[1]])); if(b.tipo) c.tipo=b.tipo; if(b.rot!=null) c.rot=b.rot; return c };
+/* "+ Bloco": novo bloco no topo, cópia do de cima, começando no meio da faixa de cima (null se ela tem um andar só) */
+function blcMaisBloco(st, i){
+  const tw=(st.blocos.torres||[])[i], L=tw && tw.blocos; if(!L || !L.length || !blcValido(L[L.length-1])) return null;
+  const top=L[L.length-1], N=Math.max(1, Math.round(+((st.produto.torres[i]||{}).pav)||1)), de0=L.length===1? 1 : Math.max(1, Math.round(+top.de||1)), n=N-de0+1;
+  if(n<2) return null;
+  const nb=blcClone(top); nb.de=de0+Math.ceil(n/2); L.push(nb); return nb;
+}
+/* "Copiar do de baixo": o bloco k fica com o contorno (e os pátios) do bloco k−1; o andar inicial não muda */
+function blcCopiaBaixo(st, i, k){
+  const L=((st.blocos.torres||[])[i]||{}).blocos; if(!L || !(k>0) || !blcValido(L[k-1]) || !L[k]) return null;
+  const c=blcClone(L[k-1]); c.de=L[k].de; L[k]=c; return c;
+}
+/* contorno deslocado d metros para dentro (d < 0: para fora), lado a lado (esquina em ponta). Vale para L, U, T, H…
+   desde que d seja menor que metade da ala mais estreita; senão devolve null */
+function blcOffset(p, d){
+  if(!p || p.length<3) return null; const s=Math.sign(G.sArea(p))||1, ln=[];
+  for(let i=0;i<p.length;i++){ const a=p[i], b=p[(i+1)%p.length], dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy); if(l<1e-6) continue;
+    const u=[dx/l, dy/l], n=[-u[1]*s, u[0]*s]; const q=ln[ln.length-1]; if(q && Math.abs(q.u[0]*u[1]-q.u[1]*u[0])<1e-9 && q.u[0]*u[0]+q.u[1]*u[1]>0) continue;   // colinear com o anterior
+    ln.push({a:[a[0]+n[0]*d, a[1]+n[1]*d], u}) }
+  if(ln.length<3) return null;
+  const out=ln.map((B,i)=>{ const A=ln[(i-1+ln.length)%ln.length], cr=A.u[0]*B.u[1]-A.u[1]*B.u[0]; if(Math.abs(cr)<1e-9) return B.a.slice();
+    const t=((B.a[0]-A.a[0])*B.u[1]-(B.a[1]-A.a[1])*B.u[0])/cr; return [A.a[0]+A.u[0]*t, A.a[1]+A.u[1]*t] });
+  for(let i=0;i<out.length;i++){ const a=out[i], b=out[(i+1)%out.length]; if((b[0]-a[0])*ln[i].u[0]+(b[1]-a[1])*ln[i].u[1] <= 0.05) return null }   // lado sumiu ou inverteu
+  for(let i=0;i<out.length;i++) for(let j=i+2;j<out.length;j++){ if(i===0 && j===out.length-1) continue; if(G.segInter(out[i],out[(i+1)%out.length],out[j],out[(j+1)%out.length])) return null }
+  const a0=G.area(p), a1=G.area(out); if(Math.sign(G.sArea(out))!==s || !(a1>1) || (d>0 && a1>=a0) || (d<0 && a1<=a0)) return null;
+  return out;
+}
+/* "Recuar X m": o bloco k vira o bloco de baixo recuado X m em todas as fachadas (pátios crescem X m); o 1º bloco recua em si mesmo */
+function blcRecua(st, i, k, d){
+  const L=((st.blocos.torres||[])[i]||{}).blocos, base=L && (k>0 ? L[k-1] : L[k]); if(!blcValido(base) || !L[k] || !(d>0)) return null;
+  const pts=blcOffset(base.pts, d); if(!pts) return null;
+  const nb={pts, de:L[k].de, tipo:"recuo"}; const vz=(base.vazios||[]).map(v=>blcOffset(v, -d)).filter(v=>v && entVazioOk({pts}, v)); if(vz.length) nb.vazios=vz;
+  L[k]=nb; return nb;
+}
+/* apaga o bloco k (a pilha se refaz: o de baixo estica até o próximo); o último bloco apagado devolve a torre à forma automática */
+function blcApagaBloco(st, i, k){ const L=((st.blocos.torres||[])[i]||{}).blocos; if(!L || !L[k]) return false; L.splice(k,1); if(L.length && k===0) L[0].de=1; return true }
+/* área de p fora de q (q pode ser côncavo: amostragem numa grade fina) */
+const blcConvexo = q => { let sg=0; for(let i=0;i<q.length;i++){ const a=q[i], b=q[(i+1)%q.length], c=q[(i+2)%q.length], cr=(b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]); if(Math.abs(cr)<1e-9) continue; const s=Math.sign(cr); if(sg && s!==sg) return false; sg=s } return true };
+function blcAreaFora(p, q){
+  if(!p || p.length<3) return 0; if(!q || q.length<3) return G.area(p); if(blcConvexo(q)) return blcFora(p, q);
+  const xs=p.map(v=>v[0]), ys=p.map(v=>v[1]), x0=Math.min(...xs), y0=Math.min(...ys), h=Math.max(0.2, Math.sqrt(G.area(p))/90); let n=0;
+  for(let x=x0+h/2; x<Math.max(...xs); x+=h) for(let y=y0+h/2; y<Math.max(...ys); y+=h) if(G.pip([x,y],p) && !G.pip([x,y],q)) n++;
+  return n*h*h;
+}
 /* forma automática da torre i (o que o massing calcula sem blocos): planta, faixa máxima (slot) e área */
 function blcAutoPlanta(st, i){
   const s2=Object.assign({}, st, {blocos:{modo:"auto", torres:[]}}), m=massing(s2), t=m.T[i]||{};
@@ -2711,14 +2851,21 @@ function blcFormato(tipo, slot, alvo, o={}){
   const b={pts:r.pts, de:1, tipo, rot}; if(r.vazios) b.vazios=r.vazios;
   return {bloco:b, A:r.A, ala:r.ala, curto: r.A < alvo-1};
 }
-/* aplica um formato à torre i, com a área atual do andar; clicar de novo no mesmo formato gira 90° */
-function blcAplicaFormato(st, i, tipo){
-  const auto=blcAutoPlanta(st, i), m=massing(st), alvo=(m.T[i]&&m.T[i].A) || auto.A, cur=blcBloco(st, i);
+/* aplica um formato ao bloco k da torre i (padrão: o 1º), com a área atual dele; clicar de novo no mesmo formato gira 90°.
+   1º bloco: dentro da faixa automática da torre; blocos de cima: dentro do retângulo envolvente do bloco de baixo */
+function blcAplicaFormato(st, i, tipo, k=0){
+  const cur=blcBloco(st, i, k), m=massing(st), fx=cur && m.T[i] && (m.T[i].faixas||[]).find(f=>f.bk===k);
+  const auto = k>0 && blcBloco(st, i, k-1) ? null : blcAutoPlanta(st, i);
+  const alvo=(fx && fx.A) || (m.T[i] && m.T[i].A) || (auto && auto.A) || 0;
   const rot = cur && cur.tipo===tipo ? ((cur.rot|0)+1)%4 : 0;
-  const slot = auto.slot.length ? auto.slot : st.lote.pts;
+  let slot;
+  if(auto) slot = auto.slot.length ? auto.slot : st.lote.pts;
+  else { const F=blcMoldura(blcBloco(st, i, k-1).pts); slot=G.rect(F.ux, F.vy, F.cu-F.W/2, F.cv-F.D/2, F.W, F.D); if(G.sArea(slot)<0) slot.reverse() }
   const r=blcFormato(tipo, slot, alvo, {rot, ala: 2*(+st.estudo.profMin||5.5)+(+st.estudo.corrTipo||1.6)}); if(!r || r.bloco.pts.length<3) return null;
   const B=st.blocos; B.modo="desenhada"; B.torres=B.torres||[]; while(B.torres.length<=i) B.torres.push({blocos:[]});
-  B.torres[i]={blocos:[r.bloco]}; return r;
+  const L=B.torres[i].blocos=B.torres[i].blocos||[];
+  if(L[k]){ r.bloco.de=k? L[k].de : 1; L[k]=r.bloco } else B.torres[i]={blocos:[r.bloco]};
+  return r;
 }
 /* distância entre dois contornos (0 se encostam ou se sobrepõem) */
 function blcDist(a, b){
@@ -2743,14 +2890,28 @@ function blcResumo(st, m){
   return {torres:D.map(t=>t.i), A, priv, ocupa, q, muda, desvio: Math.abs(ocupa-1)>0.10};
 }
 /* avisos de uma torre desenhada (I = medidas usadas pelo desenho da implantação) */
-function blcTorreAv(st, m, t, I, out, envTopo){
+const blcRotulo = f => f.de===f.ate ? `${f.de}º` : `${f.de}º–${f.ate}º`;
+function blcTorreAv(st, m, t, I, out, envAt){
     const i=t.i, nm=blcNome(i); let auto=null;
+    (t.blcIgn||[]).forEach(g=>out.push(g.motivo==="acima" ? `Na ${nm}, o bloco ${g.k+1} começa no ${g.de}º andar e a torre tem ${t.pav} — ele fica de fora até a torre ter mais pavimentos.`
+      : `Na ${nm}, dois blocos começam no ${g.de}º andar — vale só o primeiro.`));
     if(!t.plate.length){ out.push(`A ${nm} desenhada ficou fora do lote — redesenhe a forma ou volte para a automática.`); return }
     if(I.foraLote>0.5) out.push(`A ${nm} passa ${nf(I.foraLote,0)} m² para fora do lote — a planta foi cortada na divisa.`);
-    const plOut = t.oco ? t.oco.pts : t.plate;
-    I.foraRecuo = Math.max(blcFora(plOut, m.torAll), blcFora(plOut, envTopo(t)));
-    if(I.foraRecuo>0.5) out.push(`A ${nm} avança ${nf(I.foraRecuo,0)} m² sobre os recuos (afastamento de ${nf(m.afast,1)} m às divisas).`);
-    // balanço: só o que a forma desenhada acrescenta além do que a forma automática já tinha fora do embasamento
+    // C2: cada bloco é conferido com o envelope da sua cota (recuos progressivos da 2.4) e com o bloco de baixo (balanço)
+    const fx=(t.faixas||[]).filter(f=>f.blc), pilha=fx.length>1, ext=f=>f.oco ? f.oco.pts : f.plate;
+    const blocos = pilha ? fx : [{de:1, ate:t.pav, plate:t.plate, oco:t.oco, A:t.A, z1:t.H, af:m.afast, bk:t.blcRef||0, ref:true}];
+    I.bl = blocos.map((f,j)=>{ const po=ext(f), env=envAt(pilha? f.z1 : t.H), b={k:f.bk, de:f.de, ate:f.ate, A:f.A, ref:!!f.ref, plate:f.plate, env:env||m.torAll, foraRecuo:0, bal:0, nucleo:true};
+      if(po.length>2){ b.foraRecuo=Math.max(blcFora(po, m.torAll), blcFora(po, env));
+        if(j>0){ const pb=ext(blocos[j-1]); b.below=pb; b.bal = pb.length>2 ? blcAreaFora(po, pb) : G.area(po) } }
+      if(!f.ref && f.nucleo!=null){ b.nucleo = f.nucleo>=0.999; f.nucleoCortado=!b.nucleo }
+      return b });
+    const plOut = ext(blocos[0]);
+    I.foraRecuo = Math.max(...I.bl.map(b=>b.foraRecuo));
+    if(!pilha){ if(I.foraRecuo>0.5) out.push(`A ${nm} avança ${nf(I.foraRecuo,0)} m² sobre os recuos (afastamento de ${nf(m.afast,1)} m às divisas).`) }
+    else I.bl.forEach((b,j)=>{ if(b.foraRecuo>0.5) out.push(`Na ${nm}, o bloco ${blcRotulo(b)} avança ${nf(b.foraRecuo,0)} m² sobre os recuos (afastamento de ${nf(blocos[j].af||m.afast,1)} m na sua altura).`) });
+    I.bl.forEach(b=>{ if(b.bal>0.5) out.push(`Na ${nm}, o bloco ${blcRotulo(b)} avança ${nf(b.bal,0)} m² além do bloco de baixo — balanço ou transição de pilares.`) });
+    I.bl.forEach(b=>{ if(!b.nucleo) out.push(`Na ${nm}, o bloco ${blcRotulo(b)} corta o núcleo (escada e elevadores) — o núcleo sobe inteiro até o topo: amplie ou mova o bloco.`) });
+    // balanço: só o que a forma desenhada acrescenta além do que a forma automática já tinha fora do embasamento (bloco mais baixo)
     if(m.emb && m.emb.length>2){ I.balanco=blcFora(plOut, m.emb);
       if(I.balanco>0.5){ if(!auto) auto=blcAutoPlanta(st, i).plate; const base=auto && auto.length ? blcFora(auto, m.emb) : 0;
         if(I.balanco>base+1) out.push(`A ${nm} sai ${nf(I.balanco,0)} m² da projeção do embasamento — balanço ou pilares próprios até o chão.`); else I.balanco=0 } }
@@ -2763,9 +2924,9 @@ function blcTorreAv(st, m, t, I, out, envTopo){
 function blcAvisos(st, m){
   const out=[], R=st.regras, info=[];
   const T=m.T||[], D=T.filter(t=>t.desenhada); if(!D.length) return {avisos:out, info, pares:[], geral:[]};
-  const envTopo = t=>{ if(!m.env || !m.env.length) return null; const e=m.env.find(e=>t.H<=e.z1+1e-6) || m.env[m.env.length-1]; return e && e.poly };
+  const envAt = z=>{ if(!m.env || !m.env.length) return null; const e=m.env.find(e=>z<=e.z1+1e-6) || m.env[m.env.length-1]; return e && e.poly };
   D.forEach(t=>{ const I={i:t.i, foraLote:t.blcForaLote||0, foraRecuo:0, balanco:0, nucleo:true, av:[]}, n0=out.length;
-    info.push(I); blcTorreAv(st, m, t, I, out, envTopo); I.av=out.slice(n0) });
+    info.push(I); blcTorreAv(st, m, t, I, out, envAt); I.av=out.slice(n0) });
   const n1=out.length, pares=[];
   // distância entre torres (só nos pares com ao menos uma desenhada; as automáticas já respeitam a regra)
   for(let a=0;a<T.length;a++) for(let b=a+1;b<T.length;b++){
@@ -2775,7 +2936,7 @@ function blcAvisos(st, m){
     else if(d<m.gap-0.05){ pares.push({a, b, d}); out.push(`As torres ${a+1} e ${b+1} ficam a ${nf(d,1)} m; a regra pede ${nf(m.gap,1)} m entre torres.`) }
   }
   // índices: a forma desenhada não encolhe para caber — os excessos viram aviso
-  const tor=T.reduce((s,t)=>s+t.A,0), cap=R.toTorre*m.A;
+  const tor=T.reduce((s,t)=>s+(t.Aproj||t.A),0), cap=R.toTorre*m.A;   // C2: pela maior projeção de cada torre
   if(tor>cap+1 && !m.torOcupa) out.push(`As torres ocupam ${nf(tor,0)} m², acima da taxa de ocupação (${nf(cap,0)} m²).`);
   if(m.CA>R.caMax+1e-6) out.push(`Com a forma desenhada, o CA fica em ${nf(m.CA,2)} (máximo ${nf(R.caMax,1)}) — reduza pavimentos ou a área da forma.`);
   const hLim=m.hLim??R.hMax; if(m.H>hLim+1e-6) out.push(`A altura de ${nf(m.H,1)} m passa do gabarito (${nf(hLim,1)} m).`);
@@ -4319,13 +4480,13 @@ function formaAvisos(m, st){
   const F=st.forma, out=[]; if(!F || !F.on) return out;
   if(+F.hEmbMax>0 && m.hEmb > +F.hEmbMax+1e-6) out.push(`O embasamento tem ${nf(m.hEmb,1)} m e a zona permite ${nf(+F.hEmbMax,1)} m — reduza o pé-direito do térreo ou as garagens elevadas.`);
   if(F.aero && m.H > m.hLim+1e-6) out.push(`O plano de proteção do aeródromo limita a altura a ${nf(m.hLim,1)} m acima da soleira (cota ${nf(+F.aeroCota,1)} m) — o estudo tem ${nf(m.H,1)} m.`);
-  (m.T||[]).forEach((t,i)=>{ const fx=t.faixas||[]; if(fx.length>1){ const mn=fx.reduce((a,f)=>Math.min(a,f.A),Infinity); if(mn<1) out.push(`A torre ${i+1} não cabe nos recuos progressivos a partir do ${fx.find(f=>f.A<1).de}º pavimento.`) } });
+  (m.T||[]).forEach((t,i)=>{ const fx=t.faixas||[]; if(fx.length>1 && !t.desenhada){ /* C2: a pilha de blocos tem avisos próprios (src/calc/blocos.js) */ const mn=fx.reduce((a,f)=>Math.min(a,f.A),Infinity); if(mn<1) out.push(`A torre ${i+1} não cabe nos recuos progressivos a partir do ${fx.find(f=>f.A<1).de}º pavimento.`) } });
   return out;
 }
 HOOK.compute.push((m, st)=>{
   if(!st.forma || !st.forma.on) return;
   // andar recuado que corta o núcleo: a torre não pode subir até ali com esse escalonamento
-  (m.T||[]).forEach((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l || !l.core || !l.core.length) return; const core=G.scaleToArea(l.core, G.area(l.core)*0.97);
+  (m.T||[]).forEach((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l || !l.core || !l.core.length || t.desenhada) return; const core=G.scaleToArea(l.core, G.area(l.core)*0.97);
     const f=(t.faixas||[]).find(f=>f.plate!==t.plate && !core.every(q=>G.pip(q,f.plate))); if(f){ f.nucleoFora=true; t.nucleoFora=f.de;
       m.avisos && m.avisos.push(`Na torre ${i+1}, o recuo progressivo corta o núcleo a partir do ${f.de}º pavimento — reduza pavimentos (até ${f.de-1}) ou use a torre reta.`) } });
   if(m.avisos) m.avisos.push(...formaAvisos(m, st));
@@ -5100,7 +5261,7 @@ function orcDrivers(st, m){
   const P=st.produto, E=st.estudo, T=m.T||[], sub=+P.subsolos||0, gac=+P.garAcima||0;
   const maxPav = T.reduce((s,t)=>Math.max(s,t.pav||0),0);
   const proj = Math.max(m.embA||0, sub>0? (m.subA||0) : 0);
-  const carga = T.reduce((s,t)=>s+(t.A||0)*(t.pav||0),0) + proj*(1+sub+gac);
+  const carga = T.reduce((s,t)=>s+(t.desenhada && t.Atot ? t.Atot : (t.A||0)*(t.pav||0)),0) + proj*(1+sub+gac);   // C2: pilha de blocos soma por faixa
   const contArea = sub>0 ? orcPerim(m.sub)*sub*(+P.peGar||3) : 0;
   const vedA = (m.tiposA||0)+(m.duplexA||0)+(m.aticoA||0)+(m.hallA||0)+(m.lojaA||0)+(m.lzExtraA||0) + (m.garA||0)*0.1;
   const fachA = T.reduce((s,t)=>s+orcFachTorre(t, m),0) + orcPerim(m.emb)*(m.hEmb||0);
@@ -6213,7 +6374,8 @@ function uniGroups(st, m, spacing){
       const pl = f.plate && f.plate.length>2 ? f.plate : null; if(!pl) return;
       const floors=[]; for(let k=f.de-1;k<Math.min(f.ate,t.tipoFloors);k++) floors.push({k, z:base+k*P.pe+P.pe/2});
       if(!floors.length) return;
-      const us = pl===t.plate ? units : units.map(u=>({...u, poly:G.clipToPoly(u.poly, pl)})).filter(u=>u.poly.length>2 && G.area(u.poly)>4);
+      const us = f.lay ? f.lay.units.filter(u=>!u.livre && u.poly && u.poly.length>2)   // C2: bloco com layout próprio (mesmo núcleo, unidades por área)
+        : pl===t.plate ? units : units.map(u=>({...u, poly:G.clipToPoly(u.poly, pl)})).filter(u=>u.poly.length>2 && G.area(u.poly)>4);
       groups.push({ti, fk, kind:"tipo", plate:pl, units:us.map(u=>({poly:u.poly, nome:u.nome, alvo:u.alvo, fac:uniFacades(u.poly,pl,st,spacing)})), floors});
     });
     if(t.hasCob){ const fl=fxs[fxs.length-1], cp=fl.plate && fl.plate.length>2 ? fl.plate : t.plate;
@@ -6273,7 +6435,7 @@ const uniNow=()=> (typeof performance!=="undefined"? performance.now() : Date.no
 function unidadesGeo(st, m, o={}){
   const PR=o.prisms||prisms(st,m), obst=uniObst(PR);
   const geoSig=JSON.stringify([+st.lote.lat||0, st.lote.norte||0, obst.map(q=>[q.poly,q.z0,q.z1]),
-    (m.T||[]).map((t,ti)=>[t.plate, t.tipoFloors, t.hasCob, m.tipo&&m.tipo[ti]? m.tipo[ti].units.map(u=>u.poly) : 0]), m.hEmb, m.pavLz, st.produto.pe, st.produto.cob.qtd]);
+    (m.T||[]).map((t,ti)=>[t.plate, t.tipoFloors, t.hasCob, m.tipo&&m.tipo[ti]? m.tipo[ti].units.map(u=>u.poly) : 0, (t.faixas||[]).map(f=>f.lay? f.lay.units.map(u=>u.poly) : 0)]), m.hEmb, m.pavLz, st.produto.pe, st.produto.cob.qtd]);
   const full=_uniCache.full;
   if(full && full.sig===geoSig) return full;
   if(o.rough){ const r=_uniCache.rough; if(r && r.sig===geoSig) return r }
@@ -7692,7 +7854,7 @@ function massing(st, opt={}){
   const T = torres.map((t,i)=>{
     const slot=slots[i]||[], maxP=G.scaleToArea(slot, G.area(slot)*k), maxA=G.area(maxP);
     // C1: torre desenhada (src/calc/blocos.js) — a planta é o bloco recortado pelo lote; recuos, TO e CA viram avisos
-    const bl = typeof blcTorre==="function" ? blcTorre(st, i, L) : null;
+    const bl = typeof blcTorre==="function" ? blcTorre(st, i, L, t.pav) : null;   // C2: pilha de blocos (plate = bloco de referência)
     const plate = bl ? bl.plate : ocupa ? maxP : G.scaleToArea(maxP, need), pA=G.area(plate);
     const fit = bl ? pA>1 && pA >= need-0.5 : ocupa ? pA>1 : maxA >= need-0.5 && pA>1;
     // fator das unidades: < 1 se o mix não couber; ocupando o contorno, as unidades crescem ou encolhem até preencher o andar
@@ -7701,11 +7863,11 @@ function massing(st, opt={}){
     const tipoFloors = t.pav - (hasCob?1:0);
     // faixas de andares (2.4): planta de cada andar recortada pelo recuo da sua cota; sem recuos progressivos é uma faixa só
     const zB = hEmb + (pavLz && i===0 ? P.pe : 0);
-    let faixas = prog && FO.escalonar && plate.length && !bl ? formaTorre({plate, pav:t.pav, zBase:zB, pe:P.pe, envBand:z=>slotIn(i, envAt(afAt(z))), afAt}) : [];
+    let faixas = prog && FO.escalonar && plate.length && !bl ? formaTorre({plate, pav:t.pav, zBase:zB, pe:P.pe, envBand:z=>slotIn(i, envAt(afAt(z))), afAt}) : bl ? blcFaixas(bl, zB, P.pe, afAt) : [];
     if(!faixas.length) faixas=[{de:1, ate:t.pav, n:t.pav, plate, A:pA, z0:zB, z1:zB+t.pav*P.pe, af:afAt(zB+t.pav*P.pe)}];
     faixas.forEach(f=>{ f.nTipo=Math.max(0, Math.min(f.ate, tipoFloors)-f.de+1);
       if(Math.abs(f.A-pA)<0.25){ f.qtd=P.mix.map(u=>u.qtd); f.r=r; f.priv=mixPriv*r; f.un=mixUn }
-      else { const x= f.A<1 ? {qtd:P.mix.map(()=>0), r:0} : formaMix(P.mix, f.A*P.efic, FO.rMin||0.9); f.qtd=x.qtd; f.r=x.r; f.priv=P.mix.reduce((s,u,j)=>s+u.area*x.qtd[j],0)*x.r; f.un=x.qtd.reduce((s,n)=>s+n,0) } });
+      else { const x= f.A<1 ? {qtd:P.mix.map(()=>0), r:0} : f.blc ? blcMixFaixa(P.mix, f.A*P.efic, r) : formaMix(P.mix, f.A*P.efic, (FO&&FO.rMin)||0.9); f.qtd=x.qtd; f.r=x.r; f.priv=P.mix.reduce((s,u,j)=>s+u.area*x.qtd[j],0)*x.r; f.un=x.qtd.reduce((s,n)=>s+n,0) } });
     const Atop = faixas[faixas.length-1].A, one = faixas.length===1;
     const floorPriv = Atop*P.efic;
     const rc = hasCob ? Math.min(1, (duplex? 2*floorPriv : floorPriv)/Math.max(1,cobPriv)) : 0;
@@ -7713,7 +7875,7 @@ function massing(st, opt={}){
     const duplexA = hasCob && duplex ? Math.min(Atop, Math.max(0, cobP-floorPriv)/P.efic) : 0;
     const Atot = one ? pA*t.pav : faixas.reduce((s,f)=>s+f.A*f.n,0);
     return {i, pav:t.pav, H:Hs[i], slot, maxP, maxA, plate, A:pA, Atop, Atot, faixas, fit, r, rc, hasCob, cobP, duplexA, tipoFloors,
-      ...(bl ? {desenhada:true, oco:bl.oco, blcForaLote:bl.foraLote} : {}),
+      ...(bl ? {desenhada:true, oco:bl.oco, blcForaLote:bl.foraLote, blcRef:bl.ref, blcIgn:bl.ign, Aproj:bl.Aproj} : {}),
       priv: (one ? tipoFloors*mixPriv*r : faixas.reduce((s,f)=>s+f.nTipo*f.priv,0)) + cobP,
       units: (one ? tipoFloors*mixUn : faixas.reduce((s,f)=>s+f.nTipo*f.un,0)) + (hasCob?P.cob.qtd:0) };
   });
@@ -7724,13 +7886,13 @@ function massing(st, opt={}){
   const tiposA = T.reduce((s,t)=>s+t.Atot,0), duplexA=T.reduce((s,t)=>s+t.duplexA,0);
   const aticoA = P.atico ? T.reduce((s,t)=>s+t.Atop*0.25,0) : 0;
   const unitsRes = T.reduce((s,t)=>s+t.units,0), privRes=T.reduce((s,t)=>s+t.priv,0);
-  const torProj = T.reduce((s,t)=>s+t.A,0);
+  const torProj = T.reduce((s,t)=>s+(t.Aproj||t.A),0);   // C2: maior projeção da pilha de blocos
   const H = Hmax;
   // aptos por tipologia (todas as torres)
   const unitRows = P.mix.map(u=>({nome:u.nome, alvo:u.area, n:0, area:0, preco:u.preco}));
   T.forEach(t=>t.faixas.forEach(f=>P.mix.forEach((u,j)=>{ unitRows[j].n += f.qtd[j]*f.nTipo; unitRows[j].area += f.qtd[j]*f.nTipo*u.area*f.r })));
   const cobN = T.reduce((s,t)=>s+(t.hasCob?P.cob.qtd:0),0), cobArea = T.reduce((s,t)=>s+t.cobP,0);
-  const minApto = !prog ? Math.min(...P.mix.map(u=>u.area*Math.min(...T.map(t=>t.r||1))))
+  const minApto = !prog && T.every(t=>t.faixas.length<2) ? Math.min(...P.mix.map(u=>u.area*Math.min(...T.map(t=>t.r||1))))
     : Math.min(...P.mix.map((u,j)=>u.area*Math.min(1, ...T.flatMap(t=>t.faixas.filter(f=>f.qtd[j]>0 && f.nTipo>0).map(f=>f.r||1)))));
   const hLim = typeof formaHLim==="function" ? formaHLim(st) : R.hMax;
   const env = prog ? formaEnvelope(envAt, afAt, hEmb, Math.max(hLim, Hmax), P.pe) : null;
@@ -7767,9 +7929,10 @@ function compute(st, opt={}){
     return tipoLayout(t.plate, list, {corr:E.corrTipo, profMin:E.profMin, nElev: +E.elevadores||nAuto, pos:E.nucleoPos, lado:E.nucleoLado, escada:E.escadaLado, planta:E.tipoPlanta,
       escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf});
   });
+  if(typeof blcLayFaixas==="function") blcLayFaixas(st, m);   // C2: blocos fora da referência → mesmo núcleo, unidades por área (f.lay)
   // sacadas em balanço somam área construída e privativa
   m.sacA=0; m.sacBal=0;
-  m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; const fl=t.tipoFloors; l.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } }) });
+  m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; (t.faixas.some(f=>f.lay)? t.faixas.map(f=>[f.lay||l, f.nTipo]) : [[l, t.tipoFloors]]).forEach(([ly,fl])=>ly.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } })) });
   m.coreSets = m.tipo.map((l,i)=>l && l.core && l.core.length? {i, core:l.core, lobby:l.lobby, lay:l} : null).filter(Boolean);
   m.cores = m.coreSets.map(c=>c.core); m.lobbies = m.coreSets.map(c=>c.lobby).filter(p=>p&&p.length);
   m.obst = [...m.cores, ...m.lobbies];
@@ -8482,12 +8645,19 @@ function alavancasCalc(st, m) {
    (índice = torre de S.produto.torres). Um bloco é um contorno que vale do andar 'de' até o próximo bloco; no C1 cada torre
    tem no máximo UM bloco (de = 1, vale para todos os andares — o total segue no stepper da torre). Em "desenhada", a torre
    com bloco usa o bloco como planta (recortado pelo lote, NÃO encolhido pelos recuos): recuo, TO, CA, gabarito, balanço,
-   núcleo e distância entre torres viram avisos. Torre sem bloco (ou modo "auto") = forma automática, como antes. */
+   núcleo e distância entre torres viram avisos. Torre sem bloco (ou modo "auto") = forma automática, como antes.
+
+   C2: pilha de blocos (blcPilha/blcTorre/blcFaixas). Cada bloco vira uma faixa de t.faixas (de, ate, plate, A, z0, z1, bk,
+   ref); o último estica até o total de andares do stepper. O bloco de referência (mais andares tipo) é t.plate e recebe o
+   pavimento tipo detalhado; os demais repetem o MESMO núcleo com unidades por área (blcLayFaixa → f.lay), mix por
+   blcMixFaixa (unidades do tamanho das do bloco de referência, quantidade pela área). Avisos por bloco: recuos na sua cota,
+   balanço sobre o bloco de baixo, núcleo cortado, bloco ignorado. Edição pura: blcMaisBloco, blcCopiaBaixo, blcRecua. */
 extendDEF("blocos", { modo:"auto", torres:[] });
 const BLC_FORMAS = [["ret","Retângulo"],["L","L"],["U","U"],["T","T"],["H","H"],["patio","Pátio"]];
 const blcAtivo = st => !!(st && st.blocos && st.blocos.modo==="desenhada");
-/* bloco da torre i (C1: o primeiro), só no modo desenhado */
-function blcBloco(st, i){ if(!blcAtivo(st)) return null; const t=(st.blocos.torres||[])[i], b=t && t.blocos && t.blocos[0]; return b && b.pts && b.pts.length>2 ? b : null }
+const blcValido = b => !!(b && b.pts && b.pts.length>2);
+/* bloco k da torre i (padrão: o primeiro), só no modo desenhado */
+function blcBloco(st, i, k=0){ if(!blcAtivo(st)) return null; const t=(st.blocos.torres||[])[i], b=t && t.blocos && t.blocos[k]; return blcValido(b) ? b : null }
 /* planta de um bloco: contorno recortado pelo lote; os vazios inteiros dentro viram polígono com ponte (entPoly) */
 function blcPlanta(b, L){
   const raw=b.pts, rawA=G.area(raw), out = L && L.length>2 ? G.clipToPoly(raw, L) : raw.slice();
@@ -8496,12 +8666,144 @@ function blcPlanta(b, L){
   const plate = vz.length ? entPoly({pts:out, vazios:vz}) : out;
   return {plate, A:G.area(plate), oco: vz.length? {pts:out, vazios:vz} : null, rawA, foraLote:Math.max(0, rawA-G.area(out))};
 }
-/* chamado pelo massing: planta desenhada da torre i (ou null = automática) */
-function blcTorre(st, i, L){ const b=blcBloco(st, i); return b ? {...blcPlanta(b, L), b} : null }
+/* C2 — pilha de blocos. A lista da torre fica ordenada por 'de'; o 1º bloco sempre começa no 1º andar e o ÚLTIMO estica
+   até o total de andares do stepper (Máx, otimizador e cenários seguem funcionando). Bloco que começa acima do total
+   (ou no mesmo andar que o anterior) fica de fora, com aviso. Bloco de referência = o que tem mais andares tipo (empate:
+   o mais baixo): é a planta da torre (t.plate), onde o pavimento tipo é detalhado; os demais repetem o mesmo núcleo. */
+function blcPilha(st, i, L, pav){
+  if(!blcAtivo(st)) return null;
+  const tw=(st.blocos.torres||[])[i], lst=((tw && tw.blocos)||[]).map((b,k)=>({b,k})).filter(x=>blcValido(x.b));
+  if(!lst.length) return null;
+  lst.sort((a,c)=>(+a.b.de||1)-(+c.b.de||1) || a.k-c.k);
+  const P=st.produto, N=Math.max(1, Math.round(+pav || +((P.torres[i]||{}).pav) || 1)), tf=N-(P.cob && P.cob.on && N>=2 ? 1 : 0);
+  const pil=[], ign=[];
+  lst.forEach((x,j)=>{ const de = j===0 ? 1 : Math.max(1, Math.round(+x.b.de||1)), ant=pil[pil.length-1];
+    if(ant && de<=ant.de){ ign.push({k:x.k, de, motivo:"repetido"}); return }
+    if(de>N){ ign.push({k:x.k, de, motivo:"acima"}); return }
+    pil.push({k:x.k, b:x.b, de}) });
+  pil.forEach((p,j)=>{ p.ate = j<pil.length-1 ? pil[j+1].de-1 : N; p.n=p.ate-p.de+1; p.nTipo=Math.max(0, Math.min(p.ate, tf)-p.de+1); Object.assign(p, blcPlanta(p.b, L)) });
+  let ref=pil[0]; pil.forEach(p=>{ if(p.A>1 && (ref.A<=1 || p.nTipo>ref.nTipo)) ref=p });
+  return {pil, ign, ref, N};
+}
+/* chamado pelo massing: planta desenhada da torre i (ou null = automática). plate/A/oco = bloco de referência;
+   pilha = blocos ativos (de, ate, planta); Aproj = maior projeção (TO); foraLote = soma dos blocos */
+function blcTorre(st, i, L, pav){
+  const R=blcPilha(st, i, L, pav); if(!R) return null; const r=R.ref;
+  return {plate:r.plate, A:r.A, oco:r.oco, rawA:r.rawA, foraLote:R.pil.reduce((s,p)=>s+p.foraLote,0), b:r.b, ref:r.k,
+    pilha:R.pil, ign:R.ign, Aproj:Math.max(...R.pil.map(p=>p.A))};
+}
+/* faixas de andares da pilha (massing): uma por bloco; com um bloco só devolve [] (o massing usa a faixa única, como no C1) */
+function blcFaixas(bl, zB, pe, afAt){
+  if(!bl || !bl.pilha || bl.pilha.length<2) return [];
+  return bl.pilha.map(p=>{ const z1=zB+p.ate*pe; return {de:p.de, ate:p.ate, n:p.n, plate:p.plate, A:p.A, z0:zB+(p.de-1)*pe, z1, af:afAt? afAt(z1) : 0,
+    blc:true, bk:p.k, ref:p.k===bl.ref, oco:p.oco, foraLote:p.foraLote} });
+}
+/* mix de um bloco que não é o de referência: unidades do MESMO tamanho das do bloco de referência (fator rRef) e a
+   quantidade por andar ajustada à área do bloco (proporção do mix mantida, ≥ 1 por tipologia usada); o fator final
+   fecha a conta para a privativa ser área × eficiência, como no C1 */
+function blcMixFaixa(mix, cap, rRef){
+  const rr = rRef>0 ? rRef : 1, q=torreAjustaMix(mix, cap/rr, 99), s=mix.reduce((a,u,j)=>a+(+u.area||0)*q[j],0);
+  return {qtd:q, r: s>0 && cap>0 ? cap/s : 0};
+}
+/* layout de um andar de outro bloco: o MESMO núcleo do bloco de referência (núcleo contínuo) e as unidades distribuídas
+   por área em volta dele, nos dois lados do corredor (que segue a linha do corredor do tipo). Puro. */
+function blcLayFaixa(plate, ref, list, o={}){
+  if(!plate || plate.length<3 || !ref || !ref.core || !ref.core.length) return null;
+  const ux=ref.ux, vy=ref.vy, [u0,u1]=G.extent(plate,ux), [v0,v1]=G.extent(plate,vy);
+  const sub=(va,vb,ua,ub)=>{ if(!(vb-va>0.05)) return []; const b=G.band(plate,vy,va,vb); return (ua===undefined||!b.length)? b : !(ub-ua>0.05) ? [] : G.band(b,ux,ua,ub) };
+  const core=ref.coreOut||ref.core, [ku0,ku1]=G.extent(core,ux), [kv0,kv1]=G.extent(core,vy);
+  let [c0,c1] = ref.corridor && ref.corridor.length>2 ? G.extent(ref.corridor, vy) : [(kv0+kv1)/2, (kv0+kv1)/2];
+  const corridor = sub(c0, c1, u0+0.01, u1-0.01), reg=[];
+  // um lado do corredor: inteiro, ou dividido em volta do núcleo (com o trecho atrás dele, se houver fundo)
+  const lado=(va,vb,fac)=>{ if(vb-va<1) return;
+    if(kv1>va+0.1 && kv0<vb-0.1){ reg.push({p:sub(va,vb,u0,ku0),fac}); reg.push({p:sub(va,vb,ku1,u1),fac});
+      if(fac==="max" && vb-kv1>3) reg.push({p:sub(kv1,vb,ku0,ku1),fac}); if(fac==="min" && kv0-va>3) reg.push({p:sub(va,kv0,ku0,ku1),fac}) }
+    else reg.push({p:sub(va,vb),fac}) };
+  lado(v0, c0, "min"); lado(c1, v1, "max");
+  const R=reg.filter(r=>r.p.length && G.area(r.p)>4).map(r=>({...r, A:G.area(r.p), list:[], used:0}));
+  const us=list.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo), totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
+  us.forEach(u=>{ let best=null, bs=-Infinity; R.forEach(r=>{ const s=r.A/totalA*totalAlvo-r.used-u.alvo*0.5; if(s>bs){ bs=s; best=r } }); if(best){ best.list.push(u); best.used+=u.alvo } });
+  const out=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6;
+  R.forEach(r=>{
+    if(!r.list.length){ out.push({poly:r.p, nome:"livre", alvo:0, area:r.A, livre:true}); return }
+    r.list.sort((a,b)=>a.i-b.i);
+    const tot=r.list.reduce((s,u)=>s+u.alvo,0); let a2=0; const [mn,mx]=G.extent(r.p,ux); let prev=mn;
+    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot), poly=G.band(r.p,ux,prev,cut);
+      const un={poly, nome:u.nome, alvo:u.alvo, area:G.area(poly), fac:r.fac};
+      if(u.sac>0 && poly.length){ const [pv0,pv1]=G.extent(poly,vy), wU=cut-prev, w=Math.max(1.2,Math.min(wU-1, u.sac/prof)), pr=u.sac/w, uc=(prev+cut)/2;
+        let va,vb; if(r.fac==="max"){ va= sacTipo==="balanco"? pv1 : pv1-pr; vb=va+pr } else { vb= sacTipo==="balanco"? pv0 : pv0+pr; va=vb-pr }
+        let sp=G.rect(ux,vy,uc-w/2,va,w,vb-va); if(sacTipo!=="balanco") sp=G.clipToPoly(sp, poly);
+        un.sac={poly:sp, area:G.area(sp), tipo:sacTipo} }
+      prev=cut; out.push(un) });
+  });
+  return {ux, vy, units:out, core:ref.core, lobby:ref.lobby, coreParts:ref.coreParts, coreDoors:ref.coreDoors, coreLines:ref.coreLines,
+    coreOut:ref.coreOut, coreReserva:ref.coreReserva, coreA:ref.coreA, coreKinds:ref.coreKinds, fachada:ref.fachada, corridor, dbl:ref.dbl, hallEnds:[], escSobra:0, blc:true};
+}
+/* compute (src/model.js, logo depois do pavimento tipo): layout por área dos blocos que não são o de referência + núcleo dentro? */
+function blcLayFaixas(st, m){
+  const P=st.produto;
+  (m.T||[]).forEach((t,i)=>{ const ref=m.tipo && m.tipo[i]; if(!t.desenhada || !ref || !t.faixas || t.faixas.length<2) return;
+    const tem = ref.core && ref.core.length, base = tem ? blcDentro(ref.core, t.plate) : 1;   // o quanto o núcleo cabe no próprio bloco de referência
+    t.faixas.forEach(f=>{ if(f.plate===t.plate) return;
+      // núcleo cortado = o bloco perde parte do núcleo que o bloco de referência tem
+      f.nucleo = f.A>1 && tem ? Math.min(1, blcDentro(ref.core, f.plate) + (1-base)) : 0;
+      if(f.nTipo<1 || f.A<1) return;
+      const list=[]; P.mix.forEach((u,j)=>{ for(let q=0;q<(f.qtd[j]||0);q++) list.push({nome:u.nome, alvo:u.area*f.r, sac:+u.sac||0}) });
+      f.lay=blcLayFaixa(f.plate, ref, list, {sacTipo:P.sacTipo, sacProf:P.sacProf}) }) });
+}
+/* layout do andar k (1 = primeiro pavimento da torre i): o da faixa (bloco) quando houver, senão o pavimento tipo */
+function torreLayAndar(m, i, k){ const t=m.T && m.T[i], f=t && (t.faixas||[]).find(f=>k>=f.de && k<=f.ate); return (f && f.lay) || (m.tipo && m.tipo[i]) || null }
 /* planta do andar k (1 = primeiro pavimento da torre) pela faixa a que ele pertence (2.4 escalonada; C2 pilha de blocos) */
 function torrePlantaAndar(t, k){ const f=(t.faixas||[]).find(f=>k>=f.de && k<=f.ate); return f && f.plate ? f.plate : t.plate }
 /* perímetro de fachada de uma planta da torre (com pátio: borda + vazios, sem a "ponte" do polígono) */
-function blcPerim(t, p){ if(!p || p.length<3) return 0; if(t && t.oco && p===t.plate) return [t.oco.pts, ...t.oco.vazios].reduce((s,r)=>s+G.perimeter(r),0); return G.perimeter(p) }
+function blcPerim(t, p){ if(!p || p.length<3) return 0; const oco = t && t.oco && p===t.plate ? t.oco : t && ((t.faixas||[]).find(f=>f.plate===p && f.oco)||{}).oco;
+  if(oco) return [oco.pts, ...oco.vazios].reduce((s,r)=>s+G.perimeter(r),0); return G.perimeter(p) }
+/* ---------- edição da pilha (puras; a interface chama e depois update()) ---------- */
+const blcClone = b => { const c={pts:b.pts.map(q=>[q[0],q[1]]), de:b.de}; if(b.vazios && b.vazios.length) c.vazios=b.vazios.map(v=>v.map(q=>[q[0],q[1]])); if(b.tipo) c.tipo=b.tipo; if(b.rot!=null) c.rot=b.rot; return c };
+/* "+ Bloco": novo bloco no topo, cópia do de cima, começando no meio da faixa de cima (null se ela tem um andar só) */
+function blcMaisBloco(st, i){
+  const tw=(st.blocos.torres||[])[i], L=tw && tw.blocos; if(!L || !L.length || !blcValido(L[L.length-1])) return null;
+  const top=L[L.length-1], N=Math.max(1, Math.round(+((st.produto.torres[i]||{}).pav)||1)), de0=L.length===1? 1 : Math.max(1, Math.round(+top.de||1)), n=N-de0+1;
+  if(n<2) return null;
+  const nb=blcClone(top); nb.de=de0+Math.ceil(n/2); L.push(nb); return nb;
+}
+/* "Copiar do de baixo": o bloco k fica com o contorno (e os pátios) do bloco k−1; o andar inicial não muda */
+function blcCopiaBaixo(st, i, k){
+  const L=((st.blocos.torres||[])[i]||{}).blocos; if(!L || !(k>0) || !blcValido(L[k-1]) || !L[k]) return null;
+  const c=blcClone(L[k-1]); c.de=L[k].de; L[k]=c; return c;
+}
+/* contorno deslocado d metros para dentro (d < 0: para fora), lado a lado (esquina em ponta). Vale para L, U, T, H…
+   desde que d seja menor que metade da ala mais estreita; senão devolve null */
+function blcOffset(p, d){
+  if(!p || p.length<3) return null; const s=Math.sign(G.sArea(p))||1, ln=[];
+  for(let i=0;i<p.length;i++){ const a=p[i], b=p[(i+1)%p.length], dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy); if(l<1e-6) continue;
+    const u=[dx/l, dy/l], n=[-u[1]*s, u[0]*s]; const q=ln[ln.length-1]; if(q && Math.abs(q.u[0]*u[1]-q.u[1]*u[0])<1e-9 && q.u[0]*u[0]+q.u[1]*u[1]>0) continue;   // colinear com o anterior
+    ln.push({a:[a[0]+n[0]*d, a[1]+n[1]*d], u}) }
+  if(ln.length<3) return null;
+  const out=ln.map((B,i)=>{ const A=ln[(i-1+ln.length)%ln.length], cr=A.u[0]*B.u[1]-A.u[1]*B.u[0]; if(Math.abs(cr)<1e-9) return B.a.slice();
+    const t=((B.a[0]-A.a[0])*B.u[1]-(B.a[1]-A.a[1])*B.u[0])/cr; return [A.a[0]+A.u[0]*t, A.a[1]+A.u[1]*t] });
+  for(let i=0;i<out.length;i++){ const a=out[i], b=out[(i+1)%out.length]; if((b[0]-a[0])*ln[i].u[0]+(b[1]-a[1])*ln[i].u[1] <= 0.05) return null }   // lado sumiu ou inverteu
+  for(let i=0;i<out.length;i++) for(let j=i+2;j<out.length;j++){ if(i===0 && j===out.length-1) continue; if(G.segInter(out[i],out[(i+1)%out.length],out[j],out[(j+1)%out.length])) return null }
+  const a0=G.area(p), a1=G.area(out); if(Math.sign(G.sArea(out))!==s || !(a1>1) || (d>0 && a1>=a0) || (d<0 && a1<=a0)) return null;
+  return out;
+}
+/* "Recuar X m": o bloco k vira o bloco de baixo recuado X m em todas as fachadas (pátios crescem X m); o 1º bloco recua em si mesmo */
+function blcRecua(st, i, k, d){
+  const L=((st.blocos.torres||[])[i]||{}).blocos, base=L && (k>0 ? L[k-1] : L[k]); if(!blcValido(base) || !L[k] || !(d>0)) return null;
+  const pts=blcOffset(base.pts, d); if(!pts) return null;
+  const nb={pts, de:L[k].de, tipo:"recuo"}; const vz=(base.vazios||[]).map(v=>blcOffset(v, -d)).filter(v=>v && entVazioOk({pts}, v)); if(vz.length) nb.vazios=vz;
+  L[k]=nb; return nb;
+}
+/* apaga o bloco k (a pilha se refaz: o de baixo estica até o próximo); o último bloco apagado devolve a torre à forma automática */
+function blcApagaBloco(st, i, k){ const L=((st.blocos.torres||[])[i]||{}).blocos; if(!L || !L[k]) return false; L.splice(k,1); if(L.length && k===0) L[0].de=1; return true }
+/* área de p fora de q (q pode ser côncavo: amostragem numa grade fina) */
+const blcConvexo = q => { let sg=0; for(let i=0;i<q.length;i++){ const a=q[i], b=q[(i+1)%q.length], c=q[(i+2)%q.length], cr=(b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]); if(Math.abs(cr)<1e-9) continue; const s=Math.sign(cr); if(sg && s!==sg) return false; sg=s } return true };
+function blcAreaFora(p, q){
+  if(!p || p.length<3) return 0; if(!q || q.length<3) return G.area(p); if(blcConvexo(q)) return blcFora(p, q);
+  const xs=p.map(v=>v[0]), ys=p.map(v=>v[1]), x0=Math.min(...xs), y0=Math.min(...ys), h=Math.max(0.2, Math.sqrt(G.area(p))/90); let n=0;
+  for(let x=x0+h/2; x<Math.max(...xs); x+=h) for(let y=y0+h/2; y<Math.max(...ys); y+=h) if(G.pip([x,y],p) && !G.pip([x,y],q)) n++;
+  return n*h*h;
+}
 /* forma automática da torre i (o que o massing calcula sem blocos): planta, faixa máxima (slot) e área */
 function blcAutoPlanta(st, i){
   const s2=Object.assign({}, st, {blocos:{modo:"auto", torres:[]}}), m=massing(s2), t=m.T[i]||{};
@@ -8556,14 +8858,21 @@ function blcFormato(tipo, slot, alvo, o={}){
   const b={pts:r.pts, de:1, tipo, rot}; if(r.vazios) b.vazios=r.vazios;
   return {bloco:b, A:r.A, ala:r.ala, curto: r.A < alvo-1};
 }
-/* aplica um formato à torre i, com a área atual do andar; clicar de novo no mesmo formato gira 90° */
-function blcAplicaFormato(st, i, tipo){
-  const auto=blcAutoPlanta(st, i), m=massing(st), alvo=(m.T[i]&&m.T[i].A) || auto.A, cur=blcBloco(st, i);
+/* aplica um formato ao bloco k da torre i (padrão: o 1º), com a área atual dele; clicar de novo no mesmo formato gira 90°.
+   1º bloco: dentro da faixa automática da torre; blocos de cima: dentro do retângulo envolvente do bloco de baixo */
+function blcAplicaFormato(st, i, tipo, k=0){
+  const cur=blcBloco(st, i, k), m=massing(st), fx=cur && m.T[i] && (m.T[i].faixas||[]).find(f=>f.bk===k);
+  const auto = k>0 && blcBloco(st, i, k-1) ? null : blcAutoPlanta(st, i);
+  const alvo=(fx && fx.A) || (m.T[i] && m.T[i].A) || (auto && auto.A) || 0;
   const rot = cur && cur.tipo===tipo ? ((cur.rot|0)+1)%4 : 0;
-  const slot = auto.slot.length ? auto.slot : st.lote.pts;
+  let slot;
+  if(auto) slot = auto.slot.length ? auto.slot : st.lote.pts;
+  else { const F=blcMoldura(blcBloco(st, i, k-1).pts); slot=G.rect(F.ux, F.vy, F.cu-F.W/2, F.cv-F.D/2, F.W, F.D); if(G.sArea(slot)<0) slot.reverse() }
   const r=blcFormato(tipo, slot, alvo, {rot, ala: 2*(+st.estudo.profMin||5.5)+(+st.estudo.corrTipo||1.6)}); if(!r || r.bloco.pts.length<3) return null;
   const B=st.blocos; B.modo="desenhada"; B.torres=B.torres||[]; while(B.torres.length<=i) B.torres.push({blocos:[]});
-  B.torres[i]={blocos:[r.bloco]}; return r;
+  const L=B.torres[i].blocos=B.torres[i].blocos||[];
+  if(L[k]){ r.bloco.de=k? L[k].de : 1; L[k]=r.bloco } else B.torres[i]={blocos:[r.bloco]};
+  return r;
 }
 /* distância entre dois contornos (0 se encostam ou se sobrepõem) */
 function blcDist(a, b){
@@ -8588,14 +8897,28 @@ function blcResumo(st, m){
   return {torres:D.map(t=>t.i), A, priv, ocupa, q, muda, desvio: Math.abs(ocupa-1)>0.10};
 }
 /* avisos de uma torre desenhada (I = medidas usadas pelo desenho da implantação) */
-function blcTorreAv(st, m, t, I, out, envTopo){
+const blcRotulo = f => f.de===f.ate ? `${f.de}º` : `${f.de}º–${f.ate}º`;
+function blcTorreAv(st, m, t, I, out, envAt){
     const i=t.i, nm=blcNome(i); let auto=null;
+    (t.blcIgn||[]).forEach(g=>out.push(g.motivo==="acima" ? `Na ${nm}, o bloco ${g.k+1} começa no ${g.de}º andar e a torre tem ${t.pav} — ele fica de fora até a torre ter mais pavimentos.`
+      : `Na ${nm}, dois blocos começam no ${g.de}º andar — vale só o primeiro.`));
     if(!t.plate.length){ out.push(`A ${nm} desenhada ficou fora do lote — redesenhe a forma ou volte para a automática.`); return }
     if(I.foraLote>0.5) out.push(`A ${nm} passa ${nf(I.foraLote,0)} m² para fora do lote — a planta foi cortada na divisa.`);
-    const plOut = t.oco ? t.oco.pts : t.plate;
-    I.foraRecuo = Math.max(blcFora(plOut, m.torAll), blcFora(plOut, envTopo(t)));
-    if(I.foraRecuo>0.5) out.push(`A ${nm} avança ${nf(I.foraRecuo,0)} m² sobre os recuos (afastamento de ${nf(m.afast,1)} m às divisas).`);
-    // balanço: só o que a forma desenhada acrescenta além do que a forma automática já tinha fora do embasamento
+    // C2: cada bloco é conferido com o envelope da sua cota (recuos progressivos da 2.4) e com o bloco de baixo (balanço)
+    const fx=(t.faixas||[]).filter(f=>f.blc), pilha=fx.length>1, ext=f=>f.oco ? f.oco.pts : f.plate;
+    const blocos = pilha ? fx : [{de:1, ate:t.pav, plate:t.plate, oco:t.oco, A:t.A, z1:t.H, af:m.afast, bk:t.blcRef||0, ref:true}];
+    I.bl = blocos.map((f,j)=>{ const po=ext(f), env=envAt(pilha? f.z1 : t.H), b={k:f.bk, de:f.de, ate:f.ate, A:f.A, ref:!!f.ref, plate:f.plate, env:env||m.torAll, foraRecuo:0, bal:0, nucleo:true};
+      if(po.length>2){ b.foraRecuo=Math.max(blcFora(po, m.torAll), blcFora(po, env));
+        if(j>0){ const pb=ext(blocos[j-1]); b.below=pb; b.bal = pb.length>2 ? blcAreaFora(po, pb) : G.area(po) } }
+      if(!f.ref && f.nucleo!=null){ b.nucleo = f.nucleo>=0.999; f.nucleoCortado=!b.nucleo }
+      return b });
+    const plOut = ext(blocos[0]);
+    I.foraRecuo = Math.max(...I.bl.map(b=>b.foraRecuo));
+    if(!pilha){ if(I.foraRecuo>0.5) out.push(`A ${nm} avança ${nf(I.foraRecuo,0)} m² sobre os recuos (afastamento de ${nf(m.afast,1)} m às divisas).`) }
+    else I.bl.forEach((b,j)=>{ if(b.foraRecuo>0.5) out.push(`Na ${nm}, o bloco ${blcRotulo(b)} avança ${nf(b.foraRecuo,0)} m² sobre os recuos (afastamento de ${nf(blocos[j].af||m.afast,1)} m na sua altura).`) });
+    I.bl.forEach(b=>{ if(b.bal>0.5) out.push(`Na ${nm}, o bloco ${blcRotulo(b)} avança ${nf(b.bal,0)} m² além do bloco de baixo — balanço ou transição de pilares.`) });
+    I.bl.forEach(b=>{ if(!b.nucleo) out.push(`Na ${nm}, o bloco ${blcRotulo(b)} corta o núcleo (escada e elevadores) — o núcleo sobe inteiro até o topo: amplie ou mova o bloco.`) });
+    // balanço: só o que a forma desenhada acrescenta além do que a forma automática já tinha fora do embasamento (bloco mais baixo)
     if(m.emb && m.emb.length>2){ I.balanco=blcFora(plOut, m.emb);
       if(I.balanco>0.5){ if(!auto) auto=blcAutoPlanta(st, i).plate; const base=auto && auto.length ? blcFora(auto, m.emb) : 0;
         if(I.balanco>base+1) out.push(`A ${nm} sai ${nf(I.balanco,0)} m² da projeção do embasamento — balanço ou pilares próprios até o chão.`); else I.balanco=0 } }
@@ -8608,9 +8931,9 @@ function blcTorreAv(st, m, t, I, out, envTopo){
 function blcAvisos(st, m){
   const out=[], R=st.regras, info=[];
   const T=m.T||[], D=T.filter(t=>t.desenhada); if(!D.length) return {avisos:out, info, pares:[], geral:[]};
-  const envTopo = t=>{ if(!m.env || !m.env.length) return null; const e=m.env.find(e=>t.H<=e.z1+1e-6) || m.env[m.env.length-1]; return e && e.poly };
+  const envAt = z=>{ if(!m.env || !m.env.length) return null; const e=m.env.find(e=>z<=e.z1+1e-6) || m.env[m.env.length-1]; return e && e.poly };
   D.forEach(t=>{ const I={i:t.i, foraLote:t.blcForaLote||0, foraRecuo:0, balanco:0, nucleo:true, av:[]}, n0=out.length;
-    info.push(I); blcTorreAv(st, m, t, I, out, envTopo); I.av=out.slice(n0) });
+    info.push(I); blcTorreAv(st, m, t, I, out, envAt); I.av=out.slice(n0) });
   const n1=out.length, pares=[];
   // distância entre torres (só nos pares com ao menos uma desenhada; as automáticas já respeitam a regra)
   for(let a=0;a<T.length;a++) for(let b=a+1;b<T.length;b++){
@@ -8620,7 +8943,7 @@ function blcAvisos(st, m){
     else if(d<m.gap-0.05){ pares.push({a, b, d}); out.push(`As torres ${a+1} e ${b+1} ficam a ${nf(d,1)} m; a regra pede ${nf(m.gap,1)} m entre torres.`) }
   }
   // índices: a forma desenhada não encolhe para caber — os excessos viram aviso
-  const tor=T.reduce((s,t)=>s+t.A,0), cap=R.toTorre*m.A;
+  const tor=T.reduce((s,t)=>s+(t.Aproj||t.A),0), cap=R.toTorre*m.A;   // C2: pela maior projeção de cada torre
   if(tor>cap+1 && !m.torOcupa) out.push(`As torres ocupam ${nf(tor,0)} m², acima da taxa de ocupação (${nf(cap,0)} m²).`);
   if(m.CA>R.caMax+1e-6) out.push(`Com a forma desenhada, o CA fica em ${nf(m.CA,2)} (máximo ${nf(R.caMax,1)}) — reduza pavimentos ou a área da forma.`);
   const hLim=m.hLim??R.hMax; if(m.H>hLim+1e-6) out.push(`A altura de ${nf(m.H,1)} m passa do gabarito (${nf(hLim,1)} m).`);
@@ -10156,13 +10479,13 @@ function formaAvisos(m, st){
   const F=st.forma, out=[]; if(!F || !F.on) return out;
   if(+F.hEmbMax>0 && m.hEmb > +F.hEmbMax+1e-6) out.push(`O embasamento tem ${nf(m.hEmb,1)} m e a zona permite ${nf(+F.hEmbMax,1)} m — reduza o pé-direito do térreo ou as garagens elevadas.`);
   if(F.aero && m.H > m.hLim+1e-6) out.push(`O plano de proteção do aeródromo limita a altura a ${nf(m.hLim,1)} m acima da soleira (cota ${nf(+F.aeroCota,1)} m) — o estudo tem ${nf(m.H,1)} m.`);
-  (m.T||[]).forEach((t,i)=>{ const fx=t.faixas||[]; if(fx.length>1){ const mn=fx.reduce((a,f)=>Math.min(a,f.A),Infinity); if(mn<1) out.push(`A torre ${i+1} não cabe nos recuos progressivos a partir do ${fx.find(f=>f.A<1).de}º pavimento.`) } });
+  (m.T||[]).forEach((t,i)=>{ const fx=t.faixas||[]; if(fx.length>1 && !t.desenhada){ /* C2: a pilha de blocos tem avisos próprios (src/calc/blocos.js) */ const mn=fx.reduce((a,f)=>Math.min(a,f.A),Infinity); if(mn<1) out.push(`A torre ${i+1} não cabe nos recuos progressivos a partir do ${fx.find(f=>f.A<1).de}º pavimento.`) } });
   return out;
 }
 HOOK.compute.push((m, st)=>{
   if(!st.forma || !st.forma.on) return;
   // andar recuado que corta o núcleo: a torre não pode subir até ali com esse escalonamento
-  (m.T||[]).forEach((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l || !l.core || !l.core.length) return; const core=G.scaleToArea(l.core, G.area(l.core)*0.97);
+  (m.T||[]).forEach((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l || !l.core || !l.core.length || t.desenhada) return; const core=G.scaleToArea(l.core, G.area(l.core)*0.97);
     const f=(t.faixas||[]).find(f=>f.plate!==t.plate && !core.every(q=>G.pip(q,f.plate))); if(f){ f.nucleoFora=true; t.nucleoFora=f.de;
       m.avisos && m.avisos.push(`Na torre ${i+1}, o recuo progressivo corta o núcleo a partir do ${f.de}º pavimento — reduza pavimentos (até ${f.de-1}) ou use a torre reta.`) } });
   if(m.avisos) m.avisos.push(...formaAvisos(m, st));
@@ -10930,7 +11253,7 @@ function orcDrivers(st, m){
   const P=st.produto, E=st.estudo, T=m.T||[], sub=+P.subsolos||0, gac=+P.garAcima||0;
   const maxPav = T.reduce((s,t)=>Math.max(s,t.pav||0),0);
   const proj = Math.max(m.embA||0, sub>0? (m.subA||0) : 0);
-  const carga = T.reduce((s,t)=>s+(t.A||0)*(t.pav||0),0) + proj*(1+sub+gac);
+  const carga = T.reduce((s,t)=>s+(t.desenhada && t.Atot ? t.Atot : (t.A||0)*(t.pav||0)),0) + proj*(1+sub+gac);   // C2: pilha de blocos soma por faixa
   const contArea = sub>0 ? orcPerim(m.sub)*sub*(+P.peGar||3) : 0;
   const vedA = (m.tiposA||0)+(m.duplexA||0)+(m.aticoA||0)+(m.hallA||0)+(m.lojaA||0)+(m.lzExtraA||0) + (m.garA||0)*0.1;
   const fachA = T.reduce((s,t)=>s+orcFachTorre(t, m),0) + orcPerim(m.emb)*(m.hEmb||0);
@@ -12035,7 +12358,8 @@ function uniGroups(st, m, spacing){
       const pl = f.plate && f.plate.length>2 ? f.plate : null; if(!pl) return;
       const floors=[]; for(let k=f.de-1;k<Math.min(f.ate,t.tipoFloors);k++) floors.push({k, z:base+k*P.pe+P.pe/2});
       if(!floors.length) return;
-      const us = pl===t.plate ? units : units.map(u=>({...u, poly:G.clipToPoly(u.poly, pl)})).filter(u=>u.poly.length>2 && G.area(u.poly)>4);
+      const us = f.lay ? f.lay.units.filter(u=>!u.livre && u.poly && u.poly.length>2)   // C2: bloco com layout próprio (mesmo núcleo, unidades por área)
+        : pl===t.plate ? units : units.map(u=>({...u, poly:G.clipToPoly(u.poly, pl)})).filter(u=>u.poly.length>2 && G.area(u.poly)>4);
       groups.push({ti, fk, kind:"tipo", plate:pl, units:us.map(u=>({poly:u.poly, nome:u.nome, alvo:u.alvo, fac:uniFacades(u.poly,pl,st,spacing)})), floors});
     });
     if(t.hasCob){ const fl=fxs[fxs.length-1], cp=fl.plate && fl.plate.length>2 ? fl.plate : t.plate;
@@ -12095,7 +12419,7 @@ const uniNow=()=> (typeof performance!=="undefined"? performance.now() : Date.no
 function unidadesGeo(st, m, o={}){
   const PR=o.prisms||prisms(st,m), obst=uniObst(PR);
   const geoSig=JSON.stringify([+st.lote.lat||0, st.lote.norte||0, obst.map(q=>[q.poly,q.z0,q.z1]),
-    (m.T||[]).map((t,ti)=>[t.plate, t.tipoFloors, t.hasCob, m.tipo&&m.tipo[ti]? m.tipo[ti].units.map(u=>u.poly) : 0]), m.hEmb, m.pavLz, st.produto.pe, st.produto.cob.qtd]);
+    (m.T||[]).map((t,ti)=>[t.plate, t.tipoFloors, t.hasCob, m.tipo&&m.tipo[ti]? m.tipo[ti].units.map(u=>u.poly) : 0, (t.faixas||[]).map(f=>f.lay? f.lay.units.map(u=>u.poly) : 0)]), m.hEmb, m.pavLz, st.produto.pe, st.produto.cob.qtd]);
   const full=_uniCache.full;
   if(full && full.sig===geoSig) return full;
   if(o.rough){ const r=_uniCache.rough; if(r && r.sig===geoSig) return r }
@@ -12574,7 +12898,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     fillP(poly,col,0.95); strokeP(poly,css("--ink"),1, item.desc? [4,3] : null);
     if(V.s>3.5){ const c=w2s(G.centroid(poly)); label(item.nome,[c[0],c[1]-(V.s>6?7:0)],{size:10,w:"600",bg:false}); if(V.s>6) label(`${nf(item.area,0)} m²${item.desc?" · descoberto":""}`,[c[0],c[1]+7],{size:9,bg:false,col:css("--ink-2")}) } }) }
   function tipoBody(ti, onlyOutline){
-    const t=m.T[ti], lay=m.tipo[ti]; if(!t||!t.plate.length) return;
+    const t=m.T[ti], lay=(mode==="andar" && opt.andar && typeof torreLayAndar==="function" ? torreLayAndar(m, ti, opt.andar.j+1) : null) || m.tipo[ti]; if(!t||!t.plate.length) return;   // C2: andar de outro bloco → layout do bloco
     if(!lay || onlyOutline){ strokeP(t.plate,css("--ink"),1.2,[5,4]); return }
     const pal=[css("--u1"),css("--u2"),css("--u3"),css("--u4"),css("--u5")], names=[...new Set(S.produto.mix.map(u=>u.nome))];
     lay.units.forEach(u=>{ fillP(u.poly, u.livre?css("--c-circ"):pal[names.indexOf(u.nome)%pal.length], u.livre?0.6:0.8); strokeP(u.poly,css("--ink"),1.4) });
@@ -12589,8 +12913,8 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     if(V.s>4) lay.units.forEach(u=>{ if(!u.poly.length || (com && u.com)) return; const c=w2s(G.centroid(u.poly)); if(u.livre){ label("livre",c,{size:10}); return }
       label(u.nome, [c[0],c[1]-8], {w:"600",font:"--f-display",size:12,bg:false}); label(`${nf(u.alvo,1)} m² priv${u.sac?` · sacada ${nf(u.sac.area,1)}`:""}`, [c[0],c[1]+8], {size:10,bg:false}) });
   }
-  function cobBody(ti){ const t=m.T[ti]; if(!t||!t.plate.length) return; const n=Math.max(1,S.produto.cob.qtd), ux=G.longestDir(t.plate);
-    for(let k=0;k<n;k++){ const [mn,mx]=G.extent(t.plate,ux), a=k? G.cutAt(t.plate,ux,k/n):mn, b=k<n-1? G.cutAt(t.plate,ux,(k+1)/n):mx, p=G.band(t.plate,ux,a,b); fillP(p,css("--m-cob"),0.85); strokeP(p,css("--ink"),1.3); if(p.length) label(`Cobertura ${k+1}`, w2s(G.centroid(p)), {w:"600",font:"--f-display",size:12,bg:false}) } coreDraw(m.tipo[ti], true) }
+  function cobBody(ti){ const t=m.T[ti]; if(!t||!t.plate.length) return; const n=Math.max(1,S.produto.cob.qtd), cp=t.desenhada? torrePlantaAndar(t,t.pav) : t.plate, ux=G.longestDir(cp);   // C2: cobertura no último bloco
+    for(let k=0;k<n;k++){ const [mn,mx]=G.extent(cp,ux), a=k? G.cutAt(cp,ux,k/n):mn, b=k<n-1? G.cutAt(cp,ux,(k+1)/n):mx, p=G.band(cp,ux,a,b); fillP(p,css("--m-cob"),0.85); strokeP(p,css("--ink"),1.3); if(p.length) label(`Cobertura ${k+1}`, w2s(G.centroid(p)), {w:"600",font:"--f-display",size:12,bg:false}) } coreDraw(m.tipo[ti], true) }
   function terreoBody(){
     const T=m.ter||{};
     fillP(L,css("--m-lote"),0.4); strokeP(L,css("--ink"),1.4);
@@ -12811,9 +13135,10 @@ function rebuild3d(m, force){
     const fxs=t.faixas||[], plateK=k=>{ const f=fxs.find(f=>k+1>=f.de && k+1<=f.ate); return f? f.plate : t.plate }, topP=fxs.length? fxs[fxs.length-1].plate : t.plate;
     for(let k=0;k<t.pav;k++){ const cob = t.hasCob && k===t.pav-1, pk=plateK(k), pPrev=k? plateK(k-1) : null;
       if(pPrev && pPrev!==pk && G.area(pPrev)>G.area(pk)+0.5){ slab(pPrev, yy-0.02, 0.07, col3("--lz-deck"), {eop:0.35, rough:0.8}); outline(pPrev, yy, 1.05, col3("--ink"), false) }
-      const oco = pk===t.plate && t.oco;   // C1: torre com pátio → laje com furo (sem a "ponte" do polígono)
+      const fK=fxs.find(f=>k+1>=f.de && k+1<=f.ate), oco = (fK && fK.oco) || (pk===t.plate && t.oco);   // C1/C2: torre (ou bloco) com pátio → laje com furo (sem a "ponte" do polígono)
       slab(oco? oco.pts : pk, yy, P.pe-0.22, cob? col3("--m-cob") : white, {eop:0.22, rough:0.75, holes: oco? oco.vazios : undefined});
-      if(lay && !cob && pk===t.plate) lay.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length) return; if(u.sac.tipo==="balanco"){ slab(u.sac.poly, yy, 0.16, white, {eop:0.3}); slab(u.sac.poly, yy+0.16, 1.05, glass, {op:0.3, eop:0.25, rough:0.1}) } else { slab(G.scaleToArea(u.sac.poly,G.area(u.sac.poly)*0.999), yy+0.03, P.pe-0.3, sacCol, {op:0.55, eop:0.2, rough:0.2}) } });
+      const layK = fK && fK.lay ? fK.lay : pk===t.plate ? lay : null;   // C2: sacadas do layout do bloco
+      if(layK && !cob) layK.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length) return; if(u.sac.tipo==="balanco"){ slab(u.sac.poly, yy, 0.16, white, {eop:0.3}); slab(u.sac.poly, yy+0.16, 1.05, glass, {op:0.3, eop:0.25, rough:0.1}) } else { slab(G.scaleToArea(u.sac.poly,G.area(u.sac.poly)*0.999), yy+0.03, P.pe-0.3, sacCol, {op:0.55, eop:0.2, rough:0.2}) } });
       yy+=P.pe }
     if(t.duplexA>1){ slab(G.scaleToArea(topP,t.duplexA), yy, P.pe-0.22, col3("--m-cob"), {eop:0.22}); yy+=P.pe }
     if(ti===0) lzMesh(LZ.cob, yy);
@@ -12855,8 +13180,8 @@ function cutFloor(m, fl){
   if(fl.tipo==="ter"){ (m.ter.lojas||[]).forEach(p=>flat(p,y,col3("--m-loja"))); (m.ter.hall||[]).forEach(p=>flat(p,y,col3("--m-ter"))); ((m.lzLay||{}).terreo||[]).forEach(o=>flat(o.poly,y+0.01,col3("--lz-c"))) }
   if(fl.tipo!=="tipo") (m.coreSets||[]).forEach(cs=>{ if(fl.tipo==="pavlaz"||fl.tipo==="roof"){ if(cs.i!==0) return } (cs.lay.coreParts||[]).forEach(cp=>flat(cp.poly,y+0.012,col3("--c-"+cp.kind))) });
   if(garLay){ garLay.vagas.forEach(v=>{ if(v.tipo==="off") return; flat(v.poly,y+0.01, v.tipo==="pcd"? col3("--accent") : v.tipo==="idoso"? col3("--ok") : col3("--m-gar")) }); }
-  if(fl.tipo==="tipo") m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l||fl.j>=t.tipoFloors) return;
-    const fx=(t.faixas||[]).find(f=>fl.j+1>=f.de && fl.j+1<=f.ate), pf=fx && fx.plate!==t.plate ? fx.plate : null; // 2.4: andar recuado → terraço em volta
+  if(fl.tipo==="tipo") m.T.forEach((t,i)=>{ const fx=(t.faixas||[]).find(f=>fl.j+1>=f.de && fl.j+1<=f.ate), l=(fx && fx.lay) || m.tipo[i]; if(!l||fl.j>=t.tipoFloors) return;   // C2: bloco com layout próprio
+    const pf=fx && fx.plate!==t.plate && !fx.lay ? fx.plate : null; // 2.4: andar recuado → terraço em volta
     if(pf) flat(t.plate,y-0.004,col3("--lz-deck"));
     l.units.forEach(u=>{ const p= pf? G.clipToPoly(u.poly,pf) : u.poly; if(p.length) flat(p,y,u.livre?col3("--c-circ"):pal[names.indexOf(u.nome)%5]) }); l.coreParts.forEach(cp=>flat(cp.poly,y+0.01,col3("--c-"+cp.kind))); flat(l.corridor,y+0.005,col3("--surface")) });
 }
@@ -14159,7 +14484,7 @@ function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.p
 /* contorno da torre: com pátio (C1), borda e vazios em polilinhas separadas (sem a "ponte" do polígono) */
 function dxfTorre(d, layer, t, col){ if(t.oco){ d.poly(layer,t.oco.pts,col); t.oco.vazios.forEach(v=>d.poly(layer+"-VAZIO",v,col)) } else d.poly(layer,t.plate,col) }
 function dxfTipo(m,i){ const d=DXF(), l=m.tipo[i], t=m.T[i]; dxfTorre(d,"PAVIMENTO",t,7);
-  (t.faixas||[]).forEach(f=>{ if(f.plate && f.plate!==t.plate && f.plate.length>2) d.poly(`PAVIMENTO-RECUADO-${f.de}-${f.ate}`,f.plate,3) });   // 2.4: andares recuados
+  (t.faixas||[]).forEach(f=>{ if(f.plate && f.plate!==t.plate && f.plate.length>2) d.poly(`PAVIMENTO-${t.desenhada?"BLOCO":"RECUADO"}-${f.de}-${f.ate}`,f.plate,3) });   // 2.4: andares recuados · C2: blocos da pilha
   if(!l) return d.out(); d.poly("NUCLEO",l.coreOut||l.core,1); (l.coreParts||[]).forEach(cp=>d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1)); d.poly("CIRCULACAO",l.corridor,8); (l.hallEnds||[]).forEach(h=>d.poly("CIRCULACAO",h,8));
   if(typeof comDxf==="function" && S.comodos && S.comodos.on) comDxf(d, l);   // cômodos: PAREDES, PORTAS, JANELAS, MOBILIARIO, TEXTOS
   l.units.forEach(u=>{ d.poly(u.livre?"LIVRE":"UNIDADES",u.poly,u.livre?8:3); if(u.poly.length){ const c=G.centroid(u.poly); d.text("TEXTOS",c,0.9,u.livre?"livre":u.nome); if(!u.livre) d.text("TEXTOS",[c[0],c[1]-1.3],0.6,`${nf(u.alvo,1)} m2 priv / ${nf(u.area,1)} m2 bruto`) } });
@@ -14198,7 +14523,7 @@ function IFC(m){
     const z=m.hEmb+j*P.pe, st=storey(`Pavimento ${j+1}`,z);
     m.T.forEach((t,i)=>{
       if(j<t.pav){ const cob=t.hasCob && j===t.pav-1, pk=torrePlantaAndar(t,j+1); proxy(st,`Torre ${i+1} - Pav ${j+1}`,cob?"Cobertura":"Pavimento tipo",pk,P.pe);   // planta da faixa do andar (escalonada / blocos)
-        const l=m.tipo[i]; if(l && !cob) l.units.filter(u=>!u.livre).map(u=>pk===t.plate? u : {...u, poly:G.clipToPoly(u.poly,pk)}).filter(u=>u.poly.length>2).forEach((u,q)=>{ const cod=`T${i+1}-${String(j+1).padStart(2,"0")}${String(q+1).padStart(2,"0")}`; space(st,cod,`${u.nome} - ${nf(u.alvo,1)} m2 priv`,u.poly,2.6);
+        const l=torreLayAndar(m,i,j+1); if(l && !cob) l.units.filter(u=>!u.livre).map(u=>pk===t.plate || l.blc? u : {...u, poly:G.clipToPoly(u.poly,pk)}).filter(u=>u.poly.length>2).forEach((u,q)=>{ const cod=`T${i+1}-${String(j+1).padStart(2,"0")}${String(q+1).padStart(2,"0")}`; space(st,cod,`${u.nome} - ${nf(u.alvo,1)} m2 priv`,u.poly,2.6);
           // cômodos: IfcSpace por cômodo (dentro do espaço da unidade) e IfcWall por parede
           if(u.com && S.comodos && S.comodos.on){ const un=st.sp[st.sp.length-1], rs=[];
             u.com.rooms.forEach((r,k)=>{ if(r.poly.length<3) return; const p=lp(st.p,0); rs.push(add(`IFCSPACE('${ifcGuid()}',$,${str(cod+"-"+String(k+1).padStart(2,"0"))},$,$,${p},${solid(r.poly,2.6)},${str(`${r.longo} - ${nf(r.area,2)} m2`)},.PARTIAL.,.SPACE.,$)`)) });
@@ -15251,35 +15576,48 @@ async function authMigrar(){
   toast(n? (n===1? "1 estudo enviado para a nuvem" : n+" estudos enviados para a nuvem") : "Nada para enviar");
 }
 
-/* ================= C1 — forma livre da torre (interface) =================
+/* ================= C1/C2 — forma livre da torre e pilha de blocos (interface) =================
    Produto › seção "Forma das torres" (blcSecHTML, atualizada por blcLive no STEP_LIVE do Produto):
-     Automática | Desenhada · por torre: "Personalizar" (copia a forma automática — nada muda nos números),
-     formatos prontos (retângulo, L, U, T, H, pátio; clicar de novo no mesmo gira 90°), "Editar na implantação",
-     "Refazer da automática", "Apagar forma" (a torre volta à automática) · "Ajustar mix".
-   Implantação (ferramenta Editar), com as MESMAS interações e o mesmo visual do entorno (src/ui/entorno.js):
-     clique na torre desenhada = seleciona · arrastar = move · quadrado do canto = redimensiona · setas = ajuste fino ·
-     Delete = apaga a forma · Esc = solta · vértice: arraste (clique duplo remove) · ponto no meio do lado = vértice novo.
-     Barra flutuante #blcBar (classe .entbar): ±tamanho, giro 15°, pátio, duplicar (nova torre), apagar, soltar.
-   Destaques: parte sobre os recuos (hachura vermelha), fora do embasamento (hachura amarela), núcleo fora da planta,
-   torres próximas demais (cota vermelha). Cálculo em src/calc/blocos.js. A seleção (BLC) não entra no estudo nem no desfazer. */
-const BLC = { sel:-1, open:-1, sig:"", solta:false };
-const BLC_NOMES = { auto:"personalizada", ret:"retângulo", L:"em L", U:"em U", T:"em T", H:"em H", patio:"com pátio" };
-const blcB = i => blcBloco(S, i);
-const blcLista = () => blcAtivo(S) ? S.produto.torres.map((_,i)=>i).filter(i=>blcB(i)) : [];
+     Automática | Desenhada · por torre: "Personalizar" (copia a forma automática — nada muda nos números).
+     C2: torre aberta = lista compacta de blocos, de cima para baixo ("10º–17º · 392 m²", silhueta proporcional à área,
+     "tipo" no bloco de referência); bloco aberto = andar inicial (stepper), formatos prontos, "Copiar do de baixo",
+     "Recuar X m", "Editar na implantação", "Ver andar", "Apagar bloco". Rodapé da torre: "+ Bloco", "Apagar forma".
+   Implantação (ferramenta Editar), com as MESMAS interações e o mesmo visual do entorno (src/ui/entorno.js), agindo no
+   bloco ATIVO de cada torre (BLC.k[i]; padrão = bloco de referência): clique = seleciona (clicar num bloco de baixo/cima
+   troca o ativo) · arrastar = move · quadrado do canto = redimensiona · setas = ajuste fino · Delete = apaga o bloco
+   (o último bloco apagado volta a torre à automática) · Esc = solta · vértice: arraste (clique duplo remove) · ponto no
+   meio do lado = vértice novo. Barra flutuante #blcBar (classe .entbar): ±tamanho, giro 15°, pátio, duplicar, apagar.
+   Destaques: bloco ativo forte, os outros blocos em contorno discreto; parte sobre os recuos (hachura vermelha), balanço
+   (hachura amarela), núcleo fora/cortado. Vista Andares: o andar mostra o layout do bloco (f.lay), terraço sobre o bloco
+   de baixo e o núcleo cortado em vermelho. Cálculo em src/calc/blocos.js. A seleção (BLC) não entra no estudo nem no desfazer. */
+const BLC = { sel:-1, open:-1, sig:"", solta:false, k:{}, bopen:"", rec:3 };
+const BLC_NOMES = { auto:"personalizada", ret:"retângulo", L:"em L", U:"em U", T:"em T", H:"em H", patio:"com pátio", recuo:"recuada" };
 const blcM = () => window._last && window._last.m;
-/* vértices editáveis (views.js → editables/hitVertex) */
+const blcLst = i => (((S.blocos||{}).torres||[])[i]||{}).blocos || [];
+/* bloco ativo da torre i (o que a implantação edita): o escolhido, senão o de referência, senão o 1º */
+function blcK(i){ const L=blcLst(i), k=BLC.k[i]; if(k!=null && blcValido(L[k])) return k; const m=blcM(), r=m && m.T && m.T[i] ? m.T[i].blcRef : null; return r!=null && blcValido(L[r]) ? r : 0 }
+const blcB = i => blcBloco(S, i, blcK(i));
+const blcLista = () => blcAtivo(S) ? S.produto.torres.map((_,i)=>i).filter(i=>blcB(i)) : [];
+/* vértices editáveis (views.js → editables/hitVertex): só o bloco ativo de cada torre */
 function blcEditaveis(){ if(typeof VIEW==="undefined" || VIEW!=="impl") return []; const out=[];
   blcLista().forEach(i=>{ const b=blcB(i); out.push({arr:b.pts, kind:"bloco"}); (b.vazios||[]).forEach(v=>out.push({arr:v, kind:"blcvazio"})) }); return out }
 const blcDoArr = arr => blcLista().find(i=>{ const b=blcB(i); return b.pts===arr || (b.vazios||[]).includes(arr) }) ?? -1;
 function blcSel(i){ BLC.sel=i; if(i>=0 && typeof ENT!=="undefined" && ENT.sel.size){ ENT.sel=new Set(); if(typeof entCardRefresh==="function") entCardRefresh() } redraw2d() }
 const blcCopia = b => JSON.parse(JSON.stringify({pts:b.pts, vazios:b.vazios||[]}));
+/* faixa (bloco) k da torre i no modelo: {de, ate, A, ...} — com um bloco só, a torre inteira */
+function blcFx(m, i, k){ const t=m && m.T && m.T[i]; if(!t) return null; const f=(t.faixas||[]).find(f=>f.bk===k); if(f) return f;
+  return k===(t.blcRef??0) ? {de:1, ate:t.pav, A:t.A, n:t.pav, un:t.units, ref:true} : null }
+const blcRot = f => !f ? "—" : f.de===f.ate ? `${f.de}º` : `${f.de}º–${f.ate}º`;
 
 /* ---------- ponteiro (chamado por entDown/entDrag/entUp em src/ui/entorno.js) ---------- */
 function blcEscalaPos(b){ const bb=entBBox(b); return [bb[2], bb[1]] }
 function blcHitEscala(px,py){ const b=BLC.sel>=0 && blcB(BLC.sel); if(!b) return false; const [x,y]=w2s_(blcEscalaPos(b)); return Math.hypot(x-px,y-py)<11 }
 function blcHitMeio(px,py){ const b=BLC.sel>=0 && blcB(BLC.sel); if(!b) return null; let best=null, bd=10;
   [b.pts, ...(b.vazios||[])].forEach(arr=>arr.forEach((a,k)=>{ const c=arr[(k+1)%arr.length], A=w2s_(a), B=w2s_(c), d=Math.hypot((A[0]+B[0])/2-px,(A[1]+B[1])/2-py); if(d<bd){ bd=d; best={arr,k} } })); return best }
-function blcCorpo(w){ let best=-1, ba=Infinity; blcLista().forEach(i=>{ const b=blcB(i); if(G.pip(w,b.pts)){ const a=G.area(b.pts); if(a<ba){ ba=a; best=i } } }); return best }
+/* bloco sob o ponteiro: primeiro os ativos; senão qualquer bloco (o menor que contém o ponto) */
+function blcCorpo(w){ let best=null, ba=Infinity; const tenta=(i,k,b)=>{ if(blcValido(b) && G.pip(w,b.pts)){ const a=G.area(b.pts); if(a<ba){ ba=a; best={i,k} } } };
+  blcLista().forEach(i=>tenta(i, blcK(i), blcB(i))); if(best) return best;
+  blcLista().forEach(i=>blcLst(i).forEach((b,k)=>tenta(i,k,b))); return best }
 function blcDown(ev, px, py, w){
   if(!blcAtivo(S) || VIEW!=="impl" || TOOL!=="edit") return null;
   if(!blcLista().length){ BLC.sel=-1; return null }
@@ -15290,8 +15628,9 @@ function blcDown(ev, px, py, w){
   const mi=blcHitMeio(px,py);
   if(mi){ const a=mi.arr[mi.k], c=mi.arr[(mi.k+1)%mi.arr.length]; mi.arr.splice(mi.k+1,0,[(a[0]+c[0])/2,(a[1]+c[1])/2]); return {type:"v", arr:mi.arr, i:mi.k+1, kind:"bloco"} }
   if(hitMid(px,py)>=0) return null;                                           // ponto do meio do lote tem prioridade
-  const i=blcCorpo(w);
-  if(i>=0){ if(i!==BLC.sel) blcSel(i); return {type:"entBlcMove", blc:true, i, last:w, moved:false} }
+  const c=blcCorpo(w);
+  if(c){ if(c.i!==BLC.sel || c.k!==blcK(c.i)){ BLC.k[c.i]=c.k; BLC.bopen= BLC.open===c.i ? c.i+":"+c.k : BLC.bopen; blcSel(c.i); const m=blcM(); if(m && TAB==="produto") blcLive(m) }
+    return {type:"entBlcMove", blc:true, i:c.i, last:w, moved:false} }
   if(BLC.sel>=0) BLC.solta=true;                                              // clique sem arrastar no vazio solta (blcPanUp)
   return null;
 }
@@ -15306,12 +15645,12 @@ function blcPanUp(d){ if(BLC.solta && !d.moved && BLC.sel>=0){ BLC.sel=-1; redra
 /* clique duplo num vértice da forma remove (mínimo de 3) */
 c2.addEventListener("dblclick",e=>{ if(VIEW!=="impl"||TOOL!=="edit"||!blcAtivo(S)) return; const [px,py]=pos(e), v=hitVertex(px,py);
   if(v && (v.kind==="bloco"||v.kind==="blcvazio") && v.arr.length>3){ v.arr.splice(v.i,1); update(); toast("Vértice removido") } });
-/* teclado: Delete apaga a forma, Esc solta, setas movem (Shift = 5 m) */
+/* teclado: Delete apaga o bloco ativo, Esc solta, setas movem (Shift = 5 m) */
 document.addEventListener("keydown",e=>{
   if(typeof VIEW==="undefined" || VIEW!=="impl" || TOOL!=="edit" || BLC.sel<0 || !blcB(BLC.sel)) return;
   const a=document.activeElement; if(a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return;
   if(e.ctrlKey||e.metaKey||e.altKey) return;
-  if(e.key==="Delete"||e.key==="Backspace"){ e.preventDefault(); blcApaga(BLC.sel); return }
+  if(e.key==="Delete"||e.key==="Backspace"){ e.preventDefault(); blcApagaAtivo(BLC.sel); return }
   if(e.key==="Escape"){ BLC.sel=-1; redraw2d(); return }
   const dd={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,1],ArrowDown:[0,-1]}[e.key];
   if(dd){ e.preventDefault(); const p=e.shiftKey?5:0.5; entMove(blcB(BLC.sel),dd[0]*p,dd[1]*p); clearTimeout(blcTecla.t); blcTecla.t=setTimeout(()=>update(),200); update({fast:true}) }
@@ -15320,21 +15659,41 @@ const blcTecla={ t:0 };
 
 /* ---------- ações ---------- */
 function blcGarante(i){ const B=S.blocos; B.torres=B.torres||[]; while(B.torres.length<=i) B.torres.push({blocos:[]}); return B.torres[i] }
-function blcApaga(i){ const t=(S.blocos.torres||[])[i]; if(!t || !t.blocos.length) return; t.blocos=[]; if(BLC.sel===i) BLC.sel=-1; update(); toast(`Torre ${i+1} voltou à forma automática — Ctrl+Z desfaz`) }
+function blcApaga(i){ const t=(S.blocos.torres||[])[i]; if(!t || !t.blocos.length) return; t.blocos=[]; delete BLC.k[i]; if(BLC.sel===i) BLC.sel=-1; update(); toast(`Torre ${i+1} voltou à forma automática — Ctrl+Z desfaz`) }
+/* apaga um bloco da pilha; com um bloco só, a torre volta à automática */
+function blcApagaUm(i, k){ const L=blcLst(i); if(L.length<2){ blcApaga(i); return } const rot=blcRot(blcFx(blcM(), i, k));
+  if(!blcApagaBloco(S, i, k)) return; delete BLC.k[i]; BLC.bopen=""; update(); toast(`Bloco ${rot} apagado — o de baixo sobe até o próximo · Ctrl+Z desfaz`) }
+function blcApagaAtivo(i){ blcApagaUm(i, blcK(i)) }
 /* mudanças na lista de torres (src/ui/produto.js): mantém o índice dos blocos alinhado com S.produto.torres */
 function blcTorreNova(i){ const B=S.blocos; if(B && B.torres && B.torres[i]) B.torres[i]={blocos:[]} }
-function blcTorreRemovida(i){ const B=S.blocos; if(B && B.torres && i<B.torres.length) B.torres.splice(i,1); BLC.sel=-1; BLC.open=-1 }
-function blcEnquadra(i){ const b=blcB(i); if(!b) return; if(VIEW!=="impl") setView("impl"); const r=c2.getBoundingClientRect(); if(r.width) VS.impl=fitView([S.lote.pts, b.pts], r.width, r.height, 1.5); redraw2d() }
+function blcTorreRemovida(i){ const B=S.blocos; if(B && B.torres && i<B.torres.length) B.torres.splice(i,1); BLC.sel=-1; BLC.open=-1; BLC.k={}; BLC.bopen="" }
+function blcEnquadra(i){ const L=blcLst(i).filter(blcValido); if(!L.length) return; if(VIEW!=="impl") setView("impl"); const r=c2.getBoundingClientRect(); if(r.width) VS.impl=fitView([S.lote.pts, ...L.map(b=>b.pts)], r.width, r.height, 1.5); redraw2d() }
+/* abre a vista Andares no 1º andar de um bloco */
+function blcVerAndar(i, k){ const m=blcM(), f=blcFx(m, i, k); if(!f){ toast("Esse bloco está fora da torre — aumente os pavimentos"); return }
+  ANDAR="p"+f.de; if(VIEW!=="andar") setView("andar"); else { if(typeof viewbarSegs==="function") viewbarSegs(m); redraw2d(); if(typeof planLegend==="function") planLegend() } }
+const blcIK = b => { const [i,k]=String(b.dataset.i).split(".").map(Number); return {i, k: isFinite(k)? k : +(b.dataset.k||0)} };
 Object.assign(ACT,{
   blcTog: b=>{ const i=+b.dataset.i; BLC.open = BLC.open===i? -1 : i; const m=blcM(); if(m) blcLive(m) },
-  blcPers: b=>{ const i=+b.dataset.i; if(!blcPersonaliza(S,i)){ toast("Esta torre ainda não tem forma para copiar"); return } BLC.open=i; update();
-    toast(`Torre ${i+1} personalizada — escolha um formato ou edite na implantação`) },
-  blcFmt: b=>{ const i=+b.dataset.i, t=b.dataset.t, m=blcM(), alvo=m&&m.T[i]? m.T[i].A : 0, r=blcAplicaFormato(S,i,t); if(!r){ toast("Esse formato não coube na faixa da torre"); return }
-    BLC.open=i; update(); const nome=(BLC_FORMAS.find(f=>f[0]===t)||[])[1]||t;
-    toast(r.curto? `${nome}: coube ${m2(r.A)} de ${m2(alvo)} — a faixa da torre limita` : `${nome} aplicado — clique de novo para girar 90°`) },
-  blcEdit: b=>{ const i=+b.dataset.i; if(VIEW!=="impl") setView("impl"); setTool("edit"); blcSel(i); blcEnquadra(i) },
-  blcRefaz: b=>{ const i=+b.dataset.i; if(blcPersonaliza(S,i)){ update(); toast(`Torre ${i+1}: forma automática copiada de novo`) } },
+  blcBk: b=>{ const i=+b.dataset.i, k=+b.dataset.k, key=i+":"+k; BLC.k[i]=k; BLC.bopen = BLC.bopen===key ? "" : key;
+    if(VIEW==="impl"){ BLC.sel=i; redraw2d() } else if(VIEW==="andar" && BLC.bopen) blcVerAndar(i, k);
+    const m=blcM(); if(m) blcLive(m) },
+  blcPers: b=>{ const i=+b.dataset.i; if(!blcPersonaliza(S,i)){ toast("Esta torre ainda não tem forma para copiar"); return } BLC.open=i; delete BLC.k[i]; update();
+    toast(`Torre ${i+1} personalizada — escolha um formato, + Bloco ou edite na implantação`) },
+  blcFmt: b=>{ const {i,k}=blcIK(b), t=b.dataset.t, m=blcM(), f=blcFx(m,i,k), alvo=f? f.A : 0, r=blcAplicaFormato(S,i,t,k); if(!r){ toast("Esse formato não coube"); return }
+    BLC.open=i; BLC.k[i]=k; update(); const nome=(BLC_FORMAS.find(f=>f[0]===t)||[])[1]||t;
+    toast(r.curto? `${nome}: coube ${m2(r.A)} de ${m2(alvo)} — a faixa limita` : `${nome} aplicado — clique de novo para girar 90°`) },
+  blcEdit: b=>{ const {i,k}=blcIK(b); if(b.dataset.k!=null) BLC.k[i]=k; if(VIEW!=="impl") setView("impl"); setTool("edit"); blcSel(i); blcEnquadra(i) },
+  blcAndar: b=>{ const {i,k}=blcIK(b); BLC.k[i]=k; blcVerAndar(i, k) },
+  blcRefaz: b=>{ const i=+b.dataset.i; if(blcPersonaliza(S,i)){ delete BLC.k[i]; update(); toast(`Torre ${i+1}: forma automática copiada de novo`) } },
   blcDel: b=>blcApaga(+b.dataset.i),
+  blcDelB: b=>{ const {i,k}=blcIK(b); blcApagaUm(i, k) },
+  blcAdd: b=>{ const i=+b.dataset.i, nb=blcMaisBloco(S,i); if(!nb){ toast("O bloco de cima tem um andar só — aumente os pavimentos da torre"); return }
+    const k=blcLst(i).length-1; BLC.k[i]=k; BLC.bopen=i+":"+k; BLC.open=i; update();
+    toast(`Bloco novo a partir do ${nb.de}º andar, cópia do de cima — recue ou edite · Ctrl+Z desfaz`) },
+  blcCopBx: b=>{ const {i,k}=blcIK(b); if(!blcCopiaBaixo(S,i,k)) return; BLC.k[i]=k; update(); toast("Contorno copiado do bloco de baixo — Ctrl+Z desfaz") },
+  blcRecua: b=>{ const {i,k}=blcIK(b), inp=document.getElementById(`blcRec-${i}-${k}`), d=Math.max(0, +String(inp? inp.value : BLC.rec).replace(",",".")||0);
+    if(!(d>0)){ toast("Informe quantos metros recuar"); return } BLC.rec=d;
+    if(!blcRecua(S,i,k,d)){ toast(`Um recuo de ${nf(d,1)} m não cabe nessa forma`); return } BLC.k[i]=k; update(); toast(`Fachadas recuadas ${nf(d,1)} m ${k? "em relação ao bloco de baixo" : ""} — Ctrl+Z desfaz`) },
   blcMix: ()=>{ const m=blcM(), R=m && blcResumo(S,m); if(!R || !R.muda) return; S.produto.mix.forEach((u,j)=>u.qtd=R.q[j]); update();
     toast(`Mix ajustado: ${R.q.reduce((s,n)=>s+n,0)} unidades por andar — Ctrl+Z desfaz`) },
   blcMais: ()=>{ const b=blcB(BLC.sel); if(b){ entEscala(b, Math.sqrt(1.1)); update() } },
@@ -15343,25 +15702,26 @@ Object.assign(ACT,{
   blcGiraD: ()=>{ const b=blcB(BLC.sel); if(b){ entGira(b, -15); update() } },
   blcPatio: ()=>{ const b=blcB(BLC.sel); if(!b) return; const v=entPatio(b, 0.2); if(!v){ toast("Não coube um pátio nessa forma"); return } (b.vazios=b.vazios||[]).push(v); update(); toast("Pátio criado — arraste os vértices para ajustar") },
   blcVazioX: el=>{ const b=blcB(BLC.sel); if(b && b.vazios){ b.vazios.splice(+el.dataset.i,1); if(!b.vazios.length) delete b.vazios; update() } },
+  /* duplicar: nova torre com a mesma pilha de blocos, ao lado (deslocada pelo bloco ativo) */
   blcDup: ()=>{ const i=BLC.sel, b=blcB(i), P=S.produto, m=blcM(); if(!b || !m) return; if(P.torres.length>=4){ toast("O estudo aceita até 4 torres"); return }
-    const ax=m.axis||G.longestDir(b.pts), [a0,a1]=G.extent(b.pts,ax), d=(a1-a0)+(m.gap||10), L=S.lote.pts;
-    const cand=[d,-d].map(s=>{ const c=blcCopia(b); entMove(c, ax[0]*s, ax[1]*s); return c }), dentro=c=>G.area(G.clipToPoly(c.pts, L));
-    const c=dentro(cand[0])>=dentro(cand[1])? cand[0] : cand[1], nb={pts:c.pts, de:1, tipo:b.tipo, rot:b.rot}; if(c.vazios.length) nb.vazios=c.vazios;
-    P.torres.push({pav:P.torres[i].pav}); const n=P.torres.length-1; blcGarante(n).blocos=[nb]; BLC.sel=n; BLC.open=n;
+    const ax=m.axis||G.longestDir(b.pts), [a0,a1]=G.extent(b.pts,ax), d=(a1-a0)+(m.gap||10), L=S.lote.pts, dentro=pts=>G.area(G.clipToPoly(pts, L));
+    const s=[d,-d].map(s=>{ const c=blcCopia(b); entMove(c, ax[0]*s, ax[1]*s); return {s, A:dentro(c.pts)} }).sort((p,q)=>q.A-p.A)[0].s;
+    const nbs=blcLst(i).filter(blcValido).map(x=>{ const c=blcCopia(x); entMove(c, ax[0]*s, ax[1]*s); const nb={pts:c.pts, de:x.de||1, tipo:x.tipo, rot:x.rot}; if(c.vazios.length) nb.vazios=c.vazios; return nb });
+    P.torres.push({pav:P.torres[i].pav}); const n=P.torres.length-1; blcGarante(n).blocos=nbs; BLC.sel=n; BLC.open=n; BLC.k[n]=blcK(i);
     if(TAB==="produto") renderTab(); else update(); toast(`Torre ${n+1} criada com a mesma forma — Ctrl+Z desfaz`) },
-  blcApagaSel: ()=>{ if(BLC.sel>=0) blcApaga(BLC.sel) },
+  blcApagaSel: ()=>{ if(BLC.sel>=0) blcApagaAtivo(BLC.sel) },
   blcSolta: ()=>{ BLC.sel=-1; redraw2d() },
 });
 
 /* ---------- barra flutuante (mesmo visual do entorno) ---------- */
 function blcBarHTML(i){
-  const b=blcB(i), m=blcM(), t=m && m.T[i] || {}, nv=b.vazios||[];
-  return `<div class="eg"><span class="cnt">Torre ${i+1}</span><span class="mt">${m2(t.A||0)}/andar</span></div>
+  const b=blcB(i), m=blcM(), k=blcK(i), f=blcFx(m,i,k)||{}, nv=b.vazios||[], pil=blcLst(i).length>1;
+  return `<div class="eg"><span class="cnt">Torre ${i+1}${pil? ` · ${blcRot(f)}` : ""}</span><span class="mt">${m2(f.A||0)}/andar</span></div>
     <div class="eg"><button class="btn" data-act="blcMenos" title="Reduzir a área 10%">− Tamanho</button><button class="btn" data-act="blcMais" title="Aumentar a área 10%">+ Tamanho</button>
       <button class="btn" data-act="blcGiraE" title="Girar 15° anti-horário" aria-label="Girar 15° anti-horário">↺</button><button class="btn" data-act="blcGiraD" title="Girar 15° horário" aria-label="Girar 15° horário">↻</button></div>
     <div class="eg">${nv.length? nv.map((v,k)=>`<span class="chip">pátio ${nf(G.area(v),0)} m²<button data-act="blcVazioX" data-i="${k}" aria-label="Remover pátio" title="Remover pátio">×</button></span>`).join("")
-      : `<button class="btn" data-act="blcPatio" title="Abre um pátio central (vazio) na torre">Pátio</button>`}</div>
-    <div class="eg"><button class="btn" data-act="blcDup" title="Nova torre com esta forma, ao lado">Duplicar</button><button class="btn warn" data-act="blcApagaSel" title="A torre volta à forma automática (Delete)">Apagar</button><button class="btn ghost" data-act="blcSolta" title="Esc">Soltar</button></div>`;
+      : `<button class="btn" data-act="blcPatio" title="Abre um pátio central (vazio) no bloco">Pátio</button>`}</div>
+    <div class="eg"><button class="btn" data-act="blcDup" title="Nova torre com esta forma, ao lado">Duplicar</button><button class="btn warn" data-act="blcApagaSel" title="${pil? "Apaga este bloco (Delete)" : "A torre volta à forma automática (Delete)"}">${pil? "Apagar bloco" : "Apagar"}</button><button class="btn ghost" data-act="blcSolta" title="Esc">Soltar</button></div>`;
 }
 function blcBarRefresh(){
   let bar=document.getElementById("blcBar");
@@ -15373,7 +15733,7 @@ function blcBarRefresh(){
     bar.addEventListener("click",ev=>{ const b=ev.target.closest("[data-act]"); if(b && ACT[b.dataset.act]){ ev.preventDefault(); ACT[b.dataset.act](b) } });
     bar.addEventListener("pointerdown",ev=>ev.stopPropagation()) }
   bar.hidden=false;
-  const m=blcM(), b=blcB(BLC.sel), sig=[BLC.sel, (b.vazios||[]).map(v=>nf(G.area(v),0)).join(), m && m.T[BLC.sel]? nf(m.T[BLC.sel].A,0) : ""].join("|");
+  const m=blcM(), b=blcB(BLC.sel), k=blcK(BLC.sel), f=blcFx(m, BLC.sel, k), sig=[BLC.sel, k, blcLst(BLC.sel).length, (b.vazios||[]).map(v=>nf(G.area(v),0)).join(), f? nf(f.A,0)+blcRot(f) : ""].join("|");
   if(sig!==BLC.sig || !bar.innerHTML){ BLC.sig=sig; bar.innerHTML=blcBarHTML(BLC.sel) }
 }
 function blcCss(){ if(document.getElementById("blcCss")) return; const s=document.createElement("style"); s.id="blcCss";
@@ -15383,22 +15743,68 @@ function blcCss(){ if(document.getElementById("blcCss")) return; const s=documen
 .blc-fm .chip::before{display:none}
 .blc-fm .chip svg{width:14px;height:14px;fill:currentColor;opacity:.8;flex:none}
 .blc-av{display:grid;gap:3px}
-.blc-av p{margin:0;font-size:11.5px;line-height:1.4;color:var(--warn)}`; document.head.appendChild(s) }
+.blc-av p{margin:0;font-size:11.5px;line-height:1.4;color:var(--warn)}
+.blc-pl{display:grid;gap:4px}
+.blc-b{border-radius:9px;background:var(--surface);border:1px solid var(--line);transition:border-color .15s,box-shadow .15s}
+.pr-row.on .blc-b{background:var(--surface-2)}
+.blc-b.on{border-color:var(--accent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
+.blc-b.warn{border-color:color-mix(in srgb,var(--warn) 55%,transparent)}
+.blc-b.on.warn{border-color:var(--accent)}
+.blc-bh{display:grid;grid-template-columns:42px auto 1fr auto;align-items:center;gap:8px;width:100%;min-height:38px;padding:4px 10px 4px 8px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:9px}
+.blc-bh:hover b{color:var(--accent)}
+.blc-bh b{font-weight:550;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.blc-bh .a{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.blc-bh .tg{font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:999px;padding:1px 6px;white-space:nowrap}
+.blc-bh .w{grid-column:2/-1;font-family:var(--f-mono);font-size:10.5px;color:var(--warn);line-height:1.35}
+.blc-sil{display:flex;justify-content:center;align-items:center;height:12px}
+.blc-sil i{display:block;height:9px;min-width:5px;border-radius:2px;background:var(--muted);opacity:.55}
+.blc-b.ref .blc-sil i{background:var(--accent);opacity:.85}
+.blc-b.fora .blc-sil i{background:none;border:1px dashed var(--muted)}
+.blc-bb{display:grid;gap:10px;padding:4px 10px 10px}
+.blc-bb .row{gap:8px;flex-wrap:wrap;align-items:center}
+.blc-bb .stp{width:118px;grid-template-columns:30px 1fr 30px}
+.blc-bb .inp{width:74px}
+.blc-bb .fl{margin:0}
+.blc-ac{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.blc-ac .blc-rm{margin-left:auto}
+.blc-ac .inp input{text-align:right}
+.blc-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 6px}`; document.head.appendChild(s) }
 
 /* ---------- desenho na implantação (destaques e alças) ---------- */
 HOOK.draw2d.push((g, ctx)=>{
-  if(ctx.mode!=="impl" || !blcAtivo(S)) return;
+  if(!blcAtivo(S)) return;
   const m=ctx.m, w2s=ctx.w2s, lst=blcLista(); if(!lst.length || !m || !m.T) return;
   const ring=p=>p.forEach((q,k)=>{ const [x,y]=w2s(q); k?g.lineTo(x,y):g.moveTo(x,y) });
   const path=p=>{ g.beginPath(); ring(p); g.closePath() };
-  // hachura da parte da planta fora de um polígono (recuos, embasamento)
-  const hach=(pl, fora, col)=>{ if(!pl.length || !fora || fora.length<3) return; g.save(); path(pl); g.clip(); g.beginPath(); g.rect(0,0,ctx.W,ctx.H); ring(fora); g.closePath(); g.clip("evenodd");
+  // hachura da parte da planta fora de um polígono (recuos, embasamento, bloco de baixo)
+  const hach=(pl, fora, col)=>{ if(!pl || !pl.length || !fora || fora.length<3) return; g.save(); path(pl); g.clip(); g.beginPath(); g.rect(0,0,ctx.W,ctx.H); ring(fora); g.closePath(); g.clip("evenodd");
     g.fillStyle=col; g.globalAlpha=0.16; g.fillRect(0,0,ctx.W,ctx.H); g.globalAlpha=0.75; g.strokeStyle=col; g.lineWidth=1.2; g.beginPath(); for(let x=-ctx.H; x<ctx.W; x+=7){ g.moveTo(x,ctx.H); g.lineTo(x+ctx.H,0) } g.stroke(); g.restore() };
-  lst.forEach(i=>{ const t=m.T[i], I=(m.blc||[]).find(x=>x.i===i)||{}, b=blcB(i); if(!t) return;
-    if(I.foraRecuo>0.5) hach(t.plate, m.torAll, css("--bad"));
-    if(I.balanco>0.5) hach(t.plate, m.emb, css("--warn"));
+  const lab=(t,[x,y],col)=>{ g.font="500 10px "+css("--f-mono"); g.textAlign="center"; g.textBaseline="middle"; const tw=g.measureText(t).width+8; g.fillStyle=css("--surface"); g.globalAlpha=0.88; g.fillRect(x-tw/2,y-8,tw,16); g.globalAlpha=1; g.fillStyle=col||css("--ink"); g.fillText(t,x,y) };
+  const nucleoVermelho=core=>{ path(core); g.fillStyle=css("--bad"); g.globalAlpha=0.25; g.fill(); g.globalAlpha=1; g.strokeStyle=css("--bad"); g.lineWidth=1.6; g.setLineDash([4,3]); g.stroke(); g.setLineDash([]) };
+  // vista Andares: o andar de um bloco mostra o terraço sobre o bloco de baixo, o balanço e o núcleo cortado
+  if(ctx.mode==="andar" && ctx.opt.andar && ctx.opt.andar.tipo==="tipo"){
+    const k=ctx.opt.andar.j+1;
+    lst.forEach(i=>{ const t=m.T[i]; if(!t || k>t.pav) return; const fx=(t.faixas||[]).filter(f=>f.blc); if(fx.length<2) return;
+      const j=fx.findIndex(f=>k>=f.de && k<=f.ate); if(j<0) return; const f=fx[j], fb=j? fx[j-1] : null, pl=f.oco? f.oco.pts : f.plate;
+      if(fb && fb.plate.length>2 && pl.length>2){ const pb=fb.oco? fb.oco.pts : fb.plate;
+        g.save(); path(pb); g.clip(); g.beginPath(); g.rect(0,0,ctx.W,ctx.H); ring(pl); g.closePath(); g.clip("evenodd"); g.fillStyle=css("--lz-deck"); g.globalAlpha=0.92; g.fillRect(0,0,ctx.W,ctx.H); g.restore();
+        path(pb); g.strokeStyle=css("--muted"); g.lineWidth=1; g.setLineDash([5,4]); g.stroke(); g.setLineDash([]);
+        hach(pl, pb, css("--warn")) }
+      if(pl.length>2){ path(pl); g.strokeStyle=css("--ink"); g.lineWidth=1.8; g.stroke() }
+      const l=m.tipo && m.tipo[i]; if(f.nucleoCortado && l && l.core && l.core.length){ nucleoVermelho(l.core); if(ctx.V.s>2) lab("núcleo cortado", w2s(G.centroid(l.core)), css("--bad")) }
+      if(ctx.V.s>2 && pl.length>2){ const c=w2s(G.centroid(pl)), bb=pl.map(q=>w2s(q)[1]); lab(`bloco ${blcRot(f)}${f.ref?" · tipo":""} · ${f.un} un/andar${fb && f.A<fb.A-1? ` · terraços ${m2(fb.A-f.A)}` : ""}`, [c[0], Math.max(...bb)+14]) }
+    });
+    return;
+  }
+  if(ctx.mode!=="impl") return;
+  lst.forEach(i=>{ const t=m.T[i], I=(m.blc||[]).find(x=>x.i===i)||{}, b=blcB(i), k=blcK(i); if(!t) return;
+    const bi=(I.bl||[]).find(x=>x.k===k), j=(I.bl||[]).indexOf(bi);
+    if(bi){ if(bi.foraRecuo>0.5) hach(bi.plate, bi.env, css("--bad")); if(bi.bal>0.5) hach(bi.plate, bi.below, css("--warn")); if(j===0 && I.balanco>0.5) hach(bi.plate, m.emb, css("--warn")) }
     if(I.foraLote>0.5){ path(b.pts); g.setLineDash([6,4]); g.strokeStyle=css("--bad"); g.lineWidth=1.6; g.stroke(); g.setLineDash([]) }
-    const l=m.tipo && m.tipo[i]; if(I.nucleo===false && l && l.core && l.core.length){ path(l.core); g.fillStyle=css("--bad"); g.globalAlpha=0.25; g.fill(); g.globalAlpha=1; g.strokeStyle=css("--bad"); g.lineWidth=1.6; g.setLineDash([4,3]); g.stroke(); g.setLineDash([]) }
+    const l=m.tipo && m.tipo[i]; if(l && l.core && l.core.length && (I.nucleo===false || (bi && bi.nucleo===false))) nucleoVermelho(l.core);
+    // outros blocos da pilha: contorno discreto (o ativo fica em destaque com a ferramenta Editar)
+    blcLst(i).forEach((o,kk)=>{ if(kk===k || !blcValido(o)) return; path(o.pts); g.strokeStyle=css("--muted"); g.globalAlpha=0.8; g.lineWidth=1; g.setLineDash([3,3]); g.stroke(); g.setLineDash([]); g.globalAlpha=1;
+      if(ctx.opt.handles && BLC.sel===i && ctx.V.s>2.5){ const f=blcFx(m,i,kk), bb=o.pts.map(q=>w2s(q)), x=Math.min(...bb.map(p=>p[0])), y=Math.min(...bb.map(p=>p[1])); if(f){ g.font="500 9.5px "+css("--f-mono"); g.textAlign="left"; g.textBaseline="bottom"; g.fillStyle=css("--muted"); g.fillText(blcRot(f), x+2, y-3) } } });
   });
   // torres próximas demais: cota entre os pontos mais próximos
   (m.blcPares||[]).forEach(p=>{ const A=m.T[p.a].plate, B=m.T[p.b].plate, c=blcPerto(A,B); if(!c) return; const [x1,y1]=w2s(c[0]), [x2,y2]=w2s(c[1]);
@@ -15406,17 +15812,26 @@ HOOK.draw2d.push((g, ctx)=>{
     const t=p.d<0.01? "sobreposição" : `${nf(p.d,1)} m < ${nf(m.gap,1)} m`; g.font="600 10.5px "+css("--f-mono"); const tw=g.measureText(t).width+8, mx=(x1+x2)/2, my=(y1+y2)/2;
     g.fillStyle=css("--surface"); g.globalAlpha=.92; g.fillRect(mx-tw/2,my-8,tw,16); g.globalAlpha=1; g.fillStyle=css("--bad"); g.textAlign="center"; g.textBaseline="middle"; g.fillText(t,mx,my) });
   if(!ctx.opt.handles) return;
-  // alças: vértices de todas as formas; a selecionada ganha contorno, meios dos lados e o quadrado de redimensionar
-  lst.forEach(i=>{ const b=blcB(i), on=BLC.sel===i;
+  // alças: vértices do bloco ativo de cada torre; o da torre selecionada ganha contorno, meios dos lados e o quadrado de redimensionar
+  lst.forEach(i=>{ const b=blcB(i), on=BLC.sel===i, f=blcFx(m,i,blcK(i));
     if(on){ path(b.pts); g.fillStyle=css("--accent"); g.globalAlpha=0.12; g.fill(); g.globalAlpha=1; g.strokeStyle=css("--accent"); g.lineWidth=2.4; g.stroke() }
     else { path(b.pts); g.strokeStyle=css("--accent"); g.globalAlpha=0.55; g.lineWidth=1.2; g.setLineDash([5,4]); g.stroke(); g.setLineDash([]); g.globalAlpha=1 }
     (b.vazios||[]).forEach(v=>{ const ok=entVazioOk(b,v); path(v); g.strokeStyle= ok? css("--accent") : css("--bad"); g.setLineDash([5,4]); g.lineWidth=1.6; g.stroke(); g.setLineDash([]) });
     [b.pts, ...(b.vazios||[])].forEach(arr=>arr.forEach(q=>{ const [x,y]=w2s(q), r=on?4:3; g.fillStyle=on? css("--accent") : css("--muted"); g.fillRect(x-r,y-r,2*r,2*r) }));
     if(on){ [b.pts, ...(b.vazios||[])].forEach(arr=>arr.forEach((a,k)=>{ const c=arr[(k+1)%arr.length], [x,y]=w2s([(a[0]+c[0])/2,(a[1]+c[1])/2]); g.fillStyle=css("--accent"); g.globalAlpha=0.55; g.beginPath(); g.arc(x,y,3,0,7); g.fill(); g.globalAlpha=1 }));
       const [x,y]=w2s(blcEscalaPos(b)); g.fillStyle=css("--surface"); g.strokeStyle=css("--accent"); g.lineWidth=2; g.beginPath(); g.rect(x-6,y-6,12,12); g.fill(); g.stroke();
-      g.beginPath(); g.moveTo(x-2.5,y+2.5); g.lineTo(x+2.5,y-2.5); g.moveTo(x+0.5,y-2.5); g.lineTo(x+2.5,y-2.5); g.lineTo(x+2.5,y-0.5); g.stroke() }
+      g.beginPath(); g.moveTo(x-2.5,y+2.5); g.lineTo(x+2.5,y-2.5); g.moveTo(x+0.5,y-2.5); g.lineTo(x+2.5,y-2.5); g.lineTo(x+2.5,y-0.5); g.stroke();
+      if(blcLst(i).length>1 && f && ctx.V.s>2){ const bb=b.pts.map(q=>w2s(q)), bx=Math.min(...bb.map(p=>p[0])), by=Math.min(...bb.map(p=>p[1])); g.font="600 10px "+css("--f-mono"); g.textAlign="left"; g.textBaseline="bottom"; g.fillStyle=css("--accent"); g.fillText(`bloco ${blcRot(f)}`, bx+2, by-3) } }
   });
 });
+/* legenda da vista Andares: terraço sobre o bloco de baixo */
+function blcLegenda(){
+  const el=document.getElementById("planLeg"), m=blcM(); if(!el || !m || !blcAtivo(S) || VIEW!=="andar" || el.querySelector(".blcLeg")) return;
+  const a=typeof floorsList==="function"? floorsList(m).find(f=>f.key===ANDAR) : null; if(!a || a.tipo!=="tipo") return;
+  if(!m.T.some(t=>{ const fx=(t.faixas||[]).filter(f=>f.blc), j=fx.findIndex(f=>a.j+1>=f.de && a.j+1<=f.ate); return j>0 && fx[j-1].A>fx[j].A+1 })) return;
+  el.insertAdjacentHTML("beforeend", `<div class="blcLeg"><i style="background:var(--lz-deck)"></i>terraço (recuo do bloco)</div>`);
+}
+if(typeof planLegend==="function"){ const _plBlc=planLegend; planLegend=function(){ _plBlc.apply(this, arguments); try{ blcLegenda() }catch(e){ console.error("[blocos] legenda", e) } } }
 /* pontos mais próximos entre dois contornos (vértice de um × lado do outro) */
 function blcPerto(A, B){ let best=null, bd=Infinity;
   const pr=(p,a,b)=>{ const vx=b[0]-a[0], vy=b[1]-a[1], L=vx*vx+vy*vy||1e-9, t=Math.max(0,Math.min(1,((p[0]-a[0])*vx+(p[1]-a[1])*vy)/L)); return [a[0]+t*vx, a[1]+t*vy] };
@@ -15426,38 +15841,65 @@ function blcPerto(A, B){ let best=null, bd=Infinity;
 /* ---------- seção "Forma das torres" (Produto) ---------- */
 const BLC_IC = { ret:"M3 4h10v8H3z", L:"M3 3h4v6h6v4H3z", U:"M2 3h4v6h4V3h4v10H2z", T:"M2 3h12v4H10v6H6V7H2z", H:"M2 3h4v3h4V3h4v10h-4v-3H6v3H2z", patio:"M2 3h12v10H2zM6 6v4h4V6z" };
 const blcIc = k => `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="${BLC_IC[k]}"/></svg>`;
-function blcSum(){ if(!blcAtivo(S)) return "automática"; const n=blcLista().length, N=S.produto.torres.length; return n? `desenhada · ${n} de ${N} torre${N>1?"s":""}` : "desenhada · nenhuma personalizada" }
+function blcSum(){ if(!blcAtivo(S)) return "automática"; const n=blcLista().length, N=S.produto.torres.length, nb=blcLista().reduce((s,i)=>s+blcLst(i).filter(blcValido).length,0);
+  return n? `desenhada · ${n} de ${N} torre${N>1?"s":""}${nb>n? ` · ${nb} blocos` : ""}` : "desenhada · nenhuma personalizada" }
 function blcSecHTML(){
   blcCss(); const on=blcAtivo(S), salvas=(S.blocos.torres||[]).filter(t=>t && t.blocos && t.blocos.length).length;
-  const body = ROW(`Forma${INFO("Automática: a torre sai das regras e do mix (recuos, faixa de cada torre, área do mix ÷ eficiência). Desenhada: você personaliza a planta de cada torre — copiando a automática, com um formato pronto (retângulo, L, U, T, H, pátio) ou editando na implantação. A planta desenhada não encolhe: recuos, TO, CA, gabarito, balanço, núcleo e distância entre torres viram avisos. Voltar para Automática guarda as formas.","forma das torres")}`,
+  const body = ROW(`Forma${INFO("Automática: a torre sai das regras e do mix (recuos, faixa de cada torre, área do mix ÷ eficiência). Desenhada: você personaliza a planta de cada torre — copiando a automática, com um formato pronto (retângulo, L, U, T, H, pátio) ou editando na implantação — e pode empilhar blocos (embasamento largo, tipo, cobertura recuada). A planta desenhada não encolhe: recuos, TO, CA, gabarito, balanço, núcleo e distância entre torres viram avisos. Voltar para Automática guarda as formas.","forma das torres")}`,
       SEG("blocos.modo",[["auto","Automática"],["desenhada","Desenhada"]],{label:"Forma das torres"}))
     + (on ? `<div class="list" id="blcList"></div><div id="blcGeral"></div>`
           : salvas ? `<p class="note">${salvas} forma${salvas>1?"s":""} guardada${salvas>1?"s":""} — volta${salvas>1?"m":""} ao escolher Desenhada.</p>` : "");
-  return SEC("Forma das torres", body, {key:"pr-forma", sum:blcSum(), info:"Planta das torres: automática pelas regras ou desenhada por você, torre a torre."});
+  return SEC("Forma das torres", body, {key:"pr-forma", sum:blcSum(), info:"Planta das torres: automática pelas regras ou desenhada por você, torre a torre, numa pilha de blocos."});
 }
-/* avisos curtos de uma torre (o texto completo fica nos avisos do estudo, em Projeto) */
+/* avisos curtos de uma torre e de um bloco (o texto completo fica nos avisos do estudo) */
 function blcCurtos(I){ if(!I) return []; const o=[];
   if(I.foraLote>0.5) o.push(`${m2(I.foraLote)} fora do lote`); if(I.foraRecuo>0.5) o.push(`${m2(I.foraRecuo)} sobre os recuos`);
-  if(I.balanco>0.5) o.push(`${m2(I.balanco)} em balanço`); if(I.nucleo===false) o.push("núcleo fora da planta"); return o }
+  if(I.balanco>0.5) o.push(`${m2(I.balanco)} em balanço`); if(I.nucleo===false) o.push("núcleo fora da planta");
+  const nc=(I.bl||[]).filter(b=>!b.nucleo).length; if(nc) o.push(nc>1? `${nc} blocos cortam o núcleo` : "um bloco corta o núcleo");
+  const bal=(I.bl||[]).reduce((s,b)=>s+(b.bal>0.5? b.bal : 0),0); if(bal>0.5) o.push(`${m2(bal)} em balanço entre blocos`); return o }
+function blcCurtosB(b){ if(!b) return []; const o=[]; if(b.foraRecuo>0.5) o.push(`${m2(b.foraRecuo)} sobre os recuos`); if(b.bal>0.5) o.push(`${m2(b.bal)} em balanço`); if(!b.nucleo) o.push("corta o núcleo"); return o }
+const BLC_INFO_PILHA = "A torre é uma pilha de blocos, de baixo para cima. Cada bloco vale do andar em que começa até o anterior ao próximo; o de cima vai até o total de andares da torre. O bloco marcado TIPO (o de mais andares) recebe o pavimento tipo detalhado; os outros repetem o mesmo núcleo com as unidades distribuídas pela área. “+ Bloco” copia o de cima e começa no meio dele; “Recuar” afasta as fachadas do bloco de baixo.";
+/* linhas dos blocos de uma torre (de cima para baixo) */
+function blcBlocosHTML(i, m, I){
+  const L=blcLst(i), t=m.T[i]||{}, N=t.pav||1, kAt=blcK(i), maxA=Math.max(1, ...L.map((_,k)=>(blcFx(m,i,k)||{}).A||0));
+  const rows=[]; for(let k=L.length-1;k>=0;k--){ const b=L[k]; if(!blcValido(b)) continue;
+    const f=blcFx(m,i,k), bi=(I && I.bl||[]).find(x=>x.k===k), ig=(t.blcIgn||[]).find(g=>g.k===k), key=i+":"+k, open=BLC.bopen===key || L.length===1;
+    const w=[...blcCurtosB(bi), ...(ig? [ig.motivo==="acima"? `fora: a torre tem ${N} andares` : "começa junto com outro"] : [])];
+    const pctW = f? Math.max(12, Math.round(f.A/maxA*100)) : 30;
+    const lo = k===1 ? 1 : (+((L[k-1]||{}).de)||1), hi = k<L.length-1 ? (+L[k+1].de||N)-1 : Math.max(N, +b.de||1);
+    rows.push(`<div class="blc-b${kAt===k && L.length>1?" on":""}${w.length?" warn":""}${f && f.ref?" ref":""}${f?"":" fora"}">
+      <button type="button" class="blc-bh" data-act="blcBk" data-i="${i}" data-k="${k}" aria-expanded="${open}" title="${open?"Fechar":"Abrir e selecionar"} o bloco">
+        <span class="blc-sil" aria-hidden="true"><i style="width:${pctW}%"></i></span><b>${f? blcRot(f) : (b.de||"?")+"º"}</b><span class="a">${f? m2(f.A) : "fora da torre"}${f && f.un!=null && L.length>1? ` · ${f.un} un` : ""}</span>${f && f.ref && L.length>1? `<span class="tg">tipo</span>` : "<span></span>"}
+        ${w.length? `<span class="w">${w.join(" · ")}</span>` : ""}</button>
+      ${open? `<div class="blc-bb">
+        ${k>0? `<div class="row"><span class="fl">Começa no andar</span>${prStp(`blocos.torres.${i}.blocos.${k}.de`, b.de||lo+1, lo+1, Math.max(lo+1, hi), `Andar inicial do bloco ${k+1}`)}</div>` : ""}
+        <div class="blc-fm" role="group" aria-label="Formatos prontos">${BLC_FORMAS.map(([fk,l])=>`<button type="button" class="chip" data-act="blcFmt" data-i="${i}.${k}" data-t="${fk}" aria-pressed="${b.tipo===fk}" title="${b.tipo===fk?"Clique de novo para girar 90°":"Aplicar "+l.toLowerCase()}">${blcIc(fk)}${l}</button>`).join("")}</div>
+        ${k>0? `<div class="blc-ac"><button type="button" class="btn sm" data-act="blcCopBx" data-i="${i}.${k}" title="Este bloco fica com o contorno do bloco de baixo">Copiar do de baixo</button>
+          <span class="row" style="gap:6px;flex-wrap:nowrap"><div class="inp"><input type="number" id="blcRec-${i}-${k}" step="0.5" min="0.5" value="${fmtIn(BLC.rec)}" aria-label="Recuo em relação ao bloco de baixo"><em>m</em></div><button type="button" class="btn sm" data-act="blcRecua" data-i="${i}.${k}" title="Contorno do bloco de baixo recuado esta distância em todas as fachadas">Recuar</button></span></div>` : ""}
+        <div class="blc-ac"><button type="button" class="btn sm" data-act="blcEdit" data-i="${i}.${k}" data-k="${k}" title="Selecionar o bloco na implantação">Editar na implantação</button><button type="button" class="btn sm" data-act="blcAndar" data-i="${i}.${k}" title="Planta do 1º andar deste bloco">Ver andar</button>${L.length>1? `<span class="blc-rm">${prRm("blcDelB", `${i}.${k}`, `bloco ${f? blcRot(f) : k+1}`, "Apagar bloco")}</span>` : ""}</div>
+      </div>` : ""}</div>`) }
+  return rows.join("");
+}
 function blcLive(m){
   setSum("pr-forma", blcSum());
   if(!blcAtivo(S) || !document.getElementById("blcList")) return;
   const P=S.produto;
   setHTML("blcList", P.torres.map((tw,i)=>{ const b=blcB(i), t=m.T[i]||{}, nome=`Torre ${i+1}`, I=(m.blc||[]).find(x=>x.i===i), cu=blcCurtos(I);
     const pares=(m.blcPares||[]).filter(p=>p.a===i||p.b===i).map(p=>p.d<0.01? `sobrepõe a torre ${(p.a===i?p.b:p.a)+1}` : `${nf(p.d,1)} m da torre ${(p.a===i?p.b:p.a)+1}`);
-    const av=[...cu, ...pares], open=!!b && BLC.open===i;
+    const av=[...cu, ...pares], open=!!b && BLC.open===i, nb=blcLst(i).filter(blcValido).length, ref=nb>1? blcFx(m,i,t.blcRef??0) : null;
     if(!b) return `<div class="pr-row"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b><span>automática · ${m2(t.A||0)}/andar</span></div>
       <button type="button" class="btn sm" data-act="blcPers" data-i="${i}" title="Copia a forma automática atual para uma forma editável">Personalizar</button></div></div>`;
-    const sub=`${BLC_NOMES[b.tipo]||"desenhada"} · ${m2(t.A||0)}/andar · unidades a ${pct(t.r||0,0)} do mix`;
+    const sub = nb>1 ? `${nb} blocos · tipo ${blcRot(ref)} · ${m2(t.A||0)}/andar · unidades a ${pct(t.r||0,0)} do mix`
+      : `${BLC_NOMES[b.tipo]||"desenhada"} · ${m2(t.A||0)}/andar · unidades a ${pct(t.r||0,0)} do mix`;
     return `<div class="pr-row${open?" on":""}${av.length?" warn":""}" data-row="blc:${i}"><div class="pr-rh">
         <button type="button" class="pr-tx" data-act="blcTog" data-i="${i}" aria-expanded="${open}"><b>${nome}</b><span>${sub}</span>${av.length?`<span class="w">${av.join(" · ")}</span>`:""}</button>
         <button type="button" class="pr-ic lbl" data-act="blcEdit" data-i="${i}" title="Selecionar e editar na implantação" aria-label="Editar a ${nome.toLowerCase()} na implantação">Editar</button>
-        <button type="button" class="pr-ic chev" data-act="blcTog" data-i="${i}" aria-expanded="${open}" aria-label="${open?"Fechar":"Abrir"} ${nome}" title="${open?"Fechar":"Formatos e opções"}">${PR_IC.chev}</button></div>
-      ${open? `<div class="pr-rb"><span class="fl">Formatos prontos${INFO("Gerados dentro da faixa da torre (recuos e divisão entre torres), com a área atual do andar. Alas de 12,6 m (dois apartamentos de 5,5 m e corredor de 1,6 m). Clique de novo no mesmo formato para girar 90°. Depois, ajuste os vértices na implantação.","formatos prontos")}</span>
-        <div class="blc-fm" role="group" aria-label="Formatos prontos">${BLC_FORMAS.map(([k,l])=>`<button type="button" class="chip" data-act="blcFmt" data-i="${i}" data-t="${k}" aria-pressed="${b.tipo===k}" title="${b.tipo===k?"Clique de novo para girar 90°":"Aplicar "+l.toLowerCase()}">${blcIc(k)}${l}</button>`).join("")}</div>
-        <div class="pr-rf"><button type="button" class="btn sm ghost" data-act="blcRefaz" data-i="${i}" title="Copia de novo a forma automática">Refazer da automática</button>${prRm("blcDel", i, "forma da "+nome.toLowerCase(), "Apagar forma")}</div></div>` : ""}</div>` }).join(""));
+        <button type="button" class="pr-ic chev" data-act="blcTog" data-i="${i}" aria-expanded="${open}" aria-label="${open?"Fechar":"Abrir"} ${nome}" title="${open?"Fechar":"Blocos, formatos e opções"}">${PR_IC.chev}</button></div>
+      ${open? `<div class="pr-rb"><div class="blc-hd"><span class="fl">${nb>1? "Blocos · de cima para baixo" : "Bloco único"}${INFO(BLC_INFO_PILHA,"pilha de blocos")}</span></div>
+        <div class="blc-pl">${blcBlocosHTML(i, m, I)}</div>
+        <div class="pr-rf"><button type="button" class="btn sm" data-act="blcAdd" data-i="${i}" title="Novo bloco no topo, cópia do de cima, começando no meio dele">+ Bloco</button>${nb===1? `<button type="button" class="btn sm ghost" data-act="blcRefaz" data-i="${i}" title="Copia de novo a forma automática">Refazer da automática</button>` : ""}${prRm("blcDel", i, "forma da "+nome.toLowerCase(), "Apagar forma")}</div></div>` : ""}</div>` }).join(""));
   const R=blcResumo(S,m), G2=(m.blcGeral||[]).filter(a=>!/^O mix ocupa/.test(a));
-  setHTML("blcGeral", (R? `<div class="row sb"><span class="note"${R.desvio?' style="color:var(--warn)"':""}>O mix ocupa ${pct(R.ocupa,0)} do pavimento desenhado</span>${R.muda? `<button type="button" class="btn sm" data-act="blcMix" title="Muda a quantidade de unidades por andar para o mix voltar ao tamanho original">Ajustar mix</button>` : ""}</div>` : "")
+  setHTML("blcGeral", (R? `<div class="row sb"><span class="note"${R.desvio?' style="color:var(--warn)"':""}>O mix ocupa ${pct(R.ocupa,0)} do pavimento ${m.T.some(t=>t.desenhada && (t.faixas||[]).length>1)? "tipo " : ""}desenhado</span>${R.muda? `<button type="button" class="btn sm" data-act="blcMix" title="Muda a quantidade de unidades por andar para o mix voltar ao tamanho original (no bloco tipo; os outros blocos acompanham)">Ajustar mix</button>` : ""}</div>` : "")
     + (G2.length? `<div class="blc-av">${G2.map(a=>`<p>${esc(a)}</p>`).join("")}</div>` : ""));
 }
 
@@ -17070,7 +17512,7 @@ HOOK.draw2d.push((g, ctx)=>{
   }
   if(mode==="andar" && opt.andar && opt.andar.tipo==="tipo"){
     const j=opt.andar.j;
-    m.T.forEach(t=>{ const f=(t.faixas||[]).find(f=>j+1>=f.de && j+1<=f.ate); if(!f || j>=t.pav || f.plate===t.plate) return;
+    m.T.forEach(t=>{ const f=(t.faixas||[]).find(f=>j+1>=f.de && j+1<=f.ate); if(!f || j>=t.pav || f.plate===t.plate || t.desenhada) return;   // C2: a pilha de blocos desenha os próprios terraços (src/ui/blocos.js)
       // terraço = planta típica fora da planta deste andar
       const ring=p=>p.forEach((q,i)=>{ const [x,y]=w2s(q); i? g.lineTo(x,y) : g.moveTo(x,y) });
       g.save(); g.beginPath(); ring(t.plate); g.closePath(); if(f.plate.length){ ring(f.plate); g.closePath() } g.fillStyle=css("--lz-deck"); g.globalAlpha=0.92; g.fill("evenodd");
@@ -17084,7 +17526,7 @@ HOOK.draw2d.push((g, ctx)=>{
 function formaLegenda(){
   const el=document.getElementById("planLeg"), m=window._last&&window._last.m; if(!el || !m || !m.forma || el.querySelector(".formaLeg") || VIEW!=="andar") return;
   const a=typeof floorsList==="function"? floorsList(m).find(f=>f.key===ANDAR) : null; if(!a || a.tipo!=="tipo") return;
-  if(!m.T.some(t=>{ const f=(t.faixas||[]).find(f=>a.j+1>=f.de && a.j+1<=f.ate); return f && f.plate!==t.plate })) return;
+  if(!m.T.some(t=>{ const f=(t.faixas||[]).find(f=>a.j+1>=f.de && a.j+1<=f.ate); return f && f.plate!==t.plate && !t.desenhada })) return;
   el.insertAdjacentHTML("beforeend", `<div class="formaLeg"><i style="background:var(--lz-deck)"></i>terraço (andar recuado)</div>`);
 }
 if(typeof planLegend==="function"){ const _plForma=planLegend; planLegend=function(){ _plForma.apply(this, arguments); try{ formaLegenda() }catch(e){ console.error("[forma] legenda", e) } } }
