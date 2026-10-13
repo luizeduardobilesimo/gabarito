@@ -126,9 +126,9 @@ describe('3.1 orçamento paramétrico', () => {
     expect(g({ solo: 'ruim' }).find(i => i.k === 'fund').total).toBeGreaterThan(g({ solo: 'bom' }).find(i => i.k === 'fund').total);
     expect(g({ fachada: 'vidro' }).find(i => i.k === 'fach').total).toBeGreaterThan(g({ fachada: 'textura' }).find(i => i.k === 'fach').total);
   });
-  it('tabela CUB: embutida ilustrativa + importação CSV e JSON', () => {
-    expect(A.cubValor(st, 'SC', 'R8-N')).toBe(3159);
-    expect(A.cubLinha(st, 'SC').ilustrativo).toBe(true);
+  it('tabela CUB: embutida (publicada, com mês e fonte) + importação CSV e JSON', () => {
+    expect(A.cubValor(st, 'SC', 'R8-N')).toBeCloseTo(2800.4, 2);                 // Fase E: boletim do Sinduscon (ago/2026), não mais o valor ilustrativo de 3159
+    expect(A.cubLinha(st, 'SC').ilustrativo).toBe(false); expect(A.cubLinha(st, 'ES').ilustrativo).toBe(true);
     const csv = A.cubParse('uf;padrao;valor;ref;fonte\nSC;R8-N;3.201,55;2026-10;Sinduscon-Grande Florianópolis\nSC;R16-A;3900\nXX;R8-N;1000');
     expect(csv.find(r => r.uf === 'SC').v['R8-N']).toBeCloseTo(3201.55, 2);
     const largo = A.cubParse('uf;ref;fonte;R8-N;R16-N\nPR;2026-10;Sinduscon-PR;2700,10;2600');

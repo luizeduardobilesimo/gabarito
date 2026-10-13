@@ -7,7 +7,7 @@
      margemVGV   lucro ÷ VGV (convenção do mercado — margem principal) · margemReceita = lucro ÷ receita nominal
      vc, vcCUB   preço médio R$/m² privativo ÷ (CUB × fator)  ·  ÷ CUB puro
      terrenoPctVGV  (preço do terreno + permuta física + permuta financeira) ÷ VGV de tabela — sem ITBI
-     softPctVGV  indiretos ÷ VGV líquido: projetos, administração, contingência, corretagem, marketing, RET, ITBI, outorga e juros
+     softPctVGV  indiretos ÷ VGV líquido: projetos, administração, contingência, corretagem, marketing, RET, ITBI, outorga, juros e os itens de src/calc/indiretos.js
      custoM2ATC  obra (sem INCC e sem indiretos) ÷ ATC
      tirVsAlvo   TIR − TIR alvo (null sem TIR)
      tipologia / tipologiaNome / faixaEfic   tipologia detectada para a faixa de eficiência (ver saudeTipologia)
@@ -87,7 +87,7 @@ function saudeNegocio(st, m, f){
   // terreno: permuta física e financeira contam como terreno equivalente; denominador = VGV de tabela (o total do empreendimento)
   const terrenoEq = (f.terrenoPreco != null ? f.terrenoPreco : F.terreno) + (f.permV || 0) + (f.permFin || 0);
   const terrenoPctVGV = saudeDiv(terrenoEq, f.vgvB);
-  const soft = (f.projetos || 0) + (f.adm || 0) + (f.conting || 0) + (f.corret || 0) + (f.mkt || 0) + (f.imp || 0) + (f.itbi || 0) + (f.outorga || 0) + (f.juros || 0);
+  const soft = (f.projetos || 0) + (f.adm || 0) + (f.conting || 0) + (f.corret || 0) + (f.mkt || 0) + (f.imp || 0) + (f.itbi || 0) + (f.outorga || 0) + (f.juros || 0) + (f.soft || 0);   // f.soft = registro, seguros, IPTU, jurídico, pós-obra e gestão (src/calc/indiretos.js; 0 quando desligados)
   const softPctVGV = saudeDiv(soft, f.vgv);
   const custoM2ATC = saudeDiv(f.obra, atc);
   const tipologia = saudeTipologia(st, m), faixaEfic = (M.efic && M.efic[tipologia]) || SAUDE_SUGERIDAS.efic[tipologia];
@@ -123,5 +123,15 @@ function saudeAplicarPadrao(st){
 const SAUDE_ORDEM = { ruim: 0, atencao: 1, ok: 2, otimo: 3 };
 function saudePior(niveis){ return niveis.reduce((a, b) => SAUDE_ORDEM[b] < SAUDE_ORDEM[a] ? b : a, "otimo") }
 
+/* Lucro após imprevistos (informativo, não muda o lucro principal): se a contingência do estudo (S.fin.conting) está abaixo da meta de imprevistos
+   (S.metas.imprev.min–max), a diferença × obra (com a correção do INCC que a obra já leva) sai do lucro. Devolve a faixa { min, max }. */
+function saudeImprevistos(st, f){
+  const M = (st.metas && st.metas.imprev) || SAUDE_SUGERIDAS.imprev, base = (f.obra || 0) + (f.adm || 0) + (f.conting || 0);
+  const incc = base > 0 ? (f.obraTot || base) / base : 1;
+  const calc = meta => { const extra = Math.max(0, meta - (st.fin.conting || 0)) * (f.obra || 0) * incc, lucro = f.lucro - extra;
+    return { meta, extra, lucro, margemVGV: saudeDiv(lucro, f.vgv) } };
+  return { min: calc(M.min), max: calc(M.max) };
+}
+
 /* o resultado acompanha o `f` (barato; roda também na sensibilidade com os ajustes de cada rodada) */
-HOOK.finance.push((f, st, m) => { f.saude = saudeNegocio(st, m, f) });
+HOOK.finance.push((f, st, m) => { f.saude = saudeNegocio(st, m, f); f.imprevistos = saudeImprevistos(st, f) });

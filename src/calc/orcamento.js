@@ -5,6 +5,7 @@
 extendDEF("orc", {
   modo: "cub",                 // "cub" = CUB × fator (padrão, método atual) · "param" = soma dos sistemas
   uf: "SC", padrao: "R8-N",    // tabela CUB (referência)
+  cubAuto: false,              // true = fin.cub segue a tabela do estado e padrão (cubSincroniza em calc/cub.js); desligado: o CUB é o digitado
   solo: "medio",               // bom | medio | ruim
   fachada: "porcelanato",      // textura | porcelanato | vidro
   acab: "normal",              // economico | normal | alto | luxo
