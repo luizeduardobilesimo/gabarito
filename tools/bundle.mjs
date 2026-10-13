@@ -1,6 +1,6 @@
 // Empacotador único do Gabarito: concatena src/ → index.html e test.html.
 // Ordem: núcleo de cálculo → src/calc/*.js → núcleo de interface → src/ui/*.js → main.js
-// Uso:  node tools/bundle.mjs [--out pasta]      (sem --out grava na raiz do projeto)
+// Uso:  node tools/bundle.mjs [--out pasta] [--web]      (sem --out grava na raiz do projeto; --web = documento completo p/ Vercel)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,15 +27,18 @@ export function bundle() {
   const calc = '<script type="text/plain" id="calcSrc">' + calcSource().replace(/<\/script/gi, '<\/script') + '</script>\n';
   const out = shell + '\n' + calc + LIBS + '<script>\n"use strict";\n' + js + '</script>\n';
   const test = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>' + out + '</body></html>';
-  return { out, test };
+  // app web (Vercel, gabarito.rixel.com.br): documento completo, sem modo quirks
+  const web = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light dark"></head><body>' + out + '</body></html>';
+  return { out, test, web };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const i = process.argv.indexOf('--out');
   const dest = i > 0 ? path.resolve(process.argv[i + 1]) : ROOT;
   fs.mkdirSync(dest, { recursive: true });
-  const { out, test } = bundle();
-  fs.writeFileSync(path.join(dest, 'index.html'), out);
+  const { out, test, web } = bundle();
+  // --web: index.html vira o documento completo do app web (dist/ publicado na Vercel); sem --web, o formato do artifact
+  fs.writeFileSync(path.join(dest, 'index.html'), process.argv.includes('--web') ? web : out);
   fs.writeFileSync(path.join(dest, 'test.html'), test);
   console.log(out.length, '→', dest);
 }

@@ -16,5 +16,6 @@ function paintRange(r){ const mn=+r.min||0, mx=+r.max||100, v=+r.value; r.style.
 document.addEventListener("input",e=>{ if(e.target.type==="range") paintRange(e.target) },true);
 new MutationObserver(()=>document.querySelectorAll('input[type=range]').forEach(paintRange)).observe(document.getElementById("tabbody"),{childList:true});
 document.querySelectorAll('input[type=range]').forEach(paintRange);
-// desfazer/refazer (começa do estado já normalizado) e repositório de estudos/versões (IndexedDB)
-histInit(); estInit();
+// desfazer/refazer (começa do estado já normalizado) e repositório de estudos/versões (IndexedDB; no app web com login,
+// a nuvem — authInit resolve na hora fora do app web, ver src/ui/auth.js)
+histInit(); authInit().then(estInit).then(authDepois);
