@@ -118,7 +118,7 @@ describe('verificaAcesso (login direto)', () => {
   beforeEach(() => limpaCacheAcesso());
   it('sem GABARITO_TOOL_ID nega com motivo claro, sem consultar a Rixel', async () => {
     const f = fetchFalso({});
-    const r = await verificaAcesso({ token: 't', sub: A }, { cfg: cfgCom({}), fetch: f });
+    const r = await verificaAcesso({ token: 't', sub: A }, { cfg: cfgCom({ GABARITO_TOOL_ID: '' }), fetch: f });
     expect(r.ok).toBe(false); expect(r.motivo).toMatch(/ainda não configurado/); expect(f.chamadas.length).toBe(0);
   });
   it('acesso aberto (desenvolvimento) libera', async () => {
@@ -197,10 +197,31 @@ describe('lançamento pela Rixel (caminho principal)', () => {
     const v = await chama(rotaCallback(() => deps), { query: q, headers: { cookie: 'gab_pkce=' + encodeURIComponent(pk) } });
     return { ini, u, pk, code, v, sessao: valorCookie(v, 'gab_sessao') };
   }
-  it('desligado sem GABARITO_TOOL_ID: volta para o app', async () => {
-    deps.cfg = cfgCom({});
+  it('desligado com GABARITO_TOOL_ID vazio: volta para o app', async () => {
+    deps.cfg = cfgCom({ GABARITO_TOOL_ID: '' });
     const r = await chama(rotaIniciar(() => deps));
     expect(r.cab.location).toBe('https://gabarito.rixel.com.br/?entrada=desligada');
+  });
+  it('padrões confirmados pela Rixel: id da ferramenta e página de lançamento (slug no caminho, redirect_uri = callback)', async () => {
+    deps.cfg = cfgCom({});
+    expect(deps.cfg.toolId).toBe('8e7150bc-bade-4cbb-8efe-47606a299af2');
+    const u = new URL((await chama(rotaIniciar(() => deps))).cab.location);
+    expect(u.origin + u.pathname).toBe('https://www.rixel.com.br/ferramentas/gabarito/abrir');
+    expect(u.searchParams.get('challenge')).toMatch(CHALLENGE_OK);
+    expect(u.searchParams.get('redirect_uri')).toBe('https://gabarito.rixel.com.br/api/rixel/callback');
+    expect(u.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{24}$/);
+  });
+  it('erros da página de lançamento viram mensagens nossas (sem repassar o texto da Rixel) e não criam sessão', async () => {
+    const ini = await chama(rotaIniciar(() => deps)), pk = valorCookie(ini, 'gab_pkce'), st = new URL(ini.cab.location).searchParams.get('state');
+    const volta = q => chama(rotaCallback(() => deps), { query: { state: st, error_description: '<b>x</b>', ...q }, headers: { cookie: 'gab_pkce=' + encodeURIComponent(pk) } });
+    expect((await volta({ error: 'access_denied' })).cab.location).toMatch(/entrada=sem_acesso&msg=/);
+    expect((await volta({ error: 'integration_pending' })).cab.location).toMatch(/entrada=indisponivel/);
+    for (const e of ['too_many_requests', 'temporarily_unavailable', 'invalid_redirect_uri', 'invalid_request', 'outro']) {
+      const loc = (await volta({ error: e })).cab.location;
+      expect(loc).toMatch(/entrada=erro&msg=/); expect(loc).not.toContain('%3Cb%3E');
+    }
+    expect((await volta({ error: 'access_denied', state: 'outro' })).cab.location).toMatch(/entrada=estado/);
+    expect(banco.T.sessoes.length).toBe(0);
   });
   it('ida e volta: challenge de 43 caracteres, troca anon com device null, sessão opaca guardada só como hash', async () => {
     const { u, pk, v, sessao } = await entra();
@@ -242,7 +263,7 @@ describe('lançamento pela Rixel (caminho principal)', () => {
     expect(v.cab.location).toMatch(/entrada=sem_acesso&msg=/);
     expect(valorCookie(v, 'gab_sessao')).toBeNull(); expect(banco.T.sessoes.length).toBe(0);
   });
-  it('reconfere a cada 60 s: ativo segue; inativo + refresh recusado derruba a sessão (401, cookie apagado)', async () => {
+  it('reconfere a cada 60 s: ativo segue; inativo derruba a sessão (401, cookie apagado)', async () => {
     const { sessao } = await entra();
     const eu = rotaEu(() => deps), ck = { cookie: 'gab_sessao=' + sessao };
     const conta = () => rx.fetch.chamadas.filter(c => c.url.endsWith('/rpc/product_access_status')).length;
@@ -252,24 +273,19 @@ describe('lançamento pela Rixel (caminho principal)', () => {
     expect((await chama(eu, { headers: ck })).status).toBe(200); expect(conta()).toBe(1);      // cache de 60 s
     rx.direito = false; relogio += 61000;
     const r = await chama(eu, { headers: ck });
-    expect(r.status).toBe(401); expect(r.corpo.erro).toBe('sem_acesso');
+    expect(r.status).toBe(401); expect(r.corpo.erro).toBe('sessao_expirada');
     expect(setCookies(r)[0]).toMatch(/^gab_sessao=; .*Max-Age=0/);
     expect(banco.T.sessoes.length).toBe(0);
     expect((await chama(eu, { headers: ck })).corpo.erro).toBe('sessao_expirada');
   });
-  it('refresh gira o hash: o banco guarda o novo hash e o antigo deixa de valer', async () => {
+  it('status inativo encerra a sessão sem tentar renovar (o refresh da Rixel não estende os 30 dias)', async () => {
     const { sessao } = await entra();
-    const antigo = banco.T.sessoes[0].refresh_hash;
-    for (const s of rx.sessoes.values()) s.ativa = false;   // jti velho (exp curto) → status inativo
+    for (const s of rx.sessoes.values()) s.ativa = false;
     relogio += 61000;
     const r = await chama(rotaEu(() => deps), { headers: { cookie: 'gab_sessao=' + sessao } });
-    expect(r.status).toBe(200);
-    const ref = rx.fetch.chamadas.find(c => c.url.endsWith('/rpc/refresh_product_session')).corpo;
-    expect(ref).toMatchObject({ p_refresh_hash: antigo, p_audience: 'gabarito', p_device_hash: null });
-    expect(ref.p_next_hash).toMatch(/^[0-9a-f]{64}$/); expect(ref.p_next_hash).not.toBe(antigo);
-    expect(banco.T.sessoes[0].refresh_hash).toBe(ref.p_next_hash);
-    expect(rx.sessoes.has(antigo)).toBe(false); expect(rx.sessoes.has(ref.p_next_hash)).toBe(true);
-    expect(banco.T.sessoes[0].jti).toBe(rx.sessoes.get(ref.p_next_hash).jti);
+    expect(r.status).toBe(401); expect(r.corpo.erro).toBe('sessao_expirada');
+    expect(rx.fetch.chamadas.some(c => c.url.endsWith('/rpc/refresh_product_session'))).toBe(false);
+    expect(banco.T.sessoes.length).toBe(0);
   });
   it('Rixel fora do ar: não libera (503) mas não derruba a sessão', async () => {
     const { sessao } = await entra();
@@ -338,7 +354,7 @@ describe('rotas /api/estudos, /api/versoes, /api/regras, /api/eu (login direto)'
     expect((await chama(est, { method: 'POST', headers: H('tok-A'), body: { nome: 'x' } })).status).toBe(400);
   });
   it('sem acesso na Rixel → 403 com o motivo; /api/eu responde mesmo assim', async () => {
-    deps.cfg = cfgCom({ GABARITO_LOGIN_DIRETO: '1' });
+    deps.cfg = cfgCom({ GABARITO_LOGIN_DIRETO: '1', GABARITO_TOOL_ID: '' });
     const r = await chama(est, { headers: H('tok-A') });
     expect(r.status).toBe(403); expect(r.corpo.erro).toBe('sem_acesso'); expect(r.corpo.motivo).toMatch(/configurado/);
     const e = await chama(eu, { headers: H('tok-A') });

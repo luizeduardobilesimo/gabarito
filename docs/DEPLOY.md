@@ -35,18 +35,27 @@ conferido com `tool_contract`).
 
 ## 2. Cadastro do Gabarito na Rixel (painel da Rixel)
 
-1. **Ferramenta**: criar em `tools` com `kind = 'web'`. Anote o **id (uuid)** → `GABARITO_TOOL_ID`.
-2. **Planos**: no painel, escolher os planos que incluem o Gabarito (o Plano 4 com certeza). Quem decide é a Rixel.
-3. **Integração** (`configure_tool_integration`):
-   - audience: `gabarito`
-   - callback: `https://gabarito.rixel.com.br/api/rixel/callback` (exatamente assim, **sem** query string)
-   - destination: `https://gabarito.rixel.com.br/` (mesmo host do callback — obrigatório para ferramenta web)
-   - `ready = false` por enquanto.
-4. **Homologação**: com o app publicado (passo 3 abaixo), testar a entrada; depois `verify_tool_integration` (exige MFA
-   recente e uma nota com pelo menos 20 caracteres) e só então `ready = true` e publicar a ferramenta.
-5. **Confirmar com quem mantém a Rixel** o endereço e os parâmetros da página de lançamento (front Next.js: recebe o
-   challenge, chama `issue_tool_code` e redireciona com `?code=`; se devolve `state`). O Gabarito aceita `state` opcional.
-   Ajuste `RIXEL_LAUNCH_URL` com os marcadores `{tool}`, `{challenge}`, `{state}` (e `{redirect}`, se precisar).
+**Estado em 13/10/2026 (confirmado pela Rixel):** a ferramenta já existe — id `8e7150bc-bade-4cbb-8efe-47606a299af2`
+(padrão no código), slug `gabarito`, kind `web`, `access_requirement = license` (avulsa: o Plano 4 e o Empresarial incluem
+automaticamente; o rank 3 não inclui avulsas; o Plano 2 só com associação em `plan_tools`; grants específicos liberam
+qualquer conta), audience `gabarito`, callback `https://gabarito.rixel.com.br/api/rixel/callback`, destination
+`https://gabarito.rixel.com.br/`, release `1.0.0`, **publicada**, homologação registrada (contrato v3), **`ready = false`**.
+A página de lançamento existe: `https://www.rixel.com.br/ferramentas/gabarito/abrir?challenge=…&state=…&redirect_uri=…`
+(padrão no código). Sem sessão a Rixel manda para `/entrar` e volta; recusas voltam ao callback com
+`?error=access_denied|integration_pending|too_many_requests|temporarily_unavailable|invalid_redirect_uri|invalid_request`
+(o Gabarito mostra uma mensagem própria), ou ficam numa página de erro da Rixel quando o RLS esconde a ferramenta.
+A sessão de produto dura **30 dias fixos** (o refresh não estende); o Gabarito reconfere com `product_access_status` a cada
+60 s e encerra quando ele vier inativo. Máximo de 10 códigos pendentes por usuário na Rixel.
+
+1. **Deixe a ferramenta publicada** (não volte para rascunho: a Rixel só lança ferramentas publicadas) e com `ready = false`
+   até o teste — enquanto isso, a entrada volta com "O Gabarito ainda está sendo liberado".
+2. **Planos**: o Plano 4 e o Empresarial já incluem. Para o Plano 2, associe em `plan_tools`; para alguém específico, um grant.
+3. **Teste e homologação**: com o app publicado (seção 3), ligar `ready = true`, entrar com uma conta do Plano 4 e outra sem
+   acesso, e registrar uma nota de homologação real em `verify_tool_integration` (MFA recente, ≥ 20 caracteres) — modelo:
+   "Callback e state conferidos; PKCE S256 com verifier de 64; audience gabarito e tool_id conferidos; código de uso único
+   (replay recusado); access_denied mostra sem acesso; revogação derruba a sessão em até 60 s; Sair revoga; logs sem código."
+4. Os logs de requisição da Vercel podem registrar o `?code=` do callback: ele é de uso único, vale 60 s e não serve sem o
+   verifier (cookie HttpOnly do navegador que iniciou), então o risco é baixo; as funções do Gabarito não registram códigos.
 6. (Só se ligar o login direto) Auth da Rixel › URL Configuration › Redirect URLs: incluir `https://gabarito.rixel.com.br/**`
    (para o link de "Esqueci a senha").
 
@@ -60,8 +69,8 @@ completo, `--web`), funções em `api/`, cabeçalhos de segurança e CSP com as 
 | variável | obrigatória | valor |
 |---|---|---|
 | `GABARITO_SUPABASE_SECRET_KEY` | sim | a secret key do Supabase do Gabarito (`sb_secret_…`) — segredo |
-| `GABARITO_TOOL_ID` | sim | o uuid da ferramenta Gabarito na Rixel. Sem ela, ninguém entra ("acesso ainda não configurado") |
-| `RIXEL_LAUNCH_URL` | sim, quando a Rixel confirmar | modelo da página de lançamento, ex.: `https://rixel.com.br/ferramentas/{tool}/abrir?challenge={challenge}&state={state}` |
+| `GABARITO_TOOL_ID` | não | padrão `8e7150bc-bade-4cbb-8efe-47606a299af2` (a ferramenta na Rixel). Vazio desliga a entrada |
+| `RIXEL_LAUNCH_URL` | não | padrão `https://www.rixel.com.br/ferramentas/gabarito/abrir?challenge={challenge}&state={state}&redirect_uri={redirect}` |
 | `GABARITO_AUDIENCE` | não | padrão `gabarito` (tem de ser igual ao cadastrado na Rixel) |
 | `APP_URL` | não | padrão `https://gabarito.rixel.com.br` (usado no callback e no destino) |
 | `GABARITO_SESSAO_DIAS` | não | duração da sessão do Gabarito, padrão 30 |
@@ -78,10 +87,9 @@ Conferir depois do deploy: `https://gabarito.rixel.com.br/api/saude` → `{"ok":
 ## 4. Passo a passo resumido (Luiz)
 
 1. Rodar a migração no Supabase do Gabarito e copiar a secret key.
-2. Cadastrar a ferramenta (kind web) na Rixel, os planos e a integração (ready=false); anotar o id.
-3. Na Vercel: `GABARITO_SUPABASE_SECRET_KEY`, `GABARITO_TOOL_ID`, `RIXEL_LAUNCH_URL`; domínio `gabarito.rixel.com.br` + CNAME.
-4. Push no `main` (ou Redeploy) e abrir `/api/saude`.
-5. Entrar pela Rixel com uma conta de teste; homologar (`verify_tool_integration`), `ready=true`, publicar.
+2. Na Vercel: só `GABARITO_SUPABASE_SECRET_KEY`; domínio `gabarito.rixel.com.br` + CNAME no DNS da Rixel.
+3. Redeploy e abrir `https://gabarito.rixel.com.br/api/saude`.
+4. Na Rixel: `ready = true`; entrar com uma conta do Plano 4 e outra sem acesso; registrar a homologação com a nota real.
 
 ## Testar localmente com a API
 

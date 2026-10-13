@@ -2,8 +2,9 @@
 // Depois da troca do código, o servidor cria a PRÓPRIA sessão: cookie HttpOnly; Secure; SameSite=Lax com um id opaco
 // aleatório (256 bits). No banco do Gabarito fica só o HASH do id (tabela `sessoes`), com sub, jti, aud, o hash ATUAL do
 // refresh da Rixel (o token cru nunca é guardado), criada, ultima_verificacao e expira.
-// A cada pedido: resolve a sessão pelo cookie; se a última verificação tem mais de 60 s, chama product_access_status e,
-// se não estiver ativo, refresh_product_session (gira o hash). Inativo = 401 e cookie apagado.
+// A cada pedido: resolve a sessão pelo cookie; se a última verificação tem mais de 60 s, chama product_access_status.
+// Inativo = 401 e cookie apagado (a sessão de produto da Rixel dura 30 dias fixos; o refresh não estende — não é usado).
+// O hash do refresh fica guardado só para o revoke_product_session do Sair.
 import { rixelRpc, validaClaims, statusAtivo, aleatorio, sha256hex, ErroRixel } from './rixel.js';
 import { rixelMotivo } from './acesso.js';
 import { ErroHttp, cookie } from './http.js';
@@ -39,18 +40,13 @@ export async function sessaoResolve(id, deps) {
       await banco.upd('sessoes', { id_hash: idHash }, { ultima_verificacao: iso(agora) });
       return { ...s, ultima_verificacao: iso(agora) };
     }
-    // inativo: tenta renovar (gira o hash do refresh). Se o direito acabou, a Rixel recusa.
-    const prox = await sha256hex(aleatorio(32));
-    const c = validaClaims(await rixelRpc(cfg, 'refresh_product_session', { p_refresh_hash: s.refresh_hash, p_next_hash: prox, p_audience: s.aud, p_device_hash: null }, opts), { audience: s.aud, toolId: cfg.toolId });
-    if (!c || c.sub !== s.sub) throw new ErroRixel('refresh_product_session', 400, { message: 'Sessão inválida' });
-    await banco.upd('sessoes', { id_hash: idHash, refresh_hash: s.refresh_hash }, { jti: c.jti, refresh_hash: prox, ultima_verificacao: iso(agora) });
-    return { ...s, jti: c.jti, refresh_hash: prox, ultima_verificacao: iso(agora) };
+    // inativo = recusa, revogação ou fim dos 30 dias da sessão de produto (contrato da Rixel, 13/10/2026). Não adianta renovar:
+    // o refresh_product_session não estende o prazo e recusa nos mesmos casos. Encerra e pede uma nova entrada pela Rixel.
+    await banco.del('sessoes', { id_hash: idHash });
+    throw recusa('sessao_expirada', 'Seu acesso precisa ser confirmado de novo na Rixel.');
   } catch (e) {
     if (e instanceof ErroHttp) throw e;
     if (e instanceof ErroRixel && e.recusa) {
-      // outro pedido simultâneo pode ter girado o refresh primeiro: vale a sessão já renovada
-      const [s2] = await banco.sel('sessoes', { f: { id_hash: idHash } });
-      if (s2 && s2.refresh_hash !== s.refresh_hash && agora - ms(s2.ultima_verificacao) <= cfg.sessao.verificaSeg * 1000) return s2;
       await banco.del('sessoes', { id_hash: idHash });
       const semDireito = /direito|acesso indispon|integra/i.test(e.message);
       throw recusa(semDireito ? 'sem_acesso' : 'sessao_expirada', rixelMotivo(e));

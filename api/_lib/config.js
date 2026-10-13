@@ -7,8 +7,10 @@ export const RIXEL_CHAVE_PUBLICA_PADRAO = 'sb_publishable_ZtZN3PBpHbTNQhcuU7pkzg
 /** projeto Supabase do Gabarito (dados) — a chave secreta NUNCA fica aqui */
 export const GABARITO_URL_PADRAO = 'https://cjeyxafuajbvuxrbufkq.supabase.co';
 export const APP_URL_PADRAO = 'https://gabarito.rixel.com.br';
-/** página de lançamento da Rixel — ENDEREÇO AINDA NÃO CONFIRMADO (código Next.js da Rixel); troque por RIXEL_LAUNCH_URL */
-export const LAUNCH_URL_PADRAO = 'https://rixel.com.br/ferramentas/{tool}/abrir?challenge={challenge}&state={state}';
+/** página de lançamento da Rixel (confirmada pela Rixel em 13/10/2026; o slug ou o UUID vai no caminho). RIXEL_LAUNCH_URL troca */
+export const LAUNCH_URL_PADRAO = 'https://www.rixel.com.br/ferramentas/gabarito/abrir?challenge={challenge}&state={state}&redirect_uri={redirect}';
+/** id da ferramenta Gabarito na Rixel (público; GABARITO_TOOL_ID troca) */
+export const TOOL_ID_PADRAO = '8e7150bc-bade-4cbb-8efe-47606a299af2';
 
 const sim = v => /^(1|true|sim|yes)$/i.test(String(v || '').trim());
 const semBarra = u => String(u || '').replace(/\/+$/, '');
@@ -29,7 +31,7 @@ export function config(env = process.env) {
       url: semBarra(env.GABARITO_SUPABASE_URL || GABARITO_URL_PADRAO),
       chave: env.GABARITO_SUPABASE_SECRET_KEY || '',
     },
-    toolId: (env.GABARITO_TOOL_ID || '').trim(),
+    toolId: (env.GABARITO_TOOL_ID ?? TOOL_ID_PADRAO).trim(),
     // caminho A (principal): lançamento pela Rixel — protocolo de ferramentas (PKCE + sessão de produto)
     lancamento: {
       audience: env.GABARITO_AUDIENCE || 'gabarito',

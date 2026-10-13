@@ -11,6 +11,15 @@ import { cookie, cookies } from './http.js';
 import { sessaoCria } from './sessoes.js';
 
 export const COOKIE_PKCE = 'gab_pkce';
+/** códigos de erro da página de lançamento da Rixel → [entrada, mensagem] (contrato confirmado em 13/10/2026) */
+export const ERROS_RIXEL = {
+  access_denied: ['sem_acesso', 'Sua conta da Rixel não inclui o Gabarito. Veja os planos na Rixel.'],
+  integration_pending: ['indisponivel', 'O Gabarito ainda está sendo liberado na Rixel. Tente de novo mais tarde.'],
+  too_many_requests: ['erro', 'Muitas tentativas de entrada seguidas. Aguarde um minuto e tente de novo.'],
+  temporarily_unavailable: ['erro', 'A Rixel está indisponível agora. Tente de novo em instantes.'],
+  invalid_redirect_uri: ['erro', 'A entrada pela Rixel está com a configuração errada. Avise o suporte.'],
+  invalid_request: ['erro', 'Não foi possível concluir a entrada pela Rixel. Tente de novo.'],
+};
 const pronto = cfg => !!cfg.toolId;
 
 /** 1) início: guarda verifier+state num cookie curto e devolve o endereço da Rixel */
@@ -31,6 +40,12 @@ export async function lancamentoVolta(req, q, deps) {
   if (!pronto(cfg)) return falha('desligada');
   if (!deps.banco) return falha('erro', 'Banco do Gabarito não configurado.');
   const [state, verifier] = String(cookies(req)[COOKIE_PKCE] || '').split('.');
+  // a Rixel recusou na página de lançamento: ?error=<codigo>&error_description=…&state=… (o texto dela não é repassado)
+  if (q.error) {
+    if (q.state != null && q.state !== '' && state && q.state !== state) return falha('estado');
+    const e = ERROS_RIXEL[String(q.error)] || ERROS_RIXEL.invalid_request;
+    return falha(e[0], e[1]);
+  }
   const code = String(q.code || '');
   if (!code || code.length > 100) return falha('estado');
   if (!verifier || !VERIFIER_OK.test(verifier)) return falha('estado');      // cookie de 5 min sumiu ou outro navegador

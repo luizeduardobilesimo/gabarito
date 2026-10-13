@@ -32,6 +32,7 @@ const AUTH_ENTRADA = {
   estado:"O link de entrada não vale mais. Entre de novo.",
   expirada:"O link de entrada expirou. Entre de novo.",
   recusada:"A entrada foi cancelada na Rixel.",
+  indisponivel:"O Gabarito ainda está sendo liberado na Rixel. Tente de novo mais tarde.",
   erro:"Não foi possível concluir a entrada. Tente de novo.",
 };
 /** lê ?entrada=…&msg=…&saiu=1 (e o retorno de recuperação de senha no hash). Puro. */
