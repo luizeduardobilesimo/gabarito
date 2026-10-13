@@ -12,6 +12,7 @@ const PARETO_CRIT = {
   vagas:  { k:"vagasAt", sentido:1, nome:"Vagas / exigidas", f:p=>Math.min(1, (+p.vagas||0)/Math.max(1,+p.req||0)) },
   efic:   { k:"efic",   sentido:1, nome:"Eficiência global", tol:0.002 },   // privativa ÷ área total construída (Fase D)
   vc:     { k:"vc",     sentido:1, nome:"V/C", tol:0.02 },                 // preço por m² privativo ÷ custo de referência (Fase D)
+  dev:    { k:"dev",    sentido:-1, nome:"Tamanho das unidades", tol:0.01 },   // forma desenhada: quanto as unidades fogem do tamanho do mix (|r − 1|)
   vento:  { k:"vento",  sentido:1, nome:"Conforto ao vento" },
   malha:  { k:"malhaCusto", sentido:-1, nome:"Custo da malha" },
 };

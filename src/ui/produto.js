@@ -92,13 +92,15 @@ STEP_R.produto = ()=>{
     desc="Testa combinações dentro das regras e mostra as melhores.";
     const chip=(k,l)=>`<button type="button" class="chip" data-act="otk" data-k="${k}" aria-pressed="${!!O[k]}">${l}</button>`;
     const extra=typeof paretoChipsHTML==="function"? paretoChipsHTML() : "";
+    const fm=typeof otimFormaAtiva==="function" && otimFormaAtiva(S), nd=fm? (S.blocos.torres||[]).filter(t=>t && (t.blocos||[]).some(blcValido)).length : 0;
     body =
       SEC("Gerar opções", `<div class="row sb" style="flex-wrap:nowrap"><span class="fl" style="flex:none">Maximizar${INFO("Lucro = receita líquida − custos. Margem = lucro ÷ VGV (a conta do mercado). TIR = rendimento anual do fluxo de caixa. VPL = valor presente do fluxo, descontado pela TMA.","os objetivos")}</span>${SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","TIR"],["vpl","VPL"]],{fx:"save",rr:false,label:"Objetivo"})}</div>
-        ${GRP("O que variar")}<div class="chips">${chip("torres","Nº de torres")+chip("tipologias","Tipologias")+chip("unidades","Unidades/andar")}</div>
+        ${fm? GRP("Fica fixo")+`<div class="chips" id="otFixo"><span class="pill ok">Forma desenhada</span><span class="pill">${P.torres.length} torre${P.torres.length>1?"s":""}</span>${nd<P.torres.length?`<span class="pill">${P.torres.length-nd} automática${P.torres.length-nd>1?"s":""}</span>`:""}</div>` : ""}
+        ${GRP("O que variar")}<div class="chips">${(fm? "" : chip("torres","Nº de torres"))+chip("tipologias","Tipologias")+chip("unidades","Unidades/andar")}${fm? `<span class="pill" title="Pavimentos (o último bloco estica), subsolos e garagens elevadas sempre variam">pavimentos · subsolos · garagens</span>` : ""}</div>
         ${extra? GRP("Comparar também")+`<div class="chips">${extra}</div>` : ""}
         <button type="button" class="btn pri full" data-act="otim" ${OTRUN?"disabled":""}>${OTRUN?"Analisando…":"Gerar opções"}</button><div class="prog" id="otProg" ${OTRUN?"":"hidden"}><i style="width:0"></i></div>`,
-        {key:"pr-otim", open:true, id:"otCard", info:"Testa número de torres, tipologias, unidades por andar, subsolos e garagens — sempre dentro das regras — e ordena pelo objetivo. As melhores são conferidas com o layout real da garagem. Subsolos e garagens elevadas sempre variam."}) +
-      (OTIM? SEC("Melhores opções", `<div class="list" id="otRes">${otimHTML()}</div>`, {key:"pr-otres", open:true, info:"Até quatro opções, da melhor para a pior pelo objetivo. “Aplicar” troca torres, mix, subsolos e garagens do estudo — dá para desfazer com Ctrl+Z."}) : "") +
+        {key:"pr-otim", open:true, id:"otCard", info:fm? "Com a forma desenhada, o número de torres e os blocos ficam como você fez. O otimizador escolhe tipologias e unidades por andar que preenchem o bloco com as unidades no tamanho do mix (até 10% maiores), o total de andares (o último bloco estica, dentro do gabarito e do CA), subsolos e garagens elevadas. Unidades maiores que o mix perdem pontos. As melhores são conferidas com o layout real da garagem." : "Testa número de torres, tipologias, unidades por andar, subsolos e garagens — sempre dentro das regras — e ordena pelo objetivo. As melhores são conferidas com o layout real da garagem. Subsolos e garagens elevadas sempre variam."}) +
+      (OTIM? SEC("Melhores opções", `<div class="list" id="otRes">${otimHTML()}</div>`, {key:"pr-otres", open:true, info:"Até quatro opções, da melhor para a pior pelo objetivo. “Aplicar” troca torres, mix, subsolos e garagens do estudo (com a forma desenhada, só pavimentos, mix, subsolos e garagens — a forma fica) — dá para desfazer com Ctrl+Z."}) : "") +
       (typeof paretoCardHTML==="function"? paretoCardHTML() : "");
   } else {
     desc="Torres, unidades e embasamento do empreendimento.";
@@ -127,14 +129,14 @@ STEP_R.produto = ()=>{
 function prEmbSum(){ const P=S.produto; return `${P.subsolos} subsolo${P.subsolos!==1?"s":""}${P.garAcima?` + ${P.garAcima} elevada${P.garAcima>1?"s":""}`:""} · lojas ${pct(P.lojaTerreo,0)}${P.garTerOn?" · garagem no térreo":""}` }
 
 function otimHTML(){
-  const O=OTIM; if(!O.res.length) return `<p class="note">Nenhuma combinação atende às regras e às vagas exigidas.</p>`;
+  const O=OTIM; if(!O.res.length) return `<p class="note">${O.forma? "Nenhuma combinação preenche a forma desenhada dentro das regras e das vagas. Ajuste a forma ou o mix." : "Nenhuma combinação atende às regras e às vagas exigidas."}</p>`;
   const cur=window._last.f, ob=OBJ[O.obj][2];
   const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0?"Melhor opção":"Opção "+(k+1)} · ${MIX_PRESETS[r.pk].nome}</b><button type="button" class="btn sm ${k===0?"pri":""}" data-act="otApply" data-i="${k}">Aplicar</button></div>
-    <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas</div>
+    <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas${r.forma?` · ${r.dev>0.005?"unidades "+pct(r.dev,0)+" maiores que o mix":"preenche a forma"}`:""}</div>
     <div class="rm"><span>Lucro<b>${mi(r.lucro)}</b></span><span>Margem s/ VGV<b>${pct(r.margem)}</b></span><span>TIR<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
   const L=O.res.slice(0,4);
   return card(L[0],0) + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
-    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}</p><p class="note">Hoje: lucro ${mi(cur.lucro)} · margem s/ VGV ${pct(cur.margemVGV)}</p>`;
+    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}${O.forma?" · forma desenhada fixa":""}</p><p class="note">Hoje: lucro ${mi(cur.lucro)} · margem s/ VGV ${pct(cur.margemVGV)}</p>`;
 }
 
 /* ---------------- partes vivas ---------------- */

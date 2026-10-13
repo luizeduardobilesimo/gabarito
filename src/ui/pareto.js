@@ -14,7 +14,7 @@ let PF_SEL = null; // índice em OTIM.pareto.pts
 .pf-tip b{font-family:var(--f-mono);font-weight:500}
 `; document.head.appendChild(s) })();
 
-const pfDesc = r => `${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} gar. elevada${r.gac>1?"s":""}`:""}`;
+const pfDesc = r => `${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} gar. elevada${r.gac>1?"s":""}`:""}${r.forma&&r.dev>0.005?` · unidades ${pct(r.dev,0)} maiores`:""}`;
 const pfFiltros = () => ({ vagas: !!S.otim.fVagas, solMin: S.otim.fSol? +S.otim.solMin||0 : null });
 function pfCrit(){ const ks=(OTIM&&OTIM.pareto&&OTIM.pareto.criterios)||["lucro","sol","vagas"]; return ks.map(k=>PARETO_CRIT[k]).filter(Boolean) }
 /** pontos com estado de filtro e de fronteira (a fronteira é recalculada só entre os que passam nos filtros) */
@@ -83,7 +83,7 @@ function paretoLive(){
   const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button class="btn sm ${top?"pri":""}" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
     <div class="note">${pfDesc(p)}${o.passa?"":" · fora dos filtros"}</div>
     <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem s/ VGV<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
-    ${p.tir!=null?`<span>TIR<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
+    ${p.tir!=null?`<span>TIR<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.forma?`<span>Unidades<b>${p.dev>0.005?"+"+pct(p.dev,0):"no mix"}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
   setHTML("pfDet", s? card(s,true) : nF? "" : `<p class="note">Nenhuma opção passa nos filtros. Afrouxe um deles.</p>`);
   const resto=frL.slice().reverse().filter(o=>!s||o.i!==s.i), more=document.getElementById("pfMore"), mt=document.getElementById("pfMoreT");
   if(more) more.hidden=!resto.length;
