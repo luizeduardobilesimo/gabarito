@@ -33,6 +33,7 @@ function fitBG(){ if(!BG) return; const r=c2.getBoundingClientRect(); const w=BG
 let T2=null;
 function redraw2d(){
   if(typeof entBarRefresh==="function") entBarRefresh();
+  if(typeof blcBarRefresh==="function") blcBarRefresh();
   if(c2.hidden || VIEW==="3d") return; const m=window._last&&window._last.m; if(!m) return;
   const r=c2.getBoundingClientRect(); const V=cur();
   const lay = VIEW==="gar" && m.gar ? m.gar[FLOOR] : null;
@@ -48,7 +49,7 @@ function redraw2d(){
 const w2s_=q=>{ const V=cur(); return [q[0]*V.s+V.ox, -q[1]*V.s+V.oy] }, s2w_=(px,py)=>{ const V=cur(); return [(px-V.ox)/V.s, -(py-V.oy)/V.s] };
 let drag=null; const ptrs=new Map(); let pinch=null;
 function pos(e){ const r=c2.getBoundingClientRect(); return [e.clientX-r.left, e.clientY-r.top] }
-function editables(){ const l=[{arr:S.lote.pts,kind:"lote"}]; ["emb","tor","sub"].forEach(k=>{ if(S.custom[k]&&S.custom[k].length) l.push({arr:S.custom[k],kind:"lim"}) }); (S.entorno||[]).forEach(e=>{ if(e.pts){ l.push({arr:e.pts,kind:"entorno",ent:e}); (e.vazios||[]).forEach(v=>l.push({arr:v,kind:"vazio",ent:e})) } }); return l }
+function editables(){ const l=[{arr:S.lote.pts,kind:"lote"}]; ["emb","tor","sub"].forEach(k=>{ if(S.custom[k]&&S.custom[k].length) l.push({arr:S.custom[k],kind:"lim"}) }); (S.entorno||[]).forEach(e=>{ if(e.pts){ l.push({arr:e.pts,kind:"entorno",ent:e}); (e.vazios||[]).forEach(v=>l.push({arr:v,kind:"vazio",ent:e})) } }); if(typeof blcEditaveis==="function") l.push(...blcEditaveis()); return l }
 function hitVertex(px,py){ let best=null,bd=14; editables().forEach(ed=>ed.arr.forEach((q,i)=>{ const [x,y]=w2s_(q), d=Math.hypot(x-px,y-py); if(d<bd){ bd=d; best={arr:ed.arr,i,kind:ed.kind,ent:ed.ent} } })); return best }
 function hitMid(px,py){ const L=S.lote.pts; let best=-1,bd=12; L.forEach((a,i)=>{ const b=L[(i+1)%L.length], A=w2s_(a), B=w2s_(b), d=Math.hypot((A[0]+B[0])/2-px,(A[1]+B[1])/2-py); if(d<bd){ bd=d; best=i } }); return best }
 const HINTSEEN={};

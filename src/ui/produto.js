@@ -108,6 +108,7 @@ STEP_R.produto = ()=>{
         <div class="row sb"><button type="button" class="btn sm" data-act="addTorre" ${P.torres.length>=4?"disabled":""}>+ Torre</button><button type="button" class="btn sm ghost" data-act="maxPav" title="Sobe todas as torres até o limite de altura ou de CA">Máximo em todas</button></div>
         ${P.torres.length>1? ROW("Disposição", SEG("produto.torreEixo",[["long","ao longo do lote"],["trans","transversais"]],{label:"Disposição das torres"})) : ""}`,
         {key:"pr-torres", open:true, info:"Pavimentos tipo de cada torre. “Máx” sobe a torre até o limite de altura ou de CA. Até 4 torres; com 2 ou mais, escolha a disposição no lote."}) +
+      (typeof blcSecHTML==="function"? blcSecHTML() : "") +   // C1: forma das torres (src/ui/blocos.js)
       SEC("Mix do andar tipo", `<div class="pr-lh"><span>Tipologia</span><span class="c" style="margin-right:44px">Un/andar</span></div><div class="list" id="mix"></div>
         <div class="row sb"><button type="button" class="btn sm" data-act="addMix" ${P.mix.length>=5?"disabled":""}>+ Tipologia</button><span class="note" id="mixSum"></span></div>
         ${ADV(ROW(`Sacadas${INFO("Sacada")}`, SEG("produto.sacTipo",[["embutida","embutidas"],["balanco","em balanço"]],{rr:false,label:"Sacadas"})), {key:"mix"})}`,
@@ -143,7 +144,7 @@ function prTorresLive(m){
     return `<div class="pr-row${t.fit===false?" warn":""}"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b></div>
       ${prStp(`produto.torres.${i}.pav`, tw.pav, 1, 80, `Pavimentos da ${nome.toLowerCase()}`)}
       <button type="button" class="pr-ic lbl" data-act="maxT" data-i="${i}" title="Máximo de pavimentos para esta torre" aria-label="Máximo de pavimentos para a ${nome.toLowerCase()}">Máx</button>${n>1? prRm("rmT", i, nome) : ""}</div>
-      <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : m.torOcupa? `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar no contorno desenhado · unidades a ${pct(t.r||0,0)} do mix` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
+      <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false && !t.desenhada? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : m.torOcupa||t.desenhada? `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar ${t.desenhada?"na forma desenhada":"no contorno desenhado"} · unidades a ${pct(t.r||0,0)} do mix` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
   setSum("pr-torres", `${n} torre${n>1?"s":""} · ${P.torres.map(t=>t.pav).join(" e ")} pav`);
 }
 function prMixLive(m){
@@ -193,7 +194,7 @@ STEP_LIVE.produto = (m,f)=>{
       <div class="met"><div class="l">Pavimentos tipo</div><div class="v">até ${po.pavH}</div><div class="s">altura de ${nf(R.hMax,0)} m</div></div>`);
   const u=(l,v)=>`<div><span>${l}<b style="${v>1?"color:var(--bad)":""}">${pct(v,0)}</b></span>${bar(v, v>1?"bad":"")}</div>`;
   setHTML("potUso", u("CA usado",po.uso.ca)+u("Altura",po.uso.h)+u("Ocupação",po.uso.to));
-  prTorresLive(m); prMixLive(m);
+  prTorresLive(m); prMixLive(m); if(typeof blcLive==="function") blcLive(m);
   setSub("produto.subsolos",`${m2(m.subA)} · ${m.gar&&m.gar.s1? m.gar.s1.count+" vg no 1º" : Math.floor(m.subA/R.m2Vaga)+" vg (est.)"}`);
   setSub("produto.garAcima",`${m2(m.embA)} · ${m.gar&&m.gar.g1? m.gar.g1.count+" vg no 1º" : Math.floor(m.embA/R.m2Vaga)+" vg (est.)"}`);
   setSub("terreo", `${P.garTerOn? `garagem ${m2(m.gTer)} · ${m.gar&&m.gar.ter? m.gar.ter.count : Math.floor(m.gTer/R.m2Vaga)} vagas · `:""}hall e lazer ${m2(m.hallA)} · acesso de veículos ${m2(m.driveA||0)}`);
@@ -241,8 +242,8 @@ Object.assign(ACT,{
   otim: ()=>{ OTRUN=true; renderTab();
     otimizar(S.otim, p=>{ const e=document.querySelector("#otProg i"); if(e) e.style.width=(p*100).toFixed(0)+"%" }, ()=>{ OTRUN=false; if(TAB==="produto") renderTab(); toast(OTIM.res.length? "Opções prontas — a melhor está no topo" : "Nenhuma combinação viável") }) },
   otApply: b=>{ const r=OTIM&&OTIM.res[+b.dataset.i]; if(!r) return; aplicarOtim(r); PR.mix=-1; renderTab(); fit3d(); toast("Opção aplicada — Ctrl+Z desfaz") },
-  addTorre: ()=>{ const T=S.produto.torres; if(T.length<4){ T.push({pav:T.at(-1)?.pav||8}); renderTab(); toast(`Torre ${T.length} adicionada`) } },
-  rmT: b=>{ const T=S.produto.torres, i=+b.dataset.i; if(T.length<2 || !T[i]) return; T.splice(i,1); renderTab(); toast(`Torre ${i+1} removida — Ctrl+Z desfaz`) },
+  addTorre: ()=>{ const T=S.produto.torres; if(T.length<4){ T.push({pav:T.at(-1)?.pav||8}); if(typeof blcTorreNova==="function") blcTorreNova(T.length-1); renderTab(); toast(`Torre ${T.length} adicionada`) } },
+  rmT: b=>{ const T=S.produto.torres, i=+b.dataset.i; if(T.length<2 || !T[i]) return; T.splice(i,1); if(typeof blcTorreRemovida==="function") blcTorreRemovida(i); renderTab(); toast(`Torre ${i+1} removida — Ctrl+Z desfaz`) },
   maxPav: ()=>{ const t=maxPav(S); if(t>0){ S.produto.torres.forEach(x=>x.pav=t); update(); toast(`${t} pavimentos por torre (gabarito/CA)`) } else toast("Nenhum pavimento cabe com essas regras") },
   maxT: b=>{ const i=+b.dataset.i, T=S.produto.torres, keep=T[i].pav; let best=0;
     for(let n=1;n<=80;n++){ T[i].pav=n; const mm=massing(S); if(mm.H<=S.regras.hMax+1e-6 && mm.CA<=S.regras.caMax+1e-6) best=n; else break }

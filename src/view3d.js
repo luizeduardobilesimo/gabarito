@@ -120,7 +120,8 @@ function rebuild3d(m, force){
     const fxs=t.faixas||[], plateK=k=>{ const f=fxs.find(f=>k+1>=f.de && k+1<=f.ate); return f? f.plate : t.plate }, topP=fxs.length? fxs[fxs.length-1].plate : t.plate;
     for(let k=0;k<t.pav;k++){ const cob = t.hasCob && k===t.pav-1, pk=plateK(k), pPrev=k? plateK(k-1) : null;
       if(pPrev && pPrev!==pk && G.area(pPrev)>G.area(pk)+0.5){ slab(pPrev, yy-0.02, 0.07, col3("--lz-deck"), {eop:0.35, rough:0.8}); outline(pPrev, yy, 1.05, col3("--ink"), false) }
-      slab(pk, yy, P.pe-0.22, cob? col3("--m-cob") : white, {eop:0.22, rough:0.75});
+      const oco = pk===t.plate && t.oco;   // C1: torre com pátio → laje com furo (sem a "ponte" do polígono)
+      slab(oco? oco.pts : pk, yy, P.pe-0.22, cob? col3("--m-cob") : white, {eop:0.22, rough:0.75, holes: oco? oco.vazios : undefined});
       if(lay && !cob && pk===t.plate) lay.units.forEach(u=>{ if(!u.sac||!u.sac.poly.length) return; if(u.sac.tipo==="balanco"){ slab(u.sac.poly, yy, 0.16, white, {eop:0.3}); slab(u.sac.poly, yy+0.16, 1.05, glass, {op:0.3, eop:0.25, rough:0.1}) } else { slab(G.scaleToArea(u.sac.poly,G.area(u.sac.poly)*0.999), yy+0.03, P.pe-0.3, sacCol, {op:0.55, eop:0.2, rough:0.2}) } });
       yy+=P.pe }
     if(t.duplexA>1){ slab(G.scaleToArea(topP,t.duplexA), yy, P.pe-0.22, col3("--m-cob"), {eop:0.22}); yy+=P.pe }

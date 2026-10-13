@@ -44,6 +44,13 @@ function orcSisKey(s){
   return "outros";
 }
 function orcPerim(p){ return (p && p.length>2) ? G.perimeter(p) : 0 }
+/* fachada da torre: perímetro × altura de cada faixa de andares (torre escalonada / pilha de blocos); pátio conta a borda interna */
+function orcFachTorre(t, m){
+  const hE=m.hEmb||0, H=Math.max(0,(t.H||0)-hE), per=p=> typeof blcPerim==="function" ? blcPerim(t,p) : orcPerim(p);
+  const fx=(t.faixas||[]).filter(f=>f.plate && f.plate.length>2);
+  if(fx.length<2) return per(t.plate)*H;
+  return fx.reduce((s,f,k)=>{ const z0=k? f.z0 : hE, z1=k===fx.length-1? (t.H||0) : f.z1; return s+per(f.plate)*Math.max(0,z1-z0) },0);
+}
 /* direcionadores físicos tirados do modelo */
 function orcDrivers(st, m){
   const P=st.produto, E=st.estudo, T=m.T||[], sub=+P.subsolos||0, gac=+P.garAcima||0;
@@ -52,7 +59,7 @@ function orcDrivers(st, m){
   const carga = T.reduce((s,t)=>s+(t.A||0)*(t.pav||0),0) + proj*(1+sub+gac);
   const contArea = sub>0 ? orcPerim(m.sub)*sub*(+P.peGar||3) : 0;
   const vedA = (m.tiposA||0)+(m.duplexA||0)+(m.aticoA||0)+(m.hallA||0)+(m.lojaA||0)+(m.lzExtraA||0) + (m.garA||0)*0.1;
-  const fachA = T.reduce((s,t)=>s+orcPerim(t.plate)*Math.max(0,(t.H||0)-(m.hEmb||0)),0) + orcPerim(m.emb)*(m.hEmb||0);
+  const fachA = T.reduce((s,t)=>s+orcFachTorre(t, m),0) + orcPerim(m.emb)*(m.hEmb||0);
   const acabA = (m.tiposA||0)+(m.duplexA||0)+(m.hallA||0)+(m.lojaA||0)+(m.lzExtraA||0)+(m.aticoA||0)*0.3+(m.garA||0)*0.25;
   const nAuto = t => (t.units>60||t.H>45)?3:(t.H>12?2:1);
   const elevs = T.map((t,i)=>{ const l=m.tipo&&m.tipo[i]; const n = l&&l.coreParts? l.coreParts.filter(c=>c.kind==="elev").length : 0;

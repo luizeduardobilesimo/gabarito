@@ -102,11 +102,19 @@ function uniGroups(st, m, spacing){
     if(!t.plate||t.plate.length<3) return;
     const lay=m.tipo&&m.tipo[ti], base=m.hEmb+(m.pavLz&&ti===0? P.pe : 0);
     const units = lay? lay.units.filter(u=>!u.livre && u.poly && u.poly.length>2) : [{poly:t.plate, nome:"", alvo:t.A}];
-    const floors=[]; for(let k=0;k<t.tipoFloors;k++) floors.push({k, z:base+k*P.pe+P.pe/2});
-    if(floors.length) groups.push({ti, kind:"tipo", plate:t.plate, units:units.map(u=>({poly:u.poly, nome:u.nome, alvo:u.alvo, fac:uniFacades(u.poly,t.plate,st,spacing)})), floors});
-    if(t.hasCob){ const n=Math.max(1,P.cob.qtd), ux=G.longestDir(t.plate), [mn,mx]=G.extent(t.plate,ux), cu=[];
-      for(let k=0;k<n;k++){ const a=k? G.cutAt(t.plate,ux,k/n):mn, b=k<n-1? G.cutAt(t.plate,ux,(k+1)/n):mx; cu.push(G.band(t.plate,ux,a,b)) }
-      groups.push({ti, kind:"cob", plate:t.plate, units:cu.map(p=>({poly:p, fac:uniFacades(p,t.plate,st,spacing)})), floors:[{k:t.pav-1, z:base+(t.pav-1)*P.pe+P.pe/2}]});
+    // um grupo por faixa de andares (torre escalonada 2.4 / pilha de blocos): a planta do andar recorta as unidades do tipo
+    const fxs = t.faixas && t.faixas.length ? t.faixas : [{de:1, ate:t.pav, plate:t.plate}];
+    fxs.forEach((f,fk)=>{
+      const pl = f.plate && f.plate.length>2 ? f.plate : null; if(!pl) return;
+      const floors=[]; for(let k=f.de-1;k<Math.min(f.ate,t.tipoFloors);k++) floors.push({k, z:base+k*P.pe+P.pe/2});
+      if(!floors.length) return;
+      const us = pl===t.plate ? units : units.map(u=>({...u, poly:G.clipToPoly(u.poly, pl)})).filter(u=>u.poly.length>2 && G.area(u.poly)>4);
+      groups.push({ti, fk, kind:"tipo", plate:pl, units:us.map(u=>({poly:u.poly, nome:u.nome, alvo:u.alvo, fac:uniFacades(u.poly,pl,st,spacing)})), floors});
+    });
+    if(t.hasCob){ const fl=fxs[fxs.length-1], cp=fl.plate && fl.plate.length>2 ? fl.plate : t.plate;
+      const n=Math.max(1,P.cob.qtd), ux=G.longestDir(cp), [mn,mx]=G.extent(cp,ux), cu=[];
+      for(let k=0;k<n;k++){ const a=k? G.cutAt(cp,ux,k/n):mn, b=k<n-1? G.cutAt(cp,ux,(k+1)/n):mx; cu.push(G.band(cp,ux,a,b)) }
+      groups.push({ti, kind:"cob", plate:cp, units:cu.map(p=>({poly:p, fac:uniFacades(p,cp,st,spacing)})), floors:[{k:t.pav-1, z:base+(t.pav-1)*P.pe+P.pe/2}]});
     }
   });
   return groups;
@@ -178,23 +186,30 @@ function unidadesCalc(st, m, o={}){
   const gIdx=(ti,kind)=>geo.groups.findIndex(g=>g.ti===ti&&g.kind===kind);
   (m.T||[]).forEach((t,ti)=>{
     const lay=m.tipo&&m.tipo[ti], base0=(m.pavLz&&ti===0)?1:0;
-    // casa cada item do mix com uma unidade da planta (mesmo nome e área)
-    const list=[]; P.mix.forEach((u,j)=>{ for(let q=0;q<u.qtd;q++) list.push({nome:u.nome, alvo:u.area*t.r, preco:u.preco, j}) });
-    const gi=gIdx(ti,"tipo"), g=gi>=0? geo.groups[gi] : null, used=new Set(), match=list.map(it=>{
-      if(!g) return -1; const k=g.units.findIndex((u,ui)=>!used.has(ui) && u.nome===it.nome && Math.abs(u.alvo-it.alvo)<1e-6); if(k>=0) used.add(k); return k });
     // finais: ordem horária a partir do norte, em volta do centro da laje
     const c=G.centroid(t.plate||[]), th=(st.lote.norte||0)*Math.PI/180, N=[Math.sin(th),Math.cos(th)], E=[Math.cos(th),-Math.sin(th)];
     const ang=p=>{ if(!p||!p.length) return 999; const q=G.centroid(p), d=[q[0]-c[0],q[1]-c[1]]; return ((Math.atan2(G.dot(d,E),G.dot(d,N))*180/Math.PI)+360+22.5)%360 };
-    const ord=list.map((it,i)=>i).sort((a,b)=>{ const pa=match[a]>=0? g.units[match[a]].poly : null, pb=match[b]>=0? g.units[match[b]].poly : null; return ang(pa)-ang(pb) || a-b });
-    const fin=new Array(list.length); ord.forEach((i,k)=>fin[i]=k+1);
-    for(let k=0;k<t.tipoFloors;k++){
-      const andar=k+1+base0;
-      list.forEach((it,i)=>{
-        const ui=match[i], gu=ui>=0? g.units[ui] : null, s=ui>=0? geo.sun[gi][ui][k] : null;
-        out.push(uniObj(st, {torre:ti+1, andar, final:fin[i], tipologia:it.nome, j:it.j, area:it.alvo, cob:false, base:it.alvo*it.preco,
-          poly:gu? gu.poly : null, fac:gu? gu.fac : [], z:g? g.floors[k].z : null, k, sol:s}));
-      });
-    }
+    // por faixa de andares (uma só, sem escalonamento): o mix e o fator de área da faixa
+    const fxs = t.faixas && t.faixas.length ? t.faixas : [{de:1, ate:t.pav}];
+    fxs.forEach((f,fk)=>{
+      const k0=f.de-1, k1=Math.min(f.ate,t.tipoFloors); if(k1<=k0) return;
+      const qtd=f.qtd||P.mix.map(u=>u.qtd), r=f.r??t.r;
+      // casa cada item do mix com uma unidade da planta (mesmo nome e área; numa faixa recuada, pelo nome)
+      const list=[]; P.mix.forEach((u,j)=>{ for(let q=0;q<(qtd[j]||0);q++) list.push({nome:u.nome, alvo:u.area*r, preco:u.preco, j}) });
+      const gi=geo.groups.findIndex(g=>g.ti===ti && g.kind==="tipo" && (g.fk??0)===fk), g=gi>=0? geo.groups[gi] : null, used=new Set();
+      const match=list.map(it=>{ if(!g) return -1; let k=g.units.findIndex((u,ui)=>!used.has(ui) && u.nome===it.nome && Math.abs(u.alvo-it.alvo)<1e-6);
+        if(k<0 && g.plate!==t.plate) k=g.units.findIndex((u,ui)=>!used.has(ui) && u.nome===it.nome); if(k>=0) used.add(k); return k });
+      const ord=list.map((it,i)=>i).sort((a,b)=>{ const pa=match[a]>=0? g.units[match[a]].poly : null, pb=match[b]>=0? g.units[match[b]].poly : null; return ang(pa)-ang(pb) || a-b });
+      const fin=new Array(list.length); ord.forEach((i,k)=>fin[i]=k+1);
+      for(let k=k0;k<k1;k++){
+        const andar=k+1+base0, kg=k-k0;
+        list.forEach((it,i)=>{
+          const ui=match[i], gu=ui>=0? g.units[ui] : null, s=ui>=0? geo.sun[gi][ui][kg] : null;
+          out.push(uniObj(st, {torre:ti+1, andar, final:fin[i], tipologia:it.nome, j:it.j, area:it.alvo, cob:false, base:it.alvo*it.preco,
+            poly:gu? gu.poly : null, fac:gu? gu.fac : [], z:g? g.floors[kg].z : null, k, sol:s}));
+        });
+      }
+    });
     if(t.hasCob){
       const gc=gIdx(ti,"cob"), gg=gc>=0? geo.groups[gc] : null, n=Math.max(1,P.cob.qtd), a=t.cobP/n;
       for(let q=0;q<n;q++){ const gu=gg&&gg.units[q], s=gg? geo.sun[gc][q][0] : null;

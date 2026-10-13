@@ -50,7 +50,9 @@ const entCopia = e => JSON.parse(JSON.stringify({pts:e.pts, vazios:e.vazios||[]}
 
 /* devolve um "drag" (ou null para o fluxo normal de vértices/pan); chamado por views.js no pointerdown da ferramenta Editar */
 function entDown(ev, px, py, w){
-  if(typeof TOOL==="undefined" || TOOL!=="edit" || !entLista().length) return null;
+  if(typeof TOOL==="undefined" || TOOL!=="edit") return null;
+  if(typeof blcDown==="function"){ const d=blcDown(ev,px,py,w); if(d) return d }   // C1: forma da torre (src/ui/blocos.js) tem prioridade
+  if(!entLista().length) return null;
   if(entHitEscala(px,py)){ const e=entSelList()[0], c=entCentro(e); return {type:"entscale", e, c, d0:Math.max(1e-6,Math.hypot(entEscalaPos(e)[0]-c[0], entEscalaPos(e)[1]-c[1])), snap:entCopia(e)} }
   const v=hitVertex(px,py);
   if(v && v.ent){ if(!ENT.sel.has(entId(v.ent))) entSelecionar(v.ent,"set"); return null }   // o fluxo normal arrasta o vértice
@@ -67,6 +69,7 @@ function entDown(ev, px, py, w){
   return null;                                                                                // vazio: pan (o clique sem arrastar limpa a seleção em entUp)
 }
 function entDrag(d, px, py){
+  if(d.blc){ blcDrag(d,px,py); return }
   const w=s2w_(px,py);
   if(d.type==="entmove"){ const dx=w[0]-d.last[0], dy=w[1]-d.last[1]; if(!d.moved && Math.hypot(dx,dy)*cur().s<3) return; d.moved=true; entSelList().forEach(e=>entMove(e,dx,dy)); d.last=w; redraw2d() }
   else if(d.type==="entscale"){ const k=Math.max(0.1, Math.hypot(w[0]-d.c[0], w[1]-d.c[1])/d.d0), e=d.e; const s=JSON.parse(JSON.stringify(d.snap)); e.pts.forEach((q,i)=>{ q[0]=d.c[0]+(s.pts[i][0]-d.c[0])*k; q[1]=d.c[1]+(s.pts[i][1]-d.c[1])*k });
@@ -75,7 +78,8 @@ function entDrag(d, px, py){
 }
 /* devolve true quando tratou o fim do gesto */
 function entUp(d){
-  if(d.type==="pan"){ if(!d.moved && ENT.sel.size) entLimpaSel(); return false }
+  if(d.blc) return blcUp(d);
+  if(d.type==="pan"){ if(typeof blcPanUp==="function") blcPanUp(d); if(!d.moved && ENT.sel.size) entLimpaSel(); return false }
   if(d.type==="entmove"){ if(d.moved){ update(); entCardRefresh() } return true }
   if(d.type==="entscale"){ update(); entCardRefresh(); return true }
   if(d.type==="marq"){ const r=ENT.marq; ENT.marq=null; if(r && d.moved){ entNoRetangulo(entVisiveis(), [r[0][0],r[0][1],r[1][0],r[1][1]]).forEach(e=>ENT.sel.add(entId(e))) } redraw2d(); entCardRefresh(); return true }
@@ -121,7 +125,7 @@ function entSelTodas(){ ENT.sel=new Set(entLista().map(entId)); redraw2d(); entC
 function entApagarOsm(b){ if(!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on"); return } S.entorno=S.entorno.filter(e=>!e.osm); entApos("Edificações do OSM apagadas"); renderTab() }
 function entApagarTodas(b){ if(!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on"); return } S.entorno=[]; ENT.sel=new Set(); entApos("Entorno apagado"); renderTab() }
 Object.assign(ACT,{ entNova:()=>entNovaCaixa(), entEnq:()=>entEnquadrar(), entTodas:()=>entSelTodas(), entNenhuma:()=>entLimpaSel(), entApagaOsm:b=>entApagarOsm(b), entApagaTodas:b=>entApagarTodas(b),
-  entApagaSel:()=>entApagarSel(), entMais:()=>entEscalaSel(1.1), entMenos:()=>entEscalaSel(1/1.1), entGiraD:()=>entGiraSel(15), entGiraE:()=>entGiraSel(-15),
+  entApagaSel:()=>entApagarSel(), entMais:()=>entEscalaSel(1.1), entMenos:()=>entEscalaSel(1/1.1), entGiraD:()=>entGiraSel(-15), entGiraE:()=>entGiraSel(15),   // ângulo positivo = anti-horário (eixo y para cima)
   entDup:()=>entDuplicaSel(), entPatio:()=>entPatioSel(), entVazio:()=>entVazioDesenha(), entVazioX:b=>{ const e=entSelList()[0]; if(e&&e.vazios){ e.vazios.splice(+b.dataset.i,1); if(!e.vazios.length) delete e.vazios; entApos() } }, entVazios0:()=>entLimpaVazios(),
   entSelItem:b=>{ const e=S.entorno[+b.dataset.i]; if(e){ entSelecionar(e,"set"); entEnquadraSel() } } });
 function entEnquadraSel(){ const s=entSelList(); if(!s.length) return; if(VIEW!=="impl") setView("impl"); const r=c2.getBoundingClientRect(); VS.impl=fitView([S.lote.pts, ...s.map(e=>e.pts)], r.width, r.height, 1.5); redraw2d() }

@@ -51,7 +51,8 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     else if(opt.handles) (S.entorno||[]).forEach(e=>(e.pts||[]).forEach(q=>{ const [x,y]=w2s(q); g.fillStyle=css("--muted"); g.fillRect(x-3.5,y-3.5,7,7) }));
     if(m.ramp) { strokeP(m.ramp.poly,css("--mark"),1.4,[4,3]) }
     frontStallsDraw();
-    m.T.forEach((t,i)=>{ fillP(t.plate,css("--m-tipo"),0.95); strokeP(t.plate,css("--ink"),1.3); if(t.plate.length) label(`T${i+1} · ${t.pav} pav`, w2s(G.centroid(t.plate)), {w:"600",font:"--f-display",size:12}) });
+    m.T.forEach((t,i)=>{ if(t.oco){ g.beginPath(); [t.oco.pts,...t.oco.vazios].forEach(r=>{ r.forEach((q,k)=>{ const [x,y]=w2s(q); k?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath() }); g.globalAlpha=0.95; g.fillStyle=css("--m-tipo"); g.fill("evenodd"); g.globalAlpha=1; [t.oco.pts,...t.oco.vazios].forEach(r=>strokeP(r,css("--ink"),1.3)) }   // C1: torre com pátio
+      else { fillP(t.plate,css("--m-tipo"),0.95); strokeP(t.plate,css("--ink"),1.3) } if(t.plate.length) label(`T${i+1} · ${t.pav} pav`, w2s(G.centroid(t.plate)), {w:"600",font:"--f-display",size:12}) });
     const free=c=>!m.T.some(t=>t.plate.length&&G.pip(c,t.plate));
     (m.ter.lojas||[]).forEach(p=>{ if(V.s>2.5 && free(G.centroid(p))) label("lojas", w2s(G.centroid(p)), {size:10}) });
     if(m.tGar.length && V.s>2.5 && free(G.centroid(m.tGar))) label("garagem", w2s(G.centroid(m.tGar)), {size:10});
