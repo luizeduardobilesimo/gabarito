@@ -329,7 +329,7 @@ Execução de 05/10/2026 (protótipo local, 9 agentes em paralelo sobre a funda�
 - [x] 3.1 Orçamento paramétrico — `calc/orcamento.js`, `calc/cub.js` (CUB e coeficientes ilustrativos).
 - [x] 3.2 Curvas, cenários e riscos — `calc/fluxo.js`. Falta: validar com a planilha real do Luiz.
 - [x] 3.3 Permuta × compra × parceria — `calc/terreno.js`.
-- [~] 4.1 Nuvem — **parte local pronta**: `ui/repo.js` (IndexedDB, interface pronta para trocar), esquema em `docs/supabase/schema.sql`. **Falta** conectar Supabase/login/sincronização (decisão de não conectar nesta fase).
+- [~] 4.1 Nuvem — **13/10/2026: app web pronto no código** (Vercel + Supabase do Gabarito, entrada pelo protocolo de ferramentas da Rixel, estudos/versões/regras na nuvem, `docs/DEPLOY.md`). Falta: página de lançamento da Rixel, id da ferramenta, variáveis na Vercel, migração no banco, domínio e homologação. Antes: **parte local pronta**: `ui/repo.js` (IndexedDB, interface pronta para trocar), esquema em `docs/supabase/schema.sql`. **Falta** conectar Supabase/login/sincronização (decisão de não conectar nesta fase).
 - [x] 4.2 Modo apresentação — `ui/apresentacao.js`, `ui/marca.js`, link `#ver=` local (link curto depende do 4.1).
 - [x] 4.3 Mapa real e entorno automático — `calc/geo.js`, `ui/mapa.js` (Overpass só com o app servido por http).
 - [x] Cidades com regras pré-cadastradas — `calc/cidades.js` (7 cidades, valores ilustrativos a conferir).

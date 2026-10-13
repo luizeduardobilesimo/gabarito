@@ -605,6 +605,41 @@ details.card>summary:hover{background:color-mix(in srgb,var(--surface-2) 60%,tra
 }
 /* seções fechadas não ocupam espaço nem contam como visíveis (vale para todas as etapas) */
 details.card:not([open])>.cb{display:none}
+/* ===== conta (app web com login pela Rixel — src/ui/auth.js) ===== */
+.auth{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px 16px;overflow-y:auto;background:radial-gradient(120% 80% at 50% 0%,var(--stage-a),var(--bg) 70%)}
+.auth::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(var(--line) 1px,transparent 1px) 0 0/48px 48px,linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/48px 48px;opacity:.35;-webkit-mask-image:radial-gradient(70% 55% at 50% 40%,#000,transparent);mask-image:radial-gradient(70% 55% at 50% 40%,#000,transparent)}
+.auth-card{position:relative;width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:28px 28px 24px;display:grid;gap:14px;animation:authIn .3s ease both}
+@keyframes authIn{from{transform:translateY(8px)}to{transform:none}}
+.auth-marca{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-variation-settings:"wdth" 125;font-weight:700;font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink)}
+.auth-marca svg{width:24px;height:24px}
+.auth h1{font-family:var(--f-display);font-variation-settings:"wdth" 112;font-weight:650;font-size:23px;letter-spacing:-.01em;margin:6px 0 -6px}
+.auth-sub{margin:0;color:var(--muted);font-size:13px}
+.auth-b{min-height:42px;font-size:13.5px;text-decoration:none}
+.auth a.btn{color:inherit}
+.auth-msg{margin:0;padding:9px 12px;border-radius:10px;font-size:12.5px;background:color-mix(in srgb,var(--warn) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 30%,var(--line));color:var(--ink)}
+.auth-msg.ok{background:var(--accent-2);border-color:color-mix(in srgb,var(--accent) 25%,var(--line))}
+.auth-ou{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11.5px}.auth-ou::before,.auth-ou::after{content:"";flex:1;height:1px;background:var(--line)}
+.auth-f{display:grid;gap:10px}.auth-f .inp input{padding:9px 10px;font-size:13.5px}
+.auth-lk{justify-self:center;color:var(--muted)}
+.auth-lin{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.auth-pe{margin:4px 0 0;font-size:12px;color:var(--muted);text-align:center}.auth-pe a,.auth-rod a{color:var(--accent);text-decoration:none;font-weight:500}
+.auth-rod{position:relative;margin:0;font-size:11px;color:var(--muted);font-family:var(--f-mono);letter-spacing:.02em}
+.auth-roda{display:flex;align-items:center;gap:12px;color:var(--ink-2);font-size:13px;padding:6px 0 2px}
+.auth-spin{width:18px;height:18px;border-radius:50%;border:2px solid var(--line-2);border-top-color:var(--accent);animation:authGira .8s linear infinite;flex:none}
+@keyframes authGira{to{transform:rotate(360deg)}}
+.auth-ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--surface-2);border:1px solid var(--line)}
+.auth-ic svg{width:22px;height:22px;fill:none;stroke:var(--ink-2);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+html.auth-on body{overflow:hidden}
+.conta{position:relative}
+.conta-b{gap:9px;padding:4px 10px 4px 4px}
+.conta-av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--accent-2);color:var(--accent);font-family:var(--f-display);font-weight:650;font-size:11.5px;letter-spacing:.04em;flex:none}
+.conta-n{display:grid;text-align:left;line-height:1.15;max-width:160px}.conta-n b{font-weight:550;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conta-n small{font-size:10.5px;color:var(--muted);font-family:var(--f-mono)}
+.conta-m{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:240px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;display:grid}
+.conta-q{display:grid;gap:3px;padding:8px 10px 10px;border-bottom:1px solid var(--line);margin-bottom:4px}.conta-q span:not(.pill){font-size:11.5px;color:var(--muted)}.conta-q .pill{justify-self:start;margin-top:4px}
+.conta-i{display:block;text-align:left;border:0;background:none;padding:8px 10px;border-radius:8px;font-size:12.5px;color:var(--ink);text-decoration:none;cursor:pointer}.conta-i:hover{background:var(--surface-2)}
+.auth-oferta{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:45;width:min(340px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:14px;display:grid;gap:8px;animation:apIn .25s ease both}
+@media (max-width:860px){.auth-oferta{bottom:calc(86px + env(safe-area-inset-bottom,0px))}}
+@media (max-width:520px){.conta-n{display:none}.conta-b{padding:4px}.auth-card{padding:24px 20px 20px}}
 </style>
 
 <div class="app">
@@ -14584,6 +14619,299 @@ addCard("cen", { key:"apresentacao", order:20, sub:"entregar", html:()=>SEC("Apr
   {key:"apresentacao", id:"cardApres", open:true, sum:"tela cheia · link",
    info:"Apresentar: passo a passo em tela cheia (maquete 3D, potencial, produto, vendas e números-chave). Copiar link: quem abre vê o estudo como está agora, sem poder editar; nada é enviado a servidor e o estudo salvo no aparelho dele não muda."}) });
 
+/* ================= conta e acesso (app web em gabarito.rixel.com.br) =================
+   Quem decide se a pessoa pode usar o Gabarito é a RIXEL. O navegador não guarda nenhum token da Rixel no caminho principal:
+     (A) "Entrar com a Rixel" → /api/rixel/iniciar (PKCE) → Rixel → /api/rixel/callback → cookie HttpOnly da sessão do Gabarito.
+         Abrir o Gabarito sem sessão inicia esse fluxo sozinho (sem clique), exceto na volta de um erro ou depois de "Sair".
+     (B) Login direto por e-mail e senha no Auth da Rixel (só se o servidor tiver GABARITO_LOGIN_DIRETO=1): sessão no
+         armazenamento padrão do navegador ("gabarito.sessao") e token no cabeçalho Authorization.
+   Só vale no app web (host *.rixel.com.br, *.vercel.app, ou localhost com ?nuvem=1). No artifact do claude.ai, em file:// e
+   no link somente leitura (#ver=) nada disso roda: o app abre como sempre, sem login, com os estudos no navegador.
+   Com acesso: `Repo` passa a ser a nuvem (repo-nuvem.js). Sem DOM no nível superior (testado em tests/nuvem.test.js). */
+const AUTH_RIXEL = { url:"https://dolwuqozocfyrutcdbsa.supabase.co", chave:"sb_publishable_ZtZN3PBpHbTNQhcuU7pkzg_4Wn1AUoH", site:"https://rixel.com.br" };
+const AUTH = { modo:"local", ativo:false, entrada:null, usuario:null, acesso:null, config:null, aviso:null, pronto:null, tela:null };
+
+/** "nuvem" (app web com login) ou "local" (como sempre). Puro: recebe {protocol, hostname, search, hash}. */
+function authModoDe(loc){
+  try{
+    if(/(^|[#&])ver=/.test(String(loc.hash||""))) return "local";          // link somente leitura: público
+    if(!/^https?:$/.test(loc.protocol||"")) return "local";
+    const h=String(loc.hostname||"").toLowerCase();
+    if(h==="rixel.com.br" || h.endsWith(".rixel.com.br") || h.endsWith(".vercel.app")) return "nuvem";
+    if((h==="localhost" || h==="127.0.0.1") && /(^|[?&])nuvem=1(&|$)/.test(String(loc.search||""))) return "nuvem";
+  }catch(e){}
+  return "local";
+}
+/** Recursos por plano: a Rixel decide o acesso e as claims não trazem o plano, então tudo é liberado.
+    Ponto único para plugar limites no futuro (ex.: pode("pdf"), limite("estudos_max")). */
+function pode(recurso){ return true }
+function limite(recurso){ return Infinity }
+
+/* ---- mensagens das voltas do servidor (?entrada=…) ---- */
+const AUTH_ENTRADA = {
+  desligada:"A entrada pela Rixel ainda não foi configurada neste servidor.",
+  estado:"O link de entrada não vale mais. Entre de novo.",
+  expirada:"O link de entrada expirou. Entre de novo.",
+  recusada:"A entrada foi cancelada na Rixel.",
+  erro:"Não foi possível concluir a entrada. Tente de novo.",
+};
+/** lê ?entrada=…&msg=…&saiu=1 (e o retorno de recuperação de senha no hash). Puro. */
+function authLeUrl(search, hash){
+  const q=new URLSearchParams(String(search||"").replace(/^\?/,"")), h=new URLSearchParams(String(hash||"").replace(/^#/,""));
+  return { entrada:q.get("entrada")||"", msg:(q.get("msg")||"").slice(0,200), saiu:q.get("saiu")==="1",
+    recuperacao: h.get("type")==="recovery" && h.get("access_token")? { token:h.get("access_token"), refresh:h.get("refresh_token")||"" } : null };
+}
+
+/* ---- caminho B: cliente mínimo do Auth (GoTrue) da Rixel ---- */
+async function authGoTrue(caminho, corpo, o={}){
+  const h={ apikey:AUTH_RIXEL.chave, "Content-Type":"application/json" };
+  if(o.token) h.Authorization="Bearer "+o.token;
+  const r=await fetch(AUTH_RIXEL.url+"/auth/v1/"+caminho, { method:o.metodo||"POST", headers:h, body:corpo===undefined? undefined : JSON.stringify(corpo) });
+  let j=null; try{ j=await r.json() }catch(e){}
+  if(!r.ok){ const e=new Error(j && (j.error_description||j.msg||j.message) || ("HTTP "+r.status)); e.status=r.status; e.corpo=j; throw e }
+  return j;
+}
+const authSessaoLocal = ()=> LS.get("gabarito.sessao");
+function authGuardaSessao(s){
+  if(!s || !s.access_token){ try{ localStorage.removeItem("gabarito.sessao") }catch(e){} return null }
+  const v={ access_token:s.access_token, refresh_token:s.refresh_token, expires_at: s.expires_at || (Math.floor(Date.now()/1000)+(s.expires_in||3600)) };
+  try{ localStorage.setItem("gabarito.sessao", JSON.stringify(v)) }catch(e){}
+  return v;
+}
+/** token válido do login direto (renova 60 s antes de vencer); null se não houver */
+async function authToken(){
+  let s=authSessaoLocal(); if(!s || !s.access_token) return null;
+  if(s.expires_at*1000 - Date.now() < 60000){
+    try{ s=authGuardaSessao(await authGoTrue("token?grant_type=refresh_token", { refresh_token:s.refresh_token })) }
+    catch(e){ if(e.status && e.status<500) authGuardaSessao(null); return null }
+  }
+  return s && s.access_token;
+}
+
+/* ---- chamadas à API do Gabarito ---- */
+async function authApi(metodo, caminho, corpo){
+  const h={ Accept:"application/json", "X-Gabarito":"1" };
+  if(corpo!==undefined) h["Content-Type"]="application/json";
+  if(AUTH.entrada==="rixel"){ const t=await authToken(); if(t) h.Authorization="Bearer "+t }
+  const r=await fetch(caminho, { method:metodo, headers:h, credentials:"same-origin", body:corpo===undefined? undefined : JSON.stringify(corpo) });
+  let j=null; try{ j=await r.json() }catch(e){}
+  if(!r.ok){
+    const e=new Error(j && j.motivo || ("HTTP "+r.status)); e.status=r.status; e.corpo=j;
+    if(AUTH.ativo && (r.status===401 || (r.status===403 && j && j.erro==="sem_acesso"))) authCaiu(j);
+    throw e;
+  }
+  return j;
+}
+
+/* ================= tela de entrada ================= */
+const AUTH_MARCA = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="13" width="5" height="8" rx="1" fill="var(--ink)" opacity=".3"/><rect x="9.5" y="7" width="5" height="14" rx="1" fill="var(--ink)" opacity=".6"/><rect x="16" y="3" width="5" height="18" rx="1" fill="var(--accent)"/><path d="M2 21.5h20" stroke="var(--mark)" stroke-width="1.6" stroke-linecap="round"/></svg>';
+function authCaixa(){
+  let el=document.getElementById("authTela");
+  if(!el){
+    el=document.createElement("div"); el.id="authTela"; el.className="auth"; el.setAttribute("role","dialog"); el.setAttribute("aria-modal","true"); el.setAttribute("aria-labelledby","authTit");
+    document.body.appendChild(el);
+    el.addEventListener("click", authClique); el.addEventListener("submit", authEnvia);
+  }
+  return el;
+}
+function authTela(estado, o={}){
+  AUTH.tela=estado;
+  const el=authCaixa(), cfg=AUTH.config||{}, direto=!!cfg.loginDireto;
+  const msg = o.msg? `<p class="auth-msg${o.ok? " ok" : ""}" role="status">${esc(o.msg)}</p>` : "";
+  const roda = t=>`<div class="auth-roda" role="status"><span class="auth-spin" aria-hidden="true"></span><span>${t}</span></div>`;
+  const rixel = (rot="Entrar com a Rixel")=>`<button type="button" class="btn pri full auth-b" data-auth="rixel">${rot}</button>`;
+  const planos = `<a class="btn full auth-b" href="${AUTH_RIXEL.site}" target="_blank" rel="noopener">Ver planos na Rixel</a>`;
+  const formDireto = !direto? "" : `<div class="auth-ou"><span>ou com e-mail e senha</span></div>
+    <form class="auth-f" data-auth="login" novalidate>
+      <label class="fld"><span class="fl">E-mail</span><span class="inp"><input class="t" type="email" name="email" autocomplete="username" required></span></label>
+      <label class="fld"><span class="fl">Senha</span><span class="inp"><input class="t" type="password" name="senha" autocomplete="current-password" required></span></label>
+      <button type="submit" class="btn full auth-b">Entrar</button>
+      <button type="button" class="btn ghost sm auth-lk" data-auth="esqueci">Esqueci a senha</button>
+    </form>`;
+  const corpo = {
+    entrando: ()=> roda("Conferindo o seu acesso…"),
+    redirecionando: ()=> `<h1 id="authTit">Entrar no Gabarito</h1>` + roda("Levando você para a Rixel…"),
+    login: ()=> `<h1 id="authTit">Entrar no Gabarito</h1><p class="auth-sub">Use a sua conta da comunidade Rixel.</p>${msg}${cfg.lancamento===false && direto? "" : rixel()}${formDireto}
+      <p class="auth-pe">Ainda não é membro? <a href="${AUTH_RIXEL.site}" target="_blank" rel="noopener">Conheça a Rixel</a></p>`,
+    expirada: ()=> `<h1 id="authTit">Sua sessão terminou</h1><p class="auth-sub">Entre de novo para continuar de onde parou.</p>${msg}${rixel()}${formDireto}`,
+    semAcesso: ()=> `<div class="auth-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></svg></div>
+      <h1 id="authTit">Sem acesso ao Gabarito</h1><p class="auth-sub">${esc(o.motivo || "A sua conta da Rixel ainda não inclui o Gabarito.")}</p>
+      ${planos}<div class="auth-lin"><button type="button" class="btn ghost sm" data-auth="tentar">Tentar de novo</button><button type="button" class="btn ghost sm" data-auth="sair">Entrar com outra conta</button></div>`,
+    erro: ()=> `<h1 id="authTit">Não foi possível conectar</h1><p class="auth-sub">${esc(o.motivo || "O servidor do Gabarito não respondeu.")}</p><button type="button" class="btn pri full auth-b" data-auth="tentar">Tentar de novo</button>`,
+    esqueci: ()=> `<h1 id="authTit">Recuperar a senha</h1><p class="auth-sub">Enviamos um link para o seu e-mail da Rixel.</p>${msg}
+      <form class="auth-f" data-auth="esqueci" novalidate><label class="fld"><span class="fl">E-mail</span><span class="inp"><input class="t" type="email" name="email" autocomplete="username" required></span></label>
+      <button type="submit" class="btn pri full auth-b">Enviar link</button><button type="button" class="btn ghost sm auth-lk" data-auth="voltar">Voltar</button></form>`,
+    novaSenha: ()=> `<h1 id="authTit">Nova senha</h1><p class="auth-sub">Escolha a nova senha da sua conta da Rixel.</p>${msg}
+      <form class="auth-f" data-auth="novaSenha" novalidate><label class="fld"><span class="fl">Nova senha</span><span class="inp"><input class="t" type="password" name="senha" autocomplete="new-password" minlength="8" required></span></label>
+      <button type="submit" class="btn pri full auth-b">Salvar e entrar</button></form>`,
+  }[estado]||(()=> "");
+  el.innerHTML = `<div class="auth-card"><div class="auth-marca">${AUTH_MARCA}<span>Gabarito</span></div>${corpo()}</div><p class="auth-rod">Gabarito · ferramenta da comunidade Rixel</p>`;
+  el.hidden=false; document.documentElement.classList.add("auth-on");
+  const f=el.querySelector("input"); if(f) setTimeout(()=>{ try{ f.focus() }catch(e){} }, 30);
+}
+function authFecha(){ const el=document.getElementById("authTela"); if(el){ el.hidden=true; el.innerHTML="" } document.documentElement.classList.remove("auth-on"); AUTH.tela=null }
+function authVaiRixel(){ authTela("redirecionando"); location.assign("/api/rixel/iniciar") }
+
+async function authClique(e){
+  const b=e.target.closest("[data-auth]"); if(!b || b.tagName==="FORM") return;
+  const a=b.dataset.auth;
+  if(a==="rixel") authVaiRixel();
+  else if(a==="esqueci") authTela("esqueci");
+  else if(a==="voltar") authTela("login");
+  else if(a==="tentar") authTenta();
+  else if(a==="sair") authSair();
+}
+async function authEnvia(e){
+  const f=e.target.closest("form[data-auth]"); if(!f) return; e.preventDefault();
+  const d=Object.fromEntries(new FormData(f)), bt=f.querySelector('button[type="submit"]'); if(bt) bt.disabled=true;
+  try{
+    if(f.dataset.auth==="login"){
+      if(!d.email || !d.senha) throw new Error("Informe o e-mail e a senha.");
+      authGuardaSessao(await authGoTrue("token?grant_type=password", { email:String(d.email).trim(), password:d.senha }));
+      await authTenta();
+    } else if(f.dataset.auth==="esqueci"){
+      if(!d.email) throw new Error("Informe o e-mail.");
+      await authGoTrue("recover?redirect_to="+encodeURIComponent(location.origin+"/"), { email:String(d.email).trim() });
+      authTela("login", { msg:"Se o e-mail estiver cadastrado na Rixel, o link chega em instantes.", ok:true });
+    } else if(f.dataset.auth==="novaSenha"){
+      if(!d.senha || String(d.senha).length<8) throw new Error("Use pelo menos 8 caracteres.");
+      const s=AUTH.recuperacao; await authGoTrue("user", { password:d.senha }, { token:s.token, metodo:"PUT" });
+      authGuardaSessao({ access_token:s.token, refresh_token:s.refresh, expires_in:3000 }); AUTH.recuperacao=null;
+      await authTenta();
+    }
+  }catch(err){
+    const m = err && err.status===400 && f.dataset.auth==="login"? "E-mail ou senha incorretos." : (err && err.message || "Não foi possível concluir.");
+    authTela(AUTH.tela||"login", { msg:m });
+  }
+}
+
+/* ================= decisão ================= */
+/** chamado por main.js antes de abrir os estudos; resolve quando o app pode seguir */
+function authInit(){
+  AUTH.modo = authModoDe(location);
+  if(AUTH.modo!=="nuvem") return Promise.resolve(false);
+  const u=authLeUrl(location.search, location.hash);
+  AUTH.aviso=u; AUTH.recuperacao=u.recuperacao;
+  if(u.entrada || u.saiu || u.recuperacao){ try{ history.replaceState(null, "", location.pathname) }catch(e){} }
+  return new Promise(res=>{ AUTH.pronto=res; authTenta() });
+}
+async function authTenta(){
+  authTela("entrando");
+  if(!AUTH.config){ try{ const r=await fetch("/api/saude", { credentials:"same-origin" }); AUTH.config=(await r.json()).config||{} }catch(e){ return authTela("erro", { motivo:"O servidor do Gabarito não respondeu. Verifique a conexão." }) } }
+  const u=AUTH.aviso||{};
+  if(AUTH.recuperacao && AUTH.config.loginDireto) return authTela("novaSenha");
+  AUTH.entrada = AUTH.config.loginDireto && authSessaoLocal()? "rixel" : "produto";
+  let eu=null, err=null;
+  try{ eu=await authApi("GET", "/api/eu") }catch(e){ err=e }
+  if(err && AUTH.entrada==="rixel" && err.status===401){ authGuardaSessao(null); AUTH.entrada="produto"; err=null; try{ eu=await authApi("GET", "/api/eu") }catch(e){ err=e } }
+  if(err){
+    const c=err.corpo||{};
+    if(err.status===401 && c.erro==="sem_acesso") return authTela("semAcesso", { motivo:c.motivo });
+    if(err.status===401 && c.erro==="sessao_expirada") return authTela("expirada", { msg:c.motivo });
+    if(err.status===401){
+      if(u.entrada==="sem_acesso") return authTela("semAcesso", { motivo:u.msg });
+      if(u.entrada) return authTela("login", { msg:u.msg || AUTH_ENTRADA[u.entrada] || AUTH_ENTRADA.erro });
+      if(!u.saiu && AUTH.config.lancamento) return authVaiRixel();            // abriu pela Rixel (destino) sem sessão: segue sozinho
+      return authTela("login", u.saiu? { msg:"Você saiu do Gabarito.", ok:true } : {});
+    }
+    return authTela("erro", { motivo:c.motivo });
+  }
+  if(!eu.acesso || !eu.acesso.ok) return authTela("semAcesso", { motivo:eu.acesso && eu.acesso.motivo });
+  AUTH.aviso=null;
+  await authLiberado(eu);
+}
+/** acesso confirmado: troca o repositório, mostra a conta no topo e segue para os estudos */
+async function authLiberado(eu){
+  AUTH.ativo=true; AUTH.usuario=eu.usuario; AUTH.acesso=eu.acesso;
+  const sub=eu.usuario.id, ant=LS.get("gabarito.nuvem.dono");
+  if(ant && ant!==sub){
+    // outra pessoa entrou neste navegador: a cópia de trabalho do anterior não vai para a conta desta
+    S=merge(clone(DEF), {}); LS.set("gabarito.v2", S); try{ localStorage.removeItem("gabarito.estudo") }catch(e){}
+    const pn=document.getElementById("projName"); if(pn) pn.value=S.nome;
+    try{ renderTab(); fit3d(); fit2d(); histReset() }catch(e){}
+  }
+  LS.set("gabarito.nuvem.dono", sub);
+  const nuvem=repoNuvem(RepoLocal, authApi, { dono:sub, autor:eu.usuario.nome||eu.usuario.email||"", avisa:m=>toast(m) });
+  // o estudo aberto, se ainda só existe neste navegador, vai para a nuvem com o mesmo id (o resto é oferecido depois)
+  try{
+    await RepoLocal.pronto();
+    const id=LS.get("gabarito.estudo"), rec=id? await RepoLocal.estudos.get(id) : null;
+    if(rec && !rec.nuvem){ await nuvem.estudos.put({ ...rec, S:clone(S), nome:S.nome||rec.nome }); for(const v of await authVersoesLocais(id)) await nuvem.versoes.put(v) }
+  }catch(e){ console.warn("[auth] estudo aberto não migrou", e) }
+  Repo=nuvem;
+  authConta(); authFecha();
+  window.addEventListener("online", ()=>Repo.sincroniza && Repo.sincroniza());
+  if(AUTH.pronto){ const p=AUTH.pronto; AUTH.pronto=null; p(true) }
+}
+async function authVersoesLocais(estudoId){ const out=[]; for(const v of await RepoLocal.versoes.list(estudoId)){ const f=await RepoLocal.versoes.get(v.id); if(f && !f.nuvem) out.push(f) } return out }
+/** a sessão caiu no meio do uso (401/403): mostra a tela por cima, sem perder o que está na tela */
+function authCaiu(c){
+  c=c||{};
+  if(c.erro==="sem_acesso") authTela("semAcesso", { motivo:c.motivo });
+  else authTela("expirada", { msg:c.motivo });
+}
+async function authSair(){
+  try{ if(EST.pronto) await estGrava() }catch(e){}
+  try{ if(Repo.sincroniza) await Promise.race([Repo.sincroniza(), new Promise(r=>setTimeout(r,4000))]) }catch(e){}
+  try{ await fetch("/api/rixel/sair", { method:"POST", headers:{ "X-Gabarito":"1" }, credentials:"same-origin" }) }catch(e){}
+  const s=authSessaoLocal(); if(s){ try{ await authGoTrue("logout", {}, { token:s.access_token }) }catch(e){} authGuardaSessao(null) }
+  location.replace("/?saiu=1");
+}
+
+/* ================= conta no topo ================= */
+const authIniciais = n=> String(n||"").trim().split(/\s+/).filter(Boolean).slice(0,2).map(p=>p[0].toUpperCase()).join("") || "R";
+function authConta(){
+  const acts=document.querySelector(".top .acts"); if(!acts || document.getElementById("authConta")) return;
+  const u=AUTH.usuario||{}, nome=u.nome||u.email||"Membro Rixel";
+  const d=document.createElement("div"); d.className="conta"; d.id="authConta";
+  d.innerHTML = `<button type="button" class="btn ghost conta-b" id="authContaBtn" aria-haspopup="true" aria-expanded="false" title="${esc(nome)}">
+      <span class="conta-av" aria-hidden="true">${esc(authIniciais(u.nome||u.email))}</span><span class="conta-n"><b>${esc(nome)}</b><small>Rixel</small></span></button>
+    <div class="conta-m" id="authMenu" role="menu" hidden>
+      <div class="conta-q"><b>${esc(nome)}</b>${u.email && u.email!==nome? `<span>${esc(u.email)}</span>` : ""}<span class="pill ok">acesso pela Rixel</span></div>
+      <button type="button" class="conta-i" role="menuitem" data-auth-m="migrar" id="authMigrarBtn" hidden>Enviar estudos deste navegador</button>
+      <a class="conta-i" role="menuitem" href="${AUTH_RIXEL.site}" target="_blank" rel="noopener">Minha conta na Rixel</a>
+      <button type="button" class="conta-i" role="menuitem" data-auth-m="sair">Sair</button>
+    </div>`;
+  acts.insertBefore(d, acts.firstChild);
+  const btn=d.querySelector("#authContaBtn"), menu=d.querySelector("#authMenu");
+  const abre=v=>{ menu.hidden=!v; btn.setAttribute("aria-expanded", String(!!v)) };
+  btn.addEventListener("click", e=>{ e.stopPropagation(); abre(menu.hidden) });
+  document.addEventListener("click", e=>{ if(!d.contains(e.target)) abre(false) });
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape") abre(false) });
+  menu.addEventListener("click", e=>{ const b=e.target.closest("[data-auth-m]"); if(!b) return; abre(false); if(b.dataset.authM==="sair") authSair(); else if(b.dataset.authM==="migrar") authMigrar() });
+}
+
+/* ================= migração: estudos deste navegador → nuvem ================= */
+async function authLocais(){ try{ return (await RepoLocal.estudos.list()).filter(e=>!e.nuvem) }catch(e){ return [] } }
+/** depois de abrir os estudos: oferece uma vez enviar o que só existe neste navegador */
+async function authDepois(){
+  if(!AUTH.ativo) return;
+  const l=await authLocais(), b=document.getElementById("authMigrarBtn"); if(b) b.hidden=!l.length;
+  if(!l.length || LS.get("gabarito.nuvem.migracao."+AUTH.usuario.id)) return;
+  authOferta(l.length);
+}
+function authOferta(n){
+  let el=document.getElementById("authOferta");
+  if(!el){ el=document.createElement("div"); el.id="authOferta"; el.className="auth-oferta"; el.setAttribute("role","dialog"); el.setAttribute("aria-labelledby","authOfTit"); document.body.appendChild(el) }
+  el.innerHTML = `<b id="authOfTit">Estudos neste navegador</b><p class="note">Há ${n===1? "1 estudo" : n+" estudos"} salvo${n===1?"":"s"} só neste navegador. Enviar para a sua conta?</p>
+    <div class="auth-lin"><button type="button" class="btn ghost sm" data-of="nao">Agora não</button><button type="button" class="btn pri sm" data-of="sim">Enviar para a nuvem</button></div>`;
+  el.hidden=false;
+  el.onclick=async e=>{ const b=e.target.closest("[data-of]"); if(!b) return; LS.set("gabarito.nuvem.migracao."+AUTH.usuario.id, true); el.hidden=true; if(b.dataset.of==="sim") await authMigrar() };
+}
+async function authMigrar(){
+  const l=await authLocais(); let n=0;
+  for(const e of l){
+    try{
+      const rec=await RepoLocal.estudos.get(e.id); if(!rec) continue;
+      const vs=await authVersoesLocais(e.id);
+      await Repo.estudos.put({ ...rec }); for(const v of vs) await Repo.versoes.put(v); n++;
+    }catch(err){ console.warn("[auth] não migrou", e.id, err) }
+  }
+  const b=document.getElementById("authMigrarBtn"); if(b) b.hidden=true;
+  try{ await estRefresh() }catch(e){}
+  toast(n? (n===1? "1 estudo enviado para a nuvem" : n+" estudos enviados para a nuvem") : "Nada para enviar");
+}
+
 /* ================= C1 — forma livre da torre (interface) =================
    Produto › seção "Forma das torres" (blcSecHTML, atualizada por blcLive no STEP_LIVE do Produto):
      Automática | Desenhada · por torre: "Personalizar" (copia a forma automática — nada muda nos números),
@@ -15714,6 +16042,11 @@ async function estInit(){
   try{
     await Repo.pronto();
     let lista=await Repo.estudos.list(), id=LS.get("gabarito.estudo");
+    if((!id || !lista.some(e=>e.id===id)) && Repo.modo()==="nuvem" && lista.length){
+      // conta na nuvem, aparelho novo: abre o estudo mais recente da conta em vez de criar outro
+      EST.pronto=true; setInterval(estAuto, 30000);
+      await estAbrir(lista[0].id, "Estudo aberto: "+lista[0].nome); return;
+    }
     if(!id || !lista.some(e=>e.id===id)){
       // migração: o estudo atual (gabarito.v2) vira um estudo do repositório — o gabarito.v2 continua lá
       const rec=await Repo.estudos.put({nome:S.nome||"Estudo", S:clone(S)}); id=rec.id;
@@ -15855,11 +16188,12 @@ function estCardsHTML(){
   const campo=(id,ph,rot,act,btn)=>`<div class="row" style="flex-wrap:nowrap"><div class="inp" style="flex:1"><input class="t" id="${id}" placeholder="${ph}" aria-label="${rot}" autocomplete="off"></div><button type="button" class="btn pri" data-act="${act}">${btn}</button></div>`;
   return `<div id="estUndo">${estUndoHTML()}</div>` +
     RES("Estudo aberto", `<div class="estcur"><b id="estCurNome">${esc(S.nome||"Estudo")}</b><span class="note" id="estCurSt">${estStatus()}</span></div>`,
-      {aside: modo==="idb"||modo==="local"? "salvo neste navegador" : "só nesta sessão"}) +
+      {aside: modo==="nuvem"? "salvo na sua conta" : modo==="idb"||modo==="local"? "salvo neste navegador" : "só nesta sessão"}) +
     SEC("Comparação", `<div id="cmpBox">${c}</div>`, {key:"cmp", open:true, id:"cmpSec", hidden:!c, sum:sm.cmp,
       info:"O estudo atual lado a lado com o que você marcou nas listas abaixo (quadradinho à esquerda de cada linha). Em verde, o melhor valor de cada linha."}) +
     SEC("Estudos", `<div id="estBox">${estListHTML()}</div>`, {key:"estudos", open:true, sum:sm.estudos,
-      info:"Cada estudo é um terreno ou uma proposta diferente. Ficam guardados neste navegador; o aberto é salvo sozinho a cada mudança. Use o .json (aba Entregar) para levar a outro aparelho."}) +
+      info: modo==="nuvem"? "Cada estudo é um terreno ou uma proposta diferente. Ficam guardados na sua conta e abrem em qualquer aparelho; o aberto é salvo sozinho a cada mudança (sem internet, ele espera e envia depois)."
+        : "Cada estudo é um terreno ou uma proposta diferente. Ficam guardados neste navegador; o aberto é salvo sozinho a cada mudança. Use o .json (aba Entregar) para levar a outro aparelho."}) +
     SEC("Versões", campo("vsNome","Ex.: aprovada na reunião","Nome da versão","vsSalvar","Salvar versão") + `<div id="vsBox">${vsListHTML()}</div>`, {key:"versoes", open:true, sum:sm.versoes,
       info:`Fotos do estudo aberto ao longo do tempo. Salvas sozinhas a cada ${EST.autoMin} minutos quando ele muda, ou quando você pedir. Restaurar volta o estudo exatamente àquele ponto (Ctrl+Z desfaz); o ícone ao lado abre a versão como um estudo novo.`}) +
     SEC("Cenários", campo("cenNome","Ex.: 2 torres · 12 e 9 pav","Nome do cenário","cenSave","Salvar") + `<div id="cenBox">${cenListHTML()}</div>`, {key:"cenarios", sum:sm.cenarios,
@@ -17796,6 +18130,175 @@ HOOK.draw3d.push((grp, m)=>{
     const pole=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(v.x,0,v.z), v]), new THREE.LineBasicMaterial(mat(0.45))); pole.renderOrder=12; grp.add(pole) });
 });
 
+/* ================= repositório na nuvem (app web com login) =================
+   Mesma interface do Repo local (docs/BACKEND.md, seção 1), falando com /api/estudos, /api/versoes e /api/regras.
+   "Grava local primeiro": toda gravação vai antes para o RepoLocal (IndexedDB), marcada {nuvem:{dono, rev, pendente:true}},
+   e entra numa fila (localStorage "gabarito.nuvem.fila.<dono>") que um sincronizador envia quando há rede.
+   Conflito (409: o estudo mudou em outro aparelho): vale a última gravação (a nossa), mas a versão do outro aparelho é
+   guardada antes como versão automática "Conflito — outro aparelho (data)" e o usuário recebe um aviso. Nada se perde.
+   Registros locais SEM o campo `nuvem` são estudos deste navegador ainda não enviados (oferta de migração em auth.js).
+   Sem DOM no nível superior: testado no Node (tests/nuvem.test.js). */
+function repoNuvem(local, api, o){
+  const dono=o.dono, ls=o.ls||LS, avisa=o.avisa||(()=>{}), agendaFn=o.agenda||((fn,ms)=>setTimeout(fn,ms)), autor=o.autor||"";
+  const CHAVE="gabarito.nuvem.fila."+dono, B=local.bruto;
+  const agora=()=>new Date().toISOString();
+  const offline=e=> !e || e.status==null || e.status===0 || e.status===502 || e.status===503 || e.status===504;
+  const recentes=(a,b)=> String(b.atualizado||b.criado||"").localeCompare(String(a.atualizado||a.criado||""));
+  const meu=r=> r && r.nuvem && r.nuvem.dono===dono;
+  const semS=r=>{ const x={...r}; delete x.S; return x };
+  let fila=ls.get(CHAVE)||[], rodando=false, timer=0, falhas=0, avisouConflito={};
+  const gravaFila=()=>ls.set(CHAVE, fila);
+  const enfileira=item=>{ fila=fila.filter(x=>x!==item); fila.push(item); gravaFila(); agenda(800) };
+  function agenda(ms){ if(timer) return; timer=agendaFn(()=>{ timer=0; sincroniza() }, ms) }
+  const cacheEst=(r,extra)=>B.grava("estudos", {...r, nuvem:{dono, rev:r.rev||0, pendente:false, ...extra}});
+
+  /* ---- envio de um item da fila; devolve true se saiu da fila ---- */
+  async function envia(item){
+    const [tipo, id]=[item.slice(0,item.indexOf(":")), item.slice(item.indexOf(":")+1)];
+    if(tipo==="e"){
+      const rec=await B.um("estudos", id); if(!meu(rec) || !rec.nuvem.pendente) return true;
+      const corpo={id, nome:rec.nome, S:rec.S, k:rec.k||null};
+      let r;
+      const cria=async()=>{ try{ return await api("POST","/api/estudos",corpo) }catch(e){ if(e.status===409){ const at=await api("GET","/api/estudos?id="+encodeURIComponent(id)); return await api("PUT","/api/estudos?id="+encodeURIComponent(id), {...corpo, rev:at.rev}) } throw e } };
+      if(!rec.nuvem.rev) r=await cria();
+      else {
+        try{ r=await api("PUT","/api/estudos?id="+encodeURIComponent(id), {...corpo, rev:rec.nuvem.rev}) }
+        catch(e){
+          if(e.status===404) r=await cria();
+          else if(e.status===409 && e.corpo && e.corpo.atual){
+            const at=e.corpo.atual;
+            await api("POST","/api/versoes",{estudoId:id, nome:"Conflito — outro aparelho ("+dataCurta(at.atualizado)+")", auto:true, S:at.S, k:at.k||null, autor:"outro aparelho"});
+            r=await api("PUT","/api/estudos?id="+encodeURIComponent(id), {...corpo, rev:at.rev});
+            if(!avisouConflito[id]){ avisouConflito[id]=1; avisa("Este estudo tinha mudado em outro aparelho. A versão de lá ficou guardada em Versões.") }
+          } else throw e;
+        }
+      }
+      // mudou enquanto enviava? continua pendente, com a revisão nova
+      const agoraRec=await B.um("estudos", id);
+      const mudou=agoraRec && agoraRec.atualizado!==rec.atualizado;
+      if(agoraRec) await B.grava("estudos", {...agoraRec, criado:r.criado||agoraRec.criado, nuvem:{dono, rev:r.rev, pendente:!!mudou}});
+      if(mudou){ fila.push(item); gravaFila() }
+      return true;
+    }
+    if(tipo==="v"){
+      const v=await B.um("versoes", id); if(!meu(v) || !v.nuvem.pendente) return true;
+      const est=await B.um("estudos", v.estudoId);
+      try{ await api("POST","/api/versoes",{id, estudoId:v.estudoId, nome:v.nome, auto:!!v.auto, S:v.S, k:v.k||null, autor:v.autor}) }
+      catch(e){ if(e.status===404 && est && meu(est) && est.nuvem.pendente) return false; if(e.status===404) return true; throw e }
+      await B.grava("versoes", {...v, nuvem:{dono, pendente:false}});
+      return true;
+    }
+    if(tipo==="r"){
+      const r=await B.um("regras", id); if(!meu(r) || !r.nuvem.pendente) return true;
+      const s=await api("POST","/api/regras", semNuvem(r));
+      await B.grava("regras", {...r, ...s, nuvem:{dono, pendente:false}});
+      return true;
+    }
+    const rota={x:"estudos", xv:"versoes", xr:"regras"}[tipo];
+    if(rota){ try{ await api("DELETE","/api/"+rota+"?id="+encodeURIComponent(id)) }catch(e){ if(e.status!==404) throw e } return true }
+    return true;
+  }
+  const semNuvem=r=>{ const x={...r}; delete x.nuvem; return x };
+  const dataCurta=iso=>{ try{ const d=new Date(iso); return d.toLocaleDateString("pt-BR")+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) }catch(e){ return "" } };
+
+  /** envia a fila; para no primeiro erro de rede (tenta de novo depois) */
+  async function sincroniza(){
+    if(rodando) return; rodando=true;
+    try{
+      let voltas=0;
+      while(fila.length && voltas++<500){
+        const item=fila[0]; let saiu=true;
+        try{ saiu=await envia(item) }
+        catch(e){
+          if(offline(e)){ falhas++; agenda(Math.min(60000, 5000*falhas)); break }
+          console.warn("[nuvem] item descartado", item, e && e.message); avisa("Não foi possível salvar uma alteração na nuvem: "+(e && e.message || "erro"));
+        }
+        fila=fila.filter(x=>x!==item); if(!saiu) fila.push(item); gravaFila();
+        if(!saiu && fila.every(x=>x.startsWith("v:"))) break;   // só versões esperando o estudo: espera a próxima rodada
+        falhas=0;
+      }
+    } finally { rodando=false }
+    return fila.length;
+  }
+
+  const lerNuvem=async(caminho)=>{ try{ return await api("GET", caminho) }catch(e){ if(offline(e)) return undefined; throw e } };
+  const R={
+    tipo:"nuvem",
+    modo:()=>"nuvem",
+    pronto:()=>local.pronto().then(()=>"nuvem"),
+    novoId:local.novoId,
+    sincroniza, pendentes:()=>fila.length, dono,
+    estudos:{
+      async list(){
+        const nv=await lerNuvem("/api/estudos");
+        const locais=(await B.todos("estudos")).filter(meu);
+        if(nv===undefined) return locais.map(semS).sort(recentes);
+        const ids=new Set(nv.map(e=>e.id)), pend=locais.filter(l=>l.nuvem.pendente);
+        for(const l of locais) if(!ids.has(l.id) && !l.nuvem.pendente) await B.apaga("estudos", l.id);   // apagado em outro aparelho
+        const out=nv.map(e=>{ const p=pend.find(x=>x.id===e.id); return p? semS(p) : e });
+        pend.filter(p=>!ids.has(p.id)).forEach(p=>out.push(semS(p)));
+        return out.sort(recentes);
+      },
+      async get(id){
+        const l=await B.um("estudos", id);
+        if(meu(l) && l.nuvem.pendente) return l;   // a cópia local é a mais nova
+        try{ const r=await api("GET","/api/estudos?id="+encodeURIComponent(id)); await cacheEst(r); return {...r, nuvem:{dono, rev:r.rev, pendente:false}} }
+        catch(e){ if(offline(e)) return meu(l)? l : null; if(e.status===404) return null; throw e }
+      },
+      async put(e){
+        const id=e.id||local.novoId(), ant=await B.um("estudos", id), t=agora();
+        const rec={...e, id, dono, criado:e.criado||(ant&&ant.criado)||t, atualizado:t, nuvem:{dono, rev:(meu(ant)&&ant.nuvem.rev)||0, pendente:true}};
+        await B.grava("estudos", rec); enfileira("e:"+id);
+        return rec;
+      },
+      async remove(id){
+        await local.estudos.remove(id);
+        fila=fila.filter(x=>x!=="e:"+id); enfileira("x:"+id);
+      },
+    },
+    versoes:{
+      async list(estudoId){
+        const nv=await lerNuvem("/api/versoes?estudo="+encodeURIComponent(estudoId)).catch(e=>{ if(e.status===404) return []; throw e });
+        const locais=(await B.todos("versoes","estudoId",estudoId)).filter(meu);
+        const ord=(a,b)=>String(b.criado).localeCompare(String(a.criado));
+        if(nv===undefined) return locais.map(semS).sort(ord);
+        const ids=new Set(nv.map(v=>v.id));
+        return [...nv, ...locais.filter(v=>v.nuvem.pendente && !ids.has(v.id)).map(semS)].sort(ord);
+      },
+      async get(id){
+        const l=await B.um("versoes", id); if(meu(l)) return l;   // versões não mudam: o cache vale
+        try{ const r=await api("GET","/api/versoes?id="+encodeURIComponent(id)); await B.grava("versoes", {...r, nuvem:{dono, pendente:false}}); return r }
+        catch(e){ if(offline(e) || e.status===404) return null; throw e }
+      },
+      async put(v){
+        const rec={autor, auto:false, ...v, id:v.id||local.novoId(), criado:v.criado||agora(), nuvem:{dono, pendente:true}};
+        await B.grava("versoes", rec); enfileira("v:"+rec.id);
+        return rec;
+      },
+      async remove(id){ await B.apaga("versoes", id); fila=fila.filter(x=>x!=="v:"+id); enfileira("xv:"+id) },
+    },
+    regras:{
+      async list(f={}){
+        const nv=await lerNuvem("/api/regras"+(f.cidade? "?cidade="+encodeURIComponent(f.cidade) : ""));
+        if(nv!==undefined) return nv;
+        return (await local.regras.list(f)).filter(r=>!r.nuvem || meu(r));
+      },
+      async get(id){
+        try{ return await api("GET","/api/regras?id="+encodeURIComponent(id)) }
+        catch(e){ if(offline(e)){ const l=await B.um("regras", id); return l && (!l.nuvem || meu(l))? l : null } if(e.status===404) return null; throw e }
+      },
+      async put(r){
+        const t=agora(), rec={status:"rascunho", ...r, id:r.id||local.novoId(), criado:r.criado||t, atualizado:t, nuvem:{dono, pendente:true}};
+        await B.grava("regras", rec); enfileira("r:"+rec.id);
+        return rec;
+      },
+      async remove(id){ await B.apaga("regras", id); fila=fila.filter(x=>x!=="r:"+id); enfileira("xr:"+id) },
+    },
+  };
+  if(fila.length) agenda(1500);
+  return R;
+}
+
 /* ================= repositório (estudos, versões, regras) =================
    Interface assíncrona e estável — hoje em IndexedDB (banco "gabarito"), amanhã no Supabase sem mudar quem chama
    (ver docs/BACKEND.md). Todos os métodos devolvem Promise e trabalham com objetos JSON simples.
@@ -17807,8 +18310,10 @@ HOOK.draw3d.push((grp, m)=>{
      Repo.versoes.get(id) · put(v) · remove(id)
      Repo.regras.list({cidade}?) · get(id) · put(r) · remove(id)       (biblioteca de regras por cidade/zona)
      Repo.modo()                    → "idb" | "local" (fallback em localStorage quando não há IndexedDB) | "memoria"
-   Sem IndexedDB (navegador antigo, iframe sem permissão) cai para localStorage ("gabarito.repo") e, em último caso, memória. */
-const Repo = (()=>{
+   Sem IndexedDB (navegador antigo, iframe sem permissão) cai para localStorage ("gabarito.repo") e, em último caso, memória.
+   App web com login (src/ui/auth.js): `Repo` passa a ser a implementação da nuvem (src/ui/repo-nuvem.js), que usa esta
+   (RepoLocal) como cópia local e fila; `RepoLocal.bruto` grava registros sem mexer em datas (cache da nuvem). */
+const RepoLocal = (()=>{
   const NOME="gabarito", VER=1, LOJAS={ estudos:"atualizado", versoes:"estudoId", regras:"cidade" };
   let modo="idb", dbP=null, mem=null;
   const agora = ()=>new Date().toISOString();
@@ -17871,8 +18376,10 @@ const Repo = (()=>{
       put: r=>{ const t=agora(); return grava("regras", {status:"rascunho", ...r, id:r.id||novoId(), criado:r.criado||t, atualizado:t}) },
       remove: id=>apaga("regras", id),
     },
+    bruto: { um, grava, apaga, todos },
   };
 })();
+let Repo = RepoLocal;
 
 /* ================= Fase A: interface da "Saúde do negócio" e das "Metas e referências" =================
    Cálculo em src/calc/saude.js (saudeNegocio); aqui só marcação e ações.
@@ -18694,7 +19201,8 @@ function paintRange(r){ const mn=+r.min||0, mx=+r.max||100, v=+r.value; r.style.
 document.addEventListener("input",e=>{ if(e.target.type==="range") paintRange(e.target) },true);
 new MutationObserver(()=>document.querySelectorAll('input[type=range]').forEach(paintRange)).observe(document.getElementById("tabbody"),{childList:true});
 document.querySelectorAll('input[type=range]').forEach(paintRange);
-// desfazer/refazer (começa do estado já normalizado) e repositório de estudos/versões (IndexedDB)
-histInit(); estInit();
+// desfazer/refazer (começa do estado já normalizado) e repositório de estudos/versões (IndexedDB; no app web com login,
+// a nuvem — authInit resolve na hora fora do app web, ver src/ui/auth.js)
+histInit(); authInit().then(estInit).then(authDepois);
 
 </script>
