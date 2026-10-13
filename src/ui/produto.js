@@ -93,7 +93,7 @@ STEP_R.produto = ()=>{
     const chip=(k,l)=>`<button type="button" class="chip" data-act="otk" data-k="${k}" aria-pressed="${!!O[k]}">${l}</button>`;
     const extra=typeof paretoChipsHTML==="function"? paretoChipsHTML() : "";
     body =
-      SEC("Gerar opções", `<div class="row sb" style="flex-wrap:nowrap"><span class="fl" style="flex:none">Maximizar${INFO("Lucro = receita líquida − custos. Margem = lucro ÷ receita. TIR = rendimento anual do fluxo de caixa. VPL = valor presente do fluxo, descontado pela TMA.","os objetivos")}</span>${SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","TIR"],["vpl","VPL"]],{fx:"save",rr:false,label:"Objetivo"})}</div>
+      SEC("Gerar opções", `<div class="row sb" style="flex-wrap:nowrap"><span class="fl" style="flex:none">Maximizar${INFO("Lucro = receita líquida − custos. Margem = lucro ÷ VGV (a conta do mercado). TIR = rendimento anual do fluxo de caixa. VPL = valor presente do fluxo, descontado pela TMA.","os objetivos")}</span>${SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","TIR"],["vpl","VPL"]],{fx:"save",rr:false,label:"Objetivo"})}</div>
         ${GRP("O que variar")}<div class="chips">${chip("torres","Nº de torres")+chip("tipologias","Tipologias")+chip("unidades","Unidades/andar")}</div>
         ${extra? GRP("Comparar também")+`<div class="chips">${extra}</div>` : ""}
         <button type="button" class="btn pri full" data-act="otim" ${OTRUN?"disabled":""}>${OTRUN?"Analisando…":"Gerar opções"}</button><div class="prog" id="otProg" ${OTRUN?"":"hidden"}><i style="width:0"></i></div>`,
@@ -127,13 +127,13 @@ function prEmbSum(){ const P=S.produto; return `${P.subsolos} subsolo${P.subsolo
 
 function otimHTML(){
   const O=OTIM; if(!O.res.length) return `<p class="note">Nenhuma combinação atende às regras e às vagas exigidas.</p>`;
-  const cur=window._last.f, ob=OBJ[O.obj][0];
+  const cur=window._last.f, ob=OBJ[O.obj][2];
   const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0?"Melhor opção":"Opção "+(k+1)} · ${MIX_PRESETS[r.pk].nome}</b><button type="button" class="btn sm ${k===0?"pri":""}" data-act="otApply" data-i="${k}">Aplicar</button></div>
     <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas</div>
-    <div class="rm"><span>Lucro<b>${mi(r.lucro)}</b></span><span>Margem<b>${pct(r.margem)}</b></span><span>TIR<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
+    <div class="rm"><span>Lucro<b>${mi(r.lucro)}</b></span><span>Margem s/ VGV<b>${pct(r.margem)}</b></span><span>TIR<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
   const L=O.res.slice(0,4);
   return card(L[0],0) + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
-    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob.toLowerCase()}</p><p class="note">Hoje: lucro ${mi(cur.lucro)} · margem ${pct(cur.margem)}</p>`;
+    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}</p><p class="note">Hoje: lucro ${mi(cur.lucro)} · margem s/ VGV ${pct(cur.margemVGV)}</p>`;
 }
 
 /* ---------------- partes vivas ---------------- */
@@ -188,11 +188,11 @@ STEP_LIVE.produto = (m,f)=>{
   if(cur==="lazer"){ prLazerLive(m); return }
   const po=potencial(S,m);
   const lim=document.getElementById("potLim"); if(lim) lim.textContent = po.limita==="ca"? "limite: coeficiente" : "limite: altura";
-  setHTML("pot", `<div class="met big"><div class="l">Privativo possível<span class="pill ${po.uso.priv>1?"bad":"ok"}" title="Parte do potencial que o estudo usa">${pct(po.uso.priv,0)} em uso</span></div><div class="v">${m2(po.priv)}</div><div class="s">≈ ${po.un} un · ${TERMO("VGV")} ≈ ${mi(po.vgv)}</div></div>
+  setHTML("pot", `<div class="met big"><div class="l">Privativo possível${potInfoHTML(po)}<span class="pill ${po.uso.priv>1?"bad":"ok"}" title="Parte do potencial que o estudo usa">${pct(po.uso.priv,0)} em uso</span></div><div class="v">${m2(po.priv)}</div><div class="s">≈ ${po.un} un · ${TERMO("VGV")} ≈ ${mi(po.vgv)}</div></div>
       <div class="met"><div class="l">Computável máx.</div><div class="v">${m2(po.compMax)}</div><div class="s">${TERMO("CA")} ${nf(R.caMax,1)} × ${m2(m.A)}</div></div>
-      <div class="met"><div class="l">Pavimentos tipo</div><div class="v">até ${po.pavH}</div><div class="s">altura de ${nf(R.hMax,0)} m</div></div>`);
+      <div class="met"><div class="l">Pavimentos tipo</div><div class="v">até ${po.pavH}</div><div class="s">altura de ${nf(po.hLim,0)} m</div></div>`);
   const u=(l,v)=>`<div><span>${l}<b style="${v>1?"color:var(--bad)":""}">${pct(v,0)}</b></span>${bar(v, v>1?"bad":"")}</div>`;
-  setHTML("potUso", u("CA usado",po.uso.ca)+u("Altura",po.uso.h)+u("Ocupação",po.uso.to));
+  setHTML("potUso", u("CA usado",po.uso.ca)+u("Altura",po.uso.h)+u("Ocupação",po.uso.to)+potNotaHTML(po));
   prTorresLive(m); prMixLive(m);
   setSub("produto.subsolos",`${m2(m.subA)} · ${m.gar&&m.gar.s1? m.gar.s1.count+" vg no 1º" : Math.floor(m.subA/R.m2Vaga)+" vg (est.)"}`);
   setSub("produto.garAcima",`${m2(m.embA)} · ${m.gar&&m.gar.g1? m.gar.g1.count+" vg no 1º" : Math.floor(m.embA/R.m2Vaga)+" vg (est.)"}`);
@@ -245,7 +245,7 @@ Object.assign(ACT,{
   rmT: b=>{ const T=S.produto.torres, i=+b.dataset.i; if(T.length<2 || !T[i]) return; T.splice(i,1); renderTab(); toast(`Torre ${i+1} removida — Ctrl+Z desfaz`) },
   maxPav: ()=>{ const t=maxPav(S); if(t>0){ S.produto.torres.forEach(x=>x.pav=t); update(); toast(`${t} pavimentos por torre (gabarito/CA)`) } else toast("Nenhum pavimento cabe com essas regras") },
   maxT: b=>{ const i=+b.dataset.i, T=S.produto.torres, keep=T[i].pav; let best=0;
-    for(let n=1;n<=80;n++){ T[i].pav=n; const mm=massing(S); if(mm.H<=S.regras.hMax+1e-6 && mm.CA<=S.regras.caMax+1e-6) best=n; else break }
+    for(let n=1;n<=80;n++){ T[i].pav=n; const mm=massing(S); if(mm.H<=(mm.hLim??S.regras.hMax)+1e-6 && mm.CA<=S.regras.caMax+1e-6) best=n; else break }
     T[i].pav=best||keep; update(); toast(best? `Torre ${i+1}: ${best} pavimentos` : `Torre ${i+1}: nenhum pavimento a mais cabe`) },
   addMix: ()=>{ const X=S.produto.mix; if(X.length<5){ X.push({nome:"Studio",area:35,qtd:1,preco:12000,sac:3}); PR.mix=X.length-1; update(); requestAnimationFrame(()=>prRelista("mix", PR.mix)) } },
   rmMix: b=>{ const X=S.produto.mix, i=+b.dataset.i; if(X.length<2 || !X[i]) return; const nome=X[i].nome; X.splice(i,1); PR.mix=-1; update(); toast(`${nome||"Tipologia"} removida — Ctrl+Z desfaz`) },

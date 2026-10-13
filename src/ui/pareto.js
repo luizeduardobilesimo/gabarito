@@ -26,7 +26,7 @@ function pfPontos(){
 function paretoCardHTML(){
   if(!OTIM || !OTIM.pareto || !OTIM.pareto.pts.length) return "";
   const O=S.otim, src=OTIM.solFonte==="unidades"? "média das unidades, com sombras (módulo Unidades)" : "horas de sol direto nas fachadas no inverno (aproximação)";
-  const info=`Cada ponto é uma combinação conferida com a garagem real. Em destaque, a fronteira: nenhuma outra opção é melhor em lucro, sol e vagas ao mesmo tempo. Toque num ponto para ver e aplicar. Sol médio: ${src}. ${OTIM.ventoOn?"Conforto ao vento: 1 − fração do lote com vento forte (vento 2D, aproximado). ":""}Vagas pelo layout rápido da garagem; na tela o layout completo pode achar mais algumas.`;
+  const nomes=pfCrit().map(c=>c.nome.toLowerCase()), lista=nomes.length>1? nomes.slice(0,-1).join(", ")+" e "+nomes[nomes.length-1] : nomes.join(""), info=`Cada ponto é uma combinação conferida com a garagem real. Em destaque, a fronteira: nenhuma outra opção é melhor em ${lista} ao mesmo tempo. ${O.efic?"Eficiência global: área privativa ÷ área total construída. ":""}${O.vc?"V/C: preço por m² privativo ÷ custo de referência (CUB × fator). ":""}Toque num ponto para ver e aplicar. Sol médio: ${src}. ${OTIM.ventoOn?"Conforto ao vento: 1 − fração do lote com vento forte (vento 2D, aproximado). ":""}Vagas pelo layout rápido da garagem; na tela o layout completo pode achar mais algumas.`;
   return SEC("Trocas entre critérios", `<div class="chips"><button type="button" class="chip" data-act="pfF" data-k="fVagas" aria-pressed="${!!O.fVagas}">Vagas ≥ exigidas</button><button type="button" class="chip" data-act="pfF" data-k="fSol" aria-pressed="${!!O.fSol}">Sol médio ≥ ${nf(+O.solMin||0,1)} h</button></div>
     ${O.fSol? KV(NUM("otim.solMin","Sol médio mínimo","h",{step:0.5,min:0,max:14,fx:"pf"})) : ""}
     <div class="pf-chart" id="pfChart"></div>
@@ -46,7 +46,7 @@ Object.assign(ACT, {
 function paretoChipsHTML(){
   const O=S.otim, c=(k,l,t)=>`<button type="button" class="chip" data-act="otk2" data-k="${k}" aria-pressed="${!!O[k]}" ${t?`title="${esc(t)}"`:""}>${l}</button>`;
   return c("mc","Comparar sol e vagas","Além do objetivo, mostra as trocas entre lucro, sol médio das unidades e vagas") +
-    (O.mc? c("vento","Conforto ao vento","Roda o vento 2D em cada opção conferida — deixa a análise mais lenta") : "") +
+    (O.mc? c("efic","Eficiência global","Inclui a eficiência global (privativa ÷ área construída) entre os critérios da fronteira") + c("vc","V/C","Inclui a relação venda/custo (preço ÷ CUB × fator) entre os critérios da fronteira") + c("vento","Conforto ao vento","Roda o vento 2D em cada opção conferida — deixa a análise mais lenta") : "") +
     (O.mc && typeof estruturaMalhas==="function"? c("malha","Malha estrutural","Calcula a malha estrutural de cada opção conferida") : "");
 }
 function paretoLive(){
@@ -82,8 +82,8 @@ function paretoLive(){
   if(pill) pill.textContent=`${nF} na fronteira · ${nP} de ${L.length} nos filtros${s?"":" · toque num ponto"}`;
   const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button class="btn sm ${top?"pri":""}" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
     <div class="note">${pfDesc(p)}${o.passa?"":" · fora dos filtros"}</div>
-    <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
-    ${p.tir!=null?`<span>TIR<b>${pct(p.tir)}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
+    <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem s/ VGV<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
+    ${p.tir!=null?`<span>TIR<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
   setHTML("pfDet", s? card(s,true) : nF? "" : `<p class="note">Nenhuma opção passa nos filtros. Afrouxe um deles.</p>`);
   const resto=frL.slice().reverse().filter(o=>!s||o.i!==s.i), more=document.getElementById("pfMore"), mt=document.getElementById("pfMoreT");
   if(more) more.hidden=!resto.length;

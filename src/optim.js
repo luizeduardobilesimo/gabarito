@@ -15,22 +15,47 @@ function distrib(tips, N, mk){
   raw.map((r,i)=>[r-q[i],i]).sort((a,b)=>b[0]-a[0]).forEach(([_,i])=>{ if(rest>0){ q[i]++; rest-- } });
   return tips.map((t,i)=>({...mk(t), qtd:q[i]})).filter(u=>u.qtd>0);
 }
+/* Potencial do terreno (Fase D). Dois olhares sobre o privativo possível:
+   - pelo ANDAR (priv0, o cálculo antigo): área bruta de pavimentos tipo × eficiência do andar. Não conta garagem, hall nem lazer — superestima;
+   - GLOBAL (priv, o que vale): área total construída possível × eficiência global do estudo (privativa ÷ ATC, `m.eficGlobal`), a mesma
+     da "Saúde do negócio". A ATC possível é o menor entre o limite do CA (computável máx. × ATC ÷ computável do estudo, que carrega
+     subsolos, garagem e áreas comuns na mesma proporção) e o da altura (cada torre sobe até o gabarito: + andares × área do andar).
+   A altura-limite é m.hLim (gabarito da zona ou plano do aeródromo — src/calc/forma.js), não só R.hMax. */
 function potencial(st, m){
-  const R=st.regras, P=st.produto, A=m.A, hEmb=P.peTerreo+P.garAcima*P.peGar;
+  const R=st.regras, P=st.produto, A=m.A, hLim=m.hLim ?? R.hMax, hEmb=P.peTerreo+P.garAcima*P.peGar;
   const compMax=R.caMax*A, compBas=R.caBas*A;
-  const pavH=Math.max(0,Math.floor((R.hMax-hEmb)/P.pe));
+  const pavH=Math.max(0,Math.floor((hLim-hEmb)/P.pe));
   const brutoPorCA = compMax/(1-R.ncTipo) - m.lojaA; // área bruta de pavimentos tipo que o CA permite
   const brutoPorVol = R.toTorre*A*pavH;           // limite pela projeção x altura
   const bruto=Math.max(0,Math.min(brutoPorCA, brutoPorVol)), limita = brutoPorCA<=brutoPorVol? "ca" : "altura";
-  const priv=bruto*P.efic + m.lojaPriv, area=(m.mixPriv/Math.max(1,m.mixUn))||70, un=Math.floor(bruto*P.efic/area);
-  return {compMax, compBas, pavH, bruto, priv, un, limita, vgv: bruto*P.efic*basePrice(st) + m.lojaPriv*st.fin.precoLoja,
-    uso:{ ca:m.CA/Math.max(1e-9,R.caMax), to:m.TO/Math.max(1e-9,R.toEmb), h:m.H/Math.max(1e-9,R.hMax), priv:m.priv/Math.max(1,priv) } };
+  const area=(m.mixPriv/Math.max(1,m.mixUn))||70, preco=basePrice(st);
+  // pelo andar (antigo)
+  const priv0=bruto*P.efic + m.lojaPriv, un0=Math.floor(bruto*P.efic/area), vgv0=bruto*P.efic*preco + m.lojaPriv*st.fin.precoLoja;
+  // global
+  const eficGlobal = m.constr>0 ? m.priv/m.constr : 0;
+  const atcCA = m.comp>0 ? m.constr*compMax/m.comp : 0;
+  const atcAlt = m.constr + (m.T||[]).reduce((s,t)=>s+Math.max(0,pavH-(+t.pav||0))*(+t.A||0),0);
+  let priv=priv0, un=un0, vgv=vgv0, atc=0, lim=limita;
+  if(eficGlobal>0 && atcCA>0){
+    atc=Math.min(atcCA, atcAlt); lim = atcCA<=atcAlt? "ca" : "altura";
+    priv=atc*eficGlobal; const res=Math.max(0, priv-m.lojaPriv); un=Math.floor(res/area); vgv=res*preco + m.lojaPriv*st.fin.precoLoja;
+  }
+  return {compMax, compBas, pavH, hLim, bruto, priv, un, limita:lim, vgv, atc, eficGlobal, priv0, un0, vgv0, limita0:limita,
+    uso:{ ca:m.CA/Math.max(1e-9,R.caMax), to:m.TO/Math.max(1e-9,R.toEmb), h:m.H/Math.max(1e-9,hLim), priv:m.priv/Math.max(1,priv) } };
 }
-function maxPavFast(st){ // maior nº de pavimentos (iguais) que respeita gabarito e CA — busca binária
-  const ok=n=>{ const m=massing(st,{pav:n}); return m.H<=st.regras.hMax+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1) };
+/* maior nº de pavimentos (iguais) que respeita gabarito (m.hLim) e CA — bisseção em 1..80. `teto` (opcional) é um limite superior EXATO do
+   que o gabarito permite (cada pavimento custa ao menos P.pe): acima dele ok(n) é falso sem precisar do massing(), que é o que custa.
+   O resultado é o mesmo da bisseção sem teto (a função não é monótona: a planta encolhe com a altura; por isso não se usa galope). */
+function hLimDe(st){ return typeof formaHLim==="function" ? formaHLim(st) : st.regras.hMax }
+function maxPavFast(st, teto=80){
+  const ok=n=>{ if(n>teto) return false; const m=massing(st,{pav:n}); return m.H<=(m.hLim ?? st.regras.hMax)+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1) };
   if(!ok(1)) return 0; let lo=1, hi=80; while(lo<hi){ const mid=Math.ceil((lo+hi)/2); if(ok(mid)) lo=mid; else hi=mid-1 } return lo;
 }
-const OBJ = { lucro:["Lucro",f=>f.lucro], margem:["Margem",f=>f.margem], tir:["TIR",f=>f.tirA??-1], vpl:["VPL",f=>f.vpl] };
+const OBJ = { lucro:["Lucro",f=>f.lucro,"lucro"], margem:["Margem s/ VGV",f=>f.margemVGV,"margem s/ VGV"], tir:["TIR",f=>f.tirA??-1,"TIR"], vpl:["VPL",f=>f.vpl,"VPL"] };
+/* números que cada combinação guarda (estimada ou conferida): margem = s/ VGV; eficiência global e V/C vêm da "Saúde do negócio" (f.saude) */
+function otimNum(f, m){ const sd=f.saude;
+  return { lucro:f.lucro, margem:f.margemVGV, margemReceita:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv,
+    efic: sd? sd.eficGlobal : (m.constr>0? m.priv/m.constr : 0), vc: sd? sd.vc : null } }
 
 /* ---------- critérios extras (item 1.3) ----------
    Sol médio das unidades: usa unidadesSolMedio(st, m) quando existir (módulo de unidades).
@@ -48,19 +73,26 @@ function otimSolVetores(st){
     out.push({x:east[0]*e+north[0]*nn, y:east[1]*e+north[1]*nn, z:Math.sin(alt), t:Math.tan(alt)}) }
   return out;
 }
-function otimSolProxy(st, m){
+const otimBox=p=>{ const xs=p.map(q=>q[0]), ys=p.map(q=>q[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)] };
+/* prismas do entorno (polígono com ponte, altura e caixa) — o otimizador calcula uma vez por rodada e passa a cada otimSolProxy */
+function otimEntorno(st){ return (st.entorno||[]).filter(e=>e.pts&&e.pts.length>2).map(e=>{ const poly=entPoly(e); return {poly, z1:+e.h||0, own:-1, bb:otimBox(poly)} }) }
+function otimSolProxy(st, m, ent){
   const suns=otimSolVetores(st), P=st.produto, T=(m.T||[]).filter(t=>t.plate&&t.plate.length>2);
   if(!T.length || !suns.length) return 0;
-  const box=p=>{ const xs=p.map(q=>q[0]), ys=p.map(q=>q[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)] };
-  const prs=[...T.map(t=>({poly:t.plate, z1:t.H, own:t.i})), ...(st.entorno||[]).filter(e=>e.pts&&e.pts.length>2).map(e=>({poly:entPoly(e), z1:+e.h||0, own:-1}))];
-  prs.forEach(p=>p.bb=box(p.poly));
+  const prs=[...T.map(t=>({poly:t.plate, z1:t.H, own:t.i, bb:otimBox(t.plate)})), ...(ent || otimEntorno(st))];
+  // por raio de sol, só os prismas que podem sombrear algum ponto de partida: dentro do corredor da sombra (perpendicular ≤ raios somados,
+  // ao longo de [−raios, alcance]). Conservador: descarta apenas quem nunca é atingido, então o resultado é o mesmo, bem mais rápido
+  const vs=T.flatMap(t=>t.plate), cx=vs.reduce((a,q)=>a+q[0],0)/vs.length, cy=vs.reduce((a,q)=>a+q[1],0)/vs.length, rT=1+Math.max(...vs.map(q=>Math.hypot(q[0]-cx,q[1]-cy)));
+  const info=prs.map(q=>({q, bx:(q.bb[0]+q.bb[2])/2-cx, by:(q.bb[1]+q.bb[3])/2-cy, r:Math.hypot(q.bb[2]-q.bb[0], q.bb[3]-q.bb[1])/2+rT}));
+  const hzs=suns.map(s=>Math.hypot(s.x,s.y)||1);
+  const cor=suns.map((s,si)=>{ const ux=s.x/hzs[si], uy=s.y/hzs[si]; return info.filter(o=>{ const al=o.bx*ux+o.by*uy, pe=Math.abs(o.bx*uy-o.by*ux); return pe<=o.r && al>=-o.r && al<=o.q.z1/s.t+o.r }).map(o=>o.q) });
   let sum=0, wsum=0;
   T.forEach(t=>{ const pl=t.plate, ccw=G.sArea(pl)>0, tipoH=Math.max(P.pe, t.pav*P.pe);
     for(let i=0;i<pl.length;i++){ const a=pl[i], b=pl[(i+1)%pl.length], dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy); if(L<1) continue;
       const n= ccw? [dy/L,-dx/L] : [-dy/L,dx/L], mid=[(a[0]+b[0])/2+n[0]*0.2, (a[1]+b[1])/2+n[1]*0.2];
       for(const fz of [0.15,0.5,0.85]){ const z=m.hEmb+fz*tipoH; let lit=0;
-        for(const s of suns){ if(n[0]*s.x+n[1]*s.y<0.05) continue; let sh=false;
-          for(const q of prs){ if(q.own===t.i || q.z1<=z) continue; const d=(q.z1-z)/s.t, hz=Math.hypot(s.x,s.y)||1, e=[mid[0]+s.x/hz*d, mid[1]+s.y/hz*d];
+        for(let si=0; si<suns.length; si++){ const s=suns[si]; if(n[0]*s.x+n[1]*s.y<0.05) continue; let sh=false;
+          for(const q of cor[si]){ if(q.own===t.i || q.z1<=z) continue; const d=(q.z1-z)/s.t, hz=hzs[si], e=[mid[0]+s.x/hz*d, mid[1]+s.y/hz*d];
             if(Math.max(mid[0],e[0])<q.bb[0]||Math.min(mid[0],e[0])>q.bb[2]||Math.max(mid[1],e[1])<q.bb[1]||Math.min(mid[1],e[1])>q.bb[3]) continue;
             if(G.segPolyHit(mid,e,q.poly)){ sh=true; break } }
           if(!sh) lit++ }
@@ -91,7 +123,10 @@ const otimKey=r=>[r.nT,r.pk,r.N,r.pav,r.sub,r.gac].join("|");
 let OTIM=null;
 /* otimizar(opts, onProg?, onDone?, ctx?) → Promise do resultado (também entregue a onDone).
    Puro (sem DOM): roda no Web Worker. ctx = {st, m} (padrão: S e o último modelo da tela; sem eles, calcula).
-   opts: {obj, torres, tipologias, unidades} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, vento=false, malha=false}.
+   opts: {obj, torres, tipologias, unidades} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, tempoTotal=15000 ms, vento=false, malha=false, efic=false, vc=false}
+   (efic/vc acrescentam eficiência global e V/C aos critérios da fronteira de Pareto).
+   Desempenho: maxPavFast com teto vindo das combinações menores; combinações dominadas (mais subsolos com o mesmo nº de pavimentos e
+   garagem elevada, vagas já cumpridas) não são recalculadas; o sol (que não depende dos subsolos) é guardado por assinatura.
    Resultado serializável: {res (as melhores pelo objetivo, conferidas — igual ao otimizador antigo), pts (estimativas de todas as combinações),
    pareto:{pts (conferidas com a garagem real), criterios}, solFonte, …}. */
 function otimizar(opts, onProg, onDone, ctx={}){
@@ -106,30 +141,35 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const Ns = opts.unidades? [2,3,4,5,6,8] : [base.produto.mix.reduce((s,u)=>s+u.qtd,0)];
   const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
   const jobs=[]; nTs.forEach(nT=>presets.forEach(pk=>Ns.forEach(N=>jobs.push({nT,pk,N}))));
-  const res=[], pts=[]; let i=0; const t0=performance.now(); const score=OBJ[opts.obj][1];
+  const res=[], pts=[]; let i=0; const t0=performance.now(); const score=OBJ[opts.obj][1], solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
   let resolve; const done=new Promise(r=>resolve=r);
   const finish=o=>{ OTIM=o; if(typeof onDone==="function") onDone(o); resolve(o) };
   const step=()=>{
     const ts=performance.now();
     while(i<jobs.length && performance.now()-ts<40){
       const {nT,pk,N}=jobs[i++]; const st=clone(base); st.produto.mix=presetMix(base,pk,N); if(!st.produto.mix.length) continue;
-      let best=null, tested=0;
+      let best=null, tested=0; const cumpre=new Map();   // cumpre: "gac|pav" → menor nº de subsolos (≥1) que já atende às vagas
       for(const [sub,gac] of gars){
         st.produto.subsolos=sub; st.produto.garAcima=gac; st.produto.torres=Array.from({length:nT},()=>({pav:4}));
-        const pmax=maxPavFast(st); if(pmax<2) continue;
+        // teto exato pelo gabarito: acima dele o massing() nem precisa rodar
+        const hEmbG=st.produto.peTerreo+gac*st.produto.peGar, pmax=maxPavFast(st, Math.floor((hLimDe(st)+1e-6-hEmbG)/st.produto.pe));
+        if(pmax<2) continue;
         for(const pav of [...new Set([pmax, pmax-1, pmax-3, Math.ceil(pmax*0.7)])].filter(p=>p>=2)){
+          const kc=gac+"|"+pav, sMin=cumpre.get(kc);
+          if(sMin!=null && sub>sMin){ tested++; continue }   // dominada por sMin subsolos: mesmo preço, mais custo (conta como testada, como antes)
           st.produto.torres=Array.from({length:nT},()=>({pav}));
           const m=massing(st); if(!m.T.every(t=>t.fit)) continue;
           const okVg = m.vagasEst*k >= m.vagasReq;
           if(!okVg && !mc) continue;
           if(m.minApto<st.regras.aptoMin) continue;
-          const f=finance(st,m), sc=score(f);
+          const f=finance(st,m), sc=score(f), num=otimNum(f,m);
           // multicritério: guarda todas as combinações dentro das regras (inclusive as que não atingem as vagas — é um dos critérios)
-          if(mc) pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq,
-            lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv, sol:otimSolProxy(st,m), est:true});
+          if(mc){ const sk=nT+"|"+pk+"|"+N+"|"+pav+"|"+gac; let sol=solMemo.get(sk); if(sol===undefined){ sol=otimSolProxy(st,m,entPrs); solMemo.set(sk,sol) }
+            pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq,
+              ...num, sol, est:true}) }
           if(!okVg) continue;
-          tested++;
-          if(!best || sc>best.sc) best={sc, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq, CA:m.CA, H:m.H, lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv};
+          tested++; if(sub>=1 && (cumpre.get(kc)==null || sub<cumpre.get(kc))) cumpre.set(kc, sub);
+          if(!best || sc>best.sc) best={sc, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq, CA:m.CA, H:m.H, ...num};
         }
         if(tested>=8) break;
       }
@@ -152,26 +192,28 @@ function otimizar(opts, onProg, onDone, ctx={}){
       while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++]; const st=stOf(r);
         let m=compute(st,{quick:true}), t=0;
         while(m.vagas<m.vagasReq && t<4){ if(st.produto.subsolos<=st.produto.garAcima+1 && st.produto.subsolos<5) st.produto.subsolos++; else st.produto.garAcima++; m=compute(st,{quick:true}); t++ }
-        if(m.vagas<m.vagasReq || !m.T.every(x=>x.fit) || m.H>R.hMax+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...r, sc:score(f), sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv};
+        if(m.vagas<m.vagasReq || !m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
+        const f=finance(st,m), v={...r, sc:score(f), sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m)};
         v.key=otimKey(v); v.est=false; if(mc) extras(st,m,v); out.push(v) }
       prog(0.6+0.2*j/Math.max(1,list.length));
       if(j<list.length && out.length<5) setTimeout(stepV,0); else done(out.sort((a,b)=>b.sc-a.sc)) };
     stepV() };
   // multicritério: confere com a garagem real alguns pontos da fronteira estimada e calcula a fronteira final
   const multi=(out, o)=>{
-    const R=base.regras, crit0=[PARETO_CRIT.lucro, PARETO_CRIT.sol, PARETO_CRIT.vagas], have=new Set(out.map(r=>r.key));
+    const R=base.regras, crit0=[PARETO_CRIT.lucro, PARETO_CRIT.sol, PARETO_CRIT.vagas, ...(opts.efic? [PARETO_CRIT.efic] : []), ...(opts.vc? [PARETO_CRIT.vc] : [])], have=new Set(out.map(r=>r.key));
     // metade da fronteira geral, metade da fronteira das que atingem as vagas (para o filtro "vagas ≥ exigidas" ter opções)
     const nMax=Math.max(0, opts.paretoMax ?? 8), fr0=(l)=>paretoFronteira(l, crit0).map(q=>l[q]).filter(p=>!have.has(p.key));
     const okV=pts.filter(p=>p.vagas>=p.req), a=paretoEspalha(fr0(okV), Math.ceil(nMax/2), "lucro"), aK=new Set(a.map(p=>p.key));
-    const cand=[...a, ...paretoEspalha(fr0(pts).filter(p=>!aK.has(p.key)), nMax-a.length, "lucro")], val=[], t1=performance.now(); let j=0;
+    const cand=paretoPrioridade([...a, ...paretoEspalha(fr0(pts).filter(p=>!aK.has(p.key)), nMax-a.length, "lucro")], "lucro"), val=[], t1=performance.now(); let j=0;   // extremos primeiro: se o tempo acabar, a fronteira perde o meio, não as pontas
+    // tempo da conferência com a garagem real: o que sobra de tempoTotal (15 s), entre 2 s e tempoMax (9 s); os extremos da fronteira vêm primeiro
+    const tBud=Math.min(opts.tempoMax ?? 9000, Math.max(2000, (opts.tempoTotal ?? 15000)-(t1-t0)));
     const stepM=()=>{ const ts=performance.now();
-      while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<(opts.tempoMax ?? 9000)){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
-        if(!m.T.every(x=>x.fit) || m.H>R.hMax+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...p, sc:score(f), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, lucro:f.lucro, margem:f.margem, tir:f.tirA, vpl:f.vpl, vgv:f.vgv, est:false};
+      while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<tBud){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
+        if(!m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
+        const f=finance(st,m), v={...p, sc:score(f), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m), est:false};
         val.push(extras(st,m,v)) }
       prog(0.8+0.2*j/Math.max(1,cand.length));
-      if(j<cand.length && performance.now()-t1<(opts.tempoMax ?? 9000)) return setTimeout(stepM,0);
+      if(j<cand.length && performance.now()-t1<tBud) return setTimeout(stepM,0);
       const seen=new Set(), P=[...out, ...val].filter(r=>!seen.has(r.key) && seen.add(r.key));
       const crit=[...crit0]; if(opts.vento && P.length && P.every(r=>r.vento!=null)) crit.push(PARETO_CRIT.vento);
       if(opts.malha && P.length && P.every(r=>r.malhaCusto!=null)) crit.push(PARETO_CRIT.malha);
@@ -185,4 +227,4 @@ function otimizar(opts, onProg, onDone, ctx={}){
 }
 function aplicarOtim(r, st=S){ st.produto.torres=Array.from({length:r.nT},()=>({pav:r.pav})); st.produto.mix=clone(r.mix); st.produto.subsolos=r.sub; st.produto.garAcima=r.gac }
 /* opções do otimizador com vários critérios (vão junto com S.otim para o Worker); filtros fVagas/fSol/solMin são só da tela */
-extendDEF("otim", { ...DEF.otim, mc:true, vento:false, malha:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });
+extendDEF("otim", { ...DEF.otim, mc:true, vento:false, malha:false, efic:false, vc:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });

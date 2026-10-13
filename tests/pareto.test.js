@@ -73,7 +73,7 @@ describe('otimizar() com vários critérios', () => {
       expect(m2.units).toBe(p.units);
       expect(m2.vagas).toBe(p.vagas);
       expect(f2.lucro).toBeCloseTo(p.lucro, 0);
-      expect(f2.margem).toBeCloseTo(p.margem, 6);
+      expect(f2.margemVGV).toBeCloseTo(p.margem, 6); expect(f2.margem).toBeCloseTo(p.margemReceita, 6);   // margem = s/ VGV (Fase D)
       expect(B.otimSol(s2, m2, true).h).toBeCloseTo(p.sol, 6);
       // na tela o cálculo é o completo: mesmo lucro
       const m3 = B.compute(s2), f3 = B.finance(s2, m3);
