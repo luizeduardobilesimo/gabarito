@@ -58,6 +58,7 @@ function topoLive(m){
   setHTML("topoTbl", rows.map(([a,b])=>`<tr><td>${a}</td><td>${b}</td></tr>`).join("") + `<tr class="tot"><td>Total no custo da obra</td><td>${brl(tot)}</td></tr>`);
 }
 function topoAfter(){
+  if(typeof relevoAfter==="function") relevoAfter();   // arquivo GeoTIFF do bloco de relevo
   const f=document.getElementById("topoFile"); if(!f) return;
   const lb=document.querySelector('label[for="topoFile"]'); if(lb) lb.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); f.click() } };
   f.onchange=()=>{ const file=f.files[0]; if(!file) return;
@@ -147,4 +148,91 @@ HOOK.draw3d.push((grp, m)=>{
       const p=o.geometry.attributes.position; let zmin=Infinity; for(let k=0;k<p.count;k+=Math.max(1,Math.floor(p.count/24))) zmin=Math.min(zmin, topoZ(sf, p.getX(k), -p.getZ(k)));
       const dy=zmin-t.c; o.position.y+=dy; const nx_=kids[i+1]; if(nx_ && nx_.type==="LineSegments") nx_.position.y+=dy }
   });
+});
+
+/* ---------------- PDF: página "Terreno: topografia e relevo" ----------------
+   Só entra com a topografia ligada (e calculada) ou com relevo lido. Dados e textos em src/calc/terrenopdf.js. */
+function terrenoPdfMapa(m, dados){
+  return withLight(()=>{
+    const W=1400, H=760, w=W/2, h=H/2, cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+    const g=cv.getContext("2d"); g.scale(2,2);
+    const ink=css("--ink"), muted=css("--muted"), acc=css("--accent"), surf=css("--surface"), line=css("--line-2"), mono=css("--f-mono");
+    const L=S.lote.pts, xs=L.map(q=>q[0]), ys=L.map(q=>q[1]), mg=Math.max(14, 0.4*Math.max(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys)));
+    const rect=[Math.min(...xs)-mg, Math.min(...ys)-mg, Math.max(...xs)+mg, Math.max(...ys)+mg];
+    { const rw=rect[2]-rect[0], rh=rect[3]-rect[1], asp=w/h;   // a moldura ocupa a imagem toda (mesma proporção da tela)
+      if(rw/rh<asp){ const e=(rh*asp-rw)/2; rect[0]-=e; rect[2]+=e } else { const e=(rw/asp-rh)/2; rect[1]-=e; rect[3]+=e } }
+    const V=fitView([[[rect[0],rect[1]],[rect[2],rect[3]]]], w, h, 1.04), w2s=q=>[V.ox+q[0]*V.s, V.oy-q[1]*V.s];
+    g.fillStyle=surf; g.fillRect(0,0,w,h);
+    // moldura da área mostrada
+    const a=w2s([rect[0],rect[3]]), b=w2s([rect[2],rect[1]]);
+    g.save(); g.beginPath(); g.rect(a[0],a[1],b[0]-a[0],b[1]-a[1]); g.clip();
+    // lote
+    g.beginPath(); L.forEach((q,i)=>{ const p=w2s(q); i? g.lineTo(p[0],p[1]) : g.moveTo(p[0],p[1]) }); g.closePath();
+    g.fillStyle=acc; g.globalAlpha=0.08; g.fill(); g.globalAlpha=1;
+    // curvas de nível: levantamento (topo) ou plano do relevo (prévia)
+    const t=m.topo, rotulos=[];
+    const rot=(txt,p)=>{ rotulos.push([txt,p]) };
+    if(dados.topo && t){
+      const cvs=topoCurvasCache(t.sf);
+      cvs.forEach(l=>{ g.beginPath(); l.segs.forEach(s=>{ const p=w2s([s[0],s[1]]), q=w2s([s[2],s[3]]); g.moveTo(p[0],p[1]); g.lineTo(q[0],q[1]) });
+        g.strokeStyle=ink; g.globalAlpha=l.mestra? 0.5 : 0.18; g.lineWidth=l.mestra? 1.1 : 0.7; g.stroke() });
+      g.globalAlpha=1;
+      const ax=a[0]+(b[0]-a[0])*0.2;
+      cvs.filter(l=>l.mestra).forEach(l=>{ let best=null, bd=Infinity;
+        l.segs.forEach(s=>{ const p=w2s([(s[0]+s[2])/2,(s[1]+s[3])/2]); if(p[0]<a[0]+20||p[0]>b[0]-20||p[1]<a[1]+20||p[1]>b[1]-20) return; const d=Math.abs(p[0]-ax)+Math.abs(p[1]-(a[1]+b[1])/2)*0.15; if(d<bd){ bd=d; best=p } });
+        if(best && !rotulos.some(r=>Math.hypot(r[1][0]-best[0],r[1][1]-best[1])<34)) rot(nf(l.z, l.passo<1?1:0)+" m", best) });
+      if(dados.relevo===null && t.sf.N<=2500 && V.s>2){ g.fillStyle=acc; g.globalAlpha=0.4; for(let i=0;i<t.sf.N;i++){ const p=w2s(t.sf.P[i]); if(p[0]<a[0]||p[0]>b[0]||p[1]<a[1]||p[1]>b[1]) continue; g.beginPath(); g.arc(p[0],p[1],1.2,0,7); g.fill() } g.globalAlpha=1 }
+    } else if(dados.relevo && dados.relevo.previa){
+      const pv=dados.relevo.previa, cz=[[rect[0],rect[1]],[rect[2],rect[1]],[rect[2],rect[3]],[rect[0],rect[3]]].map(q=>pv.g[0]*(q[0]-pv.c[0])+pv.g[1]*(q[1]-pv.c[1])), zmn=Math.min(...cz), zmx=Math.max(...cz), amp=zmx-zmn;
+      pv.passo=amp<=2.5? 0.5 : amp<=8? 1 : amp<=20? 2 : 5; const cvs=[];   // as curvas do plano cobrem a moldura inteira do mapa
+      for(let k=Math.ceil(zmn/pv.passo-1e-9); k*pv.passo<=zmx+1e-9; k++){ const hh=+(k*pv.passo).toFixed(6), sg=relevoRetaNoRetangulo(pv.g, pv.c, hh, rect); if(sg) cvs.push({h:hh, seg:sg}) }
+      cvs.forEach(c=>{ const p=w2s([c.seg[0],c.seg[1]]), q=w2s([c.seg[2],c.seg[3]]); const mestra=Math.abs(c.h/(pv.passo*5)-Math.round(c.h/(pv.passo*5)))<1e-6;
+        g.beginPath(); g.moveTo(p[0],p[1]); g.lineTo(q[0],q[1]); g.strokeStyle=ink; g.globalAlpha=mestra? 0.5 : 0.2; g.lineWidth=mestra? 1.1 : 0.7; g.setLineDash(pv.nivel==="baixa"? [5,4] : []); g.stroke(); g.setLineDash([]); g.globalAlpha=1;
+        if(mestra || cvs.length<=12){ const r=(c.h>0?"+":c.h<0?"−":"±")+nf(Math.abs(c.h), pv.passo<1?1:0)+" m"; rot(r, [p[0]+(q[0]-p[0])*0.18, p[1]+(q[1]-p[1])*0.18]) } });
+    }
+    // lote (contorno) e torres
+    g.beginPath(); L.forEach((q,i)=>{ const p=w2s(q); i? g.lineTo(p[0],p[1]) : g.moveTo(p[0],p[1]) }); g.closePath(); g.strokeStyle=ink; g.lineWidth=1.8; g.stroke();
+    (m.T||[]).forEach((tr,i)=>{ if(!tr.plate||tr.plate.length<3) return; g.beginPath(); tr.plate.forEach((q,k)=>{ const p=w2s(q); k? g.lineTo(p[0],p[1]) : g.moveTo(p[0],p[1]) }); g.closePath();
+      g.fillStyle=acc; g.globalAlpha=0.16; g.fill(); g.globalAlpha=1; g.strokeStyle=acc; g.lineWidth=1.2; g.stroke();
+      const c=G.centroid(tr.plate), p=w2s(c); g.fillStyle=ink; g.font=`600 11px ${css("--f-display")}`; g.textAlign="center"; g.textBaseline="middle"; g.fillText("T"+(i+1), p[0], p[1]) });
+    g.restore();
+    // rótulos das curvas
+    g.font=`500 10px ${mono}`; g.textAlign="center"; g.textBaseline="middle";
+    const livre=p=>!(p[0]<a[0]+150 && p[1]>b[1]-52) && !(p[0]<a[0]+70 && p[1]<a[1]+100);   // longe da escala e do norte
+    rotulos.filter(r=>livre(r[1])).forEach(([txt,p])=>{ const tw=g.measureText(txt).width+8; g.fillStyle=surf; g.globalAlpha=0.94; g.fillRect(p[0]-tw/2,p[1]-7,tw,14); g.globalAlpha=1; g.fillStyle=muted; g.fillText(txt,p[0],p[1]) });
+    // calçada e térreo no acesso de pedestres
+    const ped=m.acesso && m.acesso.ped;
+    if(dados.topo && t && ped){ const p=w2s(ped), txt=`calçada ${nf(t.calc,2)} m · térreo ${nf(t.c,2)} m`; g.font=`600 10.5px ${mono}`; const tw=g.measureText(txt).width+14, x=Math.max(a[0]+tw/2+6, Math.min(b[0]-tw/2-6, p[0])), y=Math.min(b[1]-16, p[1]+26);
+      g.fillStyle=surf; g.globalAlpha=0.96; g.fillRect(x-tw/2,y-9,tw,18); g.globalAlpha=1; g.strokeStyle=line; g.lineWidth=1; g.strokeRect(x-tw/2,y-9,tw,18); g.fillStyle=ink; g.fillText(txt,x,y) }
+    // seta da descida do relevo (fora do lote, canto superior direito) e porcentagem
+    const pv=dados.relevo && dados.relevo.previa;
+    if(pv){ const ux=pv.dir[0], uy=-pv.dir[1], c0=[b[0]-70, a[1]+52], p0=[c0[0]-ux*26, c0[1]-uy*26], p1=[c0[0]+ux*26, c0[1]+uy*26], nx=-uy, ny=ux, hs=9;
+      const traco=(cor,lw)=>{ g.strokeStyle=cor; g.lineWidth=lw; g.lineCap="round"; g.setLineDash(pv.nivel==="baixa"? [5,4] : []); g.beginPath(); g.moveTo(p0[0],p0[1]); g.lineTo(p1[0],p1[1]); g.stroke(); g.setLineDash([]);
+        g.beginPath(); g.moveTo(p1[0],p1[1]); g.lineTo(p1[0]-ux*hs+nx*hs*0.55, p1[1]-uy*hs+ny*hs*0.55); g.moveTo(p1[0],p1[1]); g.lineTo(p1[0]-ux*hs-nx*hs*0.55, p1[1]-uy*hs-ny*hs*0.55); g.stroke() };
+      traco(surf,5); traco(acc,2.2);
+      const txt=`${pv.pct<10? nf(pv.pct,1) : nf(pv.pct,0)}% para ${pv.dirTxt}${pv.nivel==="baixa"?" ?":""}`; g.font=`600 10.5px ${mono}`; g.textAlign="center"; const tw=g.measureText(txt).width+12;
+      g.fillStyle=surf; g.globalAlpha=0.96; g.fillRect(c0[0]-tw/2, c0[1]+22, tw, 18); g.globalAlpha=1; g.strokeStyle=line; g.lineWidth=1; g.strokeRect(c0[0]-tw/2, c0[1]+22, tw, 18); g.fillStyle=acc; g.fillText(txt, c0[0], c0[1]+31) }
+    // norte
+    { const n=relevoDeENU(0,1,S.lote.norte||0), len=Math.hypot(n[0],n[1])||1, ux=n[0]/len, uy=-n[1]/len, c0=[a[0]+34, a[1]+46];
+      g.strokeStyle=ink; g.fillStyle=ink; g.lineWidth=1.3; g.beginPath(); g.moveTo(c0[0]-ux*14, c0[1]-uy*14); g.lineTo(c0[0]+ux*14, c0[1]+uy*14); g.stroke();
+      g.beginPath(); g.moveTo(c0[0]+ux*17, c0[1]+uy*17); g.lineTo(c0[0]+ux*8-uy*4, c0[1]+uy*8+ux*4); g.lineTo(c0[0]+ux*8+uy*4, c0[1]+uy*8-ux*4); g.closePath(); g.fill();
+      g.font=`600 11px ${css("--f-display")}`; g.textAlign="center"; g.textBaseline="middle"; g.fillText("N", c0[0]+ux*27, c0[1]+uy*27) }
+    // escala gráfica
+    { const alvo=(b[0]-a[0])*0.2/V.s, passos=[5,10,20,25,50,100,200], L0=passos.reduce((r,v)=>Math.abs(v-alvo)<Math.abs(r-alvo)? v : r, passos[0]), x0=a[0]+18, y0=b[1]-18, x1=x0+L0*V.s;
+      g.strokeStyle=ink; g.lineWidth=1.4; g.beginPath(); g.moveTo(x0,y0-4); g.lineTo(x0,y0); g.lineTo(x1,y0); g.lineTo(x1,y0-4); g.stroke();
+      g.fillStyle=ink; g.font=`500 10px ${mono}`; g.textAlign="left"; g.textBaseline="bottom"; g.fillText(L0+" m", x0, y0-6) }
+    g.strokeStyle=line; g.lineWidth=1; g.strokeRect(a[0],a[1],b[0]-a[0],b[1]-a[1]);
+    return cv.toDataURL("image/jpeg",0.92);
+  });
+}
+HOOK.pdf.push(async ctx=>{
+  const dados=terrenoPdfDados(S, ctx.m); if(!dados) return;
+  const {doc,PW,M,h2,rows,T}=ctx, mut=ctx.mut||[93,106,106], titulo = dados.topo&&dados.relevo? "Terreno: topografia e relevo" : dados.topo? "Terreno: topografia" : "Terreno: relevo do local";
+  ctx.newPage(); h2(titulo);
+  doc.setFontSize(8.5); doc.setTextColor(...mut);
+  doc.text(T(dados.topo? `Levantamento: ${dados.topo.fonte||"pontos importados"}. Curvas de nível a cada ${nf(dados.topo.nCurvas||1,2)} m; as mais fortes são as mestras (de 5 em 5).` : "Plano ajustado ao modelo digital de elevação: as linhas são cotas relativas ao centro do lote."), M, ctx.y()); ctx.setY(ctx.y()+4);
+  const url=terrenoPdfMapa(ctx.m, dados); if(url) ctx.img(url, PW-2*M, (PW-2*M)*760/1400);
+  [dados.topo, dados.relevo].filter(Boolean).forEach(b=>b.secoes.forEach(s=>{ h2(s.h); rows(s.linhas, {bold:["Total no custo da obra"]}) }));
+  const notas=[...(dados.topo? dados.topo.avisos : []), ...(dados.relevo? [dados.relevo.aviso] : [])].filter(Boolean);
+  if(notas.length){ doc.setFontSize(7.5); doc.setTextColor(...mut); notas.forEach(n=>{ const ls=doc.splitTextToSize(T(n), PW-2*M); if(ctx.y()+ls.length*3.4>285) ctx.newPage(); doc.text(ls, M, ctx.y()); ctx.setY(ctx.y()+ls.length*3.4+2) }) }
 });
