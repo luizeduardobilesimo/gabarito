@@ -164,15 +164,19 @@ function frontStalls(st, m){ // vagas externas na frente (uso comercial), perpen
   const E=st.estudo, L=st.lote.pts, ac=m.acesso, i=ac.edge, a=L[i], b=L[(i+1)%L.length], len=Math.hypot(b[0]-a[0],b[1]-a[1]); if(len<6) return {vagas:[],count:0};
   const ux=[(b[0]-a[0])/len,(b[1]-a[1])/len], vy=frontDir(st), W=E.vagaL, C=E.vagaC, o0=G.dot(a,ux), v0=G.dot(a,vy);
   const uVei=G.dot(ac.vei,ux)-o0, uPed=G.dot(ac.ped,ux)-o0, out=[];
-  const T=m.ter||{}, dv=T.drive0&&T.drive0.dv, lat=T.lat, inDrive=p=>dv&&lat&&(()=>{ const ls=p.map(q=>G.dot(q,lat)); return Math.max(...ls)>dv[0]-0.6 && Math.min(...ls)<dv[1]+0.6 })();
-  for(let u=0.6; u+W<=len-0.6; u+=W){ if(!dv && u+W>uVei-3.5 && u<uVei+3.5) { u=uVei+3.5-W; continue } if(u+W>uPed-1.6 && u<uPed+1.6){ u=uPed+1.6-W; continue } if(inDrive(G.rect(ux,vy,o0+u,v0+0.05,W,C))) continue;
+  const T=m.ter||{}, lv=ac.edgeV!=null && ac.edgeV!==i; // veículos por outro lado: a frente principal fica só com as vagas e os pedestres
+  const dv=!lv&&T.drive0&&T.drive0.dv, lat=T.lat, dVz=lv? [...(T.drive||[]), ...(T.driveRua||[])].map(p=>scaleBy(p,1.08)) : [];
+  const inDrive=p=> lv? dVz.some(d=>G.polysOverlap(p,d)) : dv&&lat&&(()=>{ const ls=p.map(q=>G.dot(q,lat)); return Math.max(...ls)>dv[0]-0.6 && Math.min(...ls)<dv[1]+0.6 })();
+  for(let u=0.6; u+W<=len-0.6; u+=W){ if(!dv && !lv && u+W>uVei-3.5 && u<uVei+3.5) { u=uVei+3.5-W; continue } if(u+W>uPed-1.6 && u<uPed+1.6){ u=uPed+1.6-W; continue } if(inDrive(G.rect(ux,vy,o0+u,v0+0.05,W,C))) continue;
     const p=G.rect(ux,vy,o0+u,v0+0.05,W,C); if(G.polyInPoly(p,L) && !(m.emb.length && G.polysOverlap(p,m.emb))) out.push({poly:p, c:G.centroid(p)}) }
   return {vagas:out, count:out.length};
 }
 function accessPoints(st){
   const L=st.lote.pts, i=st.lote.front.includes(st.lote.principal)? st.lote.principal : (st.lote.front[0]||0), a=L[i], b=L[(i+1)%L.length];
-  const at=t=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
-  return {ped:at(st.lote.acessoPed), vei:at(st.lote.acessoVei), edge:i};
+  const at=(t,a,b)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+  // veículos: no lado escolhido (S.lote.ladoVei, src/calc/acesso.js); sem escolha, na frente principal
+  const iv = typeof ladoVeiIdx==="function" ? ladoVeiIdx(st) : i, av=L[iv], bv=L[(iv+1)%L.length];
+  return {ped:at(st.lote.acessoPed,a,b), vei:at(st.lote.acessoVei,av,bv), edge:i, edgeV:iv};
 }
 function maxPav(st){ let best=0; for(let n=1;n<=70;n++){ const m=massing(st,{pav:n}); if(m.H<=(m.hLim??st.regras.hMax)+1e-6 && m.CA<=st.regras.caMax+1e-6 && m.T.every(t=>t.A>1)) best=n; } return best }
 function status(m, st){

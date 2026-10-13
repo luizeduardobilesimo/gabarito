@@ -20,7 +20,9 @@ function frResumo(s){
   if(s.acesso && s.front.length>1 && s.acesso.menor) t+=` · veículos pela L${s.acesso.i+1}`;
   return t;
 }
-function frIgual(s){ const L=S.lote, a=L.front.slice().sort((x,y)=>x-y).join(), b=s.front.slice().sort((x,y)=>x-y).join(); return a===b && L.principal===(FR.princ ?? s.principal) }
+function frIgual(s){ const L=S.lote, a=L.front.slice().sort((x,y)=>x-y).join(), b=s.front.slice().sort((x,y)=>x-y).join(), pr=FR.princ ?? s.principal;
+  const vei = s.acesso && s.front.includes(s.acesso.i) && s.acesso.i!==pr ? s.acesso.i : null;   // mesma regra de frenteAplicar
+  return a===b && L.principal===pr && (L.ladoVei ?? null)===vei }
 function frRegraHTML(){
   const R=S.frentes.regra;
   return ADV(`<div class="row">${SW("frentes.regra.on","Recuo pela largura da via",{rr:true})}${INFO("Opcional e desligado por padrão. Ao aplicar a sugestão, cada frente recebe o recuo da faixa que comporta a largura da via (recuo próprio do lado). Os valores da tabela são ILUSTRATIVOS: confira na lei do município e ajuste.")}</div>`
@@ -29,7 +31,7 @@ function frRegraHTML(){
 }
 function frHTML(){
   const s=frSug(), geo=!!S.lote.geo;
-  const btn=`<button class="btn sm${s?"":" pri"}" data-act="frDetectar" ${FR.busy?"disabled":""}>${FR.busy? "Buscando…" : s? "Detectar de novo" : "Detectar frentes pelas ruas"}</button>${INFO("Lê as ruas do OpenStreetMap junto ao lote e propõe quais lados são frente, qual é a principal (via de maior hierarquia), se o lote é de esquina ou passante e por qual rua deve entrar o carro (a de menor hierarquia). O modelo põe o acesso de veículos na frente principal: para entrar por outra rua, escolha-a como principal. Nada muda até você aplicar. A largura da via é estimada pela classe e pode ser corrigida em cada lado.")}`;
+  const btn=`<button class="btn sm${s?"":" pri"}" data-act="frDetectar" ${FR.busy?"disabled":""}>${FR.busy? "Buscando…" : s? "Detectar de novo" : "Detectar frentes pelas ruas"}</button>${INFO("Lê as ruas do OpenStreetMap junto ao lote e propõe quais lados são frente, qual é a principal (via de maior hierarquia), se o lote é de esquina ou passante e por qual rua deve entrar o carro (a de menor hierarquia). Ao aplicar, a frente principal fica com lojas, hall e pedestres e o carro entra pela rua de menor hierarquia (selo “veículos” no lado), sem trocar a principal. Nada muda até você aplicar. A largura da via é estimada pela classe e pode ser corrigida em cada lado.")}`;
   let h=`<div class="row" style="flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px">${btn}${s? `<button class="btn sm ghost" data-act="frDescartar" title="Descartar a proposta">Descartar</button>` : ""}</div>`;
   if(FR.msg) h+=`<p class="note" id="frMsg">${esc(FR.msg)}</p>`;
   else if(!geo && !s) h+=`<p class="note" id="frMsg">Posicione o lote no mapa para detectar.</p>`;
@@ -66,5 +68,5 @@ Object.assign(ACT,{
   frAplicar: ()=>{ const s=frSug(); if(!s) return;
     const r=frenteAplicar(S, s, {principal:FR.princ}); if(!r){ toast("Nada para aplicar"); return }
     if(typeof LADOAB!=="undefined") LADOAB.clear();
-    update(); renderTab(); toast(`Frentes aplicadas: ${r.front.map(i=>"L"+(i+1)).join(" e ")} · principal L${r.principal+1} (Ctrl+Z desfaz)`) },
+    update(); renderTab(); toast(`Frentes aplicadas: ${r.front.map(i=>"L"+(i+1)).join(" e ")} · principal L${r.principal+1}${r.ladoVei!=null? ` · veículos pela L${r.ladoVei+1}` : ""} (Ctrl+Z desfaz)`) },
 });

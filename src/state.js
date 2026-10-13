@@ -2,7 +2,7 @@
 const DEF = {
   v: 2,
   nome: "Estudo Rua Exemplo, 120",
-  lote: { pts: [[0,0],[34,0],[36,52],[-1.5,54]], front: [0], principal: 0, rec: [{},{},{},{}], acessoPed: 0.35, acessoVei: 0.85, norte: 0, lat: -28.68, lon: -49.37, geo: false, desnivel: 0, custoTerra: 55 },
+  lote: { pts: [[0,0],[34,0],[36,52],[-1.5,54]], front: [0], principal: 0, rec: [{},{},{},{}], acessoPed: 0.35, acessoVei: 0.85, ladoVei: null, norte: 0, lat: -28.68, lon: -49.37, geo: false, desnivel: 0, custoTerra: 55 },
   regras: {
     cidade: "Exemplo (zona central fictícia)",
     caBas: 2, caMax: 4, outorgaRS: 350,
@@ -71,6 +71,8 @@ function merge(base, o){
   if(Array.isArray(o.entorno)) base.entorno=o.entorno;
   if(o.cfd){ ['emissor','semente'].forEach(k=>{ if(k in o.cfd) base.cfd[k]=o.cfd[k] }); if(Array.isArray(o.cfd.linhasAlt)) base.cfd.linhasAlt=o.cfd.linhasAlt }
   if(base.lote && o.lote && Array.isArray(o.lote.rec)) base.lote.rec=o.lote.rec;
+  /* lado do acesso de veículos (índice do lado; null = frente principal). Estudos antigos não têm o campo → frente principal */
+  if(base.lote && o.lote && 'ladoVei' in o.lote) base.lote.ladoVei = Number.isInteger(o.lote.ladoVei) && o.lote.ladoVei>=0 ? o.lote.ladoVei : null;
   /* georreferência (S.lote.geo): estudos antigos só contam como posicionados se já tinham coordenadas próprias ou contexto do OSM */
   if(base.lote && (!o.lote || o.lote.geo===undefined)){ const d=DEF.lote, ol=o.lote||{};
     base.lote.geo = (ol.lat!==undefined && +ol.lat!==d.lat) || (ol.lon!==undefined && +ol.lon!==d.lon) || !!(o.contexto && o.contexto.dados) || (Array.isArray(o.entorno) && o.entorno.some(e=>e&&e.osm)) }

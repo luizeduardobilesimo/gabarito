@@ -157,7 +157,8 @@ function rampExt(st, m, dir){
 function vertical(st, m){
   const P=st.produto, E=st.estudo, T=m.ter||{}, nS=P.subsolos, nA=P.garAcima, alt=E.rampaTipo==="alternada" && !(T.drive0&&T.drive0.semAlt);
   const V={strips:[], segs:[], floors:{}, warn:[], ok:true};
-  const fd=T.fd||frontDir(st), lat=T.lat||[fd[1],-fd[0]];
+  // referencial do lado de veículos (S.lote.ladoVei); sem escolha é o da frente principal
+  const fd=T.vfd||T.fd||frontDir(st), lat=T.vlat||T.lat||[fd[1],-fd[0]];
   V.fd=fd; V.lat=lat;
   const floorOf=k=> k<0? m.sub : k>0? m.emb : (T.gar||[]);
   const keyOf=k=> k<0? "s"+(-k) : k>0? "g"+k : "ter";
@@ -587,7 +588,7 @@ function garagens(st, m, opt){
   const T=m.ter;
   if(T.gar && T.gar.length){
     const fT=V.floors.ter||{blocks:[],landings:[],portals:[],ramps:[]};
-    const portals=[]; if(T.driveEnd) portals.push({p:T.driveEnd, heading:T.fd, tipo:"chega", label:"entrada de veículos"});
+    const portals=[]; if(T.driveEnd) portals.push({p:T.driveEnd, heading:T.driveHead||T.fd, tipo:"chega", label:"entrada de veículos"});
     const blocks=[...fT.blocks.filter(b=>G.polysOverlap(b,T.gar))];
     const keep=[...(T.keep||[])];
     // rampa colocada à mão dentro da garagem do térreo: a boca precisa estar ligada
@@ -691,14 +692,17 @@ HOOK.compute.push(garPos);
 /* estudo do acesso: posições do acesso de veículos × tipo de rampa */
 function acessoCandidatos(st){
   const pos=[0.1,0.25,0.4,0.6,0.75,0.9], tipos=st.produto.subsolos>1||st.produto.garAcima>1? ["reta","alternada"] : ["reta"], out=[];
-  pos.forEach(p=>tipos.forEach(t=>out.push({acessoVei:p, rampaTipo:t})));
-  // elevador de carros como alternativa (lotes estreitos): na frente, no meio e no fim da testada
-  if(st.produto.subsolos||st.produto.garAcima) [0.1,0.5,0.9].forEach(p=>out.push({acessoVei:p, rampaTipo:"elevador"}));
-  if(!out.some(c=>Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo)) out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, atual:true});
+  // todos os lados na rua (a frente principal primeiro; ladoVei null = frente principal) — src/calc/acesso.js
+  const pr=acPrincipal(st), cur=ladoVeiIdx(st);
+  acLadosRua(st).forEach(i=>{ const lv = i===pr? null : i;
+    pos.forEach(p=>tipos.forEach(t=>out.push({acessoVei:p, rampaTipo:t, ladoVei:lv, lado:i})));
+    // elevador de carros como alternativa (lotes estreitos): na frente, no meio e no fim da testada
+    if(st.produto.subsolos||st.produto.garAcima) [0.1,0.5,0.9].forEach(p=>out.push({acessoVei:p, rampaTipo:"elevador", ladoVei:lv, lado:i})) });
+  if(!out.some(c=>c.lado===cur && Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo)) out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, ladoVei:cur===pr? null : cur, lado:cur, atual:true});
   return out;
 }
 function acessoAvalia(st, c, full){
-  const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null;
+  const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null; if(c.ladoVei!==undefined) s.lote.ladoVei=c.ladoVei;
   const m=compute(s, full? {} : {quick:true});
   const ec=m.elevCarros;
   return {vagas:m.vagasLay||0, ok:m.vert.ok && Object.values(m.gar||{}).every(l=>!l||l.ok!==false) && (!ec || ec.ok), warn:m.vert.warn.length+(ec? ec.avisos.length : 0),

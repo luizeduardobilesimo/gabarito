@@ -214,17 +214,20 @@ describe('frenteDetectar e frenteAplicar', () => {
     const st = estado(A); const p = A.frenteDetectar(st);
     expect(p.semVia).toBe(true); expect(p.front).toEqual([]);
   });
-  it('aplicar muda frentes, principal e a posição do acesso; nada além disso (regra desligada)', () => {
+  it('aplicar muda frentes, principal, o lado e a posição do acesso de veículos; nada além disso (regra desligada)', () => {
     const st = montar(RET, [sul, oeste]), antes = JSON.parse(JSON.stringify(st.lote));
     const p = A.frenteDetectar(st); const r = A.frenteAplicar(st, p);
-    expect(st.lote.front).toEqual([0, 3]); expect(st.lote.principal).toBe(0);
-    expect(st.lote.acessoVei).toBe(0.8);                      // aresta 0 vai de oeste a leste, a esquina (oeste) é no começo → afasta
+    expect(st.lote.front).toEqual([0, 3]); expect(st.lote.principal).toBe(0);   // a principal continua sendo a avenida
+    expect(st.lote.ladoVei).toBe(3);                          // o carro entra pela rua de menor hierarquia (Rua Pequena)
+    expect(st.lote.acessoVei).toBe(0.2);                      // aresta 3 termina na esquina (canto 0) → entrada no começo, longe dela
     expect(st.lote.rec).toEqual(antes.rec); expect(st.lote.pts).toEqual(antes.pts);
-    expect(r.antes.front).toEqual([2]); expect(r.recs).toEqual([]);
+    expect(r.antes.front).toEqual([2]); expect(r.antes.ladoVei).toBeNull(); expect(r.ladoVei).toBe(3); expect(r.recs).toEqual([]);
+    const m = A.compute(st); expect(m.acesso.edge).toBe(0); expect(m.acesso.edgeV).toBe(3);
   });
   it('principal escolhido pelo usuário (ex.: a rua do acesso) é respeitado se for frente', () => {
     const st = montar(RET, [sul, oeste]); A.frenteAplicar(st, A.frenteDetectar(st), { principal: 3 });
     expect(st.lote.principal).toBe(3);
+    expect(st.lote.ladoVei).toBeNull();                       // o acesso já é a principal: volta ao padrão
   });
   it('regra por largura ligada: recuo próprio nas frentes pela largura (editável)', () => {
     const st = montar(RET, [sul, oeste]); st.frentes.regra.on = true;
