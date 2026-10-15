@@ -31,6 +31,10 @@ function aptoMiniEstilo(){ if(typeof document==="undefined" || document.getEleme
 .comPc[aria-pressed="true"] .ck{background:var(--sel);border-color:var(--sel)}
 .comPc .ck::after{content:"✓";visibility:hidden} .comPc[aria-pressed="true"] .ck::after{visibility:visible}
 .comPc .tp{display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:10px;color:var(--muted)}
+.comPc.nc{opacity:.62} .comPc.nc .apto-mini{filter:grayscale(1)} .comPc.nc:hover{opacity:.9}
+.comPc .nt .mt{color:var(--muted);line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.comSep{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:4px 0 0;font-size:11px;color:var(--muted)}
+.comSep::after{content:"";flex:1;height:1px;background:var(--line)}
 .comPb{display:grid;gap:3px;font-size:12px;color:var(--ink-2)}
 .comPb div{display:flex;gap:6px;align-items:baseline} .comPb .dot{flex:none;transform:translateY(-1px)}
 .comAc{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -51,6 +55,8 @@ function comDraw(g, lay, K){
   const roomA=r=> r.k==="sacada"? 0.55 : COM_COR[r.k]==="pal"? 0.42 : r.k==="circ"? 1 : 0.85;
   const placed=[];   // etiquetas já desenhadas (evita sobreposição no corredor)
   lay.units.forEach((u,ui)=>{ const c=u.com; if(!c) return;
+    // unidade em que nenhum partido cabe: nada de planta "só para caber" — a unidade vazia, tracejada, com o motivo
+    if(c.semPartido){ comSemPartido(g, u, K, placed); return }
     // 1. poché: a unidade inteira na cor da parede; cada cômodo por cima, recuado pela meia-parede
     fill(u.poly, ink, 1);
     const ins=c.rooms.map(r=>comInsetRoom(r));
@@ -106,6 +112,24 @@ function comDraw(g, lay, K){
   });
   return true;
 }
+/* unidade sem partido que caiba: fundo suave, contorno tracejado (--bad), "Nenhum partido cabe" e o motivo curto no meio */
+function comSemPartido(g, u, K, placed){
+  const {w2s, V, css}=K, s=V.s, path=p=>{ g.beginPath(); p.forEach((q,i)=>{ const [x,y]=w2s(q); i?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath() };
+  path(u.poly); g.fillStyle=css("--surface"); g.fill(); g.globalAlpha=0.55; g.fillStyle=css("--bad-soft")||css("--soft"); g.fill(); g.globalAlpha=1;
+  g.strokeStyle=css("--bad"); g.lineWidth=2; g.setLineDash([7,4]); g.stroke(); g.setLineDash([]);
+  if(s<4) return;
+  const xs=u.poly.map(q=>w2s(q)[0]), ys=u.poly.map(q=>w2s(q)[1]), bh=Math.max(...ys)-Math.min(...ys); let bw=Math.max(...xs)-Math.min(...xs);
+  const ret = u.poly.length===4, c = ret? G.centroid(u.poly) : aptoCirculoInscrito(u.poly).c;   // em L: no meio da parte mais larga
+  let P=w2s(c); const mot=u.com.motivo || String(u.com.aviso||"").replace(/^nenhum partido cabe nesta unidade:\s*/,"").split(";")[0];
+  // largura livre na linha do texto (unidade em L: só o trecho que contém o ponto), e o texto centrado nele
+  { const S2=u.poly.map(q=>w2s(q)), xs2=[]; S2.forEach((a,i)=>{ const b=S2[(i+1)%S2.length]; if((a[1]-P[1])*(b[1]-P[1])<0) xs2.push(a[0]+(P[1]-a[1])*(b[0]-a[0])/(b[1]-a[1])) });
+    xs2.sort((a,b)=>a-b); for(let i=0;i+1<xs2.length;i+=2) if(P[0]>=xs2[i]-1 && P[0]<=xs2[i+1]+1){ bw=xs2[i+1]-xs2[i]; P=[(xs2[i]+xs2[i+1])/2, P[1]]; break } }
+  const linhas=[[u.nome, `600 ${s>14?11:10}px ${css("--f-sans")}`, css("--ink")], ["Nenhum partido cabe", `500 ${s>14?10:9}px ${css("--f-sans")}`, css("--bad")], [mot, `400 ${s>14?9.5:8.5}px ${css("--f-sans")}`, css("--ink-2")]];
+  g.textAlign="center"; g.textBaseline="middle"; const lh=s>14?14:12; let y=P[1]-lh;
+  linhas.forEach(([t,f,cor])=>{ if(!t) return; g.font=f; let tx=t; while(tx.length>8 && g.measureText(tx).width>bw-10) tx=tx.slice(0,-2); if(tx!==t) tx=tx.replace(/\s*\S*$/,"")+"…";
+    if(bh>lh*3.2 && g.measureText(tx).width<=bw-6){ g.fillStyle=cor; g.fillText(tx, P[0], y) } y+=lh });
+  placed.push([P[0],P[1],bw*0.6,lh*3]);
+}
 /* legenda (planta tipo e andares) */
 function comLeg(sw){ if(!S.comodos||!S.comodos.on) return ""; const m=window._last && window._last.m, prob=m && m.comodos && (m.comodos.validas<m.comodos.unidades || (m.comodos.avisos||0)>0);
   return sw("var(--ink)","paredes")+sw("var(--c-ant)","áreas molhadas")+`<div><i style="background:none;border:0;border-top:2px solid var(--d-acc);height:0;margin-top:5px"></i>janelas</div>`+(prob? `<div><i style="background:none;border:2px solid var(--bad);border-radius:2px"></i>ambiente com problema</div>` : "") }
@@ -115,7 +139,7 @@ function comSegDist(p,a,b){ const dx=b[0]-a[0], dy=b[1]-a[1], l2=dx*dx+dy*dy||1,
 function comHit(px,py){
   if(!S.comodos||!S.comodos.on) return null; const m=window._last&&window._last.m, lay=m&&m.tipo&&m.tipo[TOWER]; if(!lay) return null;
   let best=null, bd=8;
-  lay.units.forEach((u,ui)=>{ const c=u.com; if(!c) return; (c.divs||[]).forEach(dv=>{ const a=w2s_(dv.p0), b=w2s_(dv.p1), d=comSegDist([px,py],a,b); if(d<bd){ bd=d; best={ti:TOWER, ui, id:dv.id, nome:u.nome, ax:dv.ax, lo:dv.lo, hi:dv.hi, o0:dv.o0, tot:dv.tot, a, b} } }) });
+  lay.units.forEach((u,ui)=>{ const c=u.com; if(!c || c.semPartido) return; (c.divs||[]).forEach(dv=>{ const a=w2s_(dv.p0), b=w2s_(dv.p1), d=comSegDist([px,py],a,b); if(d<bd){ bd=d; best={ti:TOWER, ui, id:dv.id, nome:u.nome, ax:dv.ax, lo:dv.lo, hi:dv.hi, o0:dv.o0, tot:dv.tot, a, b} } }) });
   return best;
 }
 function comHover(px,py){ const h=comHit(px,py), old=COMHOV; COMHOV=h;
@@ -158,7 +182,7 @@ function comCardHTML(){
     h+=nomes.map(n=>{ const i=C.tipos.findIndex(t=>t.nome===n), t=C.tipos[i], vs=(C.variantes||[]).map((v,j)=>({...v,j})).filter(v=>v.tipo===n), marc=comMarcados(n);
       const ajust=t && ((t.cortes && Object.keys(comCortesDe(t)).length) || t.partido);
       const gal=comGaleria(n).map(g=>{ const on=marc.includes(g.mod.id);
-        return `<button type="button" class="comPc" data-act="comPart" data-k="${esc(n)}" data-id="${esc(g.mod.id)}" aria-pressed="${on}" data-pid="${esc(g.mod.id)}" title="${esc(g.mod.nome)} — ${on?"desmarcar":"tentar este partido"}">
+        return `<button type="button" class="comPc" data-act="comPart" data-k="${esc(n)}" data-id="${esc(g.mod.id)}" aria-pressed="${on}" data-pid="${esc(g.mod.id)}" data-nome="${esc(g.mod.nome)}" title="${esc(g.mod.nome)} — ${on?"desmarcar":"tentar este partido"}">
           <span class="tp"><span>${g.bib? "Meu modelo" : g.mod.origem==="usuario"? "Meu modelo" : comNf(g.mod.W,1)+" × "+comNf(g.mod.D,1)+" m"}</span><span class="ck"></span></span>
           ${aptoMiniSVG(g.mod,{w:84})}<span class="nm">${esc(g.mod.nome)}</span><span class="nt" data-nt="${esc(n)}|${esc(g.mod.id)}"><i></i>—</span></button>` }).join("");
       return `<div class="comT" data-tipo="${esc(n)}">
@@ -186,6 +210,23 @@ function comCardHTML(){
   return SEC("Plantas das unidades", h, {key:"comodos", sum: C.on? "" : "desligado", info:"Partido"});
 }
 const comNivel = n=> n==null? "" : n>=85? "ok" : n>=70? "warn" : "bad";
+/* ordena a galeria de uma tipologia: 0 = em uso, 1 = cabe (nota, sem problema grave), 2 = não cabe (o que pede a faixa ou o
+   problema que o derruba); separador "Não cabem nestas unidades" antes do grupo 2 */
+function comGaleriaOrdena(nome, T){
+  const gal=document.querySelector(`.comT[data-tipo="${CSS.escape(nome)}"] .comGal`); if(!gal) return;
+  const info=T.info||{}, bts=[...gal.querySelectorAll(".comPc")];
+  const it=bts.map(b=>{ const id=b.dataset.pid, I=info[id], uso=!!T.usados[id], nu=uso && T.notaUso? T.notaUso[id] : null;
+    const g= uso? 0 : I && I.nota!=null && I.ok? 1 : 2, nota= nu!=null? nu : I && I.nota!=null? I.nota : null;
+    return {b, id, g, nota, I, uso} });
+  it.sort((a,b)=>a.g-b.g || (a.g<2? (b.nota??-1)-(a.nota??-1) : ((a.I&&a.I.falta)||0)-((b.I&&b.I.falta)||0)));
+  gal.querySelectorAll(".comSep").forEach(e=>e.remove());
+  it.forEach((x,k)=>{ const {b, g, nota, I, uso}=x, nt=b.querySelector(".nt"), on=b.getAttribute("aria-pressed")==="true";
+    if(g===2 && k>0 && it[k-1].g<2){ const sp=document.createElement("div"); sp.className="comSep"; sp.textContent="Não cabem nestas unidades"; gal.appendChild(sp) }
+    gal.appendChild(b); b.classList.toggle("uso", uso); b.classList.toggle("nc", g===2);
+    const mot = I && I.motivo ? I.motivo : "não cabe";
+    if(nt) nt.innerHTML = g<2 ? `<i class="${comNivel(nota)}"></i>${uso? `em uso${T.usados[x.id]>1? ` (${T.usados[x.id]})` : ""} · ${Math.round(nota)}` : `nota ${Math.round(nota)}`}` : `<span class="mt">${esc(on? mot : "desmarcado")}</span>`;
+    b.title = `${b.dataset.nome||""}${g===2? ` — não cabe nestas unidades: ${mot}` : ""}${on? "" : " (desmarcado)"} — clique para ${on? "desmarcar" : "tentar este partido"}` });
+}
 function comLive(m){
   const R=m&&m.comodos; if(!R){ if(!S.comodos.on) setSum("comodos","desligado"); return }
   setSum("comodos", R.unidades? `<span style="color:var(--${comNivel(R.nota)==="ok"?"ok":comNivel(R.nota)==="warn"?"warn":"bad"})">nota ${R.nota}</span> · ${R.validas}/${R.unidades}` : "—");
@@ -193,11 +234,8 @@ function comLive(m){
   setHTML("comRes", R.unidades? `Nota média <b>${R.nota}</b> · ${R.validas} de ${R.unidades} unidades sem problema grave${ruins? ` · <span style="color:var(--bad)">${ruins} sem partido que caiba</span>` : ""}${INFO("Cada unidade testa os partidos marcados da tipologia, aplica as regras (círculo inscrito, áreas mínimas, acessos, iluminação, mobiliário) e fica com a melhor nota (100 = sem problema). Em cada partido: a nota média nas unidades em que está em uso; nos outros, a nota na pior unidade da tipologia.","a nota")}` : "");
   (S.comodos.tipos||[]).forEach((t,i)=>{ const el=document.getElementById("comSt-"+i), T=R.porTipo[t.nome]; if(!el) return;
     if(!T){ el.className="pill"; el.textContent="—"; return } const nv=comNivel(T.nota); el.className="pill "+(nv==="ok"?"ok":nv==="warn"?"warn":"bad"); el.textContent=`nota ${T.nota} · ${T.validas}/${T.n}`;
-    // nota de cada partido na unidade real e qual está em uso
-    document.querySelectorAll(`.comT[data-tipo="${CSS.escape(t.nome)}"] .comPc`).forEach(b=>{ const id=b.dataset.pid, n=T.notas[id], nt=b.querySelector(".nt"), on=b.getAttribute("aria-pressed")==="true";
-      b.classList.toggle("uso", !!T.usados[id]);
-      const nu=T.usados[id] && T.notaUso? T.notaUso[id] : null, nn= nu!=null? nu : n;
-      if(nt) nt.innerHTML = nn!=null? `<i class="${comNivel(nn)}"></i>${nu!=null? `em uso (${T.usados[id]}) · ` : ""}nota ${Math.round(nn)}` : `<i></i>${on? "não cabe" : "—"}` });
+    // galeria: em uso, depois os que cabem (pela nota) e, no fim, agrupados, os que não cabem nesta unidade (com o que pedem)
+    comGaleriaOrdena(t.nome, T);
     // problemas da planta escolhida (unidade representante), em linguagem simples
     const lay=m.tipo[T.ex.ti], u=lay&&lay.units[T.ex.ui], al=u&&u.com? u.com.alertas.filter(a=>a.nivel!=="nota").slice(0,4) : [];
     setHTML("comPb-"+i, al.length? al.map(a=>`<div><span class="dot ${a.nivel==="erro"?"bad":"warn"}"></span><span>${esc(a.msg.charAt(0).toUpperCase()+a.msg.slice(1))}</span></div>`).join("") : u&&u.com? `<div><span class="dot ok"></span><span>${esc(u.com.partidoNome)}: sem problemas</span></div>` : "") });

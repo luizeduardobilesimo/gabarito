@@ -61,6 +61,8 @@ function comPartidosDe(st, nome, area){
   const tip=comModeloDe(st, nome, area), auto=!(cfg.modelo && cfg.modelo!=="auto" && COM_MODELOS[cfg.modelo]), out=[];
   APTO_CAT.filter(m=>m.tipologia===tip).forEach(mod=>out.push({mod, pen:0})); us.filter(m=>m && m.tipologia===tip).forEach(mod=>out.push({mod, pen:0}));
   const alt=auto && COM_ALT[tip]; if(alt){ APTO_CAT.filter(m=>m.tipologia===alt).forEach(mod=>out.push({mod, pen:4})); us.filter(m=>m && m.tipologia===alt).forEach(mod=>out.push({mod, pen:4})) }
+  // lavabo pedido na tipologia: os partidos que não o têm ficam para depois (a repartição do andar também os pesa menos)
+  if(cfg.lavabo) out.forEach(x=>{ if(!(x.mod.ambientes||[]).some(a=>a.k==="lavabo" || a.opc==="lavabo")) x.pen+=10 });
   return out;
 }
 
@@ -102,6 +104,30 @@ function comFrame(P, ax, dn, lado){
 const comVet=(F,p,v)=>{ const a=F.w(p[0],p[1]), b=F.w(p[0]+v[0],p[1]+v[1]); return [b[0]-a[0], b[1]-a[1]] };
 const comNf=(v,d=1)=>(+v).toFixed(d).replace(".",",");
 
+/* por que um partido não cabe na unidade: a faixa que ele pede (frente/profundidade) — {motivo, falta (m)} */
+function comMotivoFaixa(mod, dm){
+  const fw=mod.faixaW||{}, fd=mod.faixaD||{}, F=APTO_FAIXA_FOLGA, W=dm? dm[0] : 0, D=dm? dm[1] : 0;
+  if(fw.min!=null && W<fw.min-0.025) return {motivo:`pede frente ≥ ${comNf(fw.min)} m`, falta:fw.min-W};
+  if(fw.max!=null && W>fw.max*F.W+0.025) return {motivo:`pede frente ≤ ${comNf(fw.max*F.W)} m`, falta:W-fw.max*F.W};
+  if(fd.min!=null && D<fd.min-0.025) return {motivo:`pede profundidade ≥ ${comNf(fd.min)} m`, falta:fd.min-D};
+  if(fd.max!=null && D>fd.max*F.D+0.025) return {motivo:`pede profundidade ≤ ${comNf(fd.max*F.D)} m`, falta:D-fd.max*F.D};
+  return {motivo:"não cabe", falta:9};
+}
+/* o problema grave que derruba um partido, em poucas palavras ("Cozinha estreita", "falta banheiro da suíte") */
+const COM_FEM = {suite:1, cozinha:1, serv:1, circ:1, sacada:1};
+function comMotivoCurto(probs, pl){
+  const p=(probs||[]).find(x=>x.nivel==="bad"); if(!p) return "";
+  const amb=pl && p.amb ? (pl.ambientes||[]).find(r=>r.id===p.amb) : null, nome=amb? (amb.longo||APTO_AMB[amb.k].longo) : "", f=amb && COM_FEM[amb.k];
+  const adj={area: f? "pequena" : "pequeno", circulo: f? "estreita" : "estreito", proporcao: f? "comprida" : "comprido"}[p.k];
+  if(adj && nome) return `${nome} ${adj}`;
+  if(p.k==="janela" && nome) return `${nome} sem janela`;
+  if((p.k==="acesso" || p.k==="passagem") && nome) return `${nome}: acesso ruim`;
+  if(p.k==="movel"){ const t=String(p.msg).split(": ")[1]||p.msg; return t.split(" (")[0].split(" com ")[0] }
+  if(p.k==="sala") return "sala menor que o quarto";
+  if(p.k==="faixa") return "fora da faixa do partido";
+  return String(p.msg).split(" (")[0];
+}
+
 /* ---------- uma unidade: testa os partidos e escolhe ---------- */
 const _comCache = new Map();
 function comUnidade(u, lay, st, ctx){
@@ -141,6 +167,11 @@ function comUnidade(u, lay, st, ctx){
     const lim = cs.length && cs[0].v0.ok? 4 : 2;
     let best=null; for(let i=0;i<cs.length && i<lim;i++){ const c=cs[i]; if(best && c.s0<=best.s) break; const v=aptoValida(c.planta, st); const s=v.nota-(c.s0-c.v0.nota); if(!best || s>best.s) best={...c, val:v, s} }
     if(best){ best.nVar=n; best.notas={}; cs.forEach(c=>{ const id=c.mod.id; if(best.notas[id]==null || c.v0.nota>best.notas[id]) best.notas[id]=c.v0.nota }); best.notas[best.mod.id]=best.val.nota;
+      // galeria (ui/comodos.js): cada partido cabe (nota, sem grave) ou não cabe (o que pede a faixa, ou o problema que o derruba)
+      best.info={}; cs.forEach(c=>{ const id=c.mod.id, I=best.info[id]; if(I && I.nota>=c.v0.nota) return; best.info[id]={nota:c.v0.nota, ok:c.v0.ok, motivo: c.v0.ok? "" : comMotivoCurto(c.v0.problemas, c.planta)} });
+      best.info[best.mod.id]={nota:best.val.nota, ok:best.val.ok, motivo: best.val.ok? "" : comMotivoCurto(best.val.problemas, best.planta)};
+      { const Lc=local(frames[0],"a"), dC=dims(Lc,"caixa"), dI=Lc.ret? dC : dims(Lc,"inscrito");
+        lista.forEach(({mod})=>{ if(best.info[mod.id]) return; const dm= dI && foraDe(mod,dI)<foraDe(mod,dC)? dI : dC; best.info[mod.id]={nota:null, ok:false, ...comMotivoFaixa(mod, dm)} }) }
       const Lm=local(frames[0],"a"); best.Wf=Lm.F.W; best.Df=Lm.F.D; const mr=dims(Lm,"inscrito"); best.Wi=mr? mr[0] : Lm.F.W; best.Di=mr? mr[1] : Lm.F.D }
     return best };
   let best=_comCache.get(sigA);
@@ -154,7 +185,7 @@ function comUnidade(u, lay, st, ctx){
 function comMonta(c, u, st, cands){
   const pl=c.planta, v=c.val, F=c.F;
   const fr=c.fr||c.frame;
-  const L={F, planta:pl, val:v, mk:c.mod.tipologia, mod:c.mod, frame:fr, fm:c.fm, lado:c.lado, enc:c.enc, prm:{fr, ax:c.fm.ax, dn:c.fm.dn, lado:c.lado}, nVar:c.nVar, notas:c.notas||{}, score:v.nota, nota:v.nota};
+  const L={F, planta:pl, val:v, mk:c.mod.tipologia, mod:c.mod, frame:fr, fm:c.fm, lado:c.lado, enc:c.enc, prm:{fr, ax:c.fm.ax, dn:c.fm.dn, lado:c.lado}, nVar:c.nVar, notas:c.notas||{}, info:c.info||{}, score:v.nota, nota:v.nota};
   L.alertas=v.problemas.map(p=>({nivel:p.nivel==="bad"? "erro" : "aviso", msg:p.msg, k:p.k, amb:p.amb}));
   if(!v.ok){ // nenhum partido passa: o motivo e o que faria caber
     const mods=[...new Map(cands.map(x=>[x.mod.id,x.mod])).values()], W=c.Wi||F.W, D=c.Di||F.D;
@@ -164,6 +195,9 @@ function comMonta(c, u, st, cands){
     const n2=(a,b)=>{ const d=Math.abs(a-b)<0.1? 2 : 1; return [comNf(a,d), comNf(b,d)] };   // casas para que os dois números não pareçam iguais
     let msg = W<wMin-0.02? (([a,b])=>`${fu} de ${a} m; os partidos de ${nm.toLowerCase()} pedem ${b} m ou mais`)(n2(W,wMin)) : D<dMin-0.02? (([a,b])=>`profundidade de ${a} m; os partidos de ${nm.toLowerCase()} pedem ${b} m ou mais`)(n2(D,dMin)) :
       W>wMax+0.02? (([a,b])=>`${fu} de ${a} m; os partidos de ${nm.toLowerCase()} vão até ${b} m`)(n2(W,wMax)) : D>dMax+0.02? (([a,b])=>`profundidade de ${a} m; os partidos vão até ${b} m`)(n2(D,dMax)) : ((v.problemas.find(p=>p.nivel==="bad" && p.k!=="faixa")||{}).msg||"conferir");
+    // o mesmo em poucas palavras (rótulo na planta)
+    L.motivo = W<wMin-0.02? (([a,b])=>`${fu} ${a} m · pedem ≥ ${b} m`)(n2(W,wMin)) : D<dMin-0.02? (([a,b])=>`profundidade ${a} m · pedem ≥ ${b} m`)(n2(D,dMin)) :
+      W>wMax+0.02? (([a,b])=>`${fu} ${a} m · até ${b} m`)(n2(W,wMax)) : D>dMax+0.02? (([a,b])=>`profundidade ${a} m · até ${b} m`)(n2(D,dMax)) : comMotivoCurto(v.problemas, pl);
     L.semPartido=true; L.aviso=`nenhum partido cabe nesta unidade: ${msg}`; L.alertas.unshift({nivel:"erro", msg:L.aviso, k:"partido"}) }
   if(v.dutos && v.dutos.length) L.alertas.push({nivel:"nota", msg:"cozinha, serviço e banheiros sem fachada: ventilação por duto ou shaft (conferir)", k:"duto"});
   L.erros=L.alertas.filter(a=>a.nivel==="erro").length; L.avisos=L.alertas.filter(a=>a.nivel==="aviso").length; L.ok=v.ok;
@@ -223,7 +257,7 @@ function comExporta(L){
     const d={id:ax+k, ax, lo:vs[k-1]+0.5, hi:vs[k+1]-0.5, o0, tot}; if(ax==="x"){ d.x=v; d.y0=sp[0]; d.y1=sp[1]; d.p0=F.w(v,sp[0]); d.p1=F.w(v,sp[1]) } else { d.y=v; d.x0=sp[0]; d.x1=sp[1]; d.p0=F.w(sp[0],v); d.p1=F.w(sp[1],v) } divs.push(d) } });
   return {
     modelo:L.mk, partido:L.mod.id, partidoNome:L.mod.nome, origem:L.mod.origem||"catalogo", encaixe:L.enc, frame:L.frame, lado:F.lado, nVar:L.nVar, score:L.nota, nota:L.nota, notas:L.notas,
-    ok:L.ok, erros:L.erros, avisos:L.avisos, soma:L.soma, semPartido:!!L.semPartido, aviso:L.aviso||"",
+    ok:L.ok, erros:L.erros, avisos:L.avisos, soma:L.soma, semPartido:!!L.semPartido, aviso:L.aviso||"", motivo:L.motivo||"",
     ax:F.ax, dn:F.dn, a0:F.a0, a1:F.a1, d0:F.d0, W:F.W, D:F.D, R,
     rooms, doors, windows, movel:L.movel||comMoveis(L), divs:divs.map(d=>({id:d.id, ax:d.ax, p0:d.p0, p1:d.p1, lo:d.lo, hi:d.hi, o0:d.o0, tot:d.tot, v: d.ax==="x"? d.x : d.y})),
     cortes, alertas:L.alertas, problemas:probs
@@ -244,6 +278,9 @@ function comodosCalc(m, st){
       const T=out.porTipo[u.nome]=out.porTipo[u.nome]||{nome:u.nome, modelo:L.mk, partido:L.mod.id, partidoNome:L.mod.nome, n:0, validas:0, nota:0, ex:{ti,ui}, usados:{}, notas:{}};
       T.n++; if(L.ok) T.validas++; T.nota+=L.nota; T.usados[L.mod.id]=(T.usados[L.mod.id]||0)+1; T.notaUso=T.notaUso||{}; T.notaUso[L.mod.id]=(T.notaUso[L.mod.id]||0)+L.nota;
       Object.entries(L.notas||{}).forEach(([id,n])=>{ if(T.notas[id]==null || n<T.notas[id]) T.notas[id]=n });   // nota do partido na pior unidade da tipologia
+      // cabe / não cabe por partido (galeria): vale a pior unidade — não cabe numa, não cabe na tipologia
+      T.info=T.info||{}; Object.entries(L.info||{}).forEach(([id,I])=>{ const J=T.info[id], ruim=x=>x.nota==null? 2 : !x.ok? 1 : 0;
+        if(!J || ruim(I)>ruim(J) || (ruim(I)===ruim(J) && (I.nota==null? (I.falta||0)>(J.falta||0) : I.nota<J.nota))) T.info[id]={...I} });
       if(L.semPartido && !T.aviso) T.aviso=L.aviso;
       out.lista.push({ti, ui, nome:u.nome, ok:L.ok, nota:L.nota, alertas:L.alertas});
     });
@@ -319,6 +356,7 @@ function comCortaContorno(P, vaos){
    PORTAS (folha e arco de abertura), JANELAS, MOBILIARIO, TEXTOS */
 function comDxf(d, lay){
   (lay.units||[]).forEach(u=>{ const c=u.com; if(!c) return;
+    if(c.semPartido){ d.poly("PAREDES", u.poly, 7); d.text("TEXTOS", G.centroid(u.poly), 0.22, "SEM PARTIDO QUE CAIBA"); return }   // nada de planta "só para caber"
     const vaos=comVaos(u), corta=(layer, pts, cor)=>comCortaContorno(pts, vaos).forEach(ch=>d.poly(layer, ch.pts, cor, ch.aberta));
     corta("PAREDES", u.poly, 7);
     c.rooms.forEach(r=>{ const ins=comInsetRoom(r);

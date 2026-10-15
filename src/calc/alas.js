@@ -219,9 +219,12 @@ function alasUnidades(M, units, o){
   const R=uso.filter(r=>r.A>4 && r.facL>=ALAS_FAC && r.corL>=ALAS_COR && r.F.h>=2.4).map(r=>({...r, list:[], used:0}));
   const us=units.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo), totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
   us.forEach(u=>{ let best=null, bs=-Infinity; R.forEach(r=>{ const s=r.A/totalA*totalAlvo-r.used-u.alvo*0.5; if(s>bs){ bs=s; best=r } }); if(best){ best.list.push(u); best.used+=u.alvo } });
+  // repartição pelos partidos (src/calc/reparte.js): que unidade vai em que ala, em que ordem
+  const rep = o._st && typeof repComp==="function" ? alasReparte(R, us, o._st, R.some(r=>!r.list.length)) : null;
+  if(rep) R.forEach((r,ri)=>{ r.list=rep[ri]; r.fixa=true });
   const out=[], livres=[], semLugar=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6, usados=new Set();
   R.forEach(r=>{ const F=r.F; if(!r.list.length) return; usados.add(r.i);
-    r.list.sort((a,b)=>a.i-b.i);
+    if(!r.fixa) r.list.sort((a,b)=>a.i-b.i);
     let L=r.list.slice(), cuts=alasCortes(F, L.map(u=>u.alvo));
     while(!cuts && L.length>1){ const j=L.reduce((b,u,k)=>u.alvo<L[b].alvo? k : b, 0); semLugar.push(L[j]); L.splice(j,1); cuts=alasCortes(F, L.map(u=>u.alvo)) }
     if(!cuts){ semLugar.push(...L); usados.delete(r.i); return }
@@ -244,6 +247,31 @@ function alasUnidades(M, units, o){
     const p=[g.W(fu[a],fv[b]), g.W(fu[a1+1],fv[b]), g.W(fu[a1+1],fv[b1+1]), g.W(fu[a],fv[b1+1])];
     if(G.area(p)>0.01) livres.push(lv(p, [fu[a], fu[a1+1], fv[b], fv[b1+1]])) }
   const U={units:out, livres, semLugar}; alasAbsorve(U, g); return U;
+}
+/* distribuição das unidades pelas faixas das alas escolhida pelos partidos (como repReparte no tipoLayout): todas as
+   distribuições por tipologia e as ordens distintas em cada faixa; cortes pelo alasCortes (fachada e corredor mínimos);
+   custo = repNotaGeo de cada unidade (retângulo frente × fundo da faixa). Devolve [[unidades por faixa]] ou null */
+function alasReparte(R, us, st, vazioOk){
+  if(!R.length || !us.length) return null;
+  const tipos=new Map(); us.forEach(u=>{ const key=u.nome+"|"+(+u.alvo).toFixed(3)+"|"+(+u.sac||0); if(!tipos.has(key)) tipos.set(key,{nome:u.nome, alvo:+u.alvo, us:[]}); tipos.get(key).us.push(u) });
+  const TT=[...tipos.values()]; TT.forEach(t=>{ t.T=repTipo(st, t.nome, t.alvo) }); if(TT.some(t=>!t.T)) return null;
+  const k=R.length, comps=TT.map(t=>repComp(t.us.length, k)), nDist=comps.reduce((s,c)=>s*c.length,1); if(nDist>REP_LIM.dist) return null;
+  const memo=new Map();
+  const trecho=(ri, cont)=>{ const key=ri+":"+cont.join(","); if(memo.has(key)) return memo.get(key);
+    const arr=[]; cont.forEach((n,ti)=>{ for(let q=0;q<n;q++) arr.push(ti) }); let best=null;
+    if(!arr.length) best={seq:[], custo: vazioOk? 0 : 1e6};
+    else { const F=R[ri].F; repPerms(arr, REP_LIM.seq).forEach(seq=>{ const cuts=alasCortes(F, seq.map(ti=>TT[ti].alvo)); if(!cuts) return; let c=0;
+        seq.forEach((ti,j)=>{ const W=cuts[j+1]-cuts[j], A=W*F.h; c+=repNotaGeo(TT[ti].T, TT[ti].alvo, {A, W, D:F.h, Ai:A}, false, false) });
+        if(!best || c<best.custo) best={seq, custo:c} }); if(!best) best={seq:arr, custo:1e6} }
+    memo.set(key, best); return best };
+  let best=null;
+  const rec=(ti, acc)=>{ if(ti===TT.length){ let c=0; const ps=[]; for(let ri=0;ri<k;ri++){ const cont=TT.map((t,j)=>acc[j][ri]), r=trecho(ri, cont); c+=r.custo; ps.push(r); if(best && c>=best.custo) return }
+      if(c<1e6 && (!best || c<best.custo)) best={custo:c, ps}; return }
+    comps[ti].forEach(cp=>rec(ti+1, [...acc, cp])) };
+  rec(0, []);
+  if(!best) return null;
+  const fila=TT.map(t=>t.us.slice().sort((a,b)=>a.i-b.i));
+  return best.ps.map(p=>p.seq.map(ti=>fila[ti].shift()));
 }
 /* retângulo [u0,u1,v0,v1] (referencial local da planta) do trecho a..z de uma faixa */
 function alasLocR(F, a, z){ return F.o==="h" ? [a, z, F.y0, F.y1] : [-F.y1, -F.y0, a, z] }
@@ -326,7 +354,8 @@ const _alasCache=new Map();
 function alasLayout(plate, units, o, oco, fix){
   const D=alasDetecta(plate, oco, fix); if(!D || D.falha) return D;
   const r2=v=>Math.round(v*100)/100, sig=JSON.stringify([plate.map(q=>q.map(r2)), oco? [oco.pts, oco.vazios].map(r=>JSON.stringify(r)) : 0, units.map(u=>[u.nome, r2(u.alvo), u.sac]),
-    ["corr","profMin","nElev","escTipo","nEsc","emerg","fachada","sacTipo","sacProf","planta","distMax","esc2"].map(k=>o[k]), fix? [fix.ux, fix.H, fix.V, fix.ref && fix.ref.core, fix.ref && fix.ref.coreExtra] : 0]);
+    ["corr","profMin","nElev","escTipo","nEsc","emerg","fachada","sacTipo","sacProf","planta","distMax","esc2"].map(k=>o[k]), fix? [fix.ux, fix.H, fix.V, fix.ref && fix.ref.core, fix.ref && fix.ref.coreExtra] : 0,
+    o._st && typeof repTipo==="function" ? [...new Set(units.map(u=>u.nome))].map(n=>{ const T=repTipo(o._st, n, (units.find(u=>u.nome===n)||{}).alvo||0); return T? T.mods.map(m=>m.id).join(",") : "" }) : 0]);
   // cópia rasa por chamada: os cômodos (src/calc/comodos.js) gravam em u.com e u.sac de cada unidade
   const copia=l=>!l || l.falha ? l : {...l, units:l.units.map(u=>u.sac? {...u, sac:{...u.sac}} : {...u})};
   if(_alasCache.has(sig)) return copia(_alasCache.get(sig));

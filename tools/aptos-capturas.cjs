@@ -33,7 +33,7 @@ const ESTUDOS = {
     await abre(p, html); await p.waitForTimeout(1200);
     for (const [nome, E] of Object.entries(ESTUDOS)) {
       if (so && !so.split(',').includes(nome)) continue;
-      const r = await p.evaluate(async ([E]) => {
+      await p.evaluate(async ([E]) => {
         const novo = merge(clone(DEF), clone(E.S || {}));
         if (E.forma) novo.blocos = { modo: 'desenhada', torres: [{ blocos: [blcFormato(E.forma[0], E.forma[1], E.forma[2], { ala: 12.6 }).bloco] }] };
         Object.keys(novo).forEach(k => { S[k] = novo[k] });
@@ -43,10 +43,12 @@ const ESTUDOS = {
         setView('tipo'); renderTab();
         const d = document.querySelector('#tabbody details[data-key="comodos"]'); if (d) d.open = true;
         if (typeof fit2d === 'function') fit2d();
-        const m = window._last.m, R = m.comodos || {};
-        return { nota: R.nota, validas: R.validas, unidades: R.unidades, partidos: Object.values(R.porTipo || {}).map(T => `${T.nome}: ${T.partidoNome} (nota ${T.nota}, ${T.validas}/${T.n})`), avisos: (R.lista || []).filter(x => !x.ok).map(x => x.alertas[0] && x.alertas[0].msg) };
       }, [E]);
-      await p.waitForTimeout(900);
+      await p.waitForTimeout(1500);
+      // resumo do cálculo completo (o barato, sem a repartição pelos partidos, pode aparecer antes)
+      const r = await p.evaluate(() => { const m = window._last.m, R = m.comodos || {};
+        return { nota: R.nota, validas: R.validas, unidades: R.unidades, notas: (m.tipo || []).map(l => l ? l.units.filter(u => u.com).map(u => `${u.nome} ${Math.round(u.com.nota)}${u.com.semPartido ? ' (sem partido)' : ''}`) : []),
+          partidos: Object.values(R.porTipo || {}).map(T => `${T.nome}: ${T.partidoNome} (nota ${T.nota}, ${T.validas}/${T.n})`), avisos: (R.lista || []).filter(x => !x.ok).map(x => x.alertas[0] && x.alertas[0].msg) } });
       if (md === 'm' && th === 'light' || md === 'd') resumo[nome] = r;
       if (md === 'm') { await p.evaluate(() => { try { folhaSet('espiada') } catch (e) {} }); await p.waitForTimeout(500); await p.screenshot({ path: path.join(out, `${md}-${th}-${nome}-planta.png`) });
         await p.evaluate(() => { try { folhaSet('cheia') } catch (e) {} }); await p.waitForTimeout(500);

@@ -37,6 +37,10 @@ const APTO_REGRAS = {
   prop: { dorm:2.2, suite:2.2, office:2.4, sala:3.0 },
   porta: { min:0.8, molhada:0.7, entrada:0.9 },
   nota: { bad:25, warn:6, area:0.5, areaTol:10 },
+  // estar/jantar proporcional ao número de dormitórios (m², a sala sozinha: a cozinha integrada e a sacada não contam) e nunca
+  // bem menor que o maior quarto (fração do maior dormitório/suíte: abaixo de "bad" é grave, abaixo de "warn" é atenção)
+  sala: { studio:0, "1d":10, "1s":10, "2d":12, "2d1s":12, "2s":13, "3d1s":14, "3s":16, "4d1s":16 },
+  salaQuarto: { bad:0.6, warn:0.75 },
   moveis: true
 };
 const APTO_MIN = { sala:{a:10,l:2.6}, suite:{a:9,l:2.5}, dorm:{a:7,l:2.3}, office:{a:4,l:1.8}, cozinha:{a:4,l:1.5}, serv:{a:1.8,l:1.0}, banho:{a:2.2,l:1.1}, lavabo:{a:1.2,l:0.9}, circ:{a:0,l:0.9} };
@@ -57,7 +61,7 @@ const APTO_PROG = {
 };
 const aptoTipologias = ()=> Object.entries(APTO_TIPOS).map(([k,nome])=>({k, nome}));
 const aptoNf = (v,d=1)=>(+v).toFixed(d).replace(".",",");
-const aptoReg = st=>{ const r=st && st.comodos && st.comodos.regras; if(!r) return APTO_REGRAS; return {...APTO_REGRAS, ...r, circ:{...APTO_REGRAS.circ, ...(r.circ||{})}, prop:{...APTO_REGRAS.prop, ...(r.prop||{})}, porta:{...APTO_REGRAS.porta, ...(r.porta||{})}, nota:{...APTO_REGRAS.nota, ...(r.nota||{})}} };
+const aptoReg = st=>{ const r=st && st.comodos && st.comodos.regras; if(!r) return APTO_REGRAS; return {...APTO_REGRAS, ...r, circ:{...APTO_REGRAS.circ, ...(r.circ||{})}, prop:{...APTO_REGRAS.prop, ...(r.prop||{})}, porta:{...APTO_REGRAS.porta, ...(r.porta||{})}, nota:{...APTO_REGRAS.nota, ...(r.nota||{})}, sala:{...APTO_REGRAS.sala, ...(r.sala||{})}, salaQuarto:{...APTO_REGRAS.salaQuarto, ...(r.salaQuarto||{})}} };
 
 /* ---------- geometria auxiliar (referencial local) ---------- */
 const aptoE = 1e-6;
@@ -142,6 +146,7 @@ function aptoInterno(r){ const cls=aptoParedeDe(r); return aptoInset(r.poly, i=>
 /* ---------- esticar por faixas ---------- */
 const APTO_FAIXA_FOLGA = { W:1.4, D:1.25 };   // além do máximo da faixa: tolerância (com aviso) antes de virar "não cabe"
 /* medida mínima de eixo a eixo de um ambiente que ocupa uma faixa inteira (para encolher sem estragar) */
+const APTO_SAC_FUNDO = { sala:2.9, suite:2.9, dorm:2.7, office:2.2 };   // fundo mínimo que fica atrás da sacada embutida
 const APTO_MINDIM = { sala:2.95, suite:2.85, dorm:2.62, office:2.0, cozinha:1.95, serv:1.3, banho:1.45, bsuite:1.45, lavabo:1.15, circ:1.1, closet:1.2, desp:1.0, sacada:1.2 };
 function aptoGrade(rs, eixo, ref, novo, cortes){
   const c0=eixo? "y0":"x0", c1=eixo? "y1":"x1", ch=eixo? "y":"x";
@@ -229,38 +234,50 @@ function aptoAplica(mod, W, D, o={}){
   am.forEach(a=>{ const g=grp[a.id]; let r=porId[g]; if(!r){ const dono=am.find(x=>(x.grupo||x.id)===g && grp[x.id]===g && !x.k0) || a; r=porId[g]={id:dono.id, k:dono.k, nome:dono.nome||null, de:dono.de||null, cama:dono.cama||null, partes:[], ref:0, fixo:true}; rooms.push(r) }
     rid[a.id]=r.id; r.partes.push([a.x0,a.y0,a.x1,a.y1]); r.ref+=(a.rx[2]-a.rx[0])*(a.rx[3]-a.rx[1]); if(a.estica) r.fixo=false });
   rooms.forEach(r=>{ if(r.de) r.de=rid[r.de]||r.de });
-  // sacada embutida: recorta a frente dos ambientes de "sobre" (padrão: a sala)
+  // sacada embutida: recorta a frente dos ambientes de "sobre" (padrão: a sala). Opções: só a sala (até 2,6 m de fundo, a
+  // "varanda gourmet") ou continuando na frente do quarto vizinho (varanda corrida, até 2,0 m). Cada ambiente coberto precisa
+  // ficar com o fundo mínimo atrás da sacada (APTO_SAC_FUNDO: sala 2,9 m, suíte 2,9 m, dormitório 2,7 m) — antes bastavam
+  // 2,2 m e a varanda corrida esmagava o quarto (5 m²). Fica a opção com menos ambientes que leva a área inteira e mantém a
+  // sala no mínimo da tipologia; se nenhuma leva, a maior possível (a área que sobra fica nos cômodos).
   let sac=null;
   if(o.sacada && o.sacada.area>0.5){
-    let sobre=(mod.sacada && Array.isArray(mod.sacada.sobre) && mod.sacada.sobre.length? mod.sacada.sobre.map(id=>rid[id]) : rooms.filter(r=>r.k==="sala").map(r=>r.id)).filter(Boolean);
-    { // sacada funda demais só na frente da sala (> 2,4 m): continua na frente inteira do quarto vizinho (varanda corrida)
-      const fr0=r=>r.partes.filter(p=>p[1]<1e-4), spanDe=ids=>{ const iv=rooms.filter(r=>ids.includes(r.id)).flatMap(r=>fr0(r).map(p=>[p[0],p[2]])); return iv.length? [Math.min(...iv.map(v=>v[0])), Math.max(...iv.map(v=>v[1]))] : null };
-      for(let g=0; g<3; g++){ const sp=spanDe(sobre); if(!sp || o.sacada.area/(sp[1]-sp[0])<=2.4) break;
-        const viz=rooms.filter(r=>!sobre.includes(r.id) && ["dorm","suite","office","sala"].includes(r.k) && fr0(r).some(p=>Math.abs(p[0]-sp[1])<1e-4 || Math.abs(p[2]-sp[0])<1e-4));
-        if(!viz.length) break; sobre=sobre.concat(viz[0].id) } }
-    const fr=[]; rooms.filter(r=>sobre.includes(r.id)).forEach(r=>r.partes.forEach(p=>{ if(p[1]<1e-4) fr.push([p[0],p[2],p[3]]) }));
-    fr.sort((a,b)=>a[0]-b[0]); const spans=[]; fr.forEach(f=>{ const u=spans[spans.length-1]; if(u && f[0]<=u[1]+1e-4){ u[1]=Math.max(u[1],f[1]); u[2]=Math.min(u[2],f[2]) } else spans.push([f[0],f[1],f[2]]) });
-    spans.sort((a,b)=>(b[1]-b[0])-(a[1]-a[0]));
-    const sp=spans[0];
-    if(sp && sp[1]-sp[0]>=1.2){ const span=sp[1]-sp[0], A=o.sacada.area;
-      // fachada inclinada: a sacada começa onde a fachada está (yf = maior recuo da fachada no trecho)
-      const fachY=x=>{ let y=0; bordas.forEach(b=>{ if(b.c!=="fachada") return; const dx=b.b[0]-b.a[0], dy=b.b[1]-b.a[1]; if(Math.abs(dy)>Math.abs(dx)) return; const lo=Math.min(b.a[0],b.b[0]), hi=Math.max(b.a[0],b.b[0]); if(x<lo-1e-6||x>hi+1e-6||Math.abs(dx)<1e-9) return; y=Math.max(y, b.a[1]+(x-b.a[0])*dy/dx) }); return y };
-      // a sacada ocupa a frente inteira dos ambientes cobertos (cômodos continuam retangulares); profundidade = área ÷ frente
-      let sd=Math.max(1.25, Math.min(2.4, A/span)), sw=Math.min(span, A/sd), xa=sp[0], xb, yf=0;
-      const pri=rooms.find(r=>r.id===sobre[0]), px=pri? pri.partes.filter(p=>p[1]<1e-4) : [], p0=px.length? Math.min(...px.map(p=>p[0])) : sp[0], p1=px.length? Math.max(...px.map(p=>p[2])) : sp[1];
-      for(let it=0; it<3; it++){
+    const A=o.sacada.area, fr0=r=>r.partes.filter(p=>p[1]<1e-4);
+    const base=(mod.sacada && Array.isArray(mod.sacada.sobre) && mod.sacada.sobre.length? mod.sacada.sobre.map(id=>rid[id]) : rooms.filter(r=>r.k==="sala").map(r=>r.id)).filter(Boolean);
+    const fachY=x=>{ let y=0; bordas.forEach(b=>{ if(b.c!=="fachada") return; const dx=b.b[0]-b.a[0], dy=b.b[1]-b.a[1]; if(Math.abs(dy)>Math.abs(dx)) return; const lo=Math.min(b.a[0],b.b[0]), hi=Math.max(b.a[0],b.b[0]); if(x<lo-1e-6||x>hi+1e-6||Math.abs(dx)<1e-9) return; y=Math.max(y, b.a[1]+(x-b.a[0])*dy/dx) }); return y };
+    const spanDe=ids=>{ const fr=[]; rooms.filter(r=>ids.includes(r.id)).forEach(r=>fr0(r).forEach(p=>fr.push([p[0],p[2]])));
+      fr.sort((a,b)=>a[0]-b[0]); const sps=[]; fr.forEach(f=>{ const u=sps[sps.length-1]; if(u && f[0]<=u[1]+1e-4) u[1]=Math.max(u[1],f[1]); else sps.push([f[0],f[1]]) });
+      return sps.sort((a,b)=>(b[1]-b[0])-(a[1]-a[0]))[0] || null };
+    const opcoes=[base]; { let cur=base; for(let g=0; g<2; g++){ const sp=spanDe(cur); if(!sp) break;
+        const viz=rooms.filter(r=>!cur.includes(r.id) && ["dorm","suite","office","sala"].includes(r.k) && fr0(r).some(p=>Math.abs(p[0]-sp[1])<1e-4 || Math.abs(p[2]-sp[0])<1e-4));
+        if(!viz.length) break; cur=cur.concat(viz[0].id); opcoes.push(cur) } }
+    const salaMin=Math.max(((o.st && o.st.comodos && o.st.comodos.min) || APTO_MIN).sala.a||0, +(aptoReg(o.st).sala||{})[mod.tipologia]||0);
+    // posiciona a sacada numa opção: começa pelo 1º ambiente de "sobre" (a sala), no canto da unidade se ele encosta numa divisa
+    const posiciona=sobre=>{ let sp=spanDe(sobre); if(!sp) return null;
+      // encaixe "inscrito": a sacada fica na frente do retângulo do partido — a sobra (atrás da escada, por exemplo) é rasa e
+      // continua sendo extensão do ambiente (com a sacada nela, sobraria uma tira sem uso atrás)
+      if(R[0]>aptoE || R[2]<W-aptoE){ const a=Math.max(sp[0],R[0]), b=Math.min(sp[1],R[2]); if(b-a>=1.2) sp=[a,b] }
+      if(sp[1]-sp[0]<1.2) return null; const span=sp[1]-sp[0];
+      const pri=rooms.find(r=>r.id===sobre[0]), px=pri? fr0(pri) : [], p0=px.length? Math.min(...px.map(p=>p[0])) : sp[0], p1=px.length? Math.max(...px.map(p=>p[2])) : sp[1];
+      const dMax= sobre.length>1? 2.0 : 2.6; let sd=Math.max(1.2, Math.min(dMax, A/span)), sw=Math.min(span, A/sd), xa=sp[0], xb=sp[1], yf=0, ok=true;
+      for(let it=0; it<4; it++){
         if(sw>span){ sw=span; sd=A/sw }
-        // começa pelo 1º ambiente de "sobre" (a sala): no canto da unidade, se ele encosta numa divisa
         xa = p0<1e-3 || Math.abs(p0-sp[0])<1e-3? Math.max(sp[0],p0) : p1>W-1e-3 || Math.abs(p1-sp[1])<1e-3? Math.min(sp[1],p1)-sw : p0;
         xa=Math.max(sp[0], Math.min(sp[1]-sw, xa)); xb=xa+sw;
         yf=Math.max(fachY(xa+1e-3), fachY(xb-1e-3), ...cont.filter(q=>q[0]>xa && q[0]<xb).map(q=>fachY(q[0])));
-        // o ambiente coberto quase todo fica com ≥ 2,2 m atrás da sacada
-        let ymax=Infinity; rooms.filter(r=>sobre.includes(r.id)).forEach(r=>r.partes.forEach(p=>{ if(p[1]>1e-4) return; const cov=(Math.min(p[2],xb)-Math.max(p[0],xa))/Math.max(1e-6,p[2]-p[0]); if(cov>0.6) ymax=Math.min(ymax, p[3]-yf-2.2) }));
-        if(sd<=ymax+1e-6 || ymax<1.0) break;
-        sd=Math.max(1.15, ymax); sw=Math.min(span, A/sd) }
-      const yb=yf+sd;
+        let ymax=Infinity; rooms.filter(r=>sobre.includes(r.id)).forEach(r=>fr0(r).forEach(p=>{ if(Math.min(p[2],xb)-Math.max(p[0],xa)<0.3) return; ymax=Math.min(ymax, p[3]-yf-(APTO_SAC_FUNDO[r.k]||2.7)) }));
+        if(sd<=ymax+1e-6) break;
+        if(ymax<1.15){ ok=false; sd=Math.max(1.15, Math.min(sd, ymax)); sw=Math.min(span, A/sd); break }
+        sd=ymax; sw=Math.min(span, A/sd) }
+      if(sw*sd>A+1e-6){ sd=A/sw }   // não passa da área pedida
+      // sala que sobra atrás (aproximada pelas partes da frente)
+      const salaR=rooms.filter(r=>r.k==="sala").reduce((s,r)=>s+r.partes.reduce((t,p)=>t+(p[2]-p[0])*(p[3]-p[1])-(p[1]<1e-4 && sobre.includes(r.id)? Math.max(0,Math.min(p[2],xb)-Math.max(p[0],xa))*(sd+yf) : 0),0),0);
+      return {sobre, sp, sd, sw, xa, xb, yf, area:sw*sd, ok, salaR} };
+    const cs=opcoes.map(posiciona).filter(Boolean);
+    const cheia=c=>c.ok && c.area>=A-0.05;
+    const esc= cs.find(c=>cheia(c) && c.salaR>=salaMin-0.05) || cs.find(cheia) || cs.filter(c=>c.ok).sort((a,b)=>b.area-a.area)[0] || cs[0];
+    if(esc){ const {sobre, xa, xb, yf, sd, sw}=esc, yb=yf+sd;
       rooms.forEach(r=>{ const np=[]; r.partes.forEach(p=>{ if(p[1]>1e-4 || p[2]<=xa+1e-4 || p[0]>=xb-1e-4 || !sobre.includes(r.id) || p[3]<=yb+0.3){ np.push(p); return }
-          const a0=Math.max(p[0],xa), a1=Math.min(p[2],xb);
+          const a0=Math.max(p[0],xa), a1=Math.min(p[2],xb); r.sacCut=(r.sacCut||0)+(a1-a0)*yb;
           if(a0>p[0]+1e-4) np.push([p[0],0,a0,yb]); if(a1<p[2]-1e-4) np.push([a1,0,p[2],yb]); np.push([p[0],yb,p[2],p[3]]) }); r.partes=np });
       sac={id:"sac", k:"sacada", nome:null, partes:[[xa,0,xb,yb]], ref:sw*sd, fixo:true, alvoFixo:sw*sd}; rooms.push(sac) } }
   // recorte pelo contorno e união das partes
@@ -273,9 +290,14 @@ function aptoAplica(mod, W, D, o={}){
   rooms.forEach(r=>{ (r.sobra||[]).forEach(q=>{ for(const v of rooms){ if(v===r || !v.poly.length) continue; const u=aptoUne(v.poly,q); if(u){ v.poly=aptoCCW(u); return } } }); delete r.sobra });
   let amb=rooms.filter(r=>r.poly.length>2 && G.area(r.poly)>0.05);
   // áreas-alvo: fixos mantêm a do desenho; os que esticam dividem o resto na proporção do desenho
+  // (a sacada embutida sai da área dos ambientes que ela recorta — a sala —, não de todos; no encaixe "inscrito" o que fica
+  // fora do retângulo é extensão de quem o recebe: nenhum dos dois conta como desvio de área)
   const Au=G.area(cont); amb.forEach(r=>{ r.area=G.area(r.poly) });
-  const fixos=amb.filter(r=>r.fixo), est=amb.filter(r=>!r.fixo), Af=fixos.reduce((s,r)=>s+(r.alvoFixo||r.ref),0), Re=est.reduce((s,r)=>s+r.ref,0);
-  fixos.forEach(r=>{ r.alvo=r.alvoFixo||r.ref }); est.forEach(r=>{ r.alvo= Re>0? r.ref*Math.max(0.2,(Au-Af))/Re : r.area });
+  const inscr = R[0]>aptoE || R[1]>aptoE || R[2]<W-aptoE || R[3]<D-aptoE;
+  amb.forEach(r=>{ r.ext = inscr && r.k!=="sacada"? Math.max(0, r.area-G.area(aptoClipRet(r.poly, R[0], R[1], R[2], R[3]))) : 0 });
+  const fixos=amb.filter(r=>r.fixo), est=amb.filter(r=>!r.fixo), Af=fixos.reduce((s,r)=>s+(r.k==="sacada"? 0 : (r.alvoFixo||r.ref)),0), Re=est.reduce((s,r)=>s+r.ref,0);
+  const Ab=Au-amb.reduce((s,r)=>s+r.ext,0);
+  fixos.forEach(r=>{ r.alvo=(r.alvoFixo||r.ref)-(r.k==="sacada"? 0 : (r.sacCut||0))+r.ext }); est.forEach(r=>{ r.alvo= Re>0? r.ref*Math.max(0.2,(Ab-Af))/Re-(r.sacCut||0)+r.ext : r.area });
   // bordas (classe do vizinho por trecho)
   amb.forEach(r=>{ r.bordas=aptoClassifica(r.poly, bordas) });
   // nomes (Dorm. 1, 2…; Banheiro 1, 2… quando há mais de um)
@@ -454,10 +476,10 @@ function aptoValida(pl, st, opt={}){
   // dimensões
   A.forEach(r=>{ const K=APTO_AMB[r.k], mn=mins[K.min||r.k];
     if(r.k==="sacada"){ const d=aptoCirculoInscrito(aptoInterno(r)).d; r._d=d; if(d<(R.circ.sacada||1.1)-0.05) P("sacada","warn",r.id,`${nome(r)}: profundidade ${aptoNf(d,2)} m (mín. ${aptoNf(R.circ.sacada||1.1,2)} m)`); return }
-    // área mínima (sala integrada à cozinha: um compartimento só)
-    const aR = r.k==="sala" && integ.has(r.id)? r.area + A.filter(x=>x.k==="cozinha" && integ.has(x.id)).reduce((s,x)=>s+x.area,0) : r.area;
-    const aM = mn? (r.k==="sala" && integ.has(r.id)? mn.a+((mins.cozinha||{}).a||0) : mn.a) : 0;
-    if(aM>0 && !(r.k==="cozinha" && integ.has(r.id)) && aR<aM-0.05) P("area", aR<aM*0.85? "bad" : "warn", r.id, `${nome(r)}: ${aptoNf(aR)} m²${r.k==="sala"&&integ.has(r.id)?" com a cozinha":""} (mín. ${aptoNf(aM)} m²)`);
+    // área mínima: cada ambiente por si (a cozinha integrada não conta como sala — antes somava e deixava passar uma sala de
+    // 8,5 m² num 2 dormitórios); a sala pede o mínimo da tipologia (APTO_REGRAS.sala, pelo número de dormitórios)
+    const aR = r.area, aM = mn? (r.k==="sala"? Math.max(mn.a, +(R.sala||{})[pl.tipologia]||0) : mn.a) : 0;
+    if(aM>0 && !(r.k==="cozinha" && integ.has(r.id)) && aR<aM-0.05) P("area", aR<aM*0.85? "bad" : "warn", r.id, `${nome(r)}: ${aptoNf(aR)} m² (mín. ${aptoNf(aM)} m²${r.k==="sala" && aM>mn.a+0.01? ` para ${(APTO_TIPOS[pl.tipologia]||"").toLowerCase()}` : ""})`);
     // círculo inscrito (descontadas as paredes)
     const req=R.circ[K.min||r.k]; const ci=aptoCirculoInscrito(aptoInterno(r)); r._d=ci.d; r._c=ci.c;
     if(req){ if(ci.d<req-0.005){ const lim= r.k==="circ"? 0.10 : Math.max(0.10, req*0.05); P("circulo", ci.d<req-lim? "bad" : "warn", r.id, r.k==="circ"? `${nome(r)}: largura livre ${aptoNf(ci.d,2)} m (mín. ${aptoNf(req,2)} m)` : `${nome(r)}: cabe um círculo de Ø ${aptoNf(ci.d,2)} m (mín. Ø ${aptoNf(req,2)} m)`) } }
@@ -465,6 +487,10 @@ function aptoValida(pl, st, opt={}){
     const lim=R.prop[r.k]; if(lim){ const [x0,y0,x1,y1]=aptoBBox(r.poly), a=x1-x0, b=y1-y0, q=Math.max(a,b)/Math.max(0.01,Math.min(a,b)); r._q=q;
       if(q>lim+0.01) P("proporcao", q>lim*1.15? "bad" : "warn", r.id, `${nome(r)}: comprido demais (${aptoNf(Math.max(a,b),2)} × ${aptoNf(Math.min(a,b),2)} m; máx. ${aptoNf(lim,1)} : 1)`) }
   });
+  // sala proporcional: não pode ser bem menor que o maior quarto
+  { const qs=A.filter(r=>APTO_AMB[r.k].quarto), q=qs.length? qs.reduce((a,b)=>b.area>a.area? b : a) : null, SQ=R.salaQuarto||APTO_REGRAS.salaQuarto;
+    A.filter(r=>r.k==="sala").forEach(s=>{ if(!q || !(q.area>0)) return; const f=s.area/q.area;
+      if(f<SQ.warn-1e-6) P("sala", f<SQ.bad? "bad" : "warn", s.id, `${nome(s)}: ${aptoNf(s.area)} m², menor que ${nome(q).toLowerCase()} (${aptoNf(q.area)} m²)`) }) }
   // iluminação e ventilação
   const jan=pl.janelas||[], dutos=[];
   A.forEach(r=>{ const K=APTO_AMB[r.k]; if(r.k==="sacada"||r.k==="circ") return;

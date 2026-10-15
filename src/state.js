@@ -39,7 +39,7 @@ const DEF = {
     usarLayout: true, vagaL: 2.5, vagaC: 5.0, corredor: 5.5, porModulo: 3, pilar: 0.4,
     rampaInc: 0.20, rampaL: 3.6, pcd: 0.02, idoso: 0.05,
     corrTipo: 1.6, profMin: 5.5, off: {},
-    angulo: "90", garDir: "auto", garDirGraus: 0, rampa: null, nucleoPos: 0.5, nucleoLado: "B", escadaLado: "E", elevadores: 0, tipoPlanta: "auto", escTipo: "pf_duto", nEsc: 1, emerg: false, fachada: true, rampaTipo: "reta", vtipo: {}
+    angulo: "90", garDir: "auto", garDirGraus: 0, rampa: null, nucleoPos: 0.5, nucleoLado: "B", escadaLado: "auto", elevadores: 0, tipoPlanta: "auto", escTipo: "pf_duto", nEsc: 1, emerg: false, fachada: true, rampaTipo: "reta", vtipo: {}
   },
   sol: { on: false, mes: 6, dia: 21, hora: 15 },
   custom: { emb: [], tor: [], sub: [], torOcupa: false },

@@ -85,12 +85,15 @@ function blcLayFaixa(plate, ref, list, o={}){
   const R=reg.filter(r=>r.p.length && G.area(r.p)>4).map(r=>({...r, A:G.area(r.p), list:[], used:0}));
   const us=list.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo), totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
   us.forEach(u=>{ let best=null, bs=-Infinity; R.forEach(r=>{ const s=r.A/totalA*totalAlvo-r.used-u.alvo*0.5; if(s>bs){ bs=s; best=r } }); if(best){ best.list.push(u); best.used+=u.alvo } });
+  // repartição pelos partidos (src/calc/reparte.js), como no pavimento tipo
+  const rep = o._st && typeof repReparte==="function" ? repReparte(R, us, {ux, vy, st:o._st, u0, u1, antigo:R.map(r=>r.list.map(u=>u.i)), vazioOk:R.some(r=>!r.list.length)}) : null;
+  if(rep) R.forEach((r,ri)=>{ r.list=rep.regs[ri].list; r.cuts=rep.regs[ri].cuts });
   const out=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6;
   R.forEach(r=>{
     if(!r.list.length){ out.push({poly:r.p, nome:"livre", alvo:0, area:r.A, livre:true}); return }
-    r.list.sort((a,b)=>a.i-b.i);
+    if(!r.cuts) r.list.sort((a,b)=>a.i-b.i);
     const tot=r.list.reduce((s,u)=>s+u.alvo,0); let a2=0; const [mn,mx]=G.extent(r.p,ux); let prev=mn;
-    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot), poly=G.band(r.p,ux,prev,cut);
+    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = r.cuts? (j===r.list.length-1 ? mx : r.cuts[j+1]) : j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot), poly=G.band(r.p,ux,prev,cut);
       const un={poly, nome:u.nome, alvo:u.alvo, area:G.area(poly), fac:r.fac};
       if(u.sac>0 && poly.length){ const [pv0,pv1]=G.extent(poly,vy), wU=cut-prev, w=Math.max(1.2,Math.min(wU-1, u.sac/prof)), pr=u.sac/w, uc=(prev+cut)/2;
         let va,vb; if(r.fac==="max"){ va= sacTipo==="balanco"? pv1 : pv1-pr; vb=va+pr } else { vb= sacTipo==="balanco"? pv0 : pv0+pr; va=vb-pr }
@@ -116,7 +119,7 @@ function blcLayFaixas(st, m){
       f.nucleo = f.A>1 && tem ? Math.min(1, blcDentro(ref.core, f.plate) + (1-base), ...(ref.coreExtra||[]).map(p=>blcDentro(p, f.plate))) : 0;
       if(f.nTipo<1 || f.A<1) return;
       const list=[]; P.mix.forEach((u,j)=>{ for(let q=0;q<(f.qtd[j]||0);q++) list.push({nome:u.nome, alvo:u.area*f.r, sac:+u.sac||0}) });
-      const E=st.estudo, o={sacTipo:P.sacTipo, sacProf:P.sacProf};
+      const E=st.estudo, o={sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st};
       // C3: bloco em L/U/T/H/pátio (ou referência por alas) → layout por ala com o mesmo núcleo e o corredor nas mesmas linhas
       const la = typeof alasLayFaixa==="function" && f.nucleo>=0.999 ? alasLayFaixa(f.plate, f.oco||null, ref, list, {...o, corr:E.corrTipo, profMin:E.profMin, planta:E.tipoPlanta,
         escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, nElev:ref.coreParts.filter(c=>c.kind==="elev").length||1}, st) : null;

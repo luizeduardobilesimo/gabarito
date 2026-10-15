@@ -104,10 +104,12 @@ describe('C3 — o que continua no motor de antes (tipoLayout)', () => {
     const list = []; P.mix.forEach(u => { for (let q = 0; q < u.qtd; q++) list.push({ nome: u.nome, alvo: u.area * t.r, sac: +u.sac || 0 }) });
     const nAuto = (t.units > 60 || t.H > 45) ? 3 : (t.H > 12 ? 2 : 1);
     const ref = A.tipoLayout(t.plate, list, { corr: E.corrTipo, profMin: E.profMin, nElev: +E.elevadores || nAuto, pos: E.nucleoPos, lado: E.nucleoLado, escada: E.escadaLado, planta: E.tipoPlanta,
-      escTipo: E.escTipo, nEsc: E.nEsc, emerg: E.emerg, fachada: E.fachada, sacTipo: P.sacTipo, sacProf: P.sacProf });
+      escTipo: E.escTipo, nEsc: E.nEsc, emerg: E.emerg, fachada: E.fachada, sacTipo: P.sacTipo, sacProf: P.sacProf, _st: st, _areaFixa: true });   // a repartição pelos partidos (reparte.js) também
     const lay = m.tipo[0];
     expect(lay.alas).toBeUndefined();
-    expect(JSON.stringify(lay.units.map(u => [u.poly, u.nome, u.area]))).toBe(JSON.stringify(ref.units.map(u => [u.poly, u.nome, u.area])));
+    // (a repartição pelos partidos depende da área-alvo, que a eficiência real ajusta depois: os cortes podem andar centímetros)
+    expect(lay.units.map(u => u.nome)).toEqual(ref.units.map(u => u.nome));
+    lay.units.forEach((u, i) => expect(Math.abs(u.area - ref.units[i].area)).toBeLessThan(1.5));
     expect(lay.core).toEqual(ref.core); expect(lay.corridor).toEqual(ref.corridor);
   });
   it('quase retangular (recorte pequeno) e lados inclinados seguem no tipoLayout', () => {

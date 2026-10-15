@@ -891,7 +891,7 @@ const DEF = {
     usarLayout: true, vagaL: 2.5, vagaC: 5.0, corredor: 5.5, porModulo: 3, pilar: 0.4,
     rampaInc: 0.20, rampaL: 3.6, pcd: 0.02, idoso: 0.05,
     corrTipo: 1.6, profMin: 5.5, off: {},
-    angulo: "90", garDir: "auto", garDirGraus: 0, rampa: null, nucleoPos: 0.5, nucleoLado: "B", escadaLado: "E", elevadores: 0, tipoPlanta: "auto", escTipo: "pf_duto", nEsc: 1, emerg: false, fachada: true, rampaTipo: "reta", vtipo: {}
+    angulo: "90", garDir: "auto", garDirGraus: 0, rampa: null, nucleoPos: 0.5, nucleoLado: "B", escadaLado: "auto", elevadores: 0, tipoPlanta: "auto", escTipo: "pf_duto", nEsc: 1, emerg: false, fachada: true, rampaTipo: "reta", vtipo: {}
   },
   sol: { on: false, mes: 6, dia: 21, hora: 15 },
   custom: { emb: [], tor: [], sub: [], torOcupa: false },
@@ -1133,6 +1133,17 @@ function notchPoly(Q, ux, vy, corner, inner){
 }
 function tipoLayout(plate, units, o){
   if(!plate || !plate.length) return null;
+  // ordem do núcleo automática: escada de um lado ou do outro (o contorno do núcleo é o mesmo — garagens e térreo não mudam);
+  // fica a que reparte melhor o andar pelos partidos (src/calc/reparte.js); empate = escada primeiro, como antes
+  // e, se nenhuma das duas reparte bem, a escada na profundidade toda (sem a sobra em L atrás dela, que só serve à unidade
+  // vizinha quando ela é larga o bastante para um partido)
+  if(o.escada==="auto"){ const a=tipoLayout(plate, units, {...o, escada:"E"}); if(!a || !a.rep) return a; a.escAuto="E";   // (no otimizador, _rap: sem a busca — a área das unidades é a mesma)
+    const cs=[a]; const b=tipoLayout(plate, units, {...o, escada:"D"}); const priv=l=>l.units.reduce((s,u)=>s+(u.livre? 0 : u.area),0);   // torre desenhada: a privativa vem do desenho — a ordem não pode mudá-la
+    // o contorno do núcleo não pode mudar (com poucas unidades o núcleo vai para a ponta — garagens e térreo dependem dele)
+    const mesmo=l=>l && l.rep && l.core.length===a.core.length && l.core.every((q,i)=>Math.abs(q[0]-a.core[i][0])<1e-6 && Math.abs(q[1]-a.core[i][1])<1e-6);
+    if(mesmo(b) && (!o._areaFixa || Math.abs(priv(b)-priv(a))<0.01)){ b.escAuto="D"; cs.push(b) }
+    if(o.escProf!==false && !o._areaFixa && (a.escSobra>0.5 || (b && b.escSobra>0.5))) ["E","D"].forEach(e=>{ const c=tipoLayout(plate, units, {...o, escada:e, escProf:false}); if(mesmo(c)){ c.escAuto=e; c.rep.custo+=REP_PESO.semRecorte; cs.push(c) } });
+    return cs.reduce((x,y)=> y.rep.custo < x.rep.custo-0.5 ? y : x) }
   const ux=G.longestDir(plate), vy=[-ux[1],ux[0]];
   const [u0,u1]=G.extent(plate,ux), [v0,v1]=G.extent(plate,vy), D=v1-v0, Lu=u1-u0;
   const corr=o.corr, fachada = o.fachada || o.escTipo==="pf_balcao";
@@ -1176,12 +1187,15 @@ function tipoLayout(plate, units, o){
   // poucas unidades: um trecho ficaria vazio — leva o núcleo para a ponta desse trecho
   const empty=R.find(r=>!r.list.length);
   if(empty && !o._re && us.length){ const [ea,eb]=G.extent(empty.p,ux); return tipoLayout(plate, units, {...o, _re:1, pos: (ea+eb)/2 < (cu0+cu1)/2 ? 0 : 1}) }
+  // repartição pelos partidos (src/calc/reparte.js): que unidade vai em que trecho, em que ordem e com que frente
+  const rep = o._st && !o._rap && typeof repReparte==="function" ? repReparte(R, us, {ux, vy, st:o._st, u0, u1, antigo:R.map(r=>r.list.map(u=>u.i)), vazioOk:!!empty}) : null;
+  if(rep) R.forEach((r,ri)=>{ r.list=rep.regs[ri].list; r.cuts=rep.regs[ri].cuts });
   const out=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6;
   R.forEach(r=>{
     if(!r.list.length){ out.push({poly:r.p, nome:"livre", alvo:0, area:r.A, livre:true}); return }
-    r.list.sort((a,b)=>a.i-b.i);
+    if(!r.cuts) r.list.sort((a,b)=>a.i-b.i);
     const tot=r.list.reduce((s,u)=>s+u.alvo,0); let a2=0; const [mn,mx]=G.extent(r.p,ux); let prev=mn;
-    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot); const poly=G.band(r.p,ux,prev,cut);
+    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = r.cuts? (j===r.list.length-1 ? mx : r.cuts[j+1]) : j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot); const poly=G.band(r.p,ux,prev,cut);
       const un={poly, nome:u.nome, alvo:u.alvo, area:G.area(poly), fac:r.fac};
       if(u.sac>0 && poly.length){ const [pv0,pv1]=G.extent(poly,vy), wU=cut-prev, w=Math.max(1.2,Math.min(wU-1, u.sac/prof)), pr=u.sac/w, uc=(prev+cut)/2;
         let va,vb; if(r.fac==="max"){ va= sacTipo==="balanco"? pv1 : pv1-pr; vb=va+pr } else { vb= sacTipo==="balanco"? pv0 : pv0+pr; va=vb-pr }
@@ -1190,7 +1204,7 @@ function tipoLayout(plate, units, o){
       prev=cut; out.push(un) });
   });
   const kinds={}; cParts.forEach(c=>kinds[c.kind]=(kinds[c.kind]||0)+c.area);
-  return {ux,vy,units:out,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:sobraA.reduce((s,a)=>s+a,0)};
+  return {ux,vy,units:out,rep:rep? {custo:rep.custo, antigo:rep.antigo} : null,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:sobraA.reduce((s,a)=>s+a,0)};
 }
 
 
@@ -2023,13 +2037,13 @@ function areasFin(st, m){
   m.priv = m.privRes + m.lojaPriv;
 }
 /* pavimento tipo de cada torre (m.tipo) e dos blocos da pilha (f.lay) — também usado pelo atalho do otimizador (blcPrivEstimada) */
-function tipoLayouts(st, m){
+function tipoLayouts(st, m, opt){
   const E=st.estudo, P=st.produto;
   m.tipo = m.T.map(t=>{
     const list=[]; P.mix.forEach(u=>{ for(let q=0;q<u.qtd;q++) list.push({nome:u.nome, alvo:u.area*t.r, sac:+u.sac||0}) });
     const nAuto=(t.units>60||t.H>45)?3:(t.H>12?2:1);
     return (typeof alasTipoLayout==="function" ? alasTipoLayout : tipoLayout)(t.plate, list, {corr:E.corrTipo, profMin:E.profMin, nElev: +E.elevadores||nAuto, pos:E.nucleoPos, lado:E.nucleoLado, escada:E.escadaLado, planta:E.tipoPlanta,
-      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
+      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st, _rap:!!(opt && opt.quick), _areaFixa:!!(t.desenhada || m.torOcupa)}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
   });
   if(typeof blcLayFaixas==="function") blcLayFaixas(st, m);   // C2: blocos fora da referência → mesmo núcleo, unidades por área (f.lay)
 }
@@ -2037,7 +2051,7 @@ function compute(st, opt={}){
   const m = massing(st);
   // estudo: pavimento tipo e garagem
   const E=st.estudo, P=st.produto;
-  tipoLayouts(st, m);
+  tipoLayouts(st, m, opt);
   if(typeof blcPrivReal==="function") blcPrivReal(st, m);     // torre desenhada / contorno ocupado: privativa = unidades desenhadas (eficiência real da planta)
   // sacadas em balanço somam área construída e privativa
   m.sacA=0; m.sacBal=0;
@@ -3203,9 +3217,12 @@ function alasUnidades(M, units, o){
   const R=uso.filter(r=>r.A>4 && r.facL>=ALAS_FAC && r.corL>=ALAS_COR && r.F.h>=2.4).map(r=>({...r, list:[], used:0}));
   const us=units.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo), totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
   us.forEach(u=>{ let best=null, bs=-Infinity; R.forEach(r=>{ const s=r.A/totalA*totalAlvo-r.used-u.alvo*0.5; if(s>bs){ bs=s; best=r } }); if(best){ best.list.push(u); best.used+=u.alvo } });
+  // repartição pelos partidos (src/calc/reparte.js): que unidade vai em que ala, em que ordem
+  const rep = o._st && typeof repComp==="function" ? alasReparte(R, us, o._st, R.some(r=>!r.list.length)) : null;
+  if(rep) R.forEach((r,ri)=>{ r.list=rep[ri]; r.fixa=true });
   const out=[], livres=[], semLugar=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6, usados=new Set();
   R.forEach(r=>{ const F=r.F; if(!r.list.length) return; usados.add(r.i);
-    r.list.sort((a,b)=>a.i-b.i);
+    if(!r.fixa) r.list.sort((a,b)=>a.i-b.i);
     let L=r.list.slice(), cuts=alasCortes(F, L.map(u=>u.alvo));
     while(!cuts && L.length>1){ const j=L.reduce((b,u,k)=>u.alvo<L[b].alvo? k : b, 0); semLugar.push(L[j]); L.splice(j,1); cuts=alasCortes(F, L.map(u=>u.alvo)) }
     if(!cuts){ semLugar.push(...L); usados.delete(r.i); return }
@@ -3228,6 +3245,31 @@ function alasUnidades(M, units, o){
     const p=[g.W(fu[a],fv[b]), g.W(fu[a1+1],fv[b]), g.W(fu[a1+1],fv[b1+1]), g.W(fu[a],fv[b1+1])];
     if(G.area(p)>0.01) livres.push(lv(p, [fu[a], fu[a1+1], fv[b], fv[b1+1]])) }
   const U={units:out, livres, semLugar}; alasAbsorve(U, g); return U;
+}
+/* distribuição das unidades pelas faixas das alas escolhida pelos partidos (como repReparte no tipoLayout): todas as
+   distribuições por tipologia e as ordens distintas em cada faixa; cortes pelo alasCortes (fachada e corredor mínimos);
+   custo = repNotaGeo de cada unidade (retângulo frente × fundo da faixa). Devolve [[unidades por faixa]] ou null */
+function alasReparte(R, us, st, vazioOk){
+  if(!R.length || !us.length) return null;
+  const tipos=new Map(); us.forEach(u=>{ const key=u.nome+"|"+(+u.alvo).toFixed(3)+"|"+(+u.sac||0); if(!tipos.has(key)) tipos.set(key,{nome:u.nome, alvo:+u.alvo, us:[]}); tipos.get(key).us.push(u) });
+  const TT=[...tipos.values()]; TT.forEach(t=>{ t.T=repTipo(st, t.nome, t.alvo) }); if(TT.some(t=>!t.T)) return null;
+  const k=R.length, comps=TT.map(t=>repComp(t.us.length, k)), nDist=comps.reduce((s,c)=>s*c.length,1); if(nDist>REP_LIM.dist) return null;
+  const memo=new Map();
+  const trecho=(ri, cont)=>{ const key=ri+":"+cont.join(","); if(memo.has(key)) return memo.get(key);
+    const arr=[]; cont.forEach((n,ti)=>{ for(let q=0;q<n;q++) arr.push(ti) }); let best=null;
+    if(!arr.length) best={seq:[], custo: vazioOk? 0 : 1e6};
+    else { const F=R[ri].F; repPerms(arr, REP_LIM.seq).forEach(seq=>{ const cuts=alasCortes(F, seq.map(ti=>TT[ti].alvo)); if(!cuts) return; let c=0;
+        seq.forEach((ti,j)=>{ const W=cuts[j+1]-cuts[j], A=W*F.h; c+=repNotaGeo(TT[ti].T, TT[ti].alvo, {A, W, D:F.h, Ai:A}, false, false) });
+        if(!best || c<best.custo) best={seq, custo:c} }); if(!best) best={seq:arr, custo:1e6} }
+    memo.set(key, best); return best };
+  let best=null;
+  const rec=(ti, acc)=>{ if(ti===TT.length){ let c=0; const ps=[]; for(let ri=0;ri<k;ri++){ const cont=TT.map((t,j)=>acc[j][ri]), r=trecho(ri, cont); c+=r.custo; ps.push(r); if(best && c>=best.custo) return }
+      if(c<1e6 && (!best || c<best.custo)) best={custo:c, ps}; return }
+    comps[ti].forEach(cp=>rec(ti+1, [...acc, cp])) };
+  rec(0, []);
+  if(!best) return null;
+  const fila=TT.map(t=>t.us.slice().sort((a,b)=>a.i-b.i));
+  return best.ps.map(p=>p.seq.map(ti=>fila[ti].shift()));
 }
 /* retângulo [u0,u1,v0,v1] (referencial local da planta) do trecho a..z de uma faixa */
 function alasLocR(F, a, z){ return F.o==="h" ? [a, z, F.y0, F.y1] : [-F.y1, -F.y0, a, z] }
@@ -3310,7 +3352,8 @@ const _alasCache=new Map();
 function alasLayout(plate, units, o, oco, fix){
   const D=alasDetecta(plate, oco, fix); if(!D || D.falha) return D;
   const r2=v=>Math.round(v*100)/100, sig=JSON.stringify([plate.map(q=>q.map(r2)), oco? [oco.pts, oco.vazios].map(r=>JSON.stringify(r)) : 0, units.map(u=>[u.nome, r2(u.alvo), u.sac]),
-    ["corr","profMin","nElev","escTipo","nEsc","emerg","fachada","sacTipo","sacProf","planta","distMax","esc2"].map(k=>o[k]), fix? [fix.ux, fix.H, fix.V, fix.ref && fix.ref.core, fix.ref && fix.ref.coreExtra] : 0]);
+    ["corr","profMin","nElev","escTipo","nEsc","emerg","fachada","sacTipo","sacProf","planta","distMax","esc2"].map(k=>o[k]), fix? [fix.ux, fix.H, fix.V, fix.ref && fix.ref.core, fix.ref && fix.ref.coreExtra] : 0,
+    o._st && typeof repTipo==="function" ? [...new Set(units.map(u=>u.nome))].map(n=>{ const T=repTipo(o._st, n, (units.find(u=>u.nome===n)||{}).alvo||0); return T? T.mods.map(m=>m.id).join(",") : "" }) : 0]);
   // cópia rasa por chamada: os cômodos (src/calc/comodos.js) gravam em u.com e u.sac de cada unidade
   const copia=l=>!l || l.falha ? l : {...l, units:l.units.map(u=>u.sac? {...u, sac:{...u.sac}} : {...u})};
   if(_alasCache.has(sig)) return copia(_alasCache.get(sig));
@@ -3521,10 +3564,10 @@ const APTO_CAT = (()=>{
       a("a1","sala",0,0,2.9,7.0,"xy"), a("a2","dorm",2.9,0,2.5,3.3,"xy"), a("a3","dorm",5.4,0,2.5,3.3,"xy"),
       a("a4","circ",2.9,3.3,5.0,1.1,"x"), a("a5","cozinha",2.9,4.4,2.0,2.6,"xy"), a("a6","serv",4.9,4.4,1.3,2.6,"y"),
       a("a7","banho",6.2,4.4,1.7,2.6,"xy")]),
-    P("2d-canto","2 dorm. de canto (janela lateral)","2d",7.2,7.6,[6.9,8.4],[7.0,8.8],1.2,[
-      a("a1","sala",0,0,3.0,4.6,"xy"), a("a2","cozinha",0,4.6,1.8,3.0,"xy"), a("a3","serv",1.8,4.6,1.2,3.0,"y"),
-      a("a4","dorm",3.0,0,4.2,3.3,"xy",{cama:"casal"}), a("a5","circ",3.0,3.3,4.2,1.1,"x"), a("a6","banho",3.0,4.4,1.6,3.2,"xy"),
-      a("a7","dorm",4.6,4.4,2.6,3.2,"xy")],
+    P("2d-canto","2 dorm. de canto (janela lateral)","2d",7.8,7.6,[7.0,8.6],[7.4,8.8],1.2,[
+      a("a1","sala",0,0,3.4,4.8,"xy"), a("a2","cozinha",0,4.8,2.2,2.8,"xy"), a("a3","serv",2.2,4.8,1.2,2.8,"y"),
+      a("a4","dorm",3.4,0,4.4,3.3,"xy",{cama:"casal"}), a("a5","circ",3.4,3.3,4.4,1.1,"x"), a("a6","banho",3.4,4.4,1.5,3.2,"y"),
+      a("a7","dorm",4.9,4.4,2.9,3.2,"xy")],
       {lateral:{xW:true}}),
     P("2d-rasa","2 dorm. em lâmina rasa","2d",10.6,5.6,[9.6,12.4],[5.35,6.4],1.9,[
       a("a1","sala",0,0,3.8,5.6,"xy"), a("a2","dorm",3.8,0,3.3,2.8,"xy"), a("a3","dorm",7.1,0,3.5,2.8,"xy",{cama:"casal"}),
@@ -4238,6 +4281,10 @@ const APTO_REGRAS = {
   prop: { dorm:2.2, suite:2.2, office:2.4, sala:3.0 },
   porta: { min:0.8, molhada:0.7, entrada:0.9 },
   nota: { bad:25, warn:6, area:0.5, areaTol:10 },
+  // estar/jantar proporcional ao número de dormitórios (m², a sala sozinha: a cozinha integrada e a sacada não contam) e nunca
+  // bem menor que o maior quarto (fração do maior dormitório/suíte: abaixo de "bad" é grave, abaixo de "warn" é atenção)
+  sala: { studio:0, "1d":10, "1s":10, "2d":12, "2d1s":12, "2s":13, "3d1s":14, "3s":16, "4d1s":16 },
+  salaQuarto: { bad:0.6, warn:0.75 },
   moveis: true
 };
 const APTO_MIN = { sala:{a:10,l:2.6}, suite:{a:9,l:2.5}, dorm:{a:7,l:2.3}, office:{a:4,l:1.8}, cozinha:{a:4,l:1.5}, serv:{a:1.8,l:1.0}, banho:{a:2.2,l:1.1}, lavabo:{a:1.2,l:0.9}, circ:{a:0,l:0.9} };
@@ -4258,7 +4305,7 @@ const APTO_PROG = {
 };
 const aptoTipologias = ()=> Object.entries(APTO_TIPOS).map(([k,nome])=>({k, nome}));
 const aptoNf = (v,d=1)=>(+v).toFixed(d).replace(".",",");
-const aptoReg = st=>{ const r=st && st.comodos && st.comodos.regras; if(!r) return APTO_REGRAS; return {...APTO_REGRAS, ...r, circ:{...APTO_REGRAS.circ, ...(r.circ||{})}, prop:{...APTO_REGRAS.prop, ...(r.prop||{})}, porta:{...APTO_REGRAS.porta, ...(r.porta||{})}, nota:{...APTO_REGRAS.nota, ...(r.nota||{})}} };
+const aptoReg = st=>{ const r=st && st.comodos && st.comodos.regras; if(!r) return APTO_REGRAS; return {...APTO_REGRAS, ...r, circ:{...APTO_REGRAS.circ, ...(r.circ||{})}, prop:{...APTO_REGRAS.prop, ...(r.prop||{})}, porta:{...APTO_REGRAS.porta, ...(r.porta||{})}, nota:{...APTO_REGRAS.nota, ...(r.nota||{})}, sala:{...APTO_REGRAS.sala, ...(r.sala||{})}, salaQuarto:{...APTO_REGRAS.salaQuarto, ...(r.salaQuarto||{})}} };
 
 /* ---------- geometria auxiliar (referencial local) ---------- */
 const aptoE = 1e-6;
@@ -4343,6 +4390,7 @@ function aptoInterno(r){ const cls=aptoParedeDe(r); return aptoInset(r.poly, i=>
 /* ---------- esticar por faixas ---------- */
 const APTO_FAIXA_FOLGA = { W:1.4, D:1.25 };   // além do máximo da faixa: tolerância (com aviso) antes de virar "não cabe"
 /* medida mínima de eixo a eixo de um ambiente que ocupa uma faixa inteira (para encolher sem estragar) */
+const APTO_SAC_FUNDO = { sala:2.9, suite:2.9, dorm:2.7, office:2.2 };   // fundo mínimo que fica atrás da sacada embutida
 const APTO_MINDIM = { sala:2.95, suite:2.85, dorm:2.62, office:2.0, cozinha:1.95, serv:1.3, banho:1.45, bsuite:1.45, lavabo:1.15, circ:1.1, closet:1.2, desp:1.0, sacada:1.2 };
 function aptoGrade(rs, eixo, ref, novo, cortes){
   const c0=eixo? "y0":"x0", c1=eixo? "y1":"x1", ch=eixo? "y":"x";
@@ -4430,38 +4478,50 @@ function aptoAplica(mod, W, D, o={}){
   am.forEach(a=>{ const g=grp[a.id]; let r=porId[g]; if(!r){ const dono=am.find(x=>(x.grupo||x.id)===g && grp[x.id]===g && !x.k0) || a; r=porId[g]={id:dono.id, k:dono.k, nome:dono.nome||null, de:dono.de||null, cama:dono.cama||null, partes:[], ref:0, fixo:true}; rooms.push(r) }
     rid[a.id]=r.id; r.partes.push([a.x0,a.y0,a.x1,a.y1]); r.ref+=(a.rx[2]-a.rx[0])*(a.rx[3]-a.rx[1]); if(a.estica) r.fixo=false });
   rooms.forEach(r=>{ if(r.de) r.de=rid[r.de]||r.de });
-  // sacada embutida: recorta a frente dos ambientes de "sobre" (padrão: a sala)
+  // sacada embutida: recorta a frente dos ambientes de "sobre" (padrão: a sala). Opções: só a sala (até 2,6 m de fundo, a
+  // "varanda gourmet") ou continuando na frente do quarto vizinho (varanda corrida, até 2,0 m). Cada ambiente coberto precisa
+  // ficar com o fundo mínimo atrás da sacada (APTO_SAC_FUNDO: sala 2,9 m, suíte 2,9 m, dormitório 2,7 m) — antes bastavam
+  // 2,2 m e a varanda corrida esmagava o quarto (5 m²). Fica a opção com menos ambientes que leva a área inteira e mantém a
+  // sala no mínimo da tipologia; se nenhuma leva, a maior possível (a área que sobra fica nos cômodos).
   let sac=null;
   if(o.sacada && o.sacada.area>0.5){
-    let sobre=(mod.sacada && Array.isArray(mod.sacada.sobre) && mod.sacada.sobre.length? mod.sacada.sobre.map(id=>rid[id]) : rooms.filter(r=>r.k==="sala").map(r=>r.id)).filter(Boolean);
-    { // sacada funda demais só na frente da sala (> 2,4 m): continua na frente inteira do quarto vizinho (varanda corrida)
-      const fr0=r=>r.partes.filter(p=>p[1]<1e-4), spanDe=ids=>{ const iv=rooms.filter(r=>ids.includes(r.id)).flatMap(r=>fr0(r).map(p=>[p[0],p[2]])); return iv.length? [Math.min(...iv.map(v=>v[0])), Math.max(...iv.map(v=>v[1]))] : null };
-      for(let g=0; g<3; g++){ const sp=spanDe(sobre); if(!sp || o.sacada.area/(sp[1]-sp[0])<=2.4) break;
-        const viz=rooms.filter(r=>!sobre.includes(r.id) && ["dorm","suite","office","sala"].includes(r.k) && fr0(r).some(p=>Math.abs(p[0]-sp[1])<1e-4 || Math.abs(p[2]-sp[0])<1e-4));
-        if(!viz.length) break; sobre=sobre.concat(viz[0].id) } }
-    const fr=[]; rooms.filter(r=>sobre.includes(r.id)).forEach(r=>r.partes.forEach(p=>{ if(p[1]<1e-4) fr.push([p[0],p[2],p[3]]) }));
-    fr.sort((a,b)=>a[0]-b[0]); const spans=[]; fr.forEach(f=>{ const u=spans[spans.length-1]; if(u && f[0]<=u[1]+1e-4){ u[1]=Math.max(u[1],f[1]); u[2]=Math.min(u[2],f[2]) } else spans.push([f[0],f[1],f[2]]) });
-    spans.sort((a,b)=>(b[1]-b[0])-(a[1]-a[0]));
-    const sp=spans[0];
-    if(sp && sp[1]-sp[0]>=1.2){ const span=sp[1]-sp[0], A=o.sacada.area;
-      // fachada inclinada: a sacada começa onde a fachada está (yf = maior recuo da fachada no trecho)
-      const fachY=x=>{ let y=0; bordas.forEach(b=>{ if(b.c!=="fachada") return; const dx=b.b[0]-b.a[0], dy=b.b[1]-b.a[1]; if(Math.abs(dy)>Math.abs(dx)) return; const lo=Math.min(b.a[0],b.b[0]), hi=Math.max(b.a[0],b.b[0]); if(x<lo-1e-6||x>hi+1e-6||Math.abs(dx)<1e-9) return; y=Math.max(y, b.a[1]+(x-b.a[0])*dy/dx) }); return y };
-      // a sacada ocupa a frente inteira dos ambientes cobertos (cômodos continuam retangulares); profundidade = área ÷ frente
-      let sd=Math.max(1.25, Math.min(2.4, A/span)), sw=Math.min(span, A/sd), xa=sp[0], xb, yf=0;
-      const pri=rooms.find(r=>r.id===sobre[0]), px=pri? pri.partes.filter(p=>p[1]<1e-4) : [], p0=px.length? Math.min(...px.map(p=>p[0])) : sp[0], p1=px.length? Math.max(...px.map(p=>p[2])) : sp[1];
-      for(let it=0; it<3; it++){
+    const A=o.sacada.area, fr0=r=>r.partes.filter(p=>p[1]<1e-4);
+    const base=(mod.sacada && Array.isArray(mod.sacada.sobre) && mod.sacada.sobre.length? mod.sacada.sobre.map(id=>rid[id]) : rooms.filter(r=>r.k==="sala").map(r=>r.id)).filter(Boolean);
+    const fachY=x=>{ let y=0; bordas.forEach(b=>{ if(b.c!=="fachada") return; const dx=b.b[0]-b.a[0], dy=b.b[1]-b.a[1]; if(Math.abs(dy)>Math.abs(dx)) return; const lo=Math.min(b.a[0],b.b[0]), hi=Math.max(b.a[0],b.b[0]); if(x<lo-1e-6||x>hi+1e-6||Math.abs(dx)<1e-9) return; y=Math.max(y, b.a[1]+(x-b.a[0])*dy/dx) }); return y };
+    const spanDe=ids=>{ const fr=[]; rooms.filter(r=>ids.includes(r.id)).forEach(r=>fr0(r).forEach(p=>fr.push([p[0],p[2]])));
+      fr.sort((a,b)=>a[0]-b[0]); const sps=[]; fr.forEach(f=>{ const u=sps[sps.length-1]; if(u && f[0]<=u[1]+1e-4) u[1]=Math.max(u[1],f[1]); else sps.push([f[0],f[1]]) });
+      return sps.sort((a,b)=>(b[1]-b[0])-(a[1]-a[0]))[0] || null };
+    const opcoes=[base]; { let cur=base; for(let g=0; g<2; g++){ const sp=spanDe(cur); if(!sp) break;
+        const viz=rooms.filter(r=>!cur.includes(r.id) && ["dorm","suite","office","sala"].includes(r.k) && fr0(r).some(p=>Math.abs(p[0]-sp[1])<1e-4 || Math.abs(p[2]-sp[0])<1e-4));
+        if(!viz.length) break; cur=cur.concat(viz[0].id); opcoes.push(cur) } }
+    const salaMin=Math.max(((o.st && o.st.comodos && o.st.comodos.min) || APTO_MIN).sala.a||0, +(aptoReg(o.st).sala||{})[mod.tipologia]||0);
+    // posiciona a sacada numa opção: começa pelo 1º ambiente de "sobre" (a sala), no canto da unidade se ele encosta numa divisa
+    const posiciona=sobre=>{ let sp=spanDe(sobre); if(!sp) return null;
+      // encaixe "inscrito": a sacada fica na frente do retângulo do partido — a sobra (atrás da escada, por exemplo) é rasa e
+      // continua sendo extensão do ambiente (com a sacada nela, sobraria uma tira sem uso atrás)
+      if(R[0]>aptoE || R[2]<W-aptoE){ const a=Math.max(sp[0],R[0]), b=Math.min(sp[1],R[2]); if(b-a>=1.2) sp=[a,b] }
+      if(sp[1]-sp[0]<1.2) return null; const span=sp[1]-sp[0];
+      const pri=rooms.find(r=>r.id===sobre[0]), px=pri? fr0(pri) : [], p0=px.length? Math.min(...px.map(p=>p[0])) : sp[0], p1=px.length? Math.max(...px.map(p=>p[2])) : sp[1];
+      const dMax= sobre.length>1? 2.0 : 2.6; let sd=Math.max(1.2, Math.min(dMax, A/span)), sw=Math.min(span, A/sd), xa=sp[0], xb=sp[1], yf=0, ok=true;
+      for(let it=0; it<4; it++){
         if(sw>span){ sw=span; sd=A/sw }
-        // começa pelo 1º ambiente de "sobre" (a sala): no canto da unidade, se ele encosta numa divisa
         xa = p0<1e-3 || Math.abs(p0-sp[0])<1e-3? Math.max(sp[0],p0) : p1>W-1e-3 || Math.abs(p1-sp[1])<1e-3? Math.min(sp[1],p1)-sw : p0;
         xa=Math.max(sp[0], Math.min(sp[1]-sw, xa)); xb=xa+sw;
         yf=Math.max(fachY(xa+1e-3), fachY(xb-1e-3), ...cont.filter(q=>q[0]>xa && q[0]<xb).map(q=>fachY(q[0])));
-        // o ambiente coberto quase todo fica com ≥ 2,2 m atrás da sacada
-        let ymax=Infinity; rooms.filter(r=>sobre.includes(r.id)).forEach(r=>r.partes.forEach(p=>{ if(p[1]>1e-4) return; const cov=(Math.min(p[2],xb)-Math.max(p[0],xa))/Math.max(1e-6,p[2]-p[0]); if(cov>0.6) ymax=Math.min(ymax, p[3]-yf-2.2) }));
-        if(sd<=ymax+1e-6 || ymax<1.0) break;
-        sd=Math.max(1.15, ymax); sw=Math.min(span, A/sd) }
-      const yb=yf+sd;
+        let ymax=Infinity; rooms.filter(r=>sobre.includes(r.id)).forEach(r=>fr0(r).forEach(p=>{ if(Math.min(p[2],xb)-Math.max(p[0],xa)<0.3) return; ymax=Math.min(ymax, p[3]-yf-(APTO_SAC_FUNDO[r.k]||2.7)) }));
+        if(sd<=ymax+1e-6) break;
+        if(ymax<1.15){ ok=false; sd=Math.max(1.15, Math.min(sd, ymax)); sw=Math.min(span, A/sd); break }
+        sd=ymax; sw=Math.min(span, A/sd) }
+      if(sw*sd>A+1e-6){ sd=A/sw }   // não passa da área pedida
+      // sala que sobra atrás (aproximada pelas partes da frente)
+      const salaR=rooms.filter(r=>r.k==="sala").reduce((s,r)=>s+r.partes.reduce((t,p)=>t+(p[2]-p[0])*(p[3]-p[1])-(p[1]<1e-4 && sobre.includes(r.id)? Math.max(0,Math.min(p[2],xb)-Math.max(p[0],xa))*(sd+yf) : 0),0),0);
+      return {sobre, sp, sd, sw, xa, xb, yf, area:sw*sd, ok, salaR} };
+    const cs=opcoes.map(posiciona).filter(Boolean);
+    const cheia=c=>c.ok && c.area>=A-0.05;
+    const esc= cs.find(c=>cheia(c) && c.salaR>=salaMin-0.05) || cs.find(cheia) || cs.filter(c=>c.ok).sort((a,b)=>b.area-a.area)[0] || cs[0];
+    if(esc){ const {sobre, xa, xb, yf, sd, sw}=esc, yb=yf+sd;
       rooms.forEach(r=>{ const np=[]; r.partes.forEach(p=>{ if(p[1]>1e-4 || p[2]<=xa+1e-4 || p[0]>=xb-1e-4 || !sobre.includes(r.id) || p[3]<=yb+0.3){ np.push(p); return }
-          const a0=Math.max(p[0],xa), a1=Math.min(p[2],xb);
+          const a0=Math.max(p[0],xa), a1=Math.min(p[2],xb); r.sacCut=(r.sacCut||0)+(a1-a0)*yb;
           if(a0>p[0]+1e-4) np.push([p[0],0,a0,yb]); if(a1<p[2]-1e-4) np.push([a1,0,p[2],yb]); np.push([p[0],yb,p[2],p[3]]) }); r.partes=np });
       sac={id:"sac", k:"sacada", nome:null, partes:[[xa,0,xb,yb]], ref:sw*sd, fixo:true, alvoFixo:sw*sd}; rooms.push(sac) } }
   // recorte pelo contorno e união das partes
@@ -4474,9 +4534,14 @@ function aptoAplica(mod, W, D, o={}){
   rooms.forEach(r=>{ (r.sobra||[]).forEach(q=>{ for(const v of rooms){ if(v===r || !v.poly.length) continue; const u=aptoUne(v.poly,q); if(u){ v.poly=aptoCCW(u); return } } }); delete r.sobra });
   let amb=rooms.filter(r=>r.poly.length>2 && G.area(r.poly)>0.05);
   // áreas-alvo: fixos mantêm a do desenho; os que esticam dividem o resto na proporção do desenho
+  // (a sacada embutida sai da área dos ambientes que ela recorta — a sala —, não de todos; no encaixe "inscrito" o que fica
+  // fora do retângulo é extensão de quem o recebe: nenhum dos dois conta como desvio de área)
   const Au=G.area(cont); amb.forEach(r=>{ r.area=G.area(r.poly) });
-  const fixos=amb.filter(r=>r.fixo), est=amb.filter(r=>!r.fixo), Af=fixos.reduce((s,r)=>s+(r.alvoFixo||r.ref),0), Re=est.reduce((s,r)=>s+r.ref,0);
-  fixos.forEach(r=>{ r.alvo=r.alvoFixo||r.ref }); est.forEach(r=>{ r.alvo= Re>0? r.ref*Math.max(0.2,(Au-Af))/Re : r.area });
+  const inscr = R[0]>aptoE || R[1]>aptoE || R[2]<W-aptoE || R[3]<D-aptoE;
+  amb.forEach(r=>{ r.ext = inscr && r.k!=="sacada"? Math.max(0, r.area-G.area(aptoClipRet(r.poly, R[0], R[1], R[2], R[3]))) : 0 });
+  const fixos=amb.filter(r=>r.fixo), est=amb.filter(r=>!r.fixo), Af=fixos.reduce((s,r)=>s+(r.k==="sacada"? 0 : (r.alvoFixo||r.ref)),0), Re=est.reduce((s,r)=>s+r.ref,0);
+  const Ab=Au-amb.reduce((s,r)=>s+r.ext,0);
+  fixos.forEach(r=>{ r.alvo=(r.alvoFixo||r.ref)-(r.k==="sacada"? 0 : (r.sacCut||0))+r.ext }); est.forEach(r=>{ r.alvo= Re>0? r.ref*Math.max(0.2,(Ab-Af))/Re-(r.sacCut||0)+r.ext : r.area });
   // bordas (classe do vizinho por trecho)
   amb.forEach(r=>{ r.bordas=aptoClassifica(r.poly, bordas) });
   // nomes (Dorm. 1, 2…; Banheiro 1, 2… quando há mais de um)
@@ -4655,10 +4720,10 @@ function aptoValida(pl, st, opt={}){
   // dimensões
   A.forEach(r=>{ const K=APTO_AMB[r.k], mn=mins[K.min||r.k];
     if(r.k==="sacada"){ const d=aptoCirculoInscrito(aptoInterno(r)).d; r._d=d; if(d<(R.circ.sacada||1.1)-0.05) P("sacada","warn",r.id,`${nome(r)}: profundidade ${aptoNf(d,2)} m (mín. ${aptoNf(R.circ.sacada||1.1,2)} m)`); return }
-    // área mínima (sala integrada à cozinha: um compartimento só)
-    const aR = r.k==="sala" && integ.has(r.id)? r.area + A.filter(x=>x.k==="cozinha" && integ.has(x.id)).reduce((s,x)=>s+x.area,0) : r.area;
-    const aM = mn? (r.k==="sala" && integ.has(r.id)? mn.a+((mins.cozinha||{}).a||0) : mn.a) : 0;
-    if(aM>0 && !(r.k==="cozinha" && integ.has(r.id)) && aR<aM-0.05) P("area", aR<aM*0.85? "bad" : "warn", r.id, `${nome(r)}: ${aptoNf(aR)} m²${r.k==="sala"&&integ.has(r.id)?" com a cozinha":""} (mín. ${aptoNf(aM)} m²)`);
+    // área mínima: cada ambiente por si (a cozinha integrada não conta como sala — antes somava e deixava passar uma sala de
+    // 8,5 m² num 2 dormitórios); a sala pede o mínimo da tipologia (APTO_REGRAS.sala, pelo número de dormitórios)
+    const aR = r.area, aM = mn? (r.k==="sala"? Math.max(mn.a, +(R.sala||{})[pl.tipologia]||0) : mn.a) : 0;
+    if(aM>0 && !(r.k==="cozinha" && integ.has(r.id)) && aR<aM-0.05) P("area", aR<aM*0.85? "bad" : "warn", r.id, `${nome(r)}: ${aptoNf(aR)} m² (mín. ${aptoNf(aM)} m²${r.k==="sala" && aM>mn.a+0.01? ` para ${(APTO_TIPOS[pl.tipologia]||"").toLowerCase()}` : ""})`);
     // círculo inscrito (descontadas as paredes)
     const req=R.circ[K.min||r.k]; const ci=aptoCirculoInscrito(aptoInterno(r)); r._d=ci.d; r._c=ci.c;
     if(req){ if(ci.d<req-0.005){ const lim= r.k==="circ"? 0.10 : Math.max(0.10, req*0.05); P("circulo", ci.d<req-lim? "bad" : "warn", r.id, r.k==="circ"? `${nome(r)}: largura livre ${aptoNf(ci.d,2)} m (mín. ${aptoNf(req,2)} m)` : `${nome(r)}: cabe um círculo de Ø ${aptoNf(ci.d,2)} m (mín. Ø ${aptoNf(req,2)} m)`) } }
@@ -4666,6 +4731,10 @@ function aptoValida(pl, st, opt={}){
     const lim=R.prop[r.k]; if(lim){ const [x0,y0,x1,y1]=aptoBBox(r.poly), a=x1-x0, b=y1-y0, q=Math.max(a,b)/Math.max(0.01,Math.min(a,b)); r._q=q;
       if(q>lim+0.01) P("proporcao", q>lim*1.15? "bad" : "warn", r.id, `${nome(r)}: comprido demais (${aptoNf(Math.max(a,b),2)} × ${aptoNf(Math.min(a,b),2)} m; máx. ${aptoNf(lim,1)} : 1)`) }
   });
+  // sala proporcional: não pode ser bem menor que o maior quarto
+  { const qs=A.filter(r=>APTO_AMB[r.k].quarto), q=qs.length? qs.reduce((a,b)=>b.area>a.area? b : a) : null, SQ=R.salaQuarto||APTO_REGRAS.salaQuarto;
+    A.filter(r=>r.k==="sala").forEach(s=>{ if(!q || !(q.area>0)) return; const f=s.area/q.area;
+      if(f<SQ.warn-1e-6) P("sala", f<SQ.bad? "bad" : "warn", s.id, `${nome(s)}: ${aptoNf(s.area)} m², menor que ${nome(q).toLowerCase()} (${aptoNf(q.area)} m²)`) }) }
   // iluminação e ventilação
   const jan=pl.janelas||[], dutos=[];
   A.forEach(r=>{ const K=APTO_AMB[r.k]; if(r.k==="sacada"||r.k==="circ") return;
@@ -4974,12 +5043,15 @@ function blcLayFaixa(plate, ref, list, o={}){
   const R=reg.filter(r=>r.p.length && G.area(r.p)>4).map(r=>({...r, A:G.area(r.p), list:[], used:0}));
   const us=list.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo), totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
   us.forEach(u=>{ let best=null, bs=-Infinity; R.forEach(r=>{ const s=r.A/totalA*totalAlvo-r.used-u.alvo*0.5; if(s>bs){ bs=s; best=r } }); if(best){ best.list.push(u); best.used+=u.alvo } });
+  // repartição pelos partidos (src/calc/reparte.js), como no pavimento tipo
+  const rep = o._st && typeof repReparte==="function" ? repReparte(R, us, {ux, vy, st:o._st, u0, u1, antigo:R.map(r=>r.list.map(u=>u.i)), vazioOk:R.some(r=>!r.list.length)}) : null;
+  if(rep) R.forEach((r,ri)=>{ r.list=rep.regs[ri].list; r.cuts=rep.regs[ri].cuts });
   const out=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6;
   R.forEach(r=>{
     if(!r.list.length){ out.push({poly:r.p, nome:"livre", alvo:0, area:r.A, livre:true}); return }
-    r.list.sort((a,b)=>a.i-b.i);
+    if(!r.cuts) r.list.sort((a,b)=>a.i-b.i);
     const tot=r.list.reduce((s,u)=>s+u.alvo,0); let a2=0; const [mn,mx]=G.extent(r.p,ux); let prev=mn;
-    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot), poly=G.band(r.p,ux,prev,cut);
+    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = r.cuts? (j===r.list.length-1 ? mx : r.cuts[j+1]) : j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot), poly=G.band(r.p,ux,prev,cut);
       const un={poly, nome:u.nome, alvo:u.alvo, area:G.area(poly), fac:r.fac};
       if(u.sac>0 && poly.length){ const [pv0,pv1]=G.extent(poly,vy), wU=cut-prev, w=Math.max(1.2,Math.min(wU-1, u.sac/prof)), pr=u.sac/w, uc=(prev+cut)/2;
         let va,vb; if(r.fac==="max"){ va= sacTipo==="balanco"? pv1 : pv1-pr; vb=va+pr } else { vb= sacTipo==="balanco"? pv0 : pv0+pr; va=vb-pr }
@@ -5005,7 +5077,7 @@ function blcLayFaixas(st, m){
       f.nucleo = f.A>1 && tem ? Math.min(1, blcDentro(ref.core, f.plate) + (1-base), ...(ref.coreExtra||[]).map(p=>blcDentro(p, f.plate))) : 0;
       if(f.nTipo<1 || f.A<1) return;
       const list=[]; P.mix.forEach((u,j)=>{ for(let q=0;q<(f.qtd[j]||0);q++) list.push({nome:u.nome, alvo:u.area*f.r, sac:+u.sac||0}) });
-      const E=st.estudo, o={sacTipo:P.sacTipo, sacProf:P.sacProf};
+      const E=st.estudo, o={sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st};
       // C3: bloco em L/U/T/H/pátio (ou referência por alas) → layout por ala com o mesmo núcleo e o corredor nas mesmas linhas
       const la = typeof alasLayFaixa==="function" && f.nucleo>=0.999 ? alasLayFaixa(f.plate, f.oco||null, ref, list, {...o, corr:E.corrTipo, profMin:E.profMin, planta:E.tipoPlanta,
         escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, nElev:ref.coreParts.filter(c=>c.kind==="elev").length||1}, st) : null;
@@ -5935,6 +6007,8 @@ function comPartidosDe(st, nome, area){
   const tip=comModeloDe(st, nome, area), auto=!(cfg.modelo && cfg.modelo!=="auto" && COM_MODELOS[cfg.modelo]), out=[];
   APTO_CAT.filter(m=>m.tipologia===tip).forEach(mod=>out.push({mod, pen:0})); us.filter(m=>m && m.tipologia===tip).forEach(mod=>out.push({mod, pen:0}));
   const alt=auto && COM_ALT[tip]; if(alt){ APTO_CAT.filter(m=>m.tipologia===alt).forEach(mod=>out.push({mod, pen:4})); us.filter(m=>m && m.tipologia===alt).forEach(mod=>out.push({mod, pen:4})) }
+  // lavabo pedido na tipologia: os partidos que não o têm ficam para depois (a repartição do andar também os pesa menos)
+  if(cfg.lavabo) out.forEach(x=>{ if(!(x.mod.ambientes||[]).some(a=>a.k==="lavabo" || a.opc==="lavabo")) x.pen+=10 });
   return out;
 }
 
@@ -5976,6 +6050,30 @@ function comFrame(P, ax, dn, lado){
 const comVet=(F,p,v)=>{ const a=F.w(p[0],p[1]), b=F.w(p[0]+v[0],p[1]+v[1]); return [b[0]-a[0], b[1]-a[1]] };
 const comNf=(v,d=1)=>(+v).toFixed(d).replace(".",",");
 
+/* por que um partido não cabe na unidade: a faixa que ele pede (frente/profundidade) — {motivo, falta (m)} */
+function comMotivoFaixa(mod, dm){
+  const fw=mod.faixaW||{}, fd=mod.faixaD||{}, F=APTO_FAIXA_FOLGA, W=dm? dm[0] : 0, D=dm? dm[1] : 0;
+  if(fw.min!=null && W<fw.min-0.025) return {motivo:`pede frente ≥ ${comNf(fw.min)} m`, falta:fw.min-W};
+  if(fw.max!=null && W>fw.max*F.W+0.025) return {motivo:`pede frente ≤ ${comNf(fw.max*F.W)} m`, falta:W-fw.max*F.W};
+  if(fd.min!=null && D<fd.min-0.025) return {motivo:`pede profundidade ≥ ${comNf(fd.min)} m`, falta:fd.min-D};
+  if(fd.max!=null && D>fd.max*F.D+0.025) return {motivo:`pede profundidade ≤ ${comNf(fd.max*F.D)} m`, falta:D-fd.max*F.D};
+  return {motivo:"não cabe", falta:9};
+}
+/* o problema grave que derruba um partido, em poucas palavras ("Cozinha estreita", "falta banheiro da suíte") */
+const COM_FEM = {suite:1, cozinha:1, serv:1, circ:1, sacada:1};
+function comMotivoCurto(probs, pl){
+  const p=(probs||[]).find(x=>x.nivel==="bad"); if(!p) return "";
+  const amb=pl && p.amb ? (pl.ambientes||[]).find(r=>r.id===p.amb) : null, nome=amb? (amb.longo||APTO_AMB[amb.k].longo) : "", f=amb && COM_FEM[amb.k];
+  const adj={area: f? "pequena" : "pequeno", circulo: f? "estreita" : "estreito", proporcao: f? "comprida" : "comprido"}[p.k];
+  if(adj && nome) return `${nome} ${adj}`;
+  if(p.k==="janela" && nome) return `${nome} sem janela`;
+  if((p.k==="acesso" || p.k==="passagem") && nome) return `${nome}: acesso ruim`;
+  if(p.k==="movel"){ const t=String(p.msg).split(": ")[1]||p.msg; return t.split(" (")[0].split(" com ")[0] }
+  if(p.k==="sala") return "sala menor que o quarto";
+  if(p.k==="faixa") return "fora da faixa do partido";
+  return String(p.msg).split(" (")[0];
+}
+
 /* ---------- uma unidade: testa os partidos e escolhe ---------- */
 const _comCache = new Map();
 function comUnidade(u, lay, st, ctx){
@@ -6015,6 +6113,11 @@ function comUnidade(u, lay, st, ctx){
     const lim = cs.length && cs[0].v0.ok? 4 : 2;
     let best=null; for(let i=0;i<cs.length && i<lim;i++){ const c=cs[i]; if(best && c.s0<=best.s) break; const v=aptoValida(c.planta, st); const s=v.nota-(c.s0-c.v0.nota); if(!best || s>best.s) best={...c, val:v, s} }
     if(best){ best.nVar=n; best.notas={}; cs.forEach(c=>{ const id=c.mod.id; if(best.notas[id]==null || c.v0.nota>best.notas[id]) best.notas[id]=c.v0.nota }); best.notas[best.mod.id]=best.val.nota;
+      // galeria (ui/comodos.js): cada partido cabe (nota, sem grave) ou não cabe (o que pede a faixa, ou o problema que o derruba)
+      best.info={}; cs.forEach(c=>{ const id=c.mod.id, I=best.info[id]; if(I && I.nota>=c.v0.nota) return; best.info[id]={nota:c.v0.nota, ok:c.v0.ok, motivo: c.v0.ok? "" : comMotivoCurto(c.v0.problemas, c.planta)} });
+      best.info[best.mod.id]={nota:best.val.nota, ok:best.val.ok, motivo: best.val.ok? "" : comMotivoCurto(best.val.problemas, best.planta)};
+      { const Lc=local(frames[0],"a"), dC=dims(Lc,"caixa"), dI=Lc.ret? dC : dims(Lc,"inscrito");
+        lista.forEach(({mod})=>{ if(best.info[mod.id]) return; const dm= dI && foraDe(mod,dI)<foraDe(mod,dC)? dI : dC; best.info[mod.id]={nota:null, ok:false, ...comMotivoFaixa(mod, dm)} }) }
       const Lm=local(frames[0],"a"); best.Wf=Lm.F.W; best.Df=Lm.F.D; const mr=dims(Lm,"inscrito"); best.Wi=mr? mr[0] : Lm.F.W; best.Di=mr? mr[1] : Lm.F.D }
     return best };
   let best=_comCache.get(sigA);
@@ -6028,7 +6131,7 @@ function comUnidade(u, lay, st, ctx){
 function comMonta(c, u, st, cands){
   const pl=c.planta, v=c.val, F=c.F;
   const fr=c.fr||c.frame;
-  const L={F, planta:pl, val:v, mk:c.mod.tipologia, mod:c.mod, frame:fr, fm:c.fm, lado:c.lado, enc:c.enc, prm:{fr, ax:c.fm.ax, dn:c.fm.dn, lado:c.lado}, nVar:c.nVar, notas:c.notas||{}, score:v.nota, nota:v.nota};
+  const L={F, planta:pl, val:v, mk:c.mod.tipologia, mod:c.mod, frame:fr, fm:c.fm, lado:c.lado, enc:c.enc, prm:{fr, ax:c.fm.ax, dn:c.fm.dn, lado:c.lado}, nVar:c.nVar, notas:c.notas||{}, info:c.info||{}, score:v.nota, nota:v.nota};
   L.alertas=v.problemas.map(p=>({nivel:p.nivel==="bad"? "erro" : "aviso", msg:p.msg, k:p.k, amb:p.amb}));
   if(!v.ok){ // nenhum partido passa: o motivo e o que faria caber
     const mods=[...new Map(cands.map(x=>[x.mod.id,x.mod])).values()], W=c.Wi||F.W, D=c.Di||F.D;
@@ -6038,6 +6141,9 @@ function comMonta(c, u, st, cands){
     const n2=(a,b)=>{ const d=Math.abs(a-b)<0.1? 2 : 1; return [comNf(a,d), comNf(b,d)] };   // casas para que os dois números não pareçam iguais
     let msg = W<wMin-0.02? (([a,b])=>`${fu} de ${a} m; os partidos de ${nm.toLowerCase()} pedem ${b} m ou mais`)(n2(W,wMin)) : D<dMin-0.02? (([a,b])=>`profundidade de ${a} m; os partidos de ${nm.toLowerCase()} pedem ${b} m ou mais`)(n2(D,dMin)) :
       W>wMax+0.02? (([a,b])=>`${fu} de ${a} m; os partidos de ${nm.toLowerCase()} vão até ${b} m`)(n2(W,wMax)) : D>dMax+0.02? (([a,b])=>`profundidade de ${a} m; os partidos vão até ${b} m`)(n2(D,dMax)) : ((v.problemas.find(p=>p.nivel==="bad" && p.k!=="faixa")||{}).msg||"conferir");
+    // o mesmo em poucas palavras (rótulo na planta)
+    L.motivo = W<wMin-0.02? (([a,b])=>`${fu} ${a} m · pedem ≥ ${b} m`)(n2(W,wMin)) : D<dMin-0.02? (([a,b])=>`profundidade ${a} m · pedem ≥ ${b} m`)(n2(D,dMin)) :
+      W>wMax+0.02? (([a,b])=>`${fu} ${a} m · até ${b} m`)(n2(W,wMax)) : D>dMax+0.02? (([a,b])=>`profundidade ${a} m · até ${b} m`)(n2(D,dMax)) : comMotivoCurto(v.problemas, pl);
     L.semPartido=true; L.aviso=`nenhum partido cabe nesta unidade: ${msg}`; L.alertas.unshift({nivel:"erro", msg:L.aviso, k:"partido"}) }
   if(v.dutos && v.dutos.length) L.alertas.push({nivel:"nota", msg:"cozinha, serviço e banheiros sem fachada: ventilação por duto ou shaft (conferir)", k:"duto"});
   L.erros=L.alertas.filter(a=>a.nivel==="erro").length; L.avisos=L.alertas.filter(a=>a.nivel==="aviso").length; L.ok=v.ok;
@@ -6097,7 +6203,7 @@ function comExporta(L){
     const d={id:ax+k, ax, lo:vs[k-1]+0.5, hi:vs[k+1]-0.5, o0, tot}; if(ax==="x"){ d.x=v; d.y0=sp[0]; d.y1=sp[1]; d.p0=F.w(v,sp[0]); d.p1=F.w(v,sp[1]) } else { d.y=v; d.x0=sp[0]; d.x1=sp[1]; d.p0=F.w(sp[0],v); d.p1=F.w(sp[1],v) } divs.push(d) } });
   return {
     modelo:L.mk, partido:L.mod.id, partidoNome:L.mod.nome, origem:L.mod.origem||"catalogo", encaixe:L.enc, frame:L.frame, lado:F.lado, nVar:L.nVar, score:L.nota, nota:L.nota, notas:L.notas,
-    ok:L.ok, erros:L.erros, avisos:L.avisos, soma:L.soma, semPartido:!!L.semPartido, aviso:L.aviso||"",
+    ok:L.ok, erros:L.erros, avisos:L.avisos, soma:L.soma, semPartido:!!L.semPartido, aviso:L.aviso||"", motivo:L.motivo||"",
     ax:F.ax, dn:F.dn, a0:F.a0, a1:F.a1, d0:F.d0, W:F.W, D:F.D, R,
     rooms, doors, windows, movel:L.movel||comMoveis(L), divs:divs.map(d=>({id:d.id, ax:d.ax, p0:d.p0, p1:d.p1, lo:d.lo, hi:d.hi, o0:d.o0, tot:d.tot, v: d.ax==="x"? d.x : d.y})),
     cortes, alertas:L.alertas, problemas:probs
@@ -6118,6 +6224,9 @@ function comodosCalc(m, st){
       const T=out.porTipo[u.nome]=out.porTipo[u.nome]||{nome:u.nome, modelo:L.mk, partido:L.mod.id, partidoNome:L.mod.nome, n:0, validas:0, nota:0, ex:{ti,ui}, usados:{}, notas:{}};
       T.n++; if(L.ok) T.validas++; T.nota+=L.nota; T.usados[L.mod.id]=(T.usados[L.mod.id]||0)+1; T.notaUso=T.notaUso||{}; T.notaUso[L.mod.id]=(T.notaUso[L.mod.id]||0)+L.nota;
       Object.entries(L.notas||{}).forEach(([id,n])=>{ if(T.notas[id]==null || n<T.notas[id]) T.notas[id]=n });   // nota do partido na pior unidade da tipologia
+      // cabe / não cabe por partido (galeria): vale a pior unidade — não cabe numa, não cabe na tipologia
+      T.info=T.info||{}; Object.entries(L.info||{}).forEach(([id,I])=>{ const J=T.info[id], ruim=x=>x.nota==null? 2 : !x.ok? 1 : 0;
+        if(!J || ruim(I)>ruim(J) || (ruim(I)===ruim(J) && (I.nota==null? (I.falta||0)>(J.falta||0) : I.nota<J.nota))) T.info[id]={...I} });
       if(L.semPartido && !T.aviso) T.aviso=L.aviso;
       out.lista.push({ti, ui, nome:u.nome, ok:L.ok, nota:L.nota, alertas:L.alertas});
     });
@@ -6193,6 +6302,7 @@ function comCortaContorno(P, vaos){
    PORTAS (folha e arco de abertura), JANELAS, MOBILIARIO, TEXTOS */
 function comDxf(d, lay){
   (lay.units||[]).forEach(u=>{ const c=u.com; if(!c) return;
+    if(c.semPartido){ d.poly("PAREDES", u.poly, 7); d.text("TEXTOS", G.centroid(u.poly), 0.22, "SEM PARTIDO QUE CAIBA"); return }   // nada de planta "só para caber"
     const vaos=comVaos(u), corta=(layer, pts, cor)=>comCortaContorno(pts, vaos).forEach(ch=>d.poly(layer, ch.pts, cor, ch.aberta));
     corta("PAREDES", u.poly, 7);
     c.rooms.forEach(r=>{ const ins=comInsetRoom(r);
@@ -8897,6 +9007,136 @@ function relevoPrevia(st, o={}){
   return { rect, c, g, pct:pl.pct, az:pl.azDesc, dirTxt:relevoDirTexto(pl.azDesc), dir:[-g[0]/gl, -g[1]/gl], nivel, conf:ef.conf, info:ef.info, cantos, zmin, zmax, amp, passo, curvas };
 }
 
+/* ---- calc/reparte.js ---- */
+/* ================= Repartição do pavimento tipo pelos partidos =================
+   Pedido do Luiz: "nossa ferramenta não fica criando qualquer tipo de layout só para caber, ela começa a respeitar regras
+   e padrões de mercado". O pavimento tipo (tipoLayout em src/layout.js, blcLayFaixa em blocos.js, alasUnidades em alas.js)
+   reparte cada trecho de fachada em unidades. Antes: unidades distribuídas só pela área (a maior primeiro no trecho com mais
+   folga) e cortadas na proporção da área — saíam unidades em L em volta do núcleo e frentes que nenhum partido aceita.
+   Agora a repartição é escolhida por uma nota de custo (menor = melhor), por unidade:
+   - faixa dos partidos permitidos da tipologia (comPartidosDe: os marcados, o catálogo e os modelos do usuário): metros
+     fora de faixaW/faixaD do partido que melhor cabe (o retângulo inscrito da unidade, como o encaixe "inscrito" do gerador);
+     partido "de canto" (janela lateral) só conta onde a unidade tem a fachada lateral;
+   - forma: a fração da unidade fora do retângulo inscrito (L em volta do núcleo); pesa mais com 3+ dormitórios;
+   - área: desvio da área-alvo do mix além de 3% (a quantidade e a área-alvo vêm do mix; o que muda é COMO o andar é repartido);
+   - ponta: a tipologia maior ganha um pouco na ponta do andar (esquina, duas fachadas) quando cabe.
+   Busca: todas as distribuições das unidades (por tipologia) entre os trechos (sem deixar trecho vazio quando a distribuição
+   antiga não deixava), as ordens distintas em cada trecho e, nas melhores, os cortes ajustados (±0,05…0,6 m) para entrar na
+   faixa dos partidos. Muitas combinações → só a distribuição antiga, com ordem e cortes otimizados. Puro (vai ao Worker).
+   Saída de repReparte: {regs:[{list:[unidades na ordem], cuts:[u0…u1]}], custo, antigo} ou null (sem estado: fica o antigo).
+   repNotaGeo(T, med) é a mesma conta para quem já tem a unidade medida (alas). */
+const REP_PESO = { area:30, areaTol:0.03, faixa:12, foraMax:1.2, semPartido:60, raso:30, encolhe:60, fresta:200, forma:25, forma3:60, ponta:1.5, semRecorte:4 };
+const REP_LIM = { dist:6000, seq:120, top:4, minW:2.4 };
+const _repTipoCache=new Map(), _repCache=new Map();
+const repDorms = tip=>({studio:0, "1d":1, "1s":1, "2d":2, "2d1s":2, "2s":2, "3d1s":3, "3s":3, "4d1s":4})[tip] ?? 2;
+/* tipologia de uma unidade do mix: partidos permitidos (só as faixas) e número de dormitórios */
+function repTipo(st, nome, alvo){
+  if(!st || typeof comPartidosDe!=="function" || typeof comModeloDe!=="function") return null;
+  const cfg=(typeof comTipoCfg==="function" && comTipoCfg(st, nome))||{}, us=(st.comodos && st.comodos.modelos)||[];
+  const key=[nome, Math.round((+alvo||0)*10), (cfg.partidos||[]).join(","), cfg.modelo||"", us.map(m=>m && (m.id+":"+(m.atualizado||0))).join(",")].join("|");
+  let T=_repTipoCache.get(key); if(T) return T;
+  const tip=comModeloDe(st, nome, alvo), cands=comPartidosDe(st, nome, alvo);
+  T={tip, dorms:repDorms(tip), mods:cands.map(({mod,pen})=>({id:mod.id, fw:mod.faixaW||{}, fd:mod.faixaD||{}, lat:!!(mod.lateral && (mod.lateral.xW || mod.lateral.x0)), pen:+pen||0}))};
+  if(_repTipoCache.size>400) _repTipoCache.clear(); _repTipoCache.set(key, T); return T;
+}
+/* metros fora da faixa do partido que melhor cabe (0 = cabe) */
+function repFora(T, W, D, lat, det){
+  if(!T || !T.mods.length) return det? {o:0, g:0} : 0;
+  const FW=APTO_FAIXA_FOLGA.W, FD=APTO_FAIXA_FOLGA.D; let best={o:Infinity, g:Infinity};
+  // g = metros fora da faixa (o que o gerador exige: < 2,5 cm); o = g + preferências (acima do máximo, alternativa sem/com suíte, virado)
+  const um=(m, W, D, extra)=>{ const mnW=m.fw.min??0, mxW=m.fw.max??99, mnD=m.fd.min??0, mxD=m.fd.max??99;
+    const g=Math.max(0,mnW-W)+Math.max(0,W-mxW*FW)+Math.max(0,mnD-D)+Math.max(0,D-mxD*FD); return {g, o:g+0.15*Math.max(0,W-mxW)+0.15*Math.max(0,D-mxD)+m.pen*0.05+extra} };
+  for(const m of T.mods){ const cs=[um(m, W, D, 0)]; if(m.lat && !lat){ cs[0].g+=1.5; cs[0].o+=1.5 }
+    // unidade de ponta (fachada lateral): o gerador também tenta o partido virado para a fachada lateral
+    if(lat && !m.lat) cs.push(um(m, D, W, 0.1));
+    cs.forEach(c=>{ if(c.o<best.o) best=c }) }
+  return det? best : best.o;
+}
+/* medidas de uma unidade no referencial (ux ao longo da fachada, vy para o corredor): área, retângulo inscrito */
+function repMede(poly, ux, vy){
+  if(!poly || poly.length<3) return null;
+  const L=poly.map(q=>[G.dot(q,ux), G.dot(q,vy)]), A=G.area(poly);
+  let x0=Infinity, x1=-Infinity, y0=Infinity, y1=-Infinity; L.forEach(q=>{ if(q[0]<x0)x0=q[0]; if(q[0]>x1)x1=q[0]; if(q[1]<y0)y0=q[1]; if(q[1]>y1)y1=q[1] });
+  if(L.length===4 && Math.abs(A-(x1-x0)*(y1-y0))<0.02) return {A, W:x1-x0, D:y1-y0, Ai:A, u0:x0, u1:x1};
+  const r=typeof aptoMaiorRet==="function"? aptoMaiorRet(L) : null;
+  return r? {A, W:r[2]-r[0], D:r[3]-r[1], Ai:(r[2]-r[0])*(r[3]-r[1]), u0:x0, u1:x1} : {A, W:x1-x0, D:y1-y0, Ai:A, u0:x0, u1:x1};
+}
+/* custo de uma unidade medida: {A, W, D, Ai}, lat = tem fachada lateral, maior = é a tipologia maior do andar */
+function repNotaGeo(T, alvo, med, lat, maior){
+  if(!med) return 50;
+  const P=REP_PESO, dev=alvo>0? Math.abs(med.A/alvo-1) : 0, F=repFora(T, med.W, med.D, lat, true), fora=F.o, forma=med.A>0? Math.max(0, 1-med.Ai/med.A) : 0;
+  // unidade degenerada (só uma tira rasa, ou muito menor que a área-alvo): pesa como várias sem partido
+  // (o que conta é QUANTAS unidades ficam sem partido: passar do limite por 0,7 m ou por 5 m dá no mesmo — o aviso)
+  // estreita demais para a tipologia (menos de 60% da frente mínima dos partidos): absurda, mesmo marcada como sem partido
+  const wMin = T && T.mods.length ? Math.min(...T.mods.map(m=>m.fw.min??0)) : 0, fresta = med.W < 0.6*wMin && !(lat && med.D>=0.6*wMin) ? P.fresta : 0;
+  const raso = med.D<4.5 ? P.raso*Math.min(1.5, 4.5-med.D) : 0, encolhe = dev>0.25 ? P.encolhe*(dev-0.25) : 0;
+  return fresta + P.area*Math.max(0, dev-P.areaTol) + encolhe + P.faixa*Math.min(P.foraMax, fora) + (F.g>0.025? P.semPartido : 0) + raso + forma*((T && T.dorms>=3)? P.forma3 : P.forma) - (lat && maior? P.ponta : 0);
+}
+/* multiset → sequências distintas (no máximo lim) */
+function repPerms(arr, lim){
+  const out=[], cnt=new Map(); arr.forEach(k=>cnt.set(k,(cnt.get(k)||0)+1)); const ks=[...cnt.keys()], cur=[];
+  const rec=()=>{ if(out.length>=lim) return; if(cur.length===arr.length){ out.push(cur.slice()); return }
+    for(const k of ks){ const c=cnt.get(k); if(!c) continue; cnt.set(k,c-1); cur.push(k); rec(); cur.pop(); cnt.set(k,c) } };
+  rec(); return out;
+}
+/* composições de n em k partes (vetores) */
+function repComp(n, k){ const out=[]; const rec=(i, rest, cur)=>{ if(i===k-1){ out.push([...cur, rest]); return } for(let v=0; v<=rest; v++) rec(i+1, rest-v, [...cur, v]) }; rec(0, n, []); return out }
+
+/* Repartição de trechos retos (o corte é perpendicular a ux): R = [{p, fac}] na ordem do layout, us = [{nome, alvo, sac, i}],
+   ctx = {ux, vy, st, u0, u1 (extensão do andar em ux, para achar as pontas), antigo: [[índices de us por trecho]] (a distribuição
+   da regra antiga, que manda quando não há estado), vazioOk (aceita trecho vazio, como a antiga)} */
+function repReparte(R, us, ctx){
+  const st=ctx.st; if(!st || !R.length || !us.length || typeof comPartidosDe!=="function") return null;
+  const {ux, vy}=ctx, P=REP_PESO, k=R.length;
+  const tipos=new Map(); us.forEach(u=>{ const key=u.nome+"|"+(+u.alvo).toFixed(3)+"|"+(+u.sac||0); if(!tipos.has(key)) tipos.set(key, {key, nome:u.nome, alvo:+u.alvo, us:[]}); tipos.get(key).us.push(u) });
+  const TT=[...tipos.values()]; TT.forEach(t=>{ t.T=repTipo(st, t.nome, t.alvo) });
+  const maiorA=Math.max(...TT.map(t=>t.alvo));
+  const sig=JSON.stringify([R.map(r=>r.p.map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)])), TT.map(t=>[t.key, t.us.length, t.T && t.T.mods.map(m=>m.id)]), ctx.u0, ctx.u1, ux, ctx.antigo, !!ctx.vazioOk]);
+  // unidades concretas: dentro de cada tipologia, na ordem original
+  const concreto=res=>{ const fila=TT.map(t=>t.us.slice().sort((a,b)=>a.i-b.i)); return {...res, regs:res.regs.map(r=>({list:r.seq.map(ti=>fila[ti].shift()), cuts:r.cuts}))} };
+  const hit=_repCache.get(sig); if(hit) return concreto(hit);
+  const ext=R.map(r=>G.extent(r.p, ux)), area=R.map(r=>G.area(r.p));
+  const lado=(a,b)=>Math.abs(a-ctx.u0)<0.06 || Math.abs(b-ctx.u1)<0.06;
+  // custo de um trecho com uma sequência de tipologias e cortes dados
+  const medC=new Map(), mede=(ri,a,b)=>{ const k=ri+"|"+a.toFixed(3)+"|"+b.toFixed(3); let r=medC.get(k); if(r===undefined){ r=repMede(G.band(R[ri].p, ux, a, b), ux, vy); medC.set(k, r) } return r };
+  const notaC=new Map(), notaU=(ri, ti, a, b)=>{ const k=ri+"|"+ti+"|"+a.toFixed(3)+"|"+b.toFixed(3); let r=notaC.get(k); if(r===undefined){ const t=TT[ti], med=mede(ri,a,b);
+      // unidade degenerada (só a tira rasa atrás da escada, ou uma fresta): não vale
+      r = !med || med.W<REP_LIM.minW || med.D<3.5 ? 1e6 : repNotaGeo(t.T, t.alvo, med, lado(a,b), t.alvo>=maiorA-1e-6); notaC.set(k, r) } return r };
+  const custoCortes=(ri, seq, cuts)=>{ let s=0; for(let j=0;j<seq.length;j++){ const a=cuts[j], b=cuts[j+1]; if(b-a<REP_LIM.minW) return 1e6; s+=notaU(ri, seq[j], a, b) } return s };
+  const cutC=new Map(), corte=(ri, f)=>{ const k=ri+"|"+f.toFixed(6); let r=cutC.get(k); if(r===undefined){ r=G.cutAt(R[ri].p, ux, f); cutC.set(k, r) } return r };
+  const cortesArea=(ri, seq)=>{ const tot=seq.reduce((s,ti)=>s+TT[ti].alvo,0), [mn,mx]=ext[ri], c=[mn]; let acc=0;
+    for(let j=0;j<seq.length-1;j++){ acc+=TT[seq[j]].alvo; c.push(corte(ri, acc/tot)) } c.push(mx); return c };
+  const refina=(ri, seq, cuts0)=>{ let cuts=cuts0.slice(), best=custoCortes(ri, seq, cuts);
+    for(const d of [0.6, 0.3, 0.15, 0.05]) for(let pass=0; pass<2; pass++){ let mel=false;
+      for(let j=1;j<cuts.length-1;j++) for(const sgn of [-1,1]){ const c=cuts.slice(); c[j]+=sgn*d; if(c[j]<=c[j-1]+REP_LIM.minW || c[j]>=c[j+1]-REP_LIM.minW) continue; const v=custoCortes(ri, seq, c); if(v<best-1e-9){ best=v; cuts=c; mel=true } }
+      if(!mel) break }
+    return {cuts, custo:best} };
+  // melhor sequência de um trecho para um multiset de tipologias (memo)
+  const memo=new Map();
+  const melhorTrecho=(ri, cont)=>{ const key=ri+":"+cont.join(","); let r=memo.get(key); if(r) return r;
+    const arr=[]; cont.forEach((n,ti)=>{ for(let q=0;q<n;q++) arr.push(ti) });
+    if(!arr.length){ r={seq:[], cuts:null, custo: ctx.vazioOk? 0 : 1e6}; memo.set(key, r); return r }
+    const seqs=repPerms(arr, REP_LIM.seq); let best=null;
+    seqs.forEach(seq=>{ const cuts=cortesArea(ri, seq), c=custoCortes(ri, seq, cuts); if(!best || c<best.custo) best={seq, cuts, custo:c} });
+    memo.set(key, best); return best };
+  // distribuições: todas (por tipologia), senão só a antiga
+  const comps=TT.map(t=>repComp(t.us.length, k)); let nDist=comps.reduce((s,c)=>s*c.length,1);
+  const antigoCont = ctx.antigo? ctx.antigo.map(ix=>TT.map(t=>ix.filter(i=>t.us.some(u=>u.i===i)).length)) : null;
+  const cand=[];
+  const avalia=cont=>{ let c=0; const parts=[]; for(let ri=0;ri<k;ri++){ const r=melhorTrecho(ri, cont[ri]); c+=r.custo; parts.push(r); if(c>=1e6) return } cand.push({cont, parts, custo:c}) };
+  if(nDist<=REP_LIM.dist){ const rec=(ti, acc)=>{ if(ti===TT.length){ const cont=Array.from({length:k}, (_,ri)=>TT.map((t,j)=>acc[j][ri])); avalia(cont); return } comps[ti].forEach(cp=>rec(ti+1, [...acc, cp])) }; rec(0, []) }
+  else if(antigoCont) avalia(antigoCont);
+  if(!cand.length) return null;
+  cand.sort((a,b)=>a.custo-b.custo);
+  if(typeof REP_DEBUG!=="undefined" && REP_DEBUG) REP_DEBUG.push({tipos:TT.map(t=>t.nome), cands:cand.slice(0,8).map(c=>({cont:c.cont, custo:+c.custo.toFixed(2), seqs:c.parts.map(p=>p.seq), cortes:c.parts.map(p=>p.cuts&&p.cuts.map(x=>+x.toFixed(2)))}))});
+  // as melhores: cortes refinados (faixa dos partidos)
+  let best=null; cand.slice(0, REP_LIM.top).forEach(cd=>{ let c=0; const regs=cd.parts.map((p,ri)=>{ if(!p.seq.length) return {seq:[], cuts:null}; const f=refina(ri, p.seq, p.cuts); c+=f.custo; return {seq:p.seq, cuts:f.cuts} });
+    if(!best || c<best.custo-1e-9) best={custo:c, regs, cont:cd.cont} });
+  const out={custo:best.custo, regs:best.regs, nDist, antigo: antigoCont? JSON.stringify(antigoCont)===JSON.stringify(best.cont) : null};
+  if(_repCache.size>200) _repCache.clear(); _repCache.set(sig, out);
+  return concreto(out);
+}
+
 /* ---- calc/saude.js ---- */
 /* ================= Fase A: "Saúde do negócio" — indicadores da colinha de viabilidade =================
    Cálculo puro (roda na página, no Worker e nos testes; nada de DOM). A página calcula `finance()` sobre o `m` que o Worker
@@ -10122,7 +10362,7 @@ const DEF = {
     usarLayout: true, vagaL: 2.5, vagaC: 5.0, corredor: 5.5, porModulo: 3, pilar: 0.4,
     rampaInc: 0.20, rampaL: 3.6, pcd: 0.02, idoso: 0.05,
     corrTipo: 1.6, profMin: 5.5, off: {},
-    angulo: "90", garDir: "auto", garDirGraus: 0, rampa: null, nucleoPos: 0.5, nucleoLado: "B", escadaLado: "E", elevadores: 0, tipoPlanta: "auto", escTipo: "pf_duto", nEsc: 1, emerg: false, fachada: true, rampaTipo: "reta", vtipo: {}
+    angulo: "90", garDir: "auto", garDirGraus: 0, rampa: null, nucleoPos: 0.5, nucleoLado: "B", escadaLado: "auto", elevadores: 0, tipoPlanta: "auto", escTipo: "pf_duto", nEsc: 1, emerg: false, fachada: true, rampaTipo: "reta", vtipo: {}
   },
   sol: { on: false, mes: 6, dia: 21, hora: 15 },
   custom: { emb: [], tor: [], sub: [], torOcupa: false },
@@ -10361,6 +10601,17 @@ function notchPoly(Q, ux, vy, corner, inner){
 }
 function tipoLayout(plate, units, o){
   if(!plate || !plate.length) return null;
+  // ordem do núcleo automática: escada de um lado ou do outro (o contorno do núcleo é o mesmo — garagens e térreo não mudam);
+  // fica a que reparte melhor o andar pelos partidos (src/calc/reparte.js); empate = escada primeiro, como antes
+  // e, se nenhuma das duas reparte bem, a escada na profundidade toda (sem a sobra em L atrás dela, que só serve à unidade
+  // vizinha quando ela é larga o bastante para um partido)
+  if(o.escada==="auto"){ const a=tipoLayout(plate, units, {...o, escada:"E"}); if(!a || !a.rep) return a; a.escAuto="E";   // (no otimizador, _rap: sem a busca — a área das unidades é a mesma)
+    const cs=[a]; const b=tipoLayout(plate, units, {...o, escada:"D"}); const priv=l=>l.units.reduce((s,u)=>s+(u.livre? 0 : u.area),0);   // torre desenhada: a privativa vem do desenho — a ordem não pode mudá-la
+    // o contorno do núcleo não pode mudar (com poucas unidades o núcleo vai para a ponta — garagens e térreo dependem dele)
+    const mesmo=l=>l && l.rep && l.core.length===a.core.length && l.core.every((q,i)=>Math.abs(q[0]-a.core[i][0])<1e-6 && Math.abs(q[1]-a.core[i][1])<1e-6);
+    if(mesmo(b) && (!o._areaFixa || Math.abs(priv(b)-priv(a))<0.01)){ b.escAuto="D"; cs.push(b) }
+    if(o.escProf!==false && !o._areaFixa && (a.escSobra>0.5 || (b && b.escSobra>0.5))) ["E","D"].forEach(e=>{ const c=tipoLayout(plate, units, {...o, escada:e, escProf:false}); if(mesmo(c)){ c.escAuto=e; c.rep.custo+=REP_PESO.semRecorte; cs.push(c) } });
+    return cs.reduce((x,y)=> y.rep.custo < x.rep.custo-0.5 ? y : x) }
   const ux=G.longestDir(plate), vy=[-ux[1],ux[0]];
   const [u0,u1]=G.extent(plate,ux), [v0,v1]=G.extent(plate,vy), D=v1-v0, Lu=u1-u0;
   const corr=o.corr, fachada = o.fachada || o.escTipo==="pf_balcao";
@@ -10404,12 +10655,15 @@ function tipoLayout(plate, units, o){
   // poucas unidades: um trecho ficaria vazio — leva o núcleo para a ponta desse trecho
   const empty=R.find(r=>!r.list.length);
   if(empty && !o._re && us.length){ const [ea,eb]=G.extent(empty.p,ux); return tipoLayout(plate, units, {...o, _re:1, pos: (ea+eb)/2 < (cu0+cu1)/2 ? 0 : 1}) }
+  // repartição pelos partidos (src/calc/reparte.js): que unidade vai em que trecho, em que ordem e com que frente
+  const rep = o._st && !o._rap && typeof repReparte==="function" ? repReparte(R, us, {ux, vy, st:o._st, u0, u1, antigo:R.map(r=>r.list.map(u=>u.i)), vazioOk:!!empty}) : null;
+  if(rep) R.forEach((r,ri)=>{ r.list=rep.regs[ri].list; r.cuts=rep.regs[ri].cuts });
   const out=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6;
   R.forEach(r=>{
     if(!r.list.length){ out.push({poly:r.p, nome:"livre", alvo:0, area:r.A, livre:true}); return }
-    r.list.sort((a,b)=>a.i-b.i);
+    if(!r.cuts) r.list.sort((a,b)=>a.i-b.i);
     const tot=r.list.reduce((s,u)=>s+u.alvo,0); let a2=0; const [mn,mx]=G.extent(r.p,ux); let prev=mn;
-    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot); const poly=G.band(r.p,ux,prev,cut);
+    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = r.cuts? (j===r.list.length-1 ? mx : r.cuts[j+1]) : j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot); const poly=G.band(r.p,ux,prev,cut);
       const un={poly, nome:u.nome, alvo:u.alvo, area:G.area(poly), fac:r.fac};
       if(u.sac>0 && poly.length){ const [pv0,pv1]=G.extent(poly,vy), wU=cut-prev, w=Math.max(1.2,Math.min(wU-1, u.sac/prof)), pr=u.sac/w, uc=(prev+cut)/2;
         let va,vb; if(r.fac==="max"){ va= sacTipo==="balanco"? pv1 : pv1-pr; vb=va+pr } else { vb= sacTipo==="balanco"? pv0 : pv0+pr; va=vb-pr }
@@ -10418,7 +10672,7 @@ function tipoLayout(plate, units, o){
       prev=cut; out.push(un) });
   });
   const kinds={}; cParts.forEach(c=>kinds[c.kind]=(kinds[c.kind]||0)+c.area);
-  return {ux,vy,units:out,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:sobraA.reduce((s,a)=>s+a,0)};
+  return {ux,vy,units:out,rep:rep? {custo:rep.custo, antigo:rep.antigo} : null,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:sobraA.reduce((s,a)=>s+a,0)};
 }
 
 
@@ -11249,13 +11503,13 @@ function areasFin(st, m){
   m.priv = m.privRes + m.lojaPriv;
 }
 /* pavimento tipo de cada torre (m.tipo) e dos blocos da pilha (f.lay) — também usado pelo atalho do otimizador (blcPrivEstimada) */
-function tipoLayouts(st, m){
+function tipoLayouts(st, m, opt){
   const E=st.estudo, P=st.produto;
   m.tipo = m.T.map(t=>{
     const list=[]; P.mix.forEach(u=>{ for(let q=0;q<u.qtd;q++) list.push({nome:u.nome, alvo:u.area*t.r, sac:+u.sac||0}) });
     const nAuto=(t.units>60||t.H>45)?3:(t.H>12?2:1);
     return (typeof alasTipoLayout==="function" ? alasTipoLayout : tipoLayout)(t.plate, list, {corr:E.corrTipo, profMin:E.profMin, nElev: +E.elevadores||nAuto, pos:E.nucleoPos, lado:E.nucleoLado, escada:E.escadaLado, planta:E.tipoPlanta,
-      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
+      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st, _rap:!!(opt && opt.quick), _areaFixa:!!(t.desenhada || m.torOcupa)}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
   });
   if(typeof blcLayFaixas==="function") blcLayFaixas(st, m);   // C2: blocos fora da referência → mesmo núcleo, unidades por área (f.lay)
 }
@@ -11263,7 +11517,7 @@ function compute(st, opt={}){
   const m = massing(st);
   // estudo: pavimento tipo e garagem
   const E=st.estudo, P=st.produto;
-  tipoLayouts(st, m);
+  tipoLayouts(st, m, opt);
   if(typeof blcPrivReal==="function") blcPrivReal(st, m);     // torre desenhada / contorno ocupado: privativa = unidades desenhadas (eficiência real da planta)
   // sacadas em balanço somam área construída e privativa
   m.sacA=0; m.sacBal=0;
@@ -12423,9 +12677,12 @@ function alasUnidades(M, units, o){
   const R=uso.filter(r=>r.A>4 && r.facL>=ALAS_FAC && r.corL>=ALAS_COR && r.F.h>=2.4).map(r=>({...r, list:[], used:0}));
   const us=units.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo), totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
   us.forEach(u=>{ let best=null, bs=-Infinity; R.forEach(r=>{ const s=r.A/totalA*totalAlvo-r.used-u.alvo*0.5; if(s>bs){ bs=s; best=r } }); if(best){ best.list.push(u); best.used+=u.alvo } });
+  // repartição pelos partidos (src/calc/reparte.js): que unidade vai em que ala, em que ordem
+  const rep = o._st && typeof repComp==="function" ? alasReparte(R, us, o._st, R.some(r=>!r.list.length)) : null;
+  if(rep) R.forEach((r,ri)=>{ r.list=rep[ri]; r.fixa=true });
   const out=[], livres=[], semLugar=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6, usados=new Set();
   R.forEach(r=>{ const F=r.F; if(!r.list.length) return; usados.add(r.i);
-    r.list.sort((a,b)=>a.i-b.i);
+    if(!r.fixa) r.list.sort((a,b)=>a.i-b.i);
     let L=r.list.slice(), cuts=alasCortes(F, L.map(u=>u.alvo));
     while(!cuts && L.length>1){ const j=L.reduce((b,u,k)=>u.alvo<L[b].alvo? k : b, 0); semLugar.push(L[j]); L.splice(j,1); cuts=alasCortes(F, L.map(u=>u.alvo)) }
     if(!cuts){ semLugar.push(...L); usados.delete(r.i); return }
@@ -12448,6 +12705,31 @@ function alasUnidades(M, units, o){
     const p=[g.W(fu[a],fv[b]), g.W(fu[a1+1],fv[b]), g.W(fu[a1+1],fv[b1+1]), g.W(fu[a],fv[b1+1])];
     if(G.area(p)>0.01) livres.push(lv(p, [fu[a], fu[a1+1], fv[b], fv[b1+1]])) }
   const U={units:out, livres, semLugar}; alasAbsorve(U, g); return U;
+}
+/* distribuição das unidades pelas faixas das alas escolhida pelos partidos (como repReparte no tipoLayout): todas as
+   distribuições por tipologia e as ordens distintas em cada faixa; cortes pelo alasCortes (fachada e corredor mínimos);
+   custo = repNotaGeo de cada unidade (retângulo frente × fundo da faixa). Devolve [[unidades por faixa]] ou null */
+function alasReparte(R, us, st, vazioOk){
+  if(!R.length || !us.length) return null;
+  const tipos=new Map(); us.forEach(u=>{ const key=u.nome+"|"+(+u.alvo).toFixed(3)+"|"+(+u.sac||0); if(!tipos.has(key)) tipos.set(key,{nome:u.nome, alvo:+u.alvo, us:[]}); tipos.get(key).us.push(u) });
+  const TT=[...tipos.values()]; TT.forEach(t=>{ t.T=repTipo(st, t.nome, t.alvo) }); if(TT.some(t=>!t.T)) return null;
+  const k=R.length, comps=TT.map(t=>repComp(t.us.length, k)), nDist=comps.reduce((s,c)=>s*c.length,1); if(nDist>REP_LIM.dist) return null;
+  const memo=new Map();
+  const trecho=(ri, cont)=>{ const key=ri+":"+cont.join(","); if(memo.has(key)) return memo.get(key);
+    const arr=[]; cont.forEach((n,ti)=>{ for(let q=0;q<n;q++) arr.push(ti) }); let best=null;
+    if(!arr.length) best={seq:[], custo: vazioOk? 0 : 1e6};
+    else { const F=R[ri].F; repPerms(arr, REP_LIM.seq).forEach(seq=>{ const cuts=alasCortes(F, seq.map(ti=>TT[ti].alvo)); if(!cuts) return; let c=0;
+        seq.forEach((ti,j)=>{ const W=cuts[j+1]-cuts[j], A=W*F.h; c+=repNotaGeo(TT[ti].T, TT[ti].alvo, {A, W, D:F.h, Ai:A}, false, false) });
+        if(!best || c<best.custo) best={seq, custo:c} }); if(!best) best={seq:arr, custo:1e6} }
+    memo.set(key, best); return best };
+  let best=null;
+  const rec=(ti, acc)=>{ if(ti===TT.length){ let c=0; const ps=[]; for(let ri=0;ri<k;ri++){ const cont=TT.map((t,j)=>acc[j][ri]), r=trecho(ri, cont); c+=r.custo; ps.push(r); if(best && c>=best.custo) return }
+      if(c<1e6 && (!best || c<best.custo)) best={custo:c, ps}; return }
+    comps[ti].forEach(cp=>rec(ti+1, [...acc, cp])) };
+  rec(0, []);
+  if(!best) return null;
+  const fila=TT.map(t=>t.us.slice().sort((a,b)=>a.i-b.i));
+  return best.ps.map(p=>p.seq.map(ti=>fila[ti].shift()));
 }
 /* retângulo [u0,u1,v0,v1] (referencial local da planta) do trecho a..z de uma faixa */
 function alasLocR(F, a, z){ return F.o==="h" ? [a, z, F.y0, F.y1] : [-F.y1, -F.y0, a, z] }
@@ -12530,7 +12812,8 @@ const _alasCache=new Map();
 function alasLayout(plate, units, o, oco, fix){
   const D=alasDetecta(plate, oco, fix); if(!D || D.falha) return D;
   const r2=v=>Math.round(v*100)/100, sig=JSON.stringify([plate.map(q=>q.map(r2)), oco? [oco.pts, oco.vazios].map(r=>JSON.stringify(r)) : 0, units.map(u=>[u.nome, r2(u.alvo), u.sac]),
-    ["corr","profMin","nElev","escTipo","nEsc","emerg","fachada","sacTipo","sacProf","planta","distMax","esc2"].map(k=>o[k]), fix? [fix.ux, fix.H, fix.V, fix.ref && fix.ref.core, fix.ref && fix.ref.coreExtra] : 0]);
+    ["corr","profMin","nElev","escTipo","nEsc","emerg","fachada","sacTipo","sacProf","planta","distMax","esc2"].map(k=>o[k]), fix? [fix.ux, fix.H, fix.V, fix.ref && fix.ref.core, fix.ref && fix.ref.coreExtra] : 0,
+    o._st && typeof repTipo==="function" ? [...new Set(units.map(u=>u.nome))].map(n=>{ const T=repTipo(o._st, n, (units.find(u=>u.nome===n)||{}).alvo||0); return T? T.mods.map(m=>m.id).join(",") : "" }) : 0]);
   // cópia rasa por chamada: os cômodos (src/calc/comodos.js) gravam em u.com e u.sac de cada unidade
   const copia=l=>!l || l.falha ? l : {...l, units:l.units.map(u=>u.sac? {...u, sac:{...u.sac}} : {...u})};
   if(_alasCache.has(sig)) return copia(_alasCache.get(sig));
@@ -12739,10 +13022,10 @@ const APTO_CAT = (()=>{
       a("a1","sala",0,0,2.9,7.0,"xy"), a("a2","dorm",2.9,0,2.5,3.3,"xy"), a("a3","dorm",5.4,0,2.5,3.3,"xy"),
       a("a4","circ",2.9,3.3,5.0,1.1,"x"), a("a5","cozinha",2.9,4.4,2.0,2.6,"xy"), a("a6","serv",4.9,4.4,1.3,2.6,"y"),
       a("a7","banho",6.2,4.4,1.7,2.6,"xy")]),
-    P("2d-canto","2 dorm. de canto (janela lateral)","2d",7.2,7.6,[6.9,8.4],[7.0,8.8],1.2,[
-      a("a1","sala",0,0,3.0,4.6,"xy"), a("a2","cozinha",0,4.6,1.8,3.0,"xy"), a("a3","serv",1.8,4.6,1.2,3.0,"y"),
-      a("a4","dorm",3.0,0,4.2,3.3,"xy",{cama:"casal"}), a("a5","circ",3.0,3.3,4.2,1.1,"x"), a("a6","banho",3.0,4.4,1.6,3.2,"xy"),
-      a("a7","dorm",4.6,4.4,2.6,3.2,"xy")],
+    P("2d-canto","2 dorm. de canto (janela lateral)","2d",7.8,7.6,[7.0,8.6],[7.4,8.8],1.2,[
+      a("a1","sala",0,0,3.4,4.8,"xy"), a("a2","cozinha",0,4.8,2.2,2.8,"xy"), a("a3","serv",2.2,4.8,1.2,2.8,"y"),
+      a("a4","dorm",3.4,0,4.4,3.3,"xy",{cama:"casal"}), a("a5","circ",3.4,3.3,4.4,1.1,"x"), a("a6","banho",3.4,4.4,1.5,3.2,"y"),
+      a("a7","dorm",4.9,4.4,2.9,3.2,"xy")],
       {lateral:{xW:true}}),
     P("2d-rasa","2 dorm. em lâmina rasa","2d",10.6,5.6,[9.6,12.4],[5.35,6.4],1.9,[
       a("a1","sala",0,0,3.8,5.6,"xy"), a("a2","dorm",3.8,0,3.3,2.8,"xy"), a("a3","dorm",7.1,0,3.5,2.8,"xy",{cama:"casal"}),
@@ -13454,6 +13737,10 @@ const APTO_REGRAS = {
   prop: { dorm:2.2, suite:2.2, office:2.4, sala:3.0 },
   porta: { min:0.8, molhada:0.7, entrada:0.9 },
   nota: { bad:25, warn:6, area:0.5, areaTol:10 },
+  // estar/jantar proporcional ao número de dormitórios (m², a sala sozinha: a cozinha integrada e a sacada não contam) e nunca
+  // bem menor que o maior quarto (fração do maior dormitório/suíte: abaixo de "bad" é grave, abaixo de "warn" é atenção)
+  sala: { studio:0, "1d":10, "1s":10, "2d":12, "2d1s":12, "2s":13, "3d1s":14, "3s":16, "4d1s":16 },
+  salaQuarto: { bad:0.6, warn:0.75 },
   moveis: true
 };
 const APTO_MIN = { sala:{a:10,l:2.6}, suite:{a:9,l:2.5}, dorm:{a:7,l:2.3}, office:{a:4,l:1.8}, cozinha:{a:4,l:1.5}, serv:{a:1.8,l:1.0}, banho:{a:2.2,l:1.1}, lavabo:{a:1.2,l:0.9}, circ:{a:0,l:0.9} };
@@ -13474,7 +13761,7 @@ const APTO_PROG = {
 };
 const aptoTipologias = ()=> Object.entries(APTO_TIPOS).map(([k,nome])=>({k, nome}));
 const aptoNf = (v,d=1)=>(+v).toFixed(d).replace(".",",");
-const aptoReg = st=>{ const r=st && st.comodos && st.comodos.regras; if(!r) return APTO_REGRAS; return {...APTO_REGRAS, ...r, circ:{...APTO_REGRAS.circ, ...(r.circ||{})}, prop:{...APTO_REGRAS.prop, ...(r.prop||{})}, porta:{...APTO_REGRAS.porta, ...(r.porta||{})}, nota:{...APTO_REGRAS.nota, ...(r.nota||{})}} };
+const aptoReg = st=>{ const r=st && st.comodos && st.comodos.regras; if(!r) return APTO_REGRAS; return {...APTO_REGRAS, ...r, circ:{...APTO_REGRAS.circ, ...(r.circ||{})}, prop:{...APTO_REGRAS.prop, ...(r.prop||{})}, porta:{...APTO_REGRAS.porta, ...(r.porta||{})}, nota:{...APTO_REGRAS.nota, ...(r.nota||{})}, sala:{...APTO_REGRAS.sala, ...(r.sala||{})}, salaQuarto:{...APTO_REGRAS.salaQuarto, ...(r.salaQuarto||{})}} };
 
 /* ---------- geometria auxiliar (referencial local) ---------- */
 const aptoE = 1e-6;
@@ -13559,6 +13846,7 @@ function aptoInterno(r){ const cls=aptoParedeDe(r); return aptoInset(r.poly, i=>
 /* ---------- esticar por faixas ---------- */
 const APTO_FAIXA_FOLGA = { W:1.4, D:1.25 };   // além do máximo da faixa: tolerância (com aviso) antes de virar "não cabe"
 /* medida mínima de eixo a eixo de um ambiente que ocupa uma faixa inteira (para encolher sem estragar) */
+const APTO_SAC_FUNDO = { sala:2.9, suite:2.9, dorm:2.7, office:2.2 };   // fundo mínimo que fica atrás da sacada embutida
 const APTO_MINDIM = { sala:2.95, suite:2.85, dorm:2.62, office:2.0, cozinha:1.95, serv:1.3, banho:1.45, bsuite:1.45, lavabo:1.15, circ:1.1, closet:1.2, desp:1.0, sacada:1.2 };
 function aptoGrade(rs, eixo, ref, novo, cortes){
   const c0=eixo? "y0":"x0", c1=eixo? "y1":"x1", ch=eixo? "y":"x";
@@ -13646,38 +13934,50 @@ function aptoAplica(mod, W, D, o={}){
   am.forEach(a=>{ const g=grp[a.id]; let r=porId[g]; if(!r){ const dono=am.find(x=>(x.grupo||x.id)===g && grp[x.id]===g && !x.k0) || a; r=porId[g]={id:dono.id, k:dono.k, nome:dono.nome||null, de:dono.de||null, cama:dono.cama||null, partes:[], ref:0, fixo:true}; rooms.push(r) }
     rid[a.id]=r.id; r.partes.push([a.x0,a.y0,a.x1,a.y1]); r.ref+=(a.rx[2]-a.rx[0])*(a.rx[3]-a.rx[1]); if(a.estica) r.fixo=false });
   rooms.forEach(r=>{ if(r.de) r.de=rid[r.de]||r.de });
-  // sacada embutida: recorta a frente dos ambientes de "sobre" (padrão: a sala)
+  // sacada embutida: recorta a frente dos ambientes de "sobre" (padrão: a sala). Opções: só a sala (até 2,6 m de fundo, a
+  // "varanda gourmet") ou continuando na frente do quarto vizinho (varanda corrida, até 2,0 m). Cada ambiente coberto precisa
+  // ficar com o fundo mínimo atrás da sacada (APTO_SAC_FUNDO: sala 2,9 m, suíte 2,9 m, dormitório 2,7 m) — antes bastavam
+  // 2,2 m e a varanda corrida esmagava o quarto (5 m²). Fica a opção com menos ambientes que leva a área inteira e mantém a
+  // sala no mínimo da tipologia; se nenhuma leva, a maior possível (a área que sobra fica nos cômodos).
   let sac=null;
   if(o.sacada && o.sacada.area>0.5){
-    let sobre=(mod.sacada && Array.isArray(mod.sacada.sobre) && mod.sacada.sobre.length? mod.sacada.sobre.map(id=>rid[id]) : rooms.filter(r=>r.k==="sala").map(r=>r.id)).filter(Boolean);
-    { // sacada funda demais só na frente da sala (> 2,4 m): continua na frente inteira do quarto vizinho (varanda corrida)
-      const fr0=r=>r.partes.filter(p=>p[1]<1e-4), spanDe=ids=>{ const iv=rooms.filter(r=>ids.includes(r.id)).flatMap(r=>fr0(r).map(p=>[p[0],p[2]])); return iv.length? [Math.min(...iv.map(v=>v[0])), Math.max(...iv.map(v=>v[1]))] : null };
-      for(let g=0; g<3; g++){ const sp=spanDe(sobre); if(!sp || o.sacada.area/(sp[1]-sp[0])<=2.4) break;
-        const viz=rooms.filter(r=>!sobre.includes(r.id) && ["dorm","suite","office","sala"].includes(r.k) && fr0(r).some(p=>Math.abs(p[0]-sp[1])<1e-4 || Math.abs(p[2]-sp[0])<1e-4));
-        if(!viz.length) break; sobre=sobre.concat(viz[0].id) } }
-    const fr=[]; rooms.filter(r=>sobre.includes(r.id)).forEach(r=>r.partes.forEach(p=>{ if(p[1]<1e-4) fr.push([p[0],p[2],p[3]]) }));
-    fr.sort((a,b)=>a[0]-b[0]); const spans=[]; fr.forEach(f=>{ const u=spans[spans.length-1]; if(u && f[0]<=u[1]+1e-4){ u[1]=Math.max(u[1],f[1]); u[2]=Math.min(u[2],f[2]) } else spans.push([f[0],f[1],f[2]]) });
-    spans.sort((a,b)=>(b[1]-b[0])-(a[1]-a[0]));
-    const sp=spans[0];
-    if(sp && sp[1]-sp[0]>=1.2){ const span=sp[1]-sp[0], A=o.sacada.area;
-      // fachada inclinada: a sacada começa onde a fachada está (yf = maior recuo da fachada no trecho)
-      const fachY=x=>{ let y=0; bordas.forEach(b=>{ if(b.c!=="fachada") return; const dx=b.b[0]-b.a[0], dy=b.b[1]-b.a[1]; if(Math.abs(dy)>Math.abs(dx)) return; const lo=Math.min(b.a[0],b.b[0]), hi=Math.max(b.a[0],b.b[0]); if(x<lo-1e-6||x>hi+1e-6||Math.abs(dx)<1e-9) return; y=Math.max(y, b.a[1]+(x-b.a[0])*dy/dx) }); return y };
-      // a sacada ocupa a frente inteira dos ambientes cobertos (cômodos continuam retangulares); profundidade = área ÷ frente
-      let sd=Math.max(1.25, Math.min(2.4, A/span)), sw=Math.min(span, A/sd), xa=sp[0], xb, yf=0;
-      const pri=rooms.find(r=>r.id===sobre[0]), px=pri? pri.partes.filter(p=>p[1]<1e-4) : [], p0=px.length? Math.min(...px.map(p=>p[0])) : sp[0], p1=px.length? Math.max(...px.map(p=>p[2])) : sp[1];
-      for(let it=0; it<3; it++){
+    const A=o.sacada.area, fr0=r=>r.partes.filter(p=>p[1]<1e-4);
+    const base=(mod.sacada && Array.isArray(mod.sacada.sobre) && mod.sacada.sobre.length? mod.sacada.sobre.map(id=>rid[id]) : rooms.filter(r=>r.k==="sala").map(r=>r.id)).filter(Boolean);
+    const fachY=x=>{ let y=0; bordas.forEach(b=>{ if(b.c!=="fachada") return; const dx=b.b[0]-b.a[0], dy=b.b[1]-b.a[1]; if(Math.abs(dy)>Math.abs(dx)) return; const lo=Math.min(b.a[0],b.b[0]), hi=Math.max(b.a[0],b.b[0]); if(x<lo-1e-6||x>hi+1e-6||Math.abs(dx)<1e-9) return; y=Math.max(y, b.a[1]+(x-b.a[0])*dy/dx) }); return y };
+    const spanDe=ids=>{ const fr=[]; rooms.filter(r=>ids.includes(r.id)).forEach(r=>fr0(r).forEach(p=>fr.push([p[0],p[2]])));
+      fr.sort((a,b)=>a[0]-b[0]); const sps=[]; fr.forEach(f=>{ const u=sps[sps.length-1]; if(u && f[0]<=u[1]+1e-4) u[1]=Math.max(u[1],f[1]); else sps.push([f[0],f[1]]) });
+      return sps.sort((a,b)=>(b[1]-b[0])-(a[1]-a[0]))[0] || null };
+    const opcoes=[base]; { let cur=base; for(let g=0; g<2; g++){ const sp=spanDe(cur); if(!sp) break;
+        const viz=rooms.filter(r=>!cur.includes(r.id) && ["dorm","suite","office","sala"].includes(r.k) && fr0(r).some(p=>Math.abs(p[0]-sp[1])<1e-4 || Math.abs(p[2]-sp[0])<1e-4));
+        if(!viz.length) break; cur=cur.concat(viz[0].id); opcoes.push(cur) } }
+    const salaMin=Math.max(((o.st && o.st.comodos && o.st.comodos.min) || APTO_MIN).sala.a||0, +(aptoReg(o.st).sala||{})[mod.tipologia]||0);
+    // posiciona a sacada numa opção: começa pelo 1º ambiente de "sobre" (a sala), no canto da unidade se ele encosta numa divisa
+    const posiciona=sobre=>{ let sp=spanDe(sobre); if(!sp) return null;
+      // encaixe "inscrito": a sacada fica na frente do retângulo do partido — a sobra (atrás da escada, por exemplo) é rasa e
+      // continua sendo extensão do ambiente (com a sacada nela, sobraria uma tira sem uso atrás)
+      if(R[0]>aptoE || R[2]<W-aptoE){ const a=Math.max(sp[0],R[0]), b=Math.min(sp[1],R[2]); if(b-a>=1.2) sp=[a,b] }
+      if(sp[1]-sp[0]<1.2) return null; const span=sp[1]-sp[0];
+      const pri=rooms.find(r=>r.id===sobre[0]), px=pri? fr0(pri) : [], p0=px.length? Math.min(...px.map(p=>p[0])) : sp[0], p1=px.length? Math.max(...px.map(p=>p[2])) : sp[1];
+      const dMax= sobre.length>1? 2.0 : 2.6; let sd=Math.max(1.2, Math.min(dMax, A/span)), sw=Math.min(span, A/sd), xa=sp[0], xb=sp[1], yf=0, ok=true;
+      for(let it=0; it<4; it++){
         if(sw>span){ sw=span; sd=A/sw }
-        // começa pelo 1º ambiente de "sobre" (a sala): no canto da unidade, se ele encosta numa divisa
         xa = p0<1e-3 || Math.abs(p0-sp[0])<1e-3? Math.max(sp[0],p0) : p1>W-1e-3 || Math.abs(p1-sp[1])<1e-3? Math.min(sp[1],p1)-sw : p0;
         xa=Math.max(sp[0], Math.min(sp[1]-sw, xa)); xb=xa+sw;
         yf=Math.max(fachY(xa+1e-3), fachY(xb-1e-3), ...cont.filter(q=>q[0]>xa && q[0]<xb).map(q=>fachY(q[0])));
-        // o ambiente coberto quase todo fica com ≥ 2,2 m atrás da sacada
-        let ymax=Infinity; rooms.filter(r=>sobre.includes(r.id)).forEach(r=>r.partes.forEach(p=>{ if(p[1]>1e-4) return; const cov=(Math.min(p[2],xb)-Math.max(p[0],xa))/Math.max(1e-6,p[2]-p[0]); if(cov>0.6) ymax=Math.min(ymax, p[3]-yf-2.2) }));
-        if(sd<=ymax+1e-6 || ymax<1.0) break;
-        sd=Math.max(1.15, ymax); sw=Math.min(span, A/sd) }
-      const yb=yf+sd;
+        let ymax=Infinity; rooms.filter(r=>sobre.includes(r.id)).forEach(r=>fr0(r).forEach(p=>{ if(Math.min(p[2],xb)-Math.max(p[0],xa)<0.3) return; ymax=Math.min(ymax, p[3]-yf-(APTO_SAC_FUNDO[r.k]||2.7)) }));
+        if(sd<=ymax+1e-6) break;
+        if(ymax<1.15){ ok=false; sd=Math.max(1.15, Math.min(sd, ymax)); sw=Math.min(span, A/sd); break }
+        sd=ymax; sw=Math.min(span, A/sd) }
+      if(sw*sd>A+1e-6){ sd=A/sw }   // não passa da área pedida
+      // sala que sobra atrás (aproximada pelas partes da frente)
+      const salaR=rooms.filter(r=>r.k==="sala").reduce((s,r)=>s+r.partes.reduce((t,p)=>t+(p[2]-p[0])*(p[3]-p[1])-(p[1]<1e-4 && sobre.includes(r.id)? Math.max(0,Math.min(p[2],xb)-Math.max(p[0],xa))*(sd+yf) : 0),0),0);
+      return {sobre, sp, sd, sw, xa, xb, yf, area:sw*sd, ok, salaR} };
+    const cs=opcoes.map(posiciona).filter(Boolean);
+    const cheia=c=>c.ok && c.area>=A-0.05;
+    const esc= cs.find(c=>cheia(c) && c.salaR>=salaMin-0.05) || cs.find(cheia) || cs.filter(c=>c.ok).sort((a,b)=>b.area-a.area)[0] || cs[0];
+    if(esc){ const {sobre, xa, xb, yf, sd, sw}=esc, yb=yf+sd;
       rooms.forEach(r=>{ const np=[]; r.partes.forEach(p=>{ if(p[1]>1e-4 || p[2]<=xa+1e-4 || p[0]>=xb-1e-4 || !sobre.includes(r.id) || p[3]<=yb+0.3){ np.push(p); return }
-          const a0=Math.max(p[0],xa), a1=Math.min(p[2],xb);
+          const a0=Math.max(p[0],xa), a1=Math.min(p[2],xb); r.sacCut=(r.sacCut||0)+(a1-a0)*yb;
           if(a0>p[0]+1e-4) np.push([p[0],0,a0,yb]); if(a1<p[2]-1e-4) np.push([a1,0,p[2],yb]); np.push([p[0],yb,p[2],p[3]]) }); r.partes=np });
       sac={id:"sac", k:"sacada", nome:null, partes:[[xa,0,xb,yb]], ref:sw*sd, fixo:true, alvoFixo:sw*sd}; rooms.push(sac) } }
   // recorte pelo contorno e união das partes
@@ -13690,9 +13990,14 @@ function aptoAplica(mod, W, D, o={}){
   rooms.forEach(r=>{ (r.sobra||[]).forEach(q=>{ for(const v of rooms){ if(v===r || !v.poly.length) continue; const u=aptoUne(v.poly,q); if(u){ v.poly=aptoCCW(u); return } } }); delete r.sobra });
   let amb=rooms.filter(r=>r.poly.length>2 && G.area(r.poly)>0.05);
   // áreas-alvo: fixos mantêm a do desenho; os que esticam dividem o resto na proporção do desenho
+  // (a sacada embutida sai da área dos ambientes que ela recorta — a sala —, não de todos; no encaixe "inscrito" o que fica
+  // fora do retângulo é extensão de quem o recebe: nenhum dos dois conta como desvio de área)
   const Au=G.area(cont); amb.forEach(r=>{ r.area=G.area(r.poly) });
-  const fixos=amb.filter(r=>r.fixo), est=amb.filter(r=>!r.fixo), Af=fixos.reduce((s,r)=>s+(r.alvoFixo||r.ref),0), Re=est.reduce((s,r)=>s+r.ref,0);
-  fixos.forEach(r=>{ r.alvo=r.alvoFixo||r.ref }); est.forEach(r=>{ r.alvo= Re>0? r.ref*Math.max(0.2,(Au-Af))/Re : r.area });
+  const inscr = R[0]>aptoE || R[1]>aptoE || R[2]<W-aptoE || R[3]<D-aptoE;
+  amb.forEach(r=>{ r.ext = inscr && r.k!=="sacada"? Math.max(0, r.area-G.area(aptoClipRet(r.poly, R[0], R[1], R[2], R[3]))) : 0 });
+  const fixos=amb.filter(r=>r.fixo), est=amb.filter(r=>!r.fixo), Af=fixos.reduce((s,r)=>s+(r.k==="sacada"? 0 : (r.alvoFixo||r.ref)),0), Re=est.reduce((s,r)=>s+r.ref,0);
+  const Ab=Au-amb.reduce((s,r)=>s+r.ext,0);
+  fixos.forEach(r=>{ r.alvo=(r.alvoFixo||r.ref)-(r.k==="sacada"? 0 : (r.sacCut||0))+r.ext }); est.forEach(r=>{ r.alvo= Re>0? r.ref*Math.max(0.2,(Ab-Af))/Re-(r.sacCut||0)+r.ext : r.area });
   // bordas (classe do vizinho por trecho)
   amb.forEach(r=>{ r.bordas=aptoClassifica(r.poly, bordas) });
   // nomes (Dorm. 1, 2…; Banheiro 1, 2… quando há mais de um)
@@ -13871,10 +14176,10 @@ function aptoValida(pl, st, opt={}){
   // dimensões
   A.forEach(r=>{ const K=APTO_AMB[r.k], mn=mins[K.min||r.k];
     if(r.k==="sacada"){ const d=aptoCirculoInscrito(aptoInterno(r)).d; r._d=d; if(d<(R.circ.sacada||1.1)-0.05) P("sacada","warn",r.id,`${nome(r)}: profundidade ${aptoNf(d,2)} m (mín. ${aptoNf(R.circ.sacada||1.1,2)} m)`); return }
-    // área mínima (sala integrada à cozinha: um compartimento só)
-    const aR = r.k==="sala" && integ.has(r.id)? r.area + A.filter(x=>x.k==="cozinha" && integ.has(x.id)).reduce((s,x)=>s+x.area,0) : r.area;
-    const aM = mn? (r.k==="sala" && integ.has(r.id)? mn.a+((mins.cozinha||{}).a||0) : mn.a) : 0;
-    if(aM>0 && !(r.k==="cozinha" && integ.has(r.id)) && aR<aM-0.05) P("area", aR<aM*0.85? "bad" : "warn", r.id, `${nome(r)}: ${aptoNf(aR)} m²${r.k==="sala"&&integ.has(r.id)?" com a cozinha":""} (mín. ${aptoNf(aM)} m²)`);
+    // área mínima: cada ambiente por si (a cozinha integrada não conta como sala — antes somava e deixava passar uma sala de
+    // 8,5 m² num 2 dormitórios); a sala pede o mínimo da tipologia (APTO_REGRAS.sala, pelo número de dormitórios)
+    const aR = r.area, aM = mn? (r.k==="sala"? Math.max(mn.a, +(R.sala||{})[pl.tipologia]||0) : mn.a) : 0;
+    if(aM>0 && !(r.k==="cozinha" && integ.has(r.id)) && aR<aM-0.05) P("area", aR<aM*0.85? "bad" : "warn", r.id, `${nome(r)}: ${aptoNf(aR)} m² (mín. ${aptoNf(aM)} m²${r.k==="sala" && aM>mn.a+0.01? ` para ${(APTO_TIPOS[pl.tipologia]||"").toLowerCase()}` : ""})`);
     // círculo inscrito (descontadas as paredes)
     const req=R.circ[K.min||r.k]; const ci=aptoCirculoInscrito(aptoInterno(r)); r._d=ci.d; r._c=ci.c;
     if(req){ if(ci.d<req-0.005){ const lim= r.k==="circ"? 0.10 : Math.max(0.10, req*0.05); P("circulo", ci.d<req-lim? "bad" : "warn", r.id, r.k==="circ"? `${nome(r)}: largura livre ${aptoNf(ci.d,2)} m (mín. ${aptoNf(req,2)} m)` : `${nome(r)}: cabe um círculo de Ø ${aptoNf(ci.d,2)} m (mín. Ø ${aptoNf(req,2)} m)`) } }
@@ -13882,6 +14187,10 @@ function aptoValida(pl, st, opt={}){
     const lim=R.prop[r.k]; if(lim){ const [x0,y0,x1,y1]=aptoBBox(r.poly), a=x1-x0, b=y1-y0, q=Math.max(a,b)/Math.max(0.01,Math.min(a,b)); r._q=q;
       if(q>lim+0.01) P("proporcao", q>lim*1.15? "bad" : "warn", r.id, `${nome(r)}: comprido demais (${aptoNf(Math.max(a,b),2)} × ${aptoNf(Math.min(a,b),2)} m; máx. ${aptoNf(lim,1)} : 1)`) }
   });
+  // sala proporcional: não pode ser bem menor que o maior quarto
+  { const qs=A.filter(r=>APTO_AMB[r.k].quarto), q=qs.length? qs.reduce((a,b)=>b.area>a.area? b : a) : null, SQ=R.salaQuarto||APTO_REGRAS.salaQuarto;
+    A.filter(r=>r.k==="sala").forEach(s=>{ if(!q || !(q.area>0)) return; const f=s.area/q.area;
+      if(f<SQ.warn-1e-6) P("sala", f<SQ.bad? "bad" : "warn", s.id, `${nome(s)}: ${aptoNf(s.area)} m², menor que ${nome(q).toLowerCase()} (${aptoNf(q.area)} m²)`) }) }
   // iluminação e ventilação
   const jan=pl.janelas||[], dutos=[];
   A.forEach(r=>{ const K=APTO_AMB[r.k]; if(r.k==="sacada"||r.k==="circ") return;
@@ -14188,12 +14497,15 @@ function blcLayFaixa(plate, ref, list, o={}){
   const R=reg.filter(r=>r.p.length && G.area(r.p)>4).map(r=>({...r, A:G.area(r.p), list:[], used:0}));
   const us=list.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo), totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
   us.forEach(u=>{ let best=null, bs=-Infinity; R.forEach(r=>{ const s=r.A/totalA*totalAlvo-r.used-u.alvo*0.5; if(s>bs){ bs=s; best=r } }); if(best){ best.list.push(u); best.used+=u.alvo } });
+  // repartição pelos partidos (src/calc/reparte.js), como no pavimento tipo
+  const rep = o._st && typeof repReparte==="function" ? repReparte(R, us, {ux, vy, st:o._st, u0, u1, antigo:R.map(r=>r.list.map(u=>u.i)), vazioOk:R.some(r=>!r.list.length)}) : null;
+  if(rep) R.forEach((r,ri)=>{ r.list=rep.regs[ri].list; r.cuts=rep.regs[ri].cuts });
   const out=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6;
   R.forEach(r=>{
     if(!r.list.length){ out.push({poly:r.p, nome:"livre", alvo:0, area:r.A, livre:true}); return }
-    r.list.sort((a,b)=>a.i-b.i);
+    if(!r.cuts) r.list.sort((a,b)=>a.i-b.i);
     const tot=r.list.reduce((s,u)=>s+u.alvo,0); let a2=0; const [mn,mx]=G.extent(r.p,ux); let prev=mn;
-    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot), poly=G.band(r.p,ux,prev,cut);
+    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = r.cuts? (j===r.list.length-1 ? mx : r.cuts[j+1]) : j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot), poly=G.band(r.p,ux,prev,cut);
       const un={poly, nome:u.nome, alvo:u.alvo, area:G.area(poly), fac:r.fac};
       if(u.sac>0 && poly.length){ const [pv0,pv1]=G.extent(poly,vy), wU=cut-prev, w=Math.max(1.2,Math.min(wU-1, u.sac/prof)), pr=u.sac/w, uc=(prev+cut)/2;
         let va,vb; if(r.fac==="max"){ va= sacTipo==="balanco"? pv1 : pv1-pr; vb=va+pr } else { vb= sacTipo==="balanco"? pv0 : pv0+pr; va=vb-pr }
@@ -14219,7 +14531,7 @@ function blcLayFaixas(st, m){
       f.nucleo = f.A>1 && tem ? Math.min(1, blcDentro(ref.core, f.plate) + (1-base), ...(ref.coreExtra||[]).map(p=>blcDentro(p, f.plate))) : 0;
       if(f.nTipo<1 || f.A<1) return;
       const list=[]; P.mix.forEach((u,j)=>{ for(let q=0;q<(f.qtd[j]||0);q++) list.push({nome:u.nome, alvo:u.area*f.r, sac:+u.sac||0}) });
-      const E=st.estudo, o={sacTipo:P.sacTipo, sacProf:P.sacProf};
+      const E=st.estudo, o={sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st};
       // C3: bloco em L/U/T/H/pátio (ou referência por alas) → layout por ala com o mesmo núcleo e o corredor nas mesmas linhas
       const la = typeof alasLayFaixa==="function" && f.nucleo>=0.999 ? alasLayFaixa(f.plate, f.oco||null, ref, list, {...o, corr:E.corrTipo, profMin:E.profMin, planta:E.tipoPlanta,
         escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, nElev:ref.coreParts.filter(c=>c.kind==="elev").length||1}, st) : null;
@@ -15145,6 +15457,8 @@ function comPartidosDe(st, nome, area){
   const tip=comModeloDe(st, nome, area), auto=!(cfg.modelo && cfg.modelo!=="auto" && COM_MODELOS[cfg.modelo]), out=[];
   APTO_CAT.filter(m=>m.tipologia===tip).forEach(mod=>out.push({mod, pen:0})); us.filter(m=>m && m.tipologia===tip).forEach(mod=>out.push({mod, pen:0}));
   const alt=auto && COM_ALT[tip]; if(alt){ APTO_CAT.filter(m=>m.tipologia===alt).forEach(mod=>out.push({mod, pen:4})); us.filter(m=>m && m.tipologia===alt).forEach(mod=>out.push({mod, pen:4})) }
+  // lavabo pedido na tipologia: os partidos que não o têm ficam para depois (a repartição do andar também os pesa menos)
+  if(cfg.lavabo) out.forEach(x=>{ if(!(x.mod.ambientes||[]).some(a=>a.k==="lavabo" || a.opc==="lavabo")) x.pen+=10 });
   return out;
 }
 
@@ -15186,6 +15500,30 @@ function comFrame(P, ax, dn, lado){
 const comVet=(F,p,v)=>{ const a=F.w(p[0],p[1]), b=F.w(p[0]+v[0],p[1]+v[1]); return [b[0]-a[0], b[1]-a[1]] };
 const comNf=(v,d=1)=>(+v).toFixed(d).replace(".",",");
 
+/* por que um partido não cabe na unidade: a faixa que ele pede (frente/profundidade) — {motivo, falta (m)} */
+function comMotivoFaixa(mod, dm){
+  const fw=mod.faixaW||{}, fd=mod.faixaD||{}, F=APTO_FAIXA_FOLGA, W=dm? dm[0] : 0, D=dm? dm[1] : 0;
+  if(fw.min!=null && W<fw.min-0.025) return {motivo:`pede frente ≥ ${comNf(fw.min)} m`, falta:fw.min-W};
+  if(fw.max!=null && W>fw.max*F.W+0.025) return {motivo:`pede frente ≤ ${comNf(fw.max*F.W)} m`, falta:W-fw.max*F.W};
+  if(fd.min!=null && D<fd.min-0.025) return {motivo:`pede profundidade ≥ ${comNf(fd.min)} m`, falta:fd.min-D};
+  if(fd.max!=null && D>fd.max*F.D+0.025) return {motivo:`pede profundidade ≤ ${comNf(fd.max*F.D)} m`, falta:D-fd.max*F.D};
+  return {motivo:"não cabe", falta:9};
+}
+/* o problema grave que derruba um partido, em poucas palavras ("Cozinha estreita", "falta banheiro da suíte") */
+const COM_FEM = {suite:1, cozinha:1, serv:1, circ:1, sacada:1};
+function comMotivoCurto(probs, pl){
+  const p=(probs||[]).find(x=>x.nivel==="bad"); if(!p) return "";
+  const amb=pl && p.amb ? (pl.ambientes||[]).find(r=>r.id===p.amb) : null, nome=amb? (amb.longo||APTO_AMB[amb.k].longo) : "", f=amb && COM_FEM[amb.k];
+  const adj={area: f? "pequena" : "pequeno", circulo: f? "estreita" : "estreito", proporcao: f? "comprida" : "comprido"}[p.k];
+  if(adj && nome) return `${nome} ${adj}`;
+  if(p.k==="janela" && nome) return `${nome} sem janela`;
+  if((p.k==="acesso" || p.k==="passagem") && nome) return `${nome}: acesso ruim`;
+  if(p.k==="movel"){ const t=String(p.msg).split(": ")[1]||p.msg; return t.split(" (")[0].split(" com ")[0] }
+  if(p.k==="sala") return "sala menor que o quarto";
+  if(p.k==="faixa") return "fora da faixa do partido";
+  return String(p.msg).split(" (")[0];
+}
+
 /* ---------- uma unidade: testa os partidos e escolhe ---------- */
 const _comCache = new Map();
 function comUnidade(u, lay, st, ctx){
@@ -15225,6 +15563,11 @@ function comUnidade(u, lay, st, ctx){
     const lim = cs.length && cs[0].v0.ok? 4 : 2;
     let best=null; for(let i=0;i<cs.length && i<lim;i++){ const c=cs[i]; if(best && c.s0<=best.s) break; const v=aptoValida(c.planta, st); const s=v.nota-(c.s0-c.v0.nota); if(!best || s>best.s) best={...c, val:v, s} }
     if(best){ best.nVar=n; best.notas={}; cs.forEach(c=>{ const id=c.mod.id; if(best.notas[id]==null || c.v0.nota>best.notas[id]) best.notas[id]=c.v0.nota }); best.notas[best.mod.id]=best.val.nota;
+      // galeria (ui/comodos.js): cada partido cabe (nota, sem grave) ou não cabe (o que pede a faixa, ou o problema que o derruba)
+      best.info={}; cs.forEach(c=>{ const id=c.mod.id, I=best.info[id]; if(I && I.nota>=c.v0.nota) return; best.info[id]={nota:c.v0.nota, ok:c.v0.ok, motivo: c.v0.ok? "" : comMotivoCurto(c.v0.problemas, c.planta)} });
+      best.info[best.mod.id]={nota:best.val.nota, ok:best.val.ok, motivo: best.val.ok? "" : comMotivoCurto(best.val.problemas, best.planta)};
+      { const Lc=local(frames[0],"a"), dC=dims(Lc,"caixa"), dI=Lc.ret? dC : dims(Lc,"inscrito");
+        lista.forEach(({mod})=>{ if(best.info[mod.id]) return; const dm= dI && foraDe(mod,dI)<foraDe(mod,dC)? dI : dC; best.info[mod.id]={nota:null, ok:false, ...comMotivoFaixa(mod, dm)} }) }
       const Lm=local(frames[0],"a"); best.Wf=Lm.F.W; best.Df=Lm.F.D; const mr=dims(Lm,"inscrito"); best.Wi=mr? mr[0] : Lm.F.W; best.Di=mr? mr[1] : Lm.F.D }
     return best };
   let best=_comCache.get(sigA);
@@ -15238,7 +15581,7 @@ function comUnidade(u, lay, st, ctx){
 function comMonta(c, u, st, cands){
   const pl=c.planta, v=c.val, F=c.F;
   const fr=c.fr||c.frame;
-  const L={F, planta:pl, val:v, mk:c.mod.tipologia, mod:c.mod, frame:fr, fm:c.fm, lado:c.lado, enc:c.enc, prm:{fr, ax:c.fm.ax, dn:c.fm.dn, lado:c.lado}, nVar:c.nVar, notas:c.notas||{}, score:v.nota, nota:v.nota};
+  const L={F, planta:pl, val:v, mk:c.mod.tipologia, mod:c.mod, frame:fr, fm:c.fm, lado:c.lado, enc:c.enc, prm:{fr, ax:c.fm.ax, dn:c.fm.dn, lado:c.lado}, nVar:c.nVar, notas:c.notas||{}, info:c.info||{}, score:v.nota, nota:v.nota};
   L.alertas=v.problemas.map(p=>({nivel:p.nivel==="bad"? "erro" : "aviso", msg:p.msg, k:p.k, amb:p.amb}));
   if(!v.ok){ // nenhum partido passa: o motivo e o que faria caber
     const mods=[...new Map(cands.map(x=>[x.mod.id,x.mod])).values()], W=c.Wi||F.W, D=c.Di||F.D;
@@ -15248,6 +15591,9 @@ function comMonta(c, u, st, cands){
     const n2=(a,b)=>{ const d=Math.abs(a-b)<0.1? 2 : 1; return [comNf(a,d), comNf(b,d)] };   // casas para que os dois números não pareçam iguais
     let msg = W<wMin-0.02? (([a,b])=>`${fu} de ${a} m; os partidos de ${nm.toLowerCase()} pedem ${b} m ou mais`)(n2(W,wMin)) : D<dMin-0.02? (([a,b])=>`profundidade de ${a} m; os partidos de ${nm.toLowerCase()} pedem ${b} m ou mais`)(n2(D,dMin)) :
       W>wMax+0.02? (([a,b])=>`${fu} de ${a} m; os partidos de ${nm.toLowerCase()} vão até ${b} m`)(n2(W,wMax)) : D>dMax+0.02? (([a,b])=>`profundidade de ${a} m; os partidos vão até ${b} m`)(n2(D,dMax)) : ((v.problemas.find(p=>p.nivel==="bad" && p.k!=="faixa")||{}).msg||"conferir");
+    // o mesmo em poucas palavras (rótulo na planta)
+    L.motivo = W<wMin-0.02? (([a,b])=>`${fu} ${a} m · pedem ≥ ${b} m`)(n2(W,wMin)) : D<dMin-0.02? (([a,b])=>`profundidade ${a} m · pedem ≥ ${b} m`)(n2(D,dMin)) :
+      W>wMax+0.02? (([a,b])=>`${fu} ${a} m · até ${b} m`)(n2(W,wMax)) : D>dMax+0.02? (([a,b])=>`profundidade ${a} m · até ${b} m`)(n2(D,dMax)) : comMotivoCurto(v.problemas, pl);
     L.semPartido=true; L.aviso=`nenhum partido cabe nesta unidade: ${msg}`; L.alertas.unshift({nivel:"erro", msg:L.aviso, k:"partido"}) }
   if(v.dutos && v.dutos.length) L.alertas.push({nivel:"nota", msg:"cozinha, serviço e banheiros sem fachada: ventilação por duto ou shaft (conferir)", k:"duto"});
   L.erros=L.alertas.filter(a=>a.nivel==="erro").length; L.avisos=L.alertas.filter(a=>a.nivel==="aviso").length; L.ok=v.ok;
@@ -15307,7 +15653,7 @@ function comExporta(L){
     const d={id:ax+k, ax, lo:vs[k-1]+0.5, hi:vs[k+1]-0.5, o0, tot}; if(ax==="x"){ d.x=v; d.y0=sp[0]; d.y1=sp[1]; d.p0=F.w(v,sp[0]); d.p1=F.w(v,sp[1]) } else { d.y=v; d.x0=sp[0]; d.x1=sp[1]; d.p0=F.w(sp[0],v); d.p1=F.w(sp[1],v) } divs.push(d) } });
   return {
     modelo:L.mk, partido:L.mod.id, partidoNome:L.mod.nome, origem:L.mod.origem||"catalogo", encaixe:L.enc, frame:L.frame, lado:F.lado, nVar:L.nVar, score:L.nota, nota:L.nota, notas:L.notas,
-    ok:L.ok, erros:L.erros, avisos:L.avisos, soma:L.soma, semPartido:!!L.semPartido, aviso:L.aviso||"",
+    ok:L.ok, erros:L.erros, avisos:L.avisos, soma:L.soma, semPartido:!!L.semPartido, aviso:L.aviso||"", motivo:L.motivo||"",
     ax:F.ax, dn:F.dn, a0:F.a0, a1:F.a1, d0:F.d0, W:F.W, D:F.D, R,
     rooms, doors, windows, movel:L.movel||comMoveis(L), divs:divs.map(d=>({id:d.id, ax:d.ax, p0:d.p0, p1:d.p1, lo:d.lo, hi:d.hi, o0:d.o0, tot:d.tot, v: d.ax==="x"? d.x : d.y})),
     cortes, alertas:L.alertas, problemas:probs
@@ -15328,6 +15674,9 @@ function comodosCalc(m, st){
       const T=out.porTipo[u.nome]=out.porTipo[u.nome]||{nome:u.nome, modelo:L.mk, partido:L.mod.id, partidoNome:L.mod.nome, n:0, validas:0, nota:0, ex:{ti,ui}, usados:{}, notas:{}};
       T.n++; if(L.ok) T.validas++; T.nota+=L.nota; T.usados[L.mod.id]=(T.usados[L.mod.id]||0)+1; T.notaUso=T.notaUso||{}; T.notaUso[L.mod.id]=(T.notaUso[L.mod.id]||0)+L.nota;
       Object.entries(L.notas||{}).forEach(([id,n])=>{ if(T.notas[id]==null || n<T.notas[id]) T.notas[id]=n });   // nota do partido na pior unidade da tipologia
+      // cabe / não cabe por partido (galeria): vale a pior unidade — não cabe numa, não cabe na tipologia
+      T.info=T.info||{}; Object.entries(L.info||{}).forEach(([id,I])=>{ const J=T.info[id], ruim=x=>x.nota==null? 2 : !x.ok? 1 : 0;
+        if(!J || ruim(I)>ruim(J) || (ruim(I)===ruim(J) && (I.nota==null? (I.falta||0)>(J.falta||0) : I.nota<J.nota))) T.info[id]={...I} });
       if(L.semPartido && !T.aviso) T.aviso=L.aviso;
       out.lista.push({ti, ui, nome:u.nome, ok:L.ok, nota:L.nota, alertas:L.alertas});
     });
@@ -15403,6 +15752,7 @@ function comCortaContorno(P, vaos){
    PORTAS (folha e arco de abertura), JANELAS, MOBILIARIO, TEXTOS */
 function comDxf(d, lay){
   (lay.units||[]).forEach(u=>{ const c=u.com; if(!c) return;
+    if(c.semPartido){ d.poly("PAREDES", u.poly, 7); d.text("TEXTOS", G.centroid(u.poly), 0.22, "SEM PARTIDO QUE CAIBA"); return }   // nada de planta "só para caber"
     const vaos=comVaos(u), corta=(layer, pts, cor)=>comCortaContorno(pts, vaos).forEach(ch=>d.poly(layer, ch.pts, cor, ch.aberta));
     corta("PAREDES", u.poly, 7);
     c.rooms.forEach(r=>{ const ins=comInsetRoom(r);
@@ -18087,6 +18437,135 @@ function relevoPrevia(st, o={}){
   return { rect, c, g, pct:pl.pct, az:pl.azDesc, dirTxt:relevoDirTexto(pl.azDesc), dir:[-g[0]/gl, -g[1]/gl], nivel, conf:ef.conf, info:ef.info, cantos, zmin, zmax, amp, passo, curvas };
 }
 
+/* ================= Repartição do pavimento tipo pelos partidos =================
+   Pedido do Luiz: "nossa ferramenta não fica criando qualquer tipo de layout só para caber, ela começa a respeitar regras
+   e padrões de mercado". O pavimento tipo (tipoLayout em src/layout.js, blcLayFaixa em blocos.js, alasUnidades em alas.js)
+   reparte cada trecho de fachada em unidades. Antes: unidades distribuídas só pela área (a maior primeiro no trecho com mais
+   folga) e cortadas na proporção da área — saíam unidades em L em volta do núcleo e frentes que nenhum partido aceita.
+   Agora a repartição é escolhida por uma nota de custo (menor = melhor), por unidade:
+   - faixa dos partidos permitidos da tipologia (comPartidosDe: os marcados, o catálogo e os modelos do usuário): metros
+     fora de faixaW/faixaD do partido que melhor cabe (o retângulo inscrito da unidade, como o encaixe "inscrito" do gerador);
+     partido "de canto" (janela lateral) só conta onde a unidade tem a fachada lateral;
+   - forma: a fração da unidade fora do retângulo inscrito (L em volta do núcleo); pesa mais com 3+ dormitórios;
+   - área: desvio da área-alvo do mix além de 3% (a quantidade e a área-alvo vêm do mix; o que muda é COMO o andar é repartido);
+   - ponta: a tipologia maior ganha um pouco na ponta do andar (esquina, duas fachadas) quando cabe.
+   Busca: todas as distribuições das unidades (por tipologia) entre os trechos (sem deixar trecho vazio quando a distribuição
+   antiga não deixava), as ordens distintas em cada trecho e, nas melhores, os cortes ajustados (±0,05…0,6 m) para entrar na
+   faixa dos partidos. Muitas combinações → só a distribuição antiga, com ordem e cortes otimizados. Puro (vai ao Worker).
+   Saída de repReparte: {regs:[{list:[unidades na ordem], cuts:[u0…u1]}], custo, antigo} ou null (sem estado: fica o antigo).
+   repNotaGeo(T, med) é a mesma conta para quem já tem a unidade medida (alas). */
+const REP_PESO = { area:30, areaTol:0.03, faixa:12, foraMax:1.2, semPartido:60, raso:30, encolhe:60, fresta:200, forma:25, forma3:60, ponta:1.5, semRecorte:4 };
+const REP_LIM = { dist:6000, seq:120, top:4, minW:2.4 };
+const _repTipoCache=new Map(), _repCache=new Map();
+const repDorms = tip=>({studio:0, "1d":1, "1s":1, "2d":2, "2d1s":2, "2s":2, "3d1s":3, "3s":3, "4d1s":4})[tip] ?? 2;
+/* tipologia de uma unidade do mix: partidos permitidos (só as faixas) e número de dormitórios */
+function repTipo(st, nome, alvo){
+  if(!st || typeof comPartidosDe!=="function" || typeof comModeloDe!=="function") return null;
+  const cfg=(typeof comTipoCfg==="function" && comTipoCfg(st, nome))||{}, us=(st.comodos && st.comodos.modelos)||[];
+  const key=[nome, Math.round((+alvo||0)*10), (cfg.partidos||[]).join(","), cfg.modelo||"", us.map(m=>m && (m.id+":"+(m.atualizado||0))).join(",")].join("|");
+  let T=_repTipoCache.get(key); if(T) return T;
+  const tip=comModeloDe(st, nome, alvo), cands=comPartidosDe(st, nome, alvo);
+  T={tip, dorms:repDorms(tip), mods:cands.map(({mod,pen})=>({id:mod.id, fw:mod.faixaW||{}, fd:mod.faixaD||{}, lat:!!(mod.lateral && (mod.lateral.xW || mod.lateral.x0)), pen:+pen||0}))};
+  if(_repTipoCache.size>400) _repTipoCache.clear(); _repTipoCache.set(key, T); return T;
+}
+/* metros fora da faixa do partido que melhor cabe (0 = cabe) */
+function repFora(T, W, D, lat, det){
+  if(!T || !T.mods.length) return det? {o:0, g:0} : 0;
+  const FW=APTO_FAIXA_FOLGA.W, FD=APTO_FAIXA_FOLGA.D; let best={o:Infinity, g:Infinity};
+  // g = metros fora da faixa (o que o gerador exige: < 2,5 cm); o = g + preferências (acima do máximo, alternativa sem/com suíte, virado)
+  const um=(m, W, D, extra)=>{ const mnW=m.fw.min??0, mxW=m.fw.max??99, mnD=m.fd.min??0, mxD=m.fd.max??99;
+    const g=Math.max(0,mnW-W)+Math.max(0,W-mxW*FW)+Math.max(0,mnD-D)+Math.max(0,D-mxD*FD); return {g, o:g+0.15*Math.max(0,W-mxW)+0.15*Math.max(0,D-mxD)+m.pen*0.05+extra} };
+  for(const m of T.mods){ const cs=[um(m, W, D, 0)]; if(m.lat && !lat){ cs[0].g+=1.5; cs[0].o+=1.5 }
+    // unidade de ponta (fachada lateral): o gerador também tenta o partido virado para a fachada lateral
+    if(lat && !m.lat) cs.push(um(m, D, W, 0.1));
+    cs.forEach(c=>{ if(c.o<best.o) best=c }) }
+  return det? best : best.o;
+}
+/* medidas de uma unidade no referencial (ux ao longo da fachada, vy para o corredor): área, retângulo inscrito */
+function repMede(poly, ux, vy){
+  if(!poly || poly.length<3) return null;
+  const L=poly.map(q=>[G.dot(q,ux), G.dot(q,vy)]), A=G.area(poly);
+  let x0=Infinity, x1=-Infinity, y0=Infinity, y1=-Infinity; L.forEach(q=>{ if(q[0]<x0)x0=q[0]; if(q[0]>x1)x1=q[0]; if(q[1]<y0)y0=q[1]; if(q[1]>y1)y1=q[1] });
+  if(L.length===4 && Math.abs(A-(x1-x0)*(y1-y0))<0.02) return {A, W:x1-x0, D:y1-y0, Ai:A, u0:x0, u1:x1};
+  const r=typeof aptoMaiorRet==="function"? aptoMaiorRet(L) : null;
+  return r? {A, W:r[2]-r[0], D:r[3]-r[1], Ai:(r[2]-r[0])*(r[3]-r[1]), u0:x0, u1:x1} : {A, W:x1-x0, D:y1-y0, Ai:A, u0:x0, u1:x1};
+}
+/* custo de uma unidade medida: {A, W, D, Ai}, lat = tem fachada lateral, maior = é a tipologia maior do andar */
+function repNotaGeo(T, alvo, med, lat, maior){
+  if(!med) return 50;
+  const P=REP_PESO, dev=alvo>0? Math.abs(med.A/alvo-1) : 0, F=repFora(T, med.W, med.D, lat, true), fora=F.o, forma=med.A>0? Math.max(0, 1-med.Ai/med.A) : 0;
+  // unidade degenerada (só uma tira rasa, ou muito menor que a área-alvo): pesa como várias sem partido
+  // (o que conta é QUANTAS unidades ficam sem partido: passar do limite por 0,7 m ou por 5 m dá no mesmo — o aviso)
+  // estreita demais para a tipologia (menos de 60% da frente mínima dos partidos): absurda, mesmo marcada como sem partido
+  const wMin = T && T.mods.length ? Math.min(...T.mods.map(m=>m.fw.min??0)) : 0, fresta = med.W < 0.6*wMin && !(lat && med.D>=0.6*wMin) ? P.fresta : 0;
+  const raso = med.D<4.5 ? P.raso*Math.min(1.5, 4.5-med.D) : 0, encolhe = dev>0.25 ? P.encolhe*(dev-0.25) : 0;
+  return fresta + P.area*Math.max(0, dev-P.areaTol) + encolhe + P.faixa*Math.min(P.foraMax, fora) + (F.g>0.025? P.semPartido : 0) + raso + forma*((T && T.dorms>=3)? P.forma3 : P.forma) - (lat && maior? P.ponta : 0);
+}
+/* multiset → sequências distintas (no máximo lim) */
+function repPerms(arr, lim){
+  const out=[], cnt=new Map(); arr.forEach(k=>cnt.set(k,(cnt.get(k)||0)+1)); const ks=[...cnt.keys()], cur=[];
+  const rec=()=>{ if(out.length>=lim) return; if(cur.length===arr.length){ out.push(cur.slice()); return }
+    for(const k of ks){ const c=cnt.get(k); if(!c) continue; cnt.set(k,c-1); cur.push(k); rec(); cur.pop(); cnt.set(k,c) } };
+  rec(); return out;
+}
+/* composições de n em k partes (vetores) */
+function repComp(n, k){ const out=[]; const rec=(i, rest, cur)=>{ if(i===k-1){ out.push([...cur, rest]); return } for(let v=0; v<=rest; v++) rec(i+1, rest-v, [...cur, v]) }; rec(0, n, []); return out }
+
+/* Repartição de trechos retos (o corte é perpendicular a ux): R = [{p, fac}] na ordem do layout, us = [{nome, alvo, sac, i}],
+   ctx = {ux, vy, st, u0, u1 (extensão do andar em ux, para achar as pontas), antigo: [[índices de us por trecho]] (a distribuição
+   da regra antiga, que manda quando não há estado), vazioOk (aceita trecho vazio, como a antiga)} */
+function repReparte(R, us, ctx){
+  const st=ctx.st; if(!st || !R.length || !us.length || typeof comPartidosDe!=="function") return null;
+  const {ux, vy}=ctx, P=REP_PESO, k=R.length;
+  const tipos=new Map(); us.forEach(u=>{ const key=u.nome+"|"+(+u.alvo).toFixed(3)+"|"+(+u.sac||0); if(!tipos.has(key)) tipos.set(key, {key, nome:u.nome, alvo:+u.alvo, us:[]}); tipos.get(key).us.push(u) });
+  const TT=[...tipos.values()]; TT.forEach(t=>{ t.T=repTipo(st, t.nome, t.alvo) });
+  const maiorA=Math.max(...TT.map(t=>t.alvo));
+  const sig=JSON.stringify([R.map(r=>r.p.map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)])), TT.map(t=>[t.key, t.us.length, t.T && t.T.mods.map(m=>m.id)]), ctx.u0, ctx.u1, ux, ctx.antigo, !!ctx.vazioOk]);
+  // unidades concretas: dentro de cada tipologia, na ordem original
+  const concreto=res=>{ const fila=TT.map(t=>t.us.slice().sort((a,b)=>a.i-b.i)); return {...res, regs:res.regs.map(r=>({list:r.seq.map(ti=>fila[ti].shift()), cuts:r.cuts}))} };
+  const hit=_repCache.get(sig); if(hit) return concreto(hit);
+  const ext=R.map(r=>G.extent(r.p, ux)), area=R.map(r=>G.area(r.p));
+  const lado=(a,b)=>Math.abs(a-ctx.u0)<0.06 || Math.abs(b-ctx.u1)<0.06;
+  // custo de um trecho com uma sequência de tipologias e cortes dados
+  const medC=new Map(), mede=(ri,a,b)=>{ const k=ri+"|"+a.toFixed(3)+"|"+b.toFixed(3); let r=medC.get(k); if(r===undefined){ r=repMede(G.band(R[ri].p, ux, a, b), ux, vy); medC.set(k, r) } return r };
+  const notaC=new Map(), notaU=(ri, ti, a, b)=>{ const k=ri+"|"+ti+"|"+a.toFixed(3)+"|"+b.toFixed(3); let r=notaC.get(k); if(r===undefined){ const t=TT[ti], med=mede(ri,a,b);
+      // unidade degenerada (só a tira rasa atrás da escada, ou uma fresta): não vale
+      r = !med || med.W<REP_LIM.minW || med.D<3.5 ? 1e6 : repNotaGeo(t.T, t.alvo, med, lado(a,b), t.alvo>=maiorA-1e-6); notaC.set(k, r) } return r };
+  const custoCortes=(ri, seq, cuts)=>{ let s=0; for(let j=0;j<seq.length;j++){ const a=cuts[j], b=cuts[j+1]; if(b-a<REP_LIM.minW) return 1e6; s+=notaU(ri, seq[j], a, b) } return s };
+  const cutC=new Map(), corte=(ri, f)=>{ const k=ri+"|"+f.toFixed(6); let r=cutC.get(k); if(r===undefined){ r=G.cutAt(R[ri].p, ux, f); cutC.set(k, r) } return r };
+  const cortesArea=(ri, seq)=>{ const tot=seq.reduce((s,ti)=>s+TT[ti].alvo,0), [mn,mx]=ext[ri], c=[mn]; let acc=0;
+    for(let j=0;j<seq.length-1;j++){ acc+=TT[seq[j]].alvo; c.push(corte(ri, acc/tot)) } c.push(mx); return c };
+  const refina=(ri, seq, cuts0)=>{ let cuts=cuts0.slice(), best=custoCortes(ri, seq, cuts);
+    for(const d of [0.6, 0.3, 0.15, 0.05]) for(let pass=0; pass<2; pass++){ let mel=false;
+      for(let j=1;j<cuts.length-1;j++) for(const sgn of [-1,1]){ const c=cuts.slice(); c[j]+=sgn*d; if(c[j]<=c[j-1]+REP_LIM.minW || c[j]>=c[j+1]-REP_LIM.minW) continue; const v=custoCortes(ri, seq, c); if(v<best-1e-9){ best=v; cuts=c; mel=true } }
+      if(!mel) break }
+    return {cuts, custo:best} };
+  // melhor sequência de um trecho para um multiset de tipologias (memo)
+  const memo=new Map();
+  const melhorTrecho=(ri, cont)=>{ const key=ri+":"+cont.join(","); let r=memo.get(key); if(r) return r;
+    const arr=[]; cont.forEach((n,ti)=>{ for(let q=0;q<n;q++) arr.push(ti) });
+    if(!arr.length){ r={seq:[], cuts:null, custo: ctx.vazioOk? 0 : 1e6}; memo.set(key, r); return r }
+    const seqs=repPerms(arr, REP_LIM.seq); let best=null;
+    seqs.forEach(seq=>{ const cuts=cortesArea(ri, seq), c=custoCortes(ri, seq, cuts); if(!best || c<best.custo) best={seq, cuts, custo:c} });
+    memo.set(key, best); return best };
+  // distribuições: todas (por tipologia), senão só a antiga
+  const comps=TT.map(t=>repComp(t.us.length, k)); let nDist=comps.reduce((s,c)=>s*c.length,1);
+  const antigoCont = ctx.antigo? ctx.antigo.map(ix=>TT.map(t=>ix.filter(i=>t.us.some(u=>u.i===i)).length)) : null;
+  const cand=[];
+  const avalia=cont=>{ let c=0; const parts=[]; for(let ri=0;ri<k;ri++){ const r=melhorTrecho(ri, cont[ri]); c+=r.custo; parts.push(r); if(c>=1e6) return } cand.push({cont, parts, custo:c}) };
+  if(nDist<=REP_LIM.dist){ const rec=(ti, acc)=>{ if(ti===TT.length){ const cont=Array.from({length:k}, (_,ri)=>TT.map((t,j)=>acc[j][ri])); avalia(cont); return } comps[ti].forEach(cp=>rec(ti+1, [...acc, cp])) }; rec(0, []) }
+  else if(antigoCont) avalia(antigoCont);
+  if(!cand.length) return null;
+  cand.sort((a,b)=>a.custo-b.custo);
+  if(typeof REP_DEBUG!=="undefined" && REP_DEBUG) REP_DEBUG.push({tipos:TT.map(t=>t.nome), cands:cand.slice(0,8).map(c=>({cont:c.cont, custo:+c.custo.toFixed(2), seqs:c.parts.map(p=>p.seq), cortes:c.parts.map(p=>p.cuts&&p.cuts.map(x=>+x.toFixed(2)))}))});
+  // as melhores: cortes refinados (faixa dos partidos)
+  let best=null; cand.slice(0, REP_LIM.top).forEach(cd=>{ let c=0; const regs=cd.parts.map((p,ri)=>{ if(!p.seq.length) return {seq:[], cuts:null}; const f=refina(ri, p.seq, p.cuts); c+=f.custo; return {seq:p.seq, cuts:f.cuts} });
+    if(!best || c<best.custo-1e-9) best={custo:c, regs, cont:cd.cont} });
+  const out={custo:best.custo, regs:best.regs, nDist, antigo: antigoCont? JSON.stringify(antigoCont)===JSON.stringify(best.cont) : null};
+  if(_repCache.size>200) _repCache.clear(); _repCache.set(sig, out);
+  return concreto(out);
+}
+
 /* ================= Fase A: "Saúde do negócio" — indicadores da colinha de viabilidade =================
    Cálculo puro (roda na página, no Worker e nos testes; nada de DOM). A página calcula `finance()` sobre o `m` que o Worker
    devolve, e este módulo lê só campos de `m` e `f` que atravessam o clone estruturado (números e listas simples).
@@ -20732,7 +21211,7 @@ function IFC(m){
         proxy(st,`Torre ${i+1} - Pav ${j+1}`,cob?"Cobertura":"Pavimento tipo",an? an.pts : pk,P.pe,an? an.vazios : null);
         const l=torreLayAndar(m,i,j+1); if(l && !cob) l.units.filter(u=>!u.livre).map(u=>pk===t.plate || l.blc? u : {...u, poly:G.clipToPoly(u.poly,pk)}).filter(u=>u.poly.length>2).forEach((u,q)=>{ const cod=`T${i+1}-${String(j+1).padStart(2,"0")}${String(q+1).padStart(2,"0")}`; space(st,cod,`${u.nome} - ${nf(u.alvo,1)} m2 priv`,u.poly,2.6);
           // cômodos: IfcSpace por cômodo (dentro do espaço da unidade) e IfcWall por parede
-          if(u.com && S.comodos && S.comodos.on){ const un=st.sp[st.sp.length-1], rs=[];
+          if(u.com && !u.com.semPartido && S.comodos && S.comodos.on){ const un=st.sp[st.sp.length-1], rs=[];   // sem partido que caiba: só o espaço da unidade
             u.com.rooms.forEach((r,k)=>{ if(r.poly.length<3) return; const p=lp(st.p,0); rs.push(add(`IFCSPACE('${ifcGuid()}',$,${str(cod+"-"+String(k+1).padStart(2,"0"))},$,$,${p},${solid(r.poly,2.6)},${str(`${r.longo} - ${nf(r.area,2)} m2`)},.PARTIAL.,.SPACE.,$)`)) });
             if(rs.length) add(`IFCRELAGGREGATES('${ifcGuid()}',$,$,$,${un},(${rs.join(",")}))`);
             comIfcParedes(u,{add,lp,solid,str,guid:ifcGuid,st,cod}) } }) }   // paredes com vãos de porta: IfcOpeningElement + IfcDoor
@@ -24482,6 +24961,10 @@ function aptoMiniEstilo(){ if(typeof document==="undefined" || document.getEleme
 .comPc[aria-pressed="true"] .ck{background:var(--sel);border-color:var(--sel)}
 .comPc .ck::after{content:"✓";visibility:hidden} .comPc[aria-pressed="true"] .ck::after{visibility:visible}
 .comPc .tp{display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:10px;color:var(--muted)}
+.comPc.nc{opacity:.62} .comPc.nc .apto-mini{filter:grayscale(1)} .comPc.nc:hover{opacity:.9}
+.comPc .nt .mt{color:var(--muted);line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.comSep{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:4px 0 0;font-size:11px;color:var(--muted)}
+.comSep::after{content:"";flex:1;height:1px;background:var(--line)}
 .comPb{display:grid;gap:3px;font-size:12px;color:var(--ink-2)}
 .comPb div{display:flex;gap:6px;align-items:baseline} .comPb .dot{flex:none;transform:translateY(-1px)}
 .comAc{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -24502,6 +24985,8 @@ function comDraw(g, lay, K){
   const roomA=r=> r.k==="sacada"? 0.55 : COM_COR[r.k]==="pal"? 0.42 : r.k==="circ"? 1 : 0.85;
   const placed=[];   // etiquetas já desenhadas (evita sobreposição no corredor)
   lay.units.forEach((u,ui)=>{ const c=u.com; if(!c) return;
+    // unidade em que nenhum partido cabe: nada de planta "só para caber" — a unidade vazia, tracejada, com o motivo
+    if(c.semPartido){ comSemPartido(g, u, K, placed); return }
     // 1. poché: a unidade inteira na cor da parede; cada cômodo por cima, recuado pela meia-parede
     fill(u.poly, ink, 1);
     const ins=c.rooms.map(r=>comInsetRoom(r));
@@ -24557,6 +25042,24 @@ function comDraw(g, lay, K){
   });
   return true;
 }
+/* unidade sem partido que caiba: fundo suave, contorno tracejado (--bad), "Nenhum partido cabe" e o motivo curto no meio */
+function comSemPartido(g, u, K, placed){
+  const {w2s, V, css}=K, s=V.s, path=p=>{ g.beginPath(); p.forEach((q,i)=>{ const [x,y]=w2s(q); i?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath() };
+  path(u.poly); g.fillStyle=css("--surface"); g.fill(); g.globalAlpha=0.55; g.fillStyle=css("--bad-soft")||css("--soft"); g.fill(); g.globalAlpha=1;
+  g.strokeStyle=css("--bad"); g.lineWidth=2; g.setLineDash([7,4]); g.stroke(); g.setLineDash([]);
+  if(s<4) return;
+  const xs=u.poly.map(q=>w2s(q)[0]), ys=u.poly.map(q=>w2s(q)[1]), bh=Math.max(...ys)-Math.min(...ys); let bw=Math.max(...xs)-Math.min(...xs);
+  const ret = u.poly.length===4, c = ret? G.centroid(u.poly) : aptoCirculoInscrito(u.poly).c;   // em L: no meio da parte mais larga
+  let P=w2s(c); const mot=u.com.motivo || String(u.com.aviso||"").replace(/^nenhum partido cabe nesta unidade:\s*/,"").split(";")[0];
+  // largura livre na linha do texto (unidade em L: só o trecho que contém o ponto), e o texto centrado nele
+  { const S2=u.poly.map(q=>w2s(q)), xs2=[]; S2.forEach((a,i)=>{ const b=S2[(i+1)%S2.length]; if((a[1]-P[1])*(b[1]-P[1])<0) xs2.push(a[0]+(P[1]-a[1])*(b[0]-a[0])/(b[1]-a[1])) });
+    xs2.sort((a,b)=>a-b); for(let i=0;i+1<xs2.length;i+=2) if(P[0]>=xs2[i]-1 && P[0]<=xs2[i+1]+1){ bw=xs2[i+1]-xs2[i]; P=[(xs2[i]+xs2[i+1])/2, P[1]]; break } }
+  const linhas=[[u.nome, `600 ${s>14?11:10}px ${css("--f-sans")}`, css("--ink")], ["Nenhum partido cabe", `500 ${s>14?10:9}px ${css("--f-sans")}`, css("--bad")], [mot, `400 ${s>14?9.5:8.5}px ${css("--f-sans")}`, css("--ink-2")]];
+  g.textAlign="center"; g.textBaseline="middle"; const lh=s>14?14:12; let y=P[1]-lh;
+  linhas.forEach(([t,f,cor])=>{ if(!t) return; g.font=f; let tx=t; while(tx.length>8 && g.measureText(tx).width>bw-10) tx=tx.slice(0,-2); if(tx!==t) tx=tx.replace(/\s*\S*$/,"")+"…";
+    if(bh>lh*3.2 && g.measureText(tx).width<=bw-6){ g.fillStyle=cor; g.fillText(tx, P[0], y) } y+=lh });
+  placed.push([P[0],P[1],bw*0.6,lh*3]);
+}
 /* legenda (planta tipo e andares) */
 function comLeg(sw){ if(!S.comodos||!S.comodos.on) return ""; const m=window._last && window._last.m, prob=m && m.comodos && (m.comodos.validas<m.comodos.unidades || (m.comodos.avisos||0)>0);
   return sw("var(--ink)","paredes")+sw("var(--c-ant)","áreas molhadas")+`<div><i style="background:none;border:0;border-top:2px solid var(--d-acc);height:0;margin-top:5px"></i>janelas</div>`+(prob? `<div><i style="background:none;border:2px solid var(--bad);border-radius:2px"></i>ambiente com problema</div>` : "") }
@@ -24566,7 +25069,7 @@ function comSegDist(p,a,b){ const dx=b[0]-a[0], dy=b[1]-a[1], l2=dx*dx+dy*dy||1,
 function comHit(px,py){
   if(!S.comodos||!S.comodos.on) return null; const m=window._last&&window._last.m, lay=m&&m.tipo&&m.tipo[TOWER]; if(!lay) return null;
   let best=null, bd=8;
-  lay.units.forEach((u,ui)=>{ const c=u.com; if(!c) return; (c.divs||[]).forEach(dv=>{ const a=w2s_(dv.p0), b=w2s_(dv.p1), d=comSegDist([px,py],a,b); if(d<bd){ bd=d; best={ti:TOWER, ui, id:dv.id, nome:u.nome, ax:dv.ax, lo:dv.lo, hi:dv.hi, o0:dv.o0, tot:dv.tot, a, b} } }) });
+  lay.units.forEach((u,ui)=>{ const c=u.com; if(!c || c.semPartido) return; (c.divs||[]).forEach(dv=>{ const a=w2s_(dv.p0), b=w2s_(dv.p1), d=comSegDist([px,py],a,b); if(d<bd){ bd=d; best={ti:TOWER, ui, id:dv.id, nome:u.nome, ax:dv.ax, lo:dv.lo, hi:dv.hi, o0:dv.o0, tot:dv.tot, a, b} } }) });
   return best;
 }
 function comHover(px,py){ const h=comHit(px,py), old=COMHOV; COMHOV=h;
@@ -24609,7 +25112,7 @@ function comCardHTML(){
     h+=nomes.map(n=>{ const i=C.tipos.findIndex(t=>t.nome===n), t=C.tipos[i], vs=(C.variantes||[]).map((v,j)=>({...v,j})).filter(v=>v.tipo===n), marc=comMarcados(n);
       const ajust=t && ((t.cortes && Object.keys(comCortesDe(t)).length) || t.partido);
       const gal=comGaleria(n).map(g=>{ const on=marc.includes(g.mod.id);
-        return `<button type="button" class="comPc" data-act="comPart" data-k="${esc(n)}" data-id="${esc(g.mod.id)}" aria-pressed="${on}" data-pid="${esc(g.mod.id)}" title="${esc(g.mod.nome)} — ${on?"desmarcar":"tentar este partido"}">
+        return `<button type="button" class="comPc" data-act="comPart" data-k="${esc(n)}" data-id="${esc(g.mod.id)}" aria-pressed="${on}" data-pid="${esc(g.mod.id)}" data-nome="${esc(g.mod.nome)}" title="${esc(g.mod.nome)} — ${on?"desmarcar":"tentar este partido"}">
           <span class="tp"><span>${g.bib? "Meu modelo" : g.mod.origem==="usuario"? "Meu modelo" : comNf(g.mod.W,1)+" × "+comNf(g.mod.D,1)+" m"}</span><span class="ck"></span></span>
           ${aptoMiniSVG(g.mod,{w:84})}<span class="nm">${esc(g.mod.nome)}</span><span class="nt" data-nt="${esc(n)}|${esc(g.mod.id)}"><i></i>—</span></button>` }).join("");
       return `<div class="comT" data-tipo="${esc(n)}">
@@ -24637,6 +25140,23 @@ function comCardHTML(){
   return SEC("Plantas das unidades", h, {key:"comodos", sum: C.on? "" : "desligado", info:"Partido"});
 }
 const comNivel = n=> n==null? "" : n>=85? "ok" : n>=70? "warn" : "bad";
+/* ordena a galeria de uma tipologia: 0 = em uso, 1 = cabe (nota, sem problema grave), 2 = não cabe (o que pede a faixa ou o
+   problema que o derruba); separador "Não cabem nestas unidades" antes do grupo 2 */
+function comGaleriaOrdena(nome, T){
+  const gal=document.querySelector(`.comT[data-tipo="${CSS.escape(nome)}"] .comGal`); if(!gal) return;
+  const info=T.info||{}, bts=[...gal.querySelectorAll(".comPc")];
+  const it=bts.map(b=>{ const id=b.dataset.pid, I=info[id], uso=!!T.usados[id], nu=uso && T.notaUso? T.notaUso[id] : null;
+    const g= uso? 0 : I && I.nota!=null && I.ok? 1 : 2, nota= nu!=null? nu : I && I.nota!=null? I.nota : null;
+    return {b, id, g, nota, I, uso} });
+  it.sort((a,b)=>a.g-b.g || (a.g<2? (b.nota??-1)-(a.nota??-1) : ((a.I&&a.I.falta)||0)-((b.I&&b.I.falta)||0)));
+  gal.querySelectorAll(".comSep").forEach(e=>e.remove());
+  it.forEach((x,k)=>{ const {b, g, nota, I, uso}=x, nt=b.querySelector(".nt"), on=b.getAttribute("aria-pressed")==="true";
+    if(g===2 && k>0 && it[k-1].g<2){ const sp=document.createElement("div"); sp.className="comSep"; sp.textContent="Não cabem nestas unidades"; gal.appendChild(sp) }
+    gal.appendChild(b); b.classList.toggle("uso", uso); b.classList.toggle("nc", g===2);
+    const mot = I && I.motivo ? I.motivo : "não cabe";
+    if(nt) nt.innerHTML = g<2 ? `<i class="${comNivel(nota)}"></i>${uso? `em uso${T.usados[x.id]>1? ` (${T.usados[x.id]})` : ""} · ${Math.round(nota)}` : `nota ${Math.round(nota)}`}` : `<span class="mt">${esc(on? mot : "desmarcado")}</span>`;
+    b.title = `${b.dataset.nome||""}${g===2? ` — não cabe nestas unidades: ${mot}` : ""}${on? "" : " (desmarcado)"} — clique para ${on? "desmarcar" : "tentar este partido"}` });
+}
 function comLive(m){
   const R=m&&m.comodos; if(!R){ if(!S.comodos.on) setSum("comodos","desligado"); return }
   setSum("comodos", R.unidades? `<span style="color:var(--${comNivel(R.nota)==="ok"?"ok":comNivel(R.nota)==="warn"?"warn":"bad"})">nota ${R.nota}</span> · ${R.validas}/${R.unidades}` : "—");
@@ -24644,11 +25164,8 @@ function comLive(m){
   setHTML("comRes", R.unidades? `Nota média <b>${R.nota}</b> · ${R.validas} de ${R.unidades} unidades sem problema grave${ruins? ` · <span style="color:var(--bad)">${ruins} sem partido que caiba</span>` : ""}${INFO("Cada unidade testa os partidos marcados da tipologia, aplica as regras (círculo inscrito, áreas mínimas, acessos, iluminação, mobiliário) e fica com a melhor nota (100 = sem problema). Em cada partido: a nota média nas unidades em que está em uso; nos outros, a nota na pior unidade da tipologia.","a nota")}` : "");
   (S.comodos.tipos||[]).forEach((t,i)=>{ const el=document.getElementById("comSt-"+i), T=R.porTipo[t.nome]; if(!el) return;
     if(!T){ el.className="pill"; el.textContent="—"; return } const nv=comNivel(T.nota); el.className="pill "+(nv==="ok"?"ok":nv==="warn"?"warn":"bad"); el.textContent=`nota ${T.nota} · ${T.validas}/${T.n}`;
-    // nota de cada partido na unidade real e qual está em uso
-    document.querySelectorAll(`.comT[data-tipo="${CSS.escape(t.nome)}"] .comPc`).forEach(b=>{ const id=b.dataset.pid, n=T.notas[id], nt=b.querySelector(".nt"), on=b.getAttribute("aria-pressed")==="true";
-      b.classList.toggle("uso", !!T.usados[id]);
-      const nu=T.usados[id] && T.notaUso? T.notaUso[id] : null, nn= nu!=null? nu : n;
-      if(nt) nt.innerHTML = nn!=null? `<i class="${comNivel(nn)}"></i>${nu!=null? `em uso (${T.usados[id]}) · ` : ""}nota ${Math.round(nn)}` : `<i></i>${on? "não cabe" : "—"}` });
+    // galeria: em uso, depois os que cabem (pela nota) e, no fim, agrupados, os que não cabem nesta unidade (com o que pedem)
+    comGaleriaOrdena(t.nome, T);
     // problemas da planta escolhida (unidade representante), em linguagem simples
     const lay=m.tipo[T.ex.ti], u=lay&&lay.units[T.ex.ui], al=u&&u.com? u.com.alertas.filter(a=>a.nivel!=="nota").slice(0,4) : [];
     setHTML("comPb-"+i, al.length? al.map(a=>`<div><span class="dot ${a.nivel==="erro"?"bad":"warn"}"></span><span>${esc(a.msg.charAt(0).toUpperCase()+a.msg.slice(1))}</span></div>`).join("") : u&&u.com? `<div><span class="dot ok"></span><span>${esc(u.com.partidoNome)}: sem problemas</span></div>` : "") });
@@ -25963,7 +26480,7 @@ STEP_R.projeto = ()=>{
     SEC("Escadas e elevadores", `<div class="fld wide"><label class="fl" for="escSel">Escada${INFO(desc||"Tipo de escada de emergência.","o tipo de escada")}</label><select class="sel" id="escSel" data-p="estudo.escTipo" data-t="s" data-rr="1">${Object.entries(ESC_TIPOS).map(([k,l])=>`<option value="${k}" ${E.escTipo===k?"selected":""}>${l}</option>`).join("")}</select></div>
       ${ROW("Escadas",SEG("estudo.nEsc",[[1,"1"],[2,"2"]],{rr:false}))}${ROW("Elevadores",SEG("estudo.elevadores",[[0,"auto"],[1,"1"],[2,"2"],[3,"3"],[4,"4"]],{rr:false}))}
       ${SW("estudo.emerg","Elevador de emergência")}${SW("estudo.fachada",bal?"Núcleo na fachada (obrigatório com balcão)":"Núcleo encostado na fachada",{dis:bal})}`+
-      ADV(ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
+      ADV(ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["auto","auto"],["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
         {key:"tPos", label:"Posição do núcleo", fechar:"Fechar posição do núcleo"}),
       {open:true, key:"tNuc", sum:tipoSum("nuc"), info:"Núcleo"}) +
     SEC("Medidas do andar", KV(NUM("estudo.corrTipo","Corredor / hall","m",{step:0.05})+NUM("estudo.profMin","Prof. mín. da unidade","m",{step:0.25})+NUM("produto.sacProf","Prof. da sacada","m",{step:0.1,help:"Sacada"})),

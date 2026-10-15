@@ -83,3 +83,23 @@ padrão). Cada um validado pelas regras do §1 nos testes (nota ≥ 80 no tamanh
   arrastar divisas, colocar porta de entrada e portas internas, marcar o que estica; validação ao vivo pelas regras do §1
   (lista de problemas + destaque no desenho); medidas e áreas em cada ambiente; "Começar de um partido do catálogo";
   salvar, duplicar, excluir, exportar/importar JSON. Celular: só ver e escolher (desenho no desktop).
+
+## 5. Repartição do pavimento tipo pelos partidos — `src/calc/reparte.js`
+
+Revisão do Luiz (15/10/2026, estudo exemplo): uma unidade "2 dorm." em L abraçando o núcleo com sala de 8,5 m² e uma "3 dorm."
+de 8,6 m de frente que nenhum partido aceitava. A causa era a **divisão do andar** (unidades distribuídas e cortadas só pela
+área) e uma regra frouxa (a sala somava a cozinha integrada). Agora:
+
+- **Regra da sala** (§1): mínimo por tipologia, a sala sozinha (`S.comodos.regras.sala`: 1 dorm. 10 m² · 2 dorm. 12 m² ·
+  3 dorm. 14 m² · 3 suítes/4 dorm. 16 m²; grave abaixo de 85%) e nunca bem menor que o maior quarto (`salaQuarto`).
+- **Sacada embutida**: só na frente da sala (até 2,6 m) ou corrida na frente do quarto vizinho (até 2,0 m), sem tirar do
+  ambiente coberto o fundo mínimo (sala/suíte 2,9 m, dormitório 2,7 m); não cabendo, fica a maior possível.
+- **Repartição**: para cada trecho de fachada (dos dois lados do corredor, em volta do núcleo; alas; blocos da pilha) o andar
+  testa as distribuições das unidades do mix entre os trechos, a ordem em cada trecho e a largura de cada unidade, e fica com
+  a de menor custo — unidade dentro da faixa (`faixaW/faixaD`) de um partido permitido, retangular (3+ dormitórios nunca em L
+  junto do núcleo), área perto do alvo do mix e a tipologia maior na ponta. A quantidade e a área-alvo continuam as do mix.
+- **Núcleo**: a posição não muda (garagens e térreo dependem dela); com `estudo.escadaLado` "auto" (padrão) a escada fica do
+  lado em que a sobra atrás dela serve melhor a unidade vizinha (ou na profundidade toda, sem sobra), com o mesmo contorno.
+- **Sem repartição boa**: a unidade fica sem planta, tracejada, com o motivo ("frente útil 4,8 m · pedem ≥ 10,6 m") — nada de
+  planta "só para caber".
+- **Galeria**: os partidos que cabem primeiro (pela nota), os que não cabem agrupados no fim com o que pedem.

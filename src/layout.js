@@ -90,6 +90,17 @@ function notchPoly(Q, ux, vy, corner, inner){
 }
 function tipoLayout(plate, units, o){
   if(!plate || !plate.length) return null;
+  // ordem do núcleo automática: escada de um lado ou do outro (o contorno do núcleo é o mesmo — garagens e térreo não mudam);
+  // fica a que reparte melhor o andar pelos partidos (src/calc/reparte.js); empate = escada primeiro, como antes
+  // e, se nenhuma das duas reparte bem, a escada na profundidade toda (sem a sobra em L atrás dela, que só serve à unidade
+  // vizinha quando ela é larga o bastante para um partido)
+  if(o.escada==="auto"){ const a=tipoLayout(plate, units, {...o, escada:"E"}); if(!a || !a.rep) return a; a.escAuto="E";   // (no otimizador, _rap: sem a busca — a área das unidades é a mesma)
+    const cs=[a]; const b=tipoLayout(plate, units, {...o, escada:"D"}); const priv=l=>l.units.reduce((s,u)=>s+(u.livre? 0 : u.area),0);   // torre desenhada: a privativa vem do desenho — a ordem não pode mudá-la
+    // o contorno do núcleo não pode mudar (com poucas unidades o núcleo vai para a ponta — garagens e térreo dependem dele)
+    const mesmo=l=>l && l.rep && l.core.length===a.core.length && l.core.every((q,i)=>Math.abs(q[0]-a.core[i][0])<1e-6 && Math.abs(q[1]-a.core[i][1])<1e-6);
+    if(mesmo(b) && (!o._areaFixa || Math.abs(priv(b)-priv(a))<0.01)){ b.escAuto="D"; cs.push(b) }
+    if(o.escProf!==false && !o._areaFixa && (a.escSobra>0.5 || (b && b.escSobra>0.5))) ["E","D"].forEach(e=>{ const c=tipoLayout(plate, units, {...o, escada:e, escProf:false}); if(mesmo(c)){ c.escAuto=e; c.rep.custo+=REP_PESO.semRecorte; cs.push(c) } });
+    return cs.reduce((x,y)=> y.rep.custo < x.rep.custo-0.5 ? y : x) }
   const ux=G.longestDir(plate), vy=[-ux[1],ux[0]];
   const [u0,u1]=G.extent(plate,ux), [v0,v1]=G.extent(plate,vy), D=v1-v0, Lu=u1-u0;
   const corr=o.corr, fachada = o.fachada || o.escTipo==="pf_balcao";
@@ -133,12 +144,15 @@ function tipoLayout(plate, units, o){
   // poucas unidades: um trecho ficaria vazio — leva o núcleo para a ponta desse trecho
   const empty=R.find(r=>!r.list.length);
   if(empty && !o._re && us.length){ const [ea,eb]=G.extent(empty.p,ux); return tipoLayout(plate, units, {...o, _re:1, pos: (ea+eb)/2 < (cu0+cu1)/2 ? 0 : 1}) }
+  // repartição pelos partidos (src/calc/reparte.js): que unidade vai em que trecho, em que ordem e com que frente
+  const rep = o._st && !o._rap && typeof repReparte==="function" ? repReparte(R, us, {ux, vy, st:o._st, u0, u1, antigo:R.map(r=>r.list.map(u=>u.i)), vazioOk:!!empty}) : null;
+  if(rep) R.forEach((r,ri)=>{ r.list=rep.regs[ri].list; r.cuts=rep.regs[ri].cuts });
   const out=[], sacTipo=o.sacTipo||"embutida", prof=o.sacProf||1.6;
   R.forEach(r=>{
     if(!r.list.length){ out.push({poly:r.p, nome:"livre", alvo:0, area:r.A, livre:true}); return }
-    r.list.sort((a,b)=>a.i-b.i);
+    if(!r.cuts) r.list.sort((a,b)=>a.i-b.i);
     const tot=r.list.reduce((s,u)=>s+u.alvo,0); let a2=0; const [mn,mx]=G.extent(r.p,ux); let prev=mn;
-    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot); const poly=G.band(r.p,ux,prev,cut);
+    r.list.forEach((u,j)=>{ a2+=u.alvo; const cut = r.cuts? (j===r.list.length-1 ? mx : r.cuts[j+1]) : j===r.list.length-1 ? mx : G.cutAt(r.p,ux,a2/tot); const poly=G.band(r.p,ux,prev,cut);
       const un={poly, nome:u.nome, alvo:u.alvo, area:G.area(poly), fac:r.fac};
       if(u.sac>0 && poly.length){ const [pv0,pv1]=G.extent(poly,vy), wU=cut-prev, w=Math.max(1.2,Math.min(wU-1, u.sac/prof)), pr=u.sac/w, uc=(prev+cut)/2;
         let va,vb; if(r.fac==="max"){ va= sacTipo==="balanco"? pv1 : pv1-pr; vb=va+pr } else { vb= sacTipo==="balanco"? pv0 : pv0+pr; va=vb-pr }
@@ -147,6 +161,6 @@ function tipoLayout(plate, units, o){
       prev=cut; out.push(un) });
   });
   const kinds={}; cParts.forEach(c=>kinds[c.kind]=(kinds[c.kind]||0)+c.area);
-  return {ux,vy,units:out,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:sobraA.reduce((s,a)=>s+a,0)};
+  return {ux,vy,units:out,rep:rep? {custo:rep.custo, antigo:rep.antigo} : null,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:sobraA.reduce((s,a)=>s+a,0)};
 }
 

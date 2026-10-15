@@ -188,7 +188,7 @@ function IFC(m){
         proxy(st,`Torre ${i+1} - Pav ${j+1}`,cob?"Cobertura":"Pavimento tipo",an? an.pts : pk,P.pe,an? an.vazios : null);
         const l=torreLayAndar(m,i,j+1); if(l && !cob) l.units.filter(u=>!u.livre).map(u=>pk===t.plate || l.blc? u : {...u, poly:G.clipToPoly(u.poly,pk)}).filter(u=>u.poly.length>2).forEach((u,q)=>{ const cod=`T${i+1}-${String(j+1).padStart(2,"0")}${String(q+1).padStart(2,"0")}`; space(st,cod,`${u.nome} - ${nf(u.alvo,1)} m2 priv`,u.poly,2.6);
           // cômodos: IfcSpace por cômodo (dentro do espaço da unidade) e IfcWall por parede
-          if(u.com && S.comodos && S.comodos.on){ const un=st.sp[st.sp.length-1], rs=[];
+          if(u.com && !u.com.semPartido && S.comodos && S.comodos.on){ const un=st.sp[st.sp.length-1], rs=[];   // sem partido que caiba: só o espaço da unidade
             u.com.rooms.forEach((r,k)=>{ if(r.poly.length<3) return; const p=lp(st.p,0); rs.push(add(`IFCSPACE('${ifcGuid()}',$,${str(cod+"-"+String(k+1).padStart(2,"0"))},$,$,${p},${solid(r.poly,2.6)},${str(`${r.longo} - ${nf(r.area,2)} m2`)},.PARTIAL.,.SPACE.,$)`)) });
             if(rs.length) add(`IFCRELAGGREGATES('${ifcGuid()}',$,$,$,${un},(${rs.join(",")}))`);
             comIfcParedes(u,{add,lp,solid,str,guid:ifcGuid,st,cod}) } }) }   // paredes com vãos de porta: IfcOpeningElement + IfcDoor

@@ -122,7 +122,7 @@ describe('catálogo de partidos — §3', () => {
     for (const m of A.aptoCatalogo()) {
       const { planta, val } = A.aptoAvalia(m, m.W, m.D, { sacada: { area: 5, prof: 1.6 }, lateral: m.lateral }, st);
       const sac = planta.ambientes.find(r => r.k === 'sacada');
-      expect(sac, m.id).toBeTruthy(); expect(sac.area).toBeCloseTo(5, 1);
+      expect(sac, m.id).toBeTruthy(); expect(sac.area, m.id).toBeGreaterThan(4.5); expect(sac.area, m.id).toBeLessThanOrEqual(5.01);   // sala pequena demais: um pouco menor, sem esmagar
       expect(val.problemas.filter(p => p.nivel === 'bad'), `${m.id}: ${val.problemas.map(p => p.msg).join('; ')}`).toEqual([]);
     }
   });
@@ -152,13 +152,21 @@ describe('aplicação do partido (aptoAplica) — §2', () => {
     expect(pl.ambientes.every(r => r.poly.length >= 4)).toBe(true);
     expect(pl.grade.R[2] - pl.grade.R[0]).toBeCloseTo(8.0, 6);
   });
-  it('sacada embutida recortada na frente da sala (e continua na frente do quarto vizinho quando funda demais)', () => {
-    const m = A.aptoModelo('cat-2d-canto');
-    const p = A.aptoAplica(m, m.W, m.D, { sacada: { area: 9, prof: 1.6 } });
-    const sac = p.ambientes.find(r => r.k === 'sacada'), bb = A.aptoBBox(sac.poly);
-    // 9 m² não cabem só na frente da sala (3,0 m): a varanda corre na frente do quarto, com profundidade que deixa ≥ 2,2 m atrás
-    expect(sac.area).toBeGreaterThan(7.5); expect(sac.area).toBeLessThanOrEqual(9.01); expect(bb[1]).toBeCloseTo(0, 6); expect(bb[3] - bb[1]).toBeGreaterThanOrEqual(1.09);
-    expect(p.portas.filter(x => x.k === 'pj').length).toBeGreaterThanOrEqual(2);       // sala e quarto com porta-janela
+  it('sacada embutida: na frente da sala; varanda corrida só quando o quarto fica com o fundo mínimo; nada esmagado', () => {
+    const fundo = { sala: 2.9, suite: 2.9, dorm: 2.7 };
+    const confere = (id, area) => {
+      const m = A.aptoModelo(id), p = A.aptoAplica(m, m.W, m.D, { sacada: { area, prof: 1.6 } }), sac = p.ambientes.find(r => r.k === 'sacada'), bb = A.aptoBBox(sac.poly);
+      expect(bb[1]).toBeCloseTo(0, 6); expect(sac.area).toBeLessThanOrEqual(area + 0.01);
+      // quem fica atrás da sacada mantém o fundo mínimo (antes a varanda corrida deixava um quarto de 5 m²)
+      p.ambientes.filter(r => fundo[r.k]).forEach(r => { const b = A.aptoBBox(r.poly); if (Math.min(b[2], bb[2]) - Math.max(b[0], bb[0]) < 0.3 || Math.abs(b[1] - bb[3]) > 0.01) return; expect(b[3] - bb[3], `${id} ${r.k}`).toBeGreaterThanOrEqual(fundo[r.k] - 0.01) });
+      return { p, sac, bb };
+    };
+    const lin = confere('cat-2d-linear', 9);          // sala de 3,6 m: a sacada inteira na frente dela (varanda gourmet até 2,6 m)
+    expect(lin.sac.area).toBeCloseTo(9, 1); expect(lin.bb[3] - lin.bb[1]).toBeLessThanOrEqual(2.61);
+    const var1 = confere('cat-1s-varanda', 9);        // partido de varanda corrida (sala + suíte)
+    expect(var1.sac.area).toBeCloseTo(9, 1); expect(var1.p.portas.filter(x => x.k === 'pj').length).toBeGreaterThanOrEqual(2);
+    const canto = confere('cat-2d-canto', 9);         // sala estreita e quarto raso: não leva 9 m² sem esmagar — fica menor
+    expect(canto.sac.area).toBeLessThan(9); expect(canto.sac.area).toBeGreaterThan(5);
   });
   it('lavabo opcional: ligado é um ambiente; desligado funde no vizinho', () => {
     const m = A.aptoModelo('cat-3d1s-larga');
