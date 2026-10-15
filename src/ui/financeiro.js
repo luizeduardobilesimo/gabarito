@@ -526,6 +526,7 @@ function finViabAfter(){
 /* vai para outra sub-aba da Viabilidade e abre uma seção (a antiga sub-aba "vendas" agora é "prem") */
 function finIrPara(sub, k){
   if(sub==="vendas") sub="prem";
+  if(typeof irPara==="function") return irPara("viab", sub, k);   // src/ui.js (P0)
   if(k){ const st=LS.get("gabarito.det")||{}; st["viab:"+k]=1; LS.set("gabarito.det",st) }
   SUBX.viab=sub; LS.set("gabarito.subx",SUBX);
   if(TAB!=="viab") goStep("viab"); else renderTab();
