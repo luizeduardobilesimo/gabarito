@@ -2429,21 +2429,111 @@ function otimMalha(st, m){
 }
 const otimKey=r=>[r.nT,r.pk,r.N,r.pav,r.sub,r.gac].join("|");
 
+/* ---------- vagas pela garagem real (UX v3 P3: "o otimizador não gera estudo com prejuízo quando há alternativa lucrativa") ----------
+   A massa estima as vagas por área ÷ m2Vaga (28 m²/vaga) em cada pavimento. Em lote estreito a garagem real rende bem menos (rampas,
+   circulação e núcleos): no 20 × 40 m de Criciúma, 13 vagas num subsolo de 720 m² (55 m²/vaga), 8 numa garagem elevada de 640 m²
+   e nenhuma no térreo. O fator único de antes (k = 0,75 quando não havia modelo, caso do assistente) aprovava combinações que,
+   conferidas com o layout, pediam 1 ou 2 subsolos a mais; o reparo alternado (subsolo/elevada) subia a torre, que deixava de caber,
+   e sobrava só a planta mínima (2 un/andar, 3 subsolos, eficiência 36%, prejuízo).
+   Agora a razão real ÷ estimada é medida POR TIPO de pavimento (subsolo s, garagem elevada g, térreo t), mais as vagas externas da
+   frente (vf), num layout real: o do estudo na tela (m.gar) ou, sem ele, um compute rápido do estado de partida. */
+function otimMLite(m){   // o que o Worker precisa do modelo da tela (clonável e pequeno)
+  if(!m) return {};
+  const gar={}; Object.entries(m.gar||{}).forEach(([k,l])=>{ gar[k]={count:l? +l.count||0 : 0} });
+  return {vagasLay:m.vagasLay, vagasEst:m.vagasEst, vf:{count:m.vf? m.vf.count||0 : 0}, subA:m.subA, embA:m.embA, gTer:m.gTer, gar};
+}
+function otimVagasCal(st, m){
+  const gar=m && m.gar, mv=st.regras.m2Vaga||28; if(!gar || !Object.keys(gar).length) return null;
+  const ks=re=>Object.keys(gar).filter(k=>re.test(k)), soma=l=>l.reduce((s,k)=>s+(gar[k]? +gar[k].count||0 : 0),0), cl=v=>Math.max(0, Math.min(1, v));
+  const kS=ks(/^s\d+$/), kG=ks(/^g\d+$/), eS=kS.length*Math.floor((m.subA||0)/mv), eG=kG.length*Math.floor((m.embA||0)/mv), eT=Math.floor((m.gTer||0)/mv);
+  let s = eS>0? cl(soma(kS)/eS) : null, g = eG>0? cl(soma(kG)/eG) : null, t = eT>0 && gar.ter? cl((+gar.ter.count||0)/eT) : null;
+  if(s==null) s = g!=null? cl(g/0.8) : 0.6;     // sem o pavimento no layout: elevada ≈ 0,8 × subsolo (rampa de subida no embasamento)
+  if(g==null) g = 0.8*s;
+  if(t==null) t = s;
+  return {s, g, t, vf:(m.vf && +m.vf.count)||0, fonte:"layout"};
+}
+/** vagas esperadas de uma combinação (massa) com a calibração por pavimento */
+function otimVagasEst(m, st, cal){ const P=st.produto, mv=st.regras.m2Vaga||28;
+  return cal.vf + Math.floor(P.subsolos*Math.floor((m.subA||0)/mv)*cal.s + P.garAcima*Math.floor((m.embA||0)/mv)*cal.g + Math.floor((m.gTer||0)/mv)*cal.t) }
+/* nível da combinação para a ordem (antes do objetivo): 2 = lucro > 0 e margem s/ VGV ≥ meta (S.fin.margemAlvo) · 1 = lucro > 0 · 0 = prejuízo */
+const otimNivel = (n, meta) => n.lucro>0 ? (n.margem>=meta-1e-9 ? 2 : 1) : 0;
+const otimMelhor = (a, b) => (b.nivel||0)-(a.nivel||0) || b.sc-a.sc;   // comparador: nível, depois o objetivo
+/** preço médio de venda (R$/m², média das tipologias ponderada pela área) que leva a margem s/ VGV ao alvo — todas as tipologias, coberturas
+    e lojas sobem na mesma proporção (finance dp); com tPct o terreno acompanha o VGV. null se nem 5× o preço chega lá */
+function otimPrecoPara(st, m, alvo, tPct){
+  const marg=dp=>{ const s2= tPct? {...st, fin:{...st.fin}} : st; if(tPct){ s2.fin.terreno=0; s2.fin.terreno=Math.round(tPct*finance(s2, m, {noHooks:true, dp}).vgv/1e4)*1e4 } return finance(s2, m, {noHooks:true, dp}).margemVGV };
+  let lo=-0.9, hi=4; if(marg(hi)<alvo) return null; if(marg(lo)>=alvo) return basePrice(st)*(1+lo);
+  for(let i=0;i<28;i++){ const mid=(lo+hi)/2; if(marg(mid)>=alvo) hi=mid; else lo=mid }
+  return basePrice(st)*(1+hi);
+}
+/* o que fecharia a conta de uma combinação (pura; roda no Worker): preço médio de venda para margem 0 e para a meta, terreno máximo
+   pagável (mesma conta de f.maxTerreno) e o motivo principal, lido da "Saúde do negócio" (f.saude). tPct: terreno = tPct × VGV. */
+function otimFecha(st, m, f, meta, tPct){
+  const pm=basePrice(st), pz=otimPrecoPara(st, m, 0, tPct), pmt=otimPrecoPara(st, m, meta, tPct), F=st.fin, itbi=1+(+F.itbi||0), sd=f.saude||{}, nv=sd.nivel||{};
+  const terrenoZero=(+F.terreno||0)+f.lucro/itbi, terrenoMeta=f.maxTerreno!=null? f.maxTerreno : (+F.terreno||0)+(f.lucro-meta*f.vgv)/itbi;
+  const terPct=sd.terrenoPctVGV!=null? sd.terrenoPctVGV : (f.vgv>0? (+F.terreno||0)/f.vgv : 0), M=st.metas||DEF.metas||{};
+  let k, motivo;
+  if(nv.vc==="ruim" || (sd.vc>0 && sd.vc<((M.vc&&M.vc.min)||2.5))){ k="preco"; motivo=`preço de venda baixo para o custo da obra (V/C ${nf(sd.vc||0,1)}×)` }
+  else if(nv.efic==="ruim" || (sd.faixaEfic && sd.eficGlobal<sd.faixaEfic[0])){ k="efic"; motivo=`pouca área vendável: só ${pct(sd.eficGlobal||0,0)} da área construída é privativa${m.garA>0 && m.constr>0? ` (garagem = ${pct(m.garA/m.constr,0)} da área)` : ""}` }
+  else if(terPct>((M.terreno&&M.terreno.max)||0.2)){ k="terreno"; motivo=`terreno caro: ${pct(terPct,0)} do VGV` }
+  else { k="custo"; motivo="obra e indiretos acima do que o produto vende" }
+  return { k, motivo, meta, lucro:f.lucro, margem:f.margemVGV, vgv:f.vgv, precoAtual:pm, precoZero:pz, precoMeta:pmt,
+    terrenoAtual:+F.terreno||0, terrenoZero, terrenoMeta, terrenoPct: tPct||0 };
+}
+/** texto curto do aviso (Produto e cartão do assistente): "Nenhuma combinação dá lucro: … Fecha a conta com …" */
+function otimFechaTxt(fx, semLucro){
+  if(!fx) return "";
+  const pr=v=>`R$ ${nf(Math.ceil(v/50)*50,0)}/m²`, op=[], qual=q=>q? ` na opção ${q+1}` : "";
+  if(semLucro){
+    if(fx.precoZero) op.push(`preço médio a partir de ${pr(fx.precoZero)}${qual(fx.opcaoZero)} (margem 0)${fx.precoMeta? ` ou ${pr(fx.precoMeta)}${qual(fx.opcaoMeta)} (meta de ${pct(fx.meta,0)})` : ""}`);
+    if(!fx.terrenoPct && fx.terrenoAtual>0 && fx.terrenoZero>0) op.push(`terreno até ${mi(fx.terrenoZero)}`);
+    if(fx.terrenoPct && fx.terrenoZero>0) op.push(`terreno até ${mi(fx.terrenoZero)} (estimado em ${pct(fx.terrenoPct,0)} do VGV)`);
+    return `Nenhuma combinação dá lucro — ${fx.motivo}.${op.length? " Fecha a conta com "+op.join(" ou ")+"." : ""}`;
+  }
+  if(fx.precoMeta) op.push(`preço médio de ${pr(fx.precoMeta)}${qual(fx.opcaoMeta)}`);
+  if(fx.terrenoMeta>0 && (fx.terrenoAtual>0 || fx.terrenoPct)) op.push(`terreno até ${mi(fx.terrenoMeta)}`);
+  return `Margem abaixo da meta de ${pct(fx.meta,0)}.${op.length? " Chega à meta com "+op.join(" ou ")+"." : ""}`;
+}
+
 let OTIM=null;
-/* otimizar(opts, onProg?, onDone?, ctx?) → Promise do resultado (também entregue a onDone).
-   Puro (sem DOM): roda no Web Worker. ctx = {st, m} (padrão: S e o último modelo da tela; sem eles, calcula).
-   opts: {obj, torres, tipologias, unidades} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, tempoTotal=15000 ms, vento=false, malha=false, efic=false, vc=false}
-   (efic/vc acrescentam eficiência global e V/C aos critérios da fronteira de Pareto).
+/* otimizar(opts, onProg?, onDone?, ctx?) → Promise do resultado (também entregue a onDone; rejeita com Error("cancelado")).
+   Puro (sem DOM): roda no Web Worker. Na interface, chame otimRodar (src/ui/calcworker.js), o caminho único.
+   ctx = {st, m, cancelado?} (padrão: S e o último modelo da tela; sem eles, calcula). m.gar (layout real) calibra as vagas; sem ele,
+   um compute rápido de st. cancelado(): função que, verdadeira, interrompe na próxima fatia.
+   opts: {obj, torres, tipologias, unidades, terrenoPct?} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, tempoTotal=15000 ms,
+   vento=false, malha=false, efic=false, vc=false} (efic/vc acrescentam eficiência global e V/C aos critérios da fronteira de Pareto).
+   terrenoPct (assistente, terreno sem preço): cada combinação é avaliada com terreno = terrenoPct × o seu VGV — o mesmo que o assistente
+   lança depois (antes ele otimizava com terreno 0 e cobrava 12% do VGV só no fim, e a ordem não era a do resultado mostrado).
+   opts.cal (testes): calibração das vagas {s, g, t, vf} fixa.
+   Busca (UX v3 P3): unidades por andar 2…8 (e 1 em lote pequeno); para cada garagem, alturas até o MENOR entre o gabarito/CA e o que
+   cabe (a planta estreita com a altura) e também 70% e 50% disso; vagas estimadas pela calibração por pavimento; ordem = nível
+   (lucro > 0 e margem s/ VGV ≥ S.fin.margemAlvo › lucro > 0 › prejuízo) e depois o objetivo. As 14 melhores vão à conferência com o layout
+   real (repara: −andares, +subsolo ou +elevada até fechar as vagas; as 3 primeiras ainda "sobem a encosta" — ver `repara`).
    Desempenho: maxPavFast com teto vindo das combinações menores; combinações dominadas (mais subsolos com o mesmo nº de pavimentos e
    garagem elevada, vagas já cumpridas) não são recalculadas; o sol (que não depende dos subsolos) é guardado por assinatura.
-   Resultado serializável: {res (as melhores pelo objetivo, conferidas — igual ao otimizador antigo), pts (estimativas de todas as combinações),
-   pareto:{pts (conferidas com a garagem real), criterios}, solFonte, …}. */
+   Resultado serializável (contrato para a interface e o assistente):
+     res        até 5 opções conferidas, em ordem (nível, objetivo); cada uma {nT, pk, N, pav, sub, gac, mix, units, vagas, req, lucro,
+                margem (s/ VGV), tir, vpl, vgv, efic, nivel, semLucro?, terreno? (com terrenoPct)}
+     fecha      quando a 1ª está abaixo da meta: {k, motivo, meta, lucro, margem, precoAtual, precoZero, precoMeta (R$/m² médio; os
+                menores entre as opções, opcaoZero/opcaoMeta = índice em res quando não é a 1ª), terrenoAtual, terrenoZero, terrenoMeta, terrenoPct}
+     semLucro   = fecha, quando nem a 1ª dá lucro (res[0].semLucro = true): a menos ruim + motivo + o que fecharia a conta
+     semOpcao   {k:"lote"|"vagas", motivo} quando nenhuma combinação fecha as regras com as vagas (res vazio)
+     cal, k     calibração das vagas usada · meta, terrenoPct, ms, testadas, forma? · pts, pareto, solFonte (multicritério)
+   Texto pronto do aviso: otimFechaTxt(semLucro || fecha, !!semLucro). */
 function otimizar(opts, onProg, onDone, ctx={}){
   opts = {obj:"lucro", ...(opts||{})};
   const prog = typeof onProg==="function"? onProg : ()=>{};
   const base=clone(ctx.st||S);
   const mNow = ctx.m || (typeof window!=="undefined" && window._last && window._last.m) || compute(base);
-  const k = mNow.vagasLay && mNow.vagasEst? Math.min(1, (mNow.vagasLay-(mNow.vf?mNow.vf.count:0))/Math.max(1,mNow.vagasEst-(mNow.vf?mNow.vf.count:0))) : 0.75;
+  // vagas: calibração por tipo de pavimento num layout real (o da tela; sem ele, um compute rápido do estado de partida com ≥ 1 subsolo)
+  let cal = opts.cal || otimVagasCal(base, mNow);
+  if(!cal){ try{ const sc=clone(base); sc.produto.subsolos=Math.max(1, +sc.produto.subsolos||0); cal=otimVagasCal(sc, compute(sc, {quick:true})) }catch(e){} }
+  if(!cal) cal={s:0.6, g:0.5, t:0.6, vf:0, fonte:"padrão"};
+  const k = cal.s;
+  // ordem: lucro > 0 e margem ≥ meta antes do objetivo (otimNivel); terreno sem preço e opts.terrenoPct: terreno = tPct × VGV de cada combinação
+  const meta = +(base.fin && base.fin.margemAlvo) || 0.25, tPct = +opts.terrenoPct>0 && !(+base.fin.terreno>0) ? +opts.terrenoPct : 0;
+  const fin = (st, m)=>{ if(tPct){ st.fin.terreno=0; st.fin.terreno=Math.round(tPct*finance(st, m, {noHooks:true}).vgv/1e4)*1e4 } return finance(st, m) };
+  const parou = ()=>!!(ctx.cancelado && ctx.cancelado());
   const mc = opts.mc!==false;
   // forma desenhada (Fase C): o nº de torres e os blocos são do usuário e não variam; as unidades por andar preenchem o bloco
   const forma = otimFormaAtiva(base), rTol = Math.max(0.01, +(base.otim && base.otim.rTol) || 0.10), pavMinF = forma? otimPavMinForma(base) : 1;
@@ -2456,48 +2546,62 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const memoEf = typeof blcPrivEstimada==="function" ? new Map() : null;
   const mEf = forma && !(mNow.T||[]).some(t=>t && t.eficReal!=null) ? compute(base) : mNow, efAt = forma ? blcEficMapa(mEf) : [];
   const TF = forma? massing(base).T.filter(t=>t.desenhada && t.A>1) : [], capsF=TF.map(t=>t.A), effF0=TF.map(t=>(efAt[t.i]||{}).ref), effF=effF0.some(e=>e>0)? effF0 : undefined;
-  const NsDe = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? [2,3,4,5,6,8] : [curN];
+  // unidades por andar: 2…8 e, em lote pequeno (a maior planta possível não comporta 2,5× o andar de 2 unidades), também 1
+  const nsLivre = pk=>{ const R=base.regras, mx=presetMix(base, pk, 2), need2=mx.reduce((s,u)=>s+u.area*u.qtd,0)/Math.max(0.3, base.produto.efic);
+    return [...(G.area(base.lote.pts)*R.toTorre < 2.5*need2 ? [1] : []), 2,3,4,5,6,8] };
+  const NsDe = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? nsLivre(pk) : [curN];
   const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
   const jobs=[]; nTs.forEach(nT=>presets.forEach(pk=>NsDe(pk).forEach(N=>jobs.push({nT,pk,N}))));
-  const res=[], pts=[]; let i=0; const t0=performance.now(); const solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
+  const res=[], pts=[], cont={cabe:0, vagas:0}; let i=0; const t0=performance.now(); const solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
   const score0=OBJ[opts.obj][1];
   // forma desenhada: a nota cai com o desvio do tamanho das unidades frente ao mix (a combinação ideal preenche o bloco com r = 1)
   const score = forma? (f, m)=>{ const s=score0(f); return s - OTIM_PEN*otimDesvio(m)*Math.abs(s) } : score0;
   const curPav = +(base.produto.torres[0]||{}).pav || 0, formaInfo = forma? {on:true, torres:nTs[0], desenhadas:capsF.length, rTol, pavMin:pavMinF} : null;
-  let resolve; const done=new Promise(r=>resolve=r);
+  let resolve, reject; const done=new Promise((r,j)=>{ resolve=r; reject=j });
   const finish=o=>{ OTIM=o; if(typeof onDone==="function") onDone(o); resolve(o) };
+  const cancela=()=>reject(new Error("cancelado"));
+  // maior nº de pavimentos em que todas as torres comportam o mix (a planta estreita com a altura: afastamento = H ÷ afDiv), entre lo e hi
+  const fitAte=(st, nT, lo, hi)=>{ const ok=p=>{ st.produto.torres=Array.from({length:nT},()=>({pav:p})); return massing(st).T.every(t=>t.fit) };
+    if(ok(hi)) return hi; if(!ok(lo)) return lo-1; while(hi-lo>1){ const mid=(lo+hi)>>1; if(ok(mid)) lo=mid; else hi=mid } return lo };
   const step=()=>{
+    if(parou()) return cancela();
     const ts=performance.now();
     while(i<jobs.length && performance.now()-ts<40){
       const {nT,pk,N}=jobs[i++]; const st=clone(base); st.produto.mix=presetMix(base,pk,N); if(!st.produto.mix.length) continue;
-      let best=null, tested=0; const cumpre=new Map();   // cumpre: "gac|pav" → menor nº de subsolos (≥1) que já atende às vagas
+      let best=null, tested=0; const cumpre=new Map(), pfit=new Map();   // cumpre: "gac|pav" → menor nº de subsolos (≥1) que já atende às vagas · pfit: gac → maior pav que cabe
       for(const [sub,gac] of gars){
         st.produto.subsolos=sub; st.produto.garAcima=gac; st.produto.torres=Array.from({length:nT},()=>({pav:4}));
         // teto exato pelo gabarito: acima dele o massing() nem precisa rodar
         const hEmbG=st.produto.peTerreo+gac*st.produto.peGar, pmax=maxPavFast(st, Math.floor((hLimDe(st)+1e-6-hEmbG)/st.produto.pe));
         const pMin=Math.max(2, pavMinF); if(pmax<pMin) continue;   // forma desenhada: o último bloco começa no andar pavMinF (abaixo disso ele some)
+        // automático: o teto é também o maior nº de pavimentos em que o mix cabe (os subsolos não mudam a torre: um por garagem elevada);
+        // a lista inclui alturas menores (70% e 50%): menos andares = planta mais larga, menos vagas exigidas e menos subsolos
+        let P=pmax; if(!forma){ let pf=pfit.get(gac); if(pf===undefined){ pf=fitAte(st, nT, Math.min(pMin, pmax), pmax); pfit.set(gac, pf) } P=Math.min(pmax, pf); if(P<pMin) continue }
         // forma desenhada: também o andar mínimo e o meio da faixa — a altura muda o bloco de referência (pilha) e o nº de elevadores
         // (eficiência real da planta), então os pavimentos mais altos podem não comportar o mix
-        for(const pav of [...new Set([pmax, pmax-1, pmax-3, Math.ceil(pmax*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+pmax)/2)] : [])])].filter(p=>p>=pMin && p<=pmax)){
+        for(const pav of [...new Set([P, P-1, P-3, Math.ceil(P*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+P)/2)] : [Math.ceil(P*0.5)])])].filter(p=>p>=pMin && p<=pmax)){
           const kc=gac+"|"+pav, sMin=cumpre.get(kc);
           if(sMin!=null && sub>sMin){ tested++; continue }   // dominada por sMin subsolos: mesmo preço, mais custo (conta como testada, como antes)
           st.produto.torres=Array.from({length:nT},()=>({pav}));
           const m=massing(st); if(memoEf) blcPrivEstimada(st, m, memoEf);
           if(!m.T.every(t=>t.fit)) continue;
+          cont.cabe++;
           if(forma){   // a forma não encolhe nem sobe sozinha: gabarito, CA, blocos ignorados e tamanho das unidades conferidos aqui
             if(m.H>(m.hLim ?? st.regras.hMax)+1e-6 || m.CA>st.regras.caMax+1e-6 || m.T.some(t=>t.blcIgn && t.blcIgn.length)) continue;
             if(otimDesvio(m)>rTol && !(pk==="atual" && N===curN)) continue }
-          const okVg = m.vagasEst*k >= m.vagasReq;
+          const vg = otimVagasEst(m, st, cal), okVg = vg >= m.vagasReq;
           if(!okVg && !mc) continue;
           if(m.minApto<st.regras.aptoMin) continue;
-          const f=finance(st,m), sc=score(f,m), num=otimNum(f,m,forma);
+          if(okVg) cont.vagas++;
+          const f=fin(st,m), sc=score(f,m), num=otimNum(f,m,forma), nivel=otimNivel(num, meta);
           // multicritério: guarda todas as combinações dentro das regras (inclusive as que não atingem as vagas — é um dos critérios)
           if(mc){ const sk=nT+"|"+pk+"|"+N+"|"+pav+"|"+gac; let sol=solMemo.get(sk); if(sol===undefined){ sol=otimSolProxy(st,m,entPrs); solMemo.set(sk,sol) }
-            pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq,
+            pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:vg, req:m.vagasReq,
               ...num, sol, est:true}) }
           if(!okVg) continue;
           tested++; if(sub>=1 && (cumpre.get(kc)==null || sub<cumpre.get(kc))) cumpre.set(kc, sub);
-          if(!best || sc>best.sc) best={sc, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq, CA:m.CA, H:m.H, ...num};
+          const c={sc, nivel, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:vg, req:m.vagasReq, CA:m.CA, H:m.H, ...num};
+          if(!best || otimMelhor(c, best)<0) best=c;
         }
         if(tested>=8) break;
       }
@@ -2505,8 +2609,22 @@ function otimizar(opts, onProg, onDone, ctx={}){
     }
     prog(0.6*i/jobs.length);
     if(i<jobs.length) setTimeout(step,0);
-    else { res.sort((a,b)=>b.sc-a.sc); prog(0.6); validar(res.slice(0,14), out=>{
-      const o={res:out, obj:opts.obj, k, ms:performance.now()-t0, testadas:res.length, ...(formaInfo? {forma:formaInfo} : {})};
+    else { res.sort(otimMelhor); prog(0.6); validar(res.slice(0,14), out=>{
+      const o={res:out, obj:opts.obj, k, cal, meta, ms:performance.now()-t0, testadas:res.length, ...(tPct? {terrenoPct:tPct} : {}), ...(formaInfo? {forma:formaInfo} : {})};
+      // nenhuma combinação conferida: por quê (lote pequeno para as regras, ou a garagem não comporta as vagas exigidas)
+      if(!out.length){ const mv=base.regras.m2Vaga||28, ys=Math.max(0, Math.round(cal.s*Math.floor((mNow.subA || G.area(base.lote.pts)*(1-base.regras.permeab))/mv)));
+        o.semOpcao = !cont.cabe ? {k:"lote", motivo:"o lote é pequeno demais para as regras: nenhuma torre comporta as unidades dentro dos recuos e da ocupação"}
+          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo neste lote e as regras pedem ${nf(+base.regras.vagasApto||0,1)} por unidade`, porSubsolo:ys} }
+      // sem lucro (ou abaixo da meta): o motivo e o que fecharia a conta da melhor (a menos ruim). Os preços que fecham a conta são os
+      // MENORES entre as opções conferidas (opcaoZero/opcaoMeta = índice em res quando não é a primeira): com o preço maior, outra
+      // combinação pode fechar antes
+      const b=out[0];
+      if(b && b.margem<meta-1e-9){ try{ const cb=conf.get(b.key), f=fin(cb.st, cb.m); o.fecha=otimFecha(cb.st, cb.m, f, meta, tPct);
+        out.forEach((r,q)=>{ if(!q) return; const c=conf.get(r.key); if(!c) return;
+          const pz=o.fecha.precoZero!=null && r.lucro>0? null : otimPrecoPara(c.st, c.m, 0, tPct), pm=otimPrecoPara(c.st, c.m, meta, tPct);
+          if(pz!=null && (o.fecha.precoZero==null || pz<o.fecha.precoZero-1)){ o.fecha.precoZero=pz; o.fecha.opcaoZero=q }
+          if(pm!=null && (o.fecha.precoMeta==null || pm<o.fecha.precoMeta-1)){ o.fecha.precoMeta=pm; o.fecha.opcaoMeta=q } });
+        if(!(b.lucro>0)){ o.semLucro=o.fecha; b.semLucro=true } }catch(e){ console.error("[otimizar] fecha", e); if(!(b.lucro>0)){ o.semLucro={k:"custo", motivo:"custos acima da receita", meta}; b.semLucro=true } } }
       if(!mc) return finish(o);
       multi(out, o) }) }
   };
@@ -2514,17 +2632,62 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const extras=(st,m,r)=>{ const s=otimSol(st,m,true); r.sol=s.h; r.solFonte=s.fonte;
     if(opts.vento){ const v=otimVento(st,m); if(v!=null) r.vento=v }
     if(opts.malha){ const x=otimMalha(st,m); if(x){ r.malha=x; if(x.custo!=null) r.malhaCusto=x.custo } } return r };
-  // confirma as melhores com o layout real da garagem (acrescenta subsolo/garagem se faltar vaga)
-  const validar=(list, done)=>{ let j=0; const out=[], R=base.regras;
-    const stepV=()=>{ const ts=performance.now();
-      while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++]; const st=stOf(r);
-        let m=compute(st,{quick:true}), t=0;
-        while(m.vagas<m.vagasReq && t<4){ if(st.produto.subsolos<=st.produto.garAcima+1 && st.produto.subsolos<5) st.produto.subsolos++; else st.produto.garAcima++; m=compute(st,{quick:true}); t++ }
-        if(m.vagas<m.vagasReq || !m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...r, sc:score(f,m), sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma)};
-        v.key=otimKey(v); v.est=false; if(mc) extras(st,m,v); out.push(v) }
+  const R0=base.regras, cabe=m=>m.T.every(x=>x.fit) && m.H<=(m.hLim ?? R0.hMax)+1e-6 && m.CA<=R0.caMax+1e-6;
+  /* conferência com o layout real da garagem. As vagas por pavimento variam muito com o empilhamento das rampas e a posição do núcleo
+     (no 20 × 40: de 5 a 13 por subsolo), então a estimativa só ORDENA; quem decide é o layout. Faltando vagas, testa as três saídas de
+     um incorporador e fica com a de melhor nota que fecha as vagas (ou, se nenhuma fecha, a que mais se aproxima): menos pavimentos
+     tipo (menos unidades = menos vagas exigidas), +1 subsolo, +1 garagem elevada (só se a torre continuar cabendo). Sobrando vagas de
+     um pavimento inteiro, tenta tirar um subsolo/uma elevada. No máximo 3 rodadas de reparo + 1 de corte por opção. */
+  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m);
+  const avalia=st=>{ const mm=compute(st,{quick:true}), f=fin(st,mm); return {st, m:mm, f, sc:score(f,mm)} };
+  const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
+  // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
+  // rascunho {st, sc0} (nota da massa) sem calcular a garagem — quem calcula é `confere`
+  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null; const {m0, sc0}=notaMassa(s2);
+    if(!cabe(m0) || m0.minApto<R0.aptoMin) return null;
+    if(forma && (m0.T.some(t=>t.blcIgn && t.blcIgn.length) || otimDesvio(m0)>rTol)) return null;
+    return {st:s2, sc0} };
+  const confere=r=>{ if(!r) return null; const c=avalia(r.st); return forma && otimDesvio(c.m)>rTol ? null : c };
+  const melhorDe=l=>l.filter(Boolean).sort((a,b)=>(nivelOk(b)-nivelOk(a)) || (nivelOk(a)? b.sc-a.sc : (a.m.vagasReq-a.m.vagas)-(b.m.vagasReq-b.m.vagas) || b.sc-a.sc))[0];
+  const repara=(cur, subir)=>{
+    for(let t=0; t<3 && !nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, nT=P.torres.length, pav=P.torres[0].pav;
+      const porPav=Math.max(1, nT*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), k=Math.max(1, Math.ceil((m.vagasReq-m.vagas)/porPav));
+      const nx=melhorDe([
+        pav-k>=pMinV ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav-k) }) : null,
+        rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++ }),
+        rascunho(cur.st, p=>{ if(p.garAcima>=3) return false; p.garAcima++ })].map(confere));
+      if(!nx) break; cur=nx }
+    // com as vagas fechadas, sobe a encosta com o layout real (só nas primeiras opções da lista, `subir` rodadas): mais andares (o que
+    // sobra de vagas, ou +1 e +2 — o rendimento da garagem muda com o núcleo, que muda com a altura), mais andares com +1 subsolo, ou um
+    // subsolo/uma elevada a menos, ou a elevada trocada por um subsolo. Vizinho fora das regras nem é calculado; os outros são calculados
+    // na ordem da nota da massa, só os que a massa diz que melhoram, até 3 por rodada — fica com o primeiro que fecha as vagas e melhora.
+    for(let t=0; t<subir && nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, mv=cur.st.regras.m2Vaga||28, sobra=m.vagas-m.vagasReq, pav=P.torres[0].pav;
+      const porPav=Math.max(1, P.torres.length*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), yS=cal.s*Math.floor((m.subA||0)/mv), yG=cal.g*Math.floor((m.embA||0)/mv);
+      const up=Math.floor(sobra/porPav), up2=Math.max(1, Math.floor((sobra+yS)/porPav)), sc0=notaMassa(clone(cur.st)).sc0;
+      const viz=[
+        rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav+Math.max(1, up)) }),
+        up<=1 ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav+2) }) : null,
+        rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++; p.torres.forEach(x=>x.pav=pav+up2) }),
+        P.subsolos>0 && sobra>=0.5*yS ? rascunho(cur.st, p=>{ p.subsolos-- }) : null,
+        P.garAcima>0 && sobra>=0.5*yG ? rascunho(cur.st, p=>{ p.garAcima-- }) : null,
+        P.garAcima>0 && P.subsolos<5 ? rascunho(cur.st, p=>{ p.garAcima--; p.subsolos++ }) : null]   // troca a elevada por um subsolo (a torre desce 1 pé-direito)
+        .filter(r=>r && r.sc0>sc0+1e-9).sort((a,b)=>b.sc0-a.sc0).slice(0,3);
+      let nx=null; for(const r of viz){ const c=confere(r); if(c && nivelOk(c) && c.sc>cur.sc){ nx=c; break } }
+      if(nx) cur=nx; else break }
+    return cur };
+  // confirma as melhores com o layout real da garagem (reparo acima)
+  const conf=new Map();   // chave → {st, m} das opções conferidas (para o "o que fecharia a conta" sem recalcular)
+  const validar=(list, done)=>{ let j=0; const out=[];
+    const stepV=()=>{ if(parou()) return cancela(); const ts=performance.now();
+      while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++];
+        const c=repara(avalia(stOf(r)), j<=3? 4 : 0), st=c.st, m=c.m, f=c.f;
+        if(!nivelOk(c) || (forma && otimDesvio(m)>rTol)) continue;   // forma: unidades além da tolerância não entram nas melhores
+        const v={...r, sc:c.sc, pav:st.produto.torres[0].pav, sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma)};
+        v.nivel=otimNivel(v, meta); v.key=otimKey(v); v.est=false; if(tPct) v.terreno=st.fin.terreno;
+        if(out.some(x=>x.key===v.key)) continue;   // o reparo pode levar duas opções à mesma combinação
+        if(mc) extras(st,m,v); out.push(v); conf.set(v.key, {st, m}) }
       prog(0.6+0.2*j/Math.max(1,list.length));
-      if(j<list.length && out.length<5) setTimeout(stepV,0); else done(out.sort((a,b)=>b.sc-a.sc)) };
+      if(j<list.length && out.length<5) setTimeout(stepV,0); else done(out.sort(otimMelhor)) };
     stepV() };
   // multicritério: confere com a garagem real alguns pontos da fronteira estimada e calcula a fronteira final
   const multi=(out, o)=>{
@@ -2535,11 +2698,11 @@ function otimizar(opts, onProg, onDone, ctx={}){
     const cand=paretoPrioridade([...a, ...paretoEspalha(fr0(pts).filter(p=>!aK.has(p.key)), nMax-a.length, "lucro")], "lucro"), val=[], t1=performance.now(); let j=0;   // extremos primeiro: se o tempo acabar, a fronteira perde o meio, não as pontas
     // tempo da conferência com a garagem real: o que sobra de tempoTotal (15 s), entre 2 s e tempoMax (9 s); os extremos da fronteira vêm primeiro
     const tBud=Math.min(opts.tempoMax ?? 9000, Math.max(2000, (opts.tempoTotal ?? 15000)-(t1-t0)));
-    const stepM=()=>{ const ts=performance.now();
+    const stepM=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<tBud){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
         if(!m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false};
-        val.push(extras(st,m,v)) }
+        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false};
+        v.nivel=otimNivel(v, meta); if(tPct) v.terreno=st.fin.terreno; val.push(extras(st,m,v)) }
       prog(0.8+0.2*j/Math.max(1,cand.length));
       if(j<cand.length && performance.now()-t1<tBud) return setTimeout(stepM,0);
       const seen=new Set(), P=[...out, ...val].filter(r=>!seen.has(r.key) && seen.add(r.key));
@@ -10246,21 +10409,111 @@ function otimMalha(st, m){
 }
 const otimKey=r=>[r.nT,r.pk,r.N,r.pav,r.sub,r.gac].join("|");
 
+/* ---------- vagas pela garagem real (UX v3 P3: "o otimizador não gera estudo com prejuízo quando há alternativa lucrativa") ----------
+   A massa estima as vagas por área ÷ m2Vaga (28 m²/vaga) em cada pavimento. Em lote estreito a garagem real rende bem menos (rampas,
+   circulação e núcleos): no 20 × 40 m de Criciúma, 13 vagas num subsolo de 720 m² (55 m²/vaga), 8 numa garagem elevada de 640 m²
+   e nenhuma no térreo. O fator único de antes (k = 0,75 quando não havia modelo, caso do assistente) aprovava combinações que,
+   conferidas com o layout, pediam 1 ou 2 subsolos a mais; o reparo alternado (subsolo/elevada) subia a torre, que deixava de caber,
+   e sobrava só a planta mínima (2 un/andar, 3 subsolos, eficiência 36%, prejuízo).
+   Agora a razão real ÷ estimada é medida POR TIPO de pavimento (subsolo s, garagem elevada g, térreo t), mais as vagas externas da
+   frente (vf), num layout real: o do estudo na tela (m.gar) ou, sem ele, um compute rápido do estado de partida. */
+function otimMLite(m){   // o que o Worker precisa do modelo da tela (clonável e pequeno)
+  if(!m) return {};
+  const gar={}; Object.entries(m.gar||{}).forEach(([k,l])=>{ gar[k]={count:l? +l.count||0 : 0} });
+  return {vagasLay:m.vagasLay, vagasEst:m.vagasEst, vf:{count:m.vf? m.vf.count||0 : 0}, subA:m.subA, embA:m.embA, gTer:m.gTer, gar};
+}
+function otimVagasCal(st, m){
+  const gar=m && m.gar, mv=st.regras.m2Vaga||28; if(!gar || !Object.keys(gar).length) return null;
+  const ks=re=>Object.keys(gar).filter(k=>re.test(k)), soma=l=>l.reduce((s,k)=>s+(gar[k]? +gar[k].count||0 : 0),0), cl=v=>Math.max(0, Math.min(1, v));
+  const kS=ks(/^s\d+$/), kG=ks(/^g\d+$/), eS=kS.length*Math.floor((m.subA||0)/mv), eG=kG.length*Math.floor((m.embA||0)/mv), eT=Math.floor((m.gTer||0)/mv);
+  let s = eS>0? cl(soma(kS)/eS) : null, g = eG>0? cl(soma(kG)/eG) : null, t = eT>0 && gar.ter? cl((+gar.ter.count||0)/eT) : null;
+  if(s==null) s = g!=null? cl(g/0.8) : 0.6;     // sem o pavimento no layout: elevada ≈ 0,8 × subsolo (rampa de subida no embasamento)
+  if(g==null) g = 0.8*s;
+  if(t==null) t = s;
+  return {s, g, t, vf:(m.vf && +m.vf.count)||0, fonte:"layout"};
+}
+/** vagas esperadas de uma combinação (massa) com a calibração por pavimento */
+function otimVagasEst(m, st, cal){ const P=st.produto, mv=st.regras.m2Vaga||28;
+  return cal.vf + Math.floor(P.subsolos*Math.floor((m.subA||0)/mv)*cal.s + P.garAcima*Math.floor((m.embA||0)/mv)*cal.g + Math.floor((m.gTer||0)/mv)*cal.t) }
+/* nível da combinação para a ordem (antes do objetivo): 2 = lucro > 0 e margem s/ VGV ≥ meta (S.fin.margemAlvo) · 1 = lucro > 0 · 0 = prejuízo */
+const otimNivel = (n, meta) => n.lucro>0 ? (n.margem>=meta-1e-9 ? 2 : 1) : 0;
+const otimMelhor = (a, b) => (b.nivel||0)-(a.nivel||0) || b.sc-a.sc;   // comparador: nível, depois o objetivo
+/** preço médio de venda (R$/m², média das tipologias ponderada pela área) que leva a margem s/ VGV ao alvo — todas as tipologias, coberturas
+    e lojas sobem na mesma proporção (finance dp); com tPct o terreno acompanha o VGV. null se nem 5× o preço chega lá */
+function otimPrecoPara(st, m, alvo, tPct){
+  const marg=dp=>{ const s2= tPct? {...st, fin:{...st.fin}} : st; if(tPct){ s2.fin.terreno=0; s2.fin.terreno=Math.round(tPct*finance(s2, m, {noHooks:true, dp}).vgv/1e4)*1e4 } return finance(s2, m, {noHooks:true, dp}).margemVGV };
+  let lo=-0.9, hi=4; if(marg(hi)<alvo) return null; if(marg(lo)>=alvo) return basePrice(st)*(1+lo);
+  for(let i=0;i<28;i++){ const mid=(lo+hi)/2; if(marg(mid)>=alvo) hi=mid; else lo=mid }
+  return basePrice(st)*(1+hi);
+}
+/* o que fecharia a conta de uma combinação (pura; roda no Worker): preço médio de venda para margem 0 e para a meta, terreno máximo
+   pagável (mesma conta de f.maxTerreno) e o motivo principal, lido da "Saúde do negócio" (f.saude). tPct: terreno = tPct × VGV. */
+function otimFecha(st, m, f, meta, tPct){
+  const pm=basePrice(st), pz=otimPrecoPara(st, m, 0, tPct), pmt=otimPrecoPara(st, m, meta, tPct), F=st.fin, itbi=1+(+F.itbi||0), sd=f.saude||{}, nv=sd.nivel||{};
+  const terrenoZero=(+F.terreno||0)+f.lucro/itbi, terrenoMeta=f.maxTerreno!=null? f.maxTerreno : (+F.terreno||0)+(f.lucro-meta*f.vgv)/itbi;
+  const terPct=sd.terrenoPctVGV!=null? sd.terrenoPctVGV : (f.vgv>0? (+F.terreno||0)/f.vgv : 0), M=st.metas||DEF.metas||{};
+  let k, motivo;
+  if(nv.vc==="ruim" || (sd.vc>0 && sd.vc<((M.vc&&M.vc.min)||2.5))){ k="preco"; motivo=`preço de venda baixo para o custo da obra (V/C ${nf(sd.vc||0,1)}×)` }
+  else if(nv.efic==="ruim" || (sd.faixaEfic && sd.eficGlobal<sd.faixaEfic[0])){ k="efic"; motivo=`pouca área vendável: só ${pct(sd.eficGlobal||0,0)} da área construída é privativa${m.garA>0 && m.constr>0? ` (garagem = ${pct(m.garA/m.constr,0)} da área)` : ""}` }
+  else if(terPct>((M.terreno&&M.terreno.max)||0.2)){ k="terreno"; motivo=`terreno caro: ${pct(terPct,0)} do VGV` }
+  else { k="custo"; motivo="obra e indiretos acima do que o produto vende" }
+  return { k, motivo, meta, lucro:f.lucro, margem:f.margemVGV, vgv:f.vgv, precoAtual:pm, precoZero:pz, precoMeta:pmt,
+    terrenoAtual:+F.terreno||0, terrenoZero, terrenoMeta, terrenoPct: tPct||0 };
+}
+/** texto curto do aviso (Produto e cartão do assistente): "Nenhuma combinação dá lucro: … Fecha a conta com …" */
+function otimFechaTxt(fx, semLucro){
+  if(!fx) return "";
+  const pr=v=>`R$ ${nf(Math.ceil(v/50)*50,0)}/m²`, op=[], qual=q=>q? ` na opção ${q+1}` : "";
+  if(semLucro){
+    if(fx.precoZero) op.push(`preço médio a partir de ${pr(fx.precoZero)}${qual(fx.opcaoZero)} (margem 0)${fx.precoMeta? ` ou ${pr(fx.precoMeta)}${qual(fx.opcaoMeta)} (meta de ${pct(fx.meta,0)})` : ""}`);
+    if(!fx.terrenoPct && fx.terrenoAtual>0 && fx.terrenoZero>0) op.push(`terreno até ${mi(fx.terrenoZero)}`);
+    if(fx.terrenoPct && fx.terrenoZero>0) op.push(`terreno até ${mi(fx.terrenoZero)} (estimado em ${pct(fx.terrenoPct,0)} do VGV)`);
+    return `Nenhuma combinação dá lucro — ${fx.motivo}.${op.length? " Fecha a conta com "+op.join(" ou ")+"." : ""}`;
+  }
+  if(fx.precoMeta) op.push(`preço médio de ${pr(fx.precoMeta)}${qual(fx.opcaoMeta)}`);
+  if(fx.terrenoMeta>0 && (fx.terrenoAtual>0 || fx.terrenoPct)) op.push(`terreno até ${mi(fx.terrenoMeta)}`);
+  return `Margem abaixo da meta de ${pct(fx.meta,0)}.${op.length? " Chega à meta com "+op.join(" ou ")+"." : ""}`;
+}
+
 let OTIM=null;
-/* otimizar(opts, onProg?, onDone?, ctx?) → Promise do resultado (também entregue a onDone).
-   Puro (sem DOM): roda no Web Worker. ctx = {st, m} (padrão: S e o último modelo da tela; sem eles, calcula).
-   opts: {obj, torres, tipologias, unidades} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, tempoTotal=15000 ms, vento=false, malha=false, efic=false, vc=false}
-   (efic/vc acrescentam eficiência global e V/C aos critérios da fronteira de Pareto).
+/* otimizar(opts, onProg?, onDone?, ctx?) → Promise do resultado (também entregue a onDone; rejeita com Error("cancelado")).
+   Puro (sem DOM): roda no Web Worker. Na interface, chame otimRodar (src/ui/calcworker.js), o caminho único.
+   ctx = {st, m, cancelado?} (padrão: S e o último modelo da tela; sem eles, calcula). m.gar (layout real) calibra as vagas; sem ele,
+   um compute rápido de st. cancelado(): função que, verdadeira, interrompe na próxima fatia.
+   opts: {obj, torres, tipologias, unidades, terrenoPct?} + multicritério {mc=true, paretoMax=8, tempoMax=9000 ms, tempoTotal=15000 ms,
+   vento=false, malha=false, efic=false, vc=false} (efic/vc acrescentam eficiência global e V/C aos critérios da fronteira de Pareto).
+   terrenoPct (assistente, terreno sem preço): cada combinação é avaliada com terreno = terrenoPct × o seu VGV — o mesmo que o assistente
+   lança depois (antes ele otimizava com terreno 0 e cobrava 12% do VGV só no fim, e a ordem não era a do resultado mostrado).
+   opts.cal (testes): calibração das vagas {s, g, t, vf} fixa.
+   Busca (UX v3 P3): unidades por andar 2…8 (e 1 em lote pequeno); para cada garagem, alturas até o MENOR entre o gabarito/CA e o que
+   cabe (a planta estreita com a altura) e também 70% e 50% disso; vagas estimadas pela calibração por pavimento; ordem = nível
+   (lucro > 0 e margem s/ VGV ≥ S.fin.margemAlvo › lucro > 0 › prejuízo) e depois o objetivo. As 14 melhores vão à conferência com o layout
+   real (repara: −andares, +subsolo ou +elevada até fechar as vagas; as 3 primeiras ainda "sobem a encosta" — ver `repara`).
    Desempenho: maxPavFast com teto vindo das combinações menores; combinações dominadas (mais subsolos com o mesmo nº de pavimentos e
    garagem elevada, vagas já cumpridas) não são recalculadas; o sol (que não depende dos subsolos) é guardado por assinatura.
-   Resultado serializável: {res (as melhores pelo objetivo, conferidas — igual ao otimizador antigo), pts (estimativas de todas as combinações),
-   pareto:{pts (conferidas com a garagem real), criterios}, solFonte, …}. */
+   Resultado serializável (contrato para a interface e o assistente):
+     res        até 5 opções conferidas, em ordem (nível, objetivo); cada uma {nT, pk, N, pav, sub, gac, mix, units, vagas, req, lucro,
+                margem (s/ VGV), tir, vpl, vgv, efic, nivel, semLucro?, terreno? (com terrenoPct)}
+     fecha      quando a 1ª está abaixo da meta: {k, motivo, meta, lucro, margem, precoAtual, precoZero, precoMeta (R$/m² médio; os
+                menores entre as opções, opcaoZero/opcaoMeta = índice em res quando não é a 1ª), terrenoAtual, terrenoZero, terrenoMeta, terrenoPct}
+     semLucro   = fecha, quando nem a 1ª dá lucro (res[0].semLucro = true): a menos ruim + motivo + o que fecharia a conta
+     semOpcao   {k:"lote"|"vagas", motivo} quando nenhuma combinação fecha as regras com as vagas (res vazio)
+     cal, k     calibração das vagas usada · meta, terrenoPct, ms, testadas, forma? · pts, pareto, solFonte (multicritério)
+   Texto pronto do aviso: otimFechaTxt(semLucro || fecha, !!semLucro). */
 function otimizar(opts, onProg, onDone, ctx={}){
   opts = {obj:"lucro", ...(opts||{})};
   const prog = typeof onProg==="function"? onProg : ()=>{};
   const base=clone(ctx.st||S);
   const mNow = ctx.m || (typeof window!=="undefined" && window._last && window._last.m) || compute(base);
-  const k = mNow.vagasLay && mNow.vagasEst? Math.min(1, (mNow.vagasLay-(mNow.vf?mNow.vf.count:0))/Math.max(1,mNow.vagasEst-(mNow.vf?mNow.vf.count:0))) : 0.75;
+  // vagas: calibração por tipo de pavimento num layout real (o da tela; sem ele, um compute rápido do estado de partida com ≥ 1 subsolo)
+  let cal = opts.cal || otimVagasCal(base, mNow);
+  if(!cal){ try{ const sc=clone(base); sc.produto.subsolos=Math.max(1, +sc.produto.subsolos||0); cal=otimVagasCal(sc, compute(sc, {quick:true})) }catch(e){} }
+  if(!cal) cal={s:0.6, g:0.5, t:0.6, vf:0, fonte:"padrão"};
+  const k = cal.s;
+  // ordem: lucro > 0 e margem ≥ meta antes do objetivo (otimNivel); terreno sem preço e opts.terrenoPct: terreno = tPct × VGV de cada combinação
+  const meta = +(base.fin && base.fin.margemAlvo) || 0.25, tPct = +opts.terrenoPct>0 && !(+base.fin.terreno>0) ? +opts.terrenoPct : 0;
+  const fin = (st, m)=>{ if(tPct){ st.fin.terreno=0; st.fin.terreno=Math.round(tPct*finance(st, m, {noHooks:true}).vgv/1e4)*1e4 } return finance(st, m) };
+  const parou = ()=>!!(ctx.cancelado && ctx.cancelado());
   const mc = opts.mc!==false;
   // forma desenhada (Fase C): o nº de torres e os blocos são do usuário e não variam; as unidades por andar preenchem o bloco
   const forma = otimFormaAtiva(base), rTol = Math.max(0.01, +(base.otim && base.otim.rTol) || 0.10), pavMinF = forma? otimPavMinForma(base) : 1;
@@ -10273,48 +10526,62 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const memoEf = typeof blcPrivEstimada==="function" ? new Map() : null;
   const mEf = forma && !(mNow.T||[]).some(t=>t && t.eficReal!=null) ? compute(base) : mNow, efAt = forma ? blcEficMapa(mEf) : [];
   const TF = forma? massing(base).T.filter(t=>t.desenhada && t.A>1) : [], capsF=TF.map(t=>t.A), effF0=TF.map(t=>(efAt[t.i]||{}).ref), effF=effF0.some(e=>e>0)? effF0 : undefined;
-  const NsDe = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? [2,3,4,5,6,8] : [curN];
+  // unidades por andar: 2…8 e, em lote pequeno (a maior planta possível não comporta 2,5× o andar de 2 unidades), também 1
+  const nsLivre = pk=>{ const R=base.regras, mx=presetMix(base, pk, 2), need2=mx.reduce((s,u)=>s+u.area*u.qtd,0)/Math.max(0.3, base.produto.efic);
+    return [...(G.area(base.lote.pts)*R.toTorre < 2.5*need2 ? [1] : []), 2,3,4,5,6,8] };
+  const NsDe = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? nsLivre(pk) : [curN];
   const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
   const jobs=[]; nTs.forEach(nT=>presets.forEach(pk=>NsDe(pk).forEach(N=>jobs.push({nT,pk,N}))));
-  const res=[], pts=[]; let i=0; const t0=performance.now(); const solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
+  const res=[], pts=[], cont={cabe:0, vagas:0}; let i=0; const t0=performance.now(); const solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
   const score0=OBJ[opts.obj][1];
   // forma desenhada: a nota cai com o desvio do tamanho das unidades frente ao mix (a combinação ideal preenche o bloco com r = 1)
   const score = forma? (f, m)=>{ const s=score0(f); return s - OTIM_PEN*otimDesvio(m)*Math.abs(s) } : score0;
   const curPav = +(base.produto.torres[0]||{}).pav || 0, formaInfo = forma? {on:true, torres:nTs[0], desenhadas:capsF.length, rTol, pavMin:pavMinF} : null;
-  let resolve; const done=new Promise(r=>resolve=r);
+  let resolve, reject; const done=new Promise((r,j)=>{ resolve=r; reject=j });
   const finish=o=>{ OTIM=o; if(typeof onDone==="function") onDone(o); resolve(o) };
+  const cancela=()=>reject(new Error("cancelado"));
+  // maior nº de pavimentos em que todas as torres comportam o mix (a planta estreita com a altura: afastamento = H ÷ afDiv), entre lo e hi
+  const fitAte=(st, nT, lo, hi)=>{ const ok=p=>{ st.produto.torres=Array.from({length:nT},()=>({pav:p})); return massing(st).T.every(t=>t.fit) };
+    if(ok(hi)) return hi; if(!ok(lo)) return lo-1; while(hi-lo>1){ const mid=(lo+hi)>>1; if(ok(mid)) lo=mid; else hi=mid } return lo };
   const step=()=>{
+    if(parou()) return cancela();
     const ts=performance.now();
     while(i<jobs.length && performance.now()-ts<40){
       const {nT,pk,N}=jobs[i++]; const st=clone(base); st.produto.mix=presetMix(base,pk,N); if(!st.produto.mix.length) continue;
-      let best=null, tested=0; const cumpre=new Map();   // cumpre: "gac|pav" → menor nº de subsolos (≥1) que já atende às vagas
+      let best=null, tested=0; const cumpre=new Map(), pfit=new Map();   // cumpre: "gac|pav" → menor nº de subsolos (≥1) que já atende às vagas · pfit: gac → maior pav que cabe
       for(const [sub,gac] of gars){
         st.produto.subsolos=sub; st.produto.garAcima=gac; st.produto.torres=Array.from({length:nT},()=>({pav:4}));
         // teto exato pelo gabarito: acima dele o massing() nem precisa rodar
         const hEmbG=st.produto.peTerreo+gac*st.produto.peGar, pmax=maxPavFast(st, Math.floor((hLimDe(st)+1e-6-hEmbG)/st.produto.pe));
         const pMin=Math.max(2, pavMinF); if(pmax<pMin) continue;   // forma desenhada: o último bloco começa no andar pavMinF (abaixo disso ele some)
+        // automático: o teto é também o maior nº de pavimentos em que o mix cabe (os subsolos não mudam a torre: um por garagem elevada);
+        // a lista inclui alturas menores (70% e 50%): menos andares = planta mais larga, menos vagas exigidas e menos subsolos
+        let P=pmax; if(!forma){ let pf=pfit.get(gac); if(pf===undefined){ pf=fitAte(st, nT, Math.min(pMin, pmax), pmax); pfit.set(gac, pf) } P=Math.min(pmax, pf); if(P<pMin) continue }
         // forma desenhada: também o andar mínimo e o meio da faixa — a altura muda o bloco de referência (pilha) e o nº de elevadores
         // (eficiência real da planta), então os pavimentos mais altos podem não comportar o mix
-        for(const pav of [...new Set([pmax, pmax-1, pmax-3, Math.ceil(pmax*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+pmax)/2)] : [])])].filter(p=>p>=pMin && p<=pmax)){
+        for(const pav of [...new Set([P, P-1, P-3, Math.ceil(P*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+P)/2)] : [Math.ceil(P*0.5)])])].filter(p=>p>=pMin && p<=pmax)){
           const kc=gac+"|"+pav, sMin=cumpre.get(kc);
           if(sMin!=null && sub>sMin){ tested++; continue }   // dominada por sMin subsolos: mesmo preço, mais custo (conta como testada, como antes)
           st.produto.torres=Array.from({length:nT},()=>({pav}));
           const m=massing(st); if(memoEf) blcPrivEstimada(st, m, memoEf);
           if(!m.T.every(t=>t.fit)) continue;
+          cont.cabe++;
           if(forma){   // a forma não encolhe nem sobe sozinha: gabarito, CA, blocos ignorados e tamanho das unidades conferidos aqui
             if(m.H>(m.hLim ?? st.regras.hMax)+1e-6 || m.CA>st.regras.caMax+1e-6 || m.T.some(t=>t.blcIgn && t.blcIgn.length)) continue;
             if(otimDesvio(m)>rTol && !(pk==="atual" && N===curN)) continue }
-          const okVg = m.vagasEst*k >= m.vagasReq;
+          const vg = otimVagasEst(m, st, cal), okVg = vg >= m.vagasReq;
           if(!okVg && !mc) continue;
           if(m.minApto<st.regras.aptoMin) continue;
-          const f=finance(st,m), sc=score(f,m), num=otimNum(f,m,forma);
+          if(okVg) cont.vagas++;
+          const f=fin(st,m), sc=score(f,m), num=otimNum(f,m,forma), nivel=otimNivel(num, meta);
           // multicritério: guarda todas as combinações dentro das regras (inclusive as que não atingem as vagas — é um dos critérios)
           if(mc){ const sk=nT+"|"+pk+"|"+N+"|"+pav+"|"+gac; let sol=solMemo.get(sk); if(sol===undefined){ sol=otimSolProxy(st,m,entPrs); solMemo.set(sk,sol) }
-            pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq,
+            pts.push({key:otimKey({nT,pk,N,pav,sub,gac}), nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, vagas:vg, req:m.vagasReq,
               ...num, sol, est:true}) }
           if(!okVg) continue;
           tested++; if(sub>=1 && (cumpre.get(kc)==null || sub<cumpre.get(kc))) cumpre.set(kc, sub);
-          if(!best || sc>best.sc) best={sc, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:Math.floor(m.vagasEst*k), req:m.vagasReq, CA:m.CA, H:m.H, ...num};
+          const c={sc, nivel, nT, pk, N, pav, sub, gac, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:vg, req:m.vagasReq, CA:m.CA, H:m.H, ...num};
+          if(!best || otimMelhor(c, best)<0) best=c;
         }
         if(tested>=8) break;
       }
@@ -10322,8 +10589,22 @@ function otimizar(opts, onProg, onDone, ctx={}){
     }
     prog(0.6*i/jobs.length);
     if(i<jobs.length) setTimeout(step,0);
-    else { res.sort((a,b)=>b.sc-a.sc); prog(0.6); validar(res.slice(0,14), out=>{
-      const o={res:out, obj:opts.obj, k, ms:performance.now()-t0, testadas:res.length, ...(formaInfo? {forma:formaInfo} : {})};
+    else { res.sort(otimMelhor); prog(0.6); validar(res.slice(0,14), out=>{
+      const o={res:out, obj:opts.obj, k, cal, meta, ms:performance.now()-t0, testadas:res.length, ...(tPct? {terrenoPct:tPct} : {}), ...(formaInfo? {forma:formaInfo} : {})};
+      // nenhuma combinação conferida: por quê (lote pequeno para as regras, ou a garagem não comporta as vagas exigidas)
+      if(!out.length){ const mv=base.regras.m2Vaga||28, ys=Math.max(0, Math.round(cal.s*Math.floor((mNow.subA || G.area(base.lote.pts)*(1-base.regras.permeab))/mv)));
+        o.semOpcao = !cont.cabe ? {k:"lote", motivo:"o lote é pequeno demais para as regras: nenhuma torre comporta as unidades dentro dos recuos e da ocupação"}
+          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo neste lote e as regras pedem ${nf(+base.regras.vagasApto||0,1)} por unidade`, porSubsolo:ys} }
+      // sem lucro (ou abaixo da meta): o motivo e o que fecharia a conta da melhor (a menos ruim). Os preços que fecham a conta são os
+      // MENORES entre as opções conferidas (opcaoZero/opcaoMeta = índice em res quando não é a primeira): com o preço maior, outra
+      // combinação pode fechar antes
+      const b=out[0];
+      if(b && b.margem<meta-1e-9){ try{ const cb=conf.get(b.key), f=fin(cb.st, cb.m); o.fecha=otimFecha(cb.st, cb.m, f, meta, tPct);
+        out.forEach((r,q)=>{ if(!q) return; const c=conf.get(r.key); if(!c) return;
+          const pz=o.fecha.precoZero!=null && r.lucro>0? null : otimPrecoPara(c.st, c.m, 0, tPct), pm=otimPrecoPara(c.st, c.m, meta, tPct);
+          if(pz!=null && (o.fecha.precoZero==null || pz<o.fecha.precoZero-1)){ o.fecha.precoZero=pz; o.fecha.opcaoZero=q }
+          if(pm!=null && (o.fecha.precoMeta==null || pm<o.fecha.precoMeta-1)){ o.fecha.precoMeta=pm; o.fecha.opcaoMeta=q } });
+        if(!(b.lucro>0)){ o.semLucro=o.fecha; b.semLucro=true } }catch(e){ console.error("[otimizar] fecha", e); if(!(b.lucro>0)){ o.semLucro={k:"custo", motivo:"custos acima da receita", meta}; b.semLucro=true } } }
       if(!mc) return finish(o);
       multi(out, o) }) }
   };
@@ -10331,17 +10612,62 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const extras=(st,m,r)=>{ const s=otimSol(st,m,true); r.sol=s.h; r.solFonte=s.fonte;
     if(opts.vento){ const v=otimVento(st,m); if(v!=null) r.vento=v }
     if(opts.malha){ const x=otimMalha(st,m); if(x){ r.malha=x; if(x.custo!=null) r.malhaCusto=x.custo } } return r };
-  // confirma as melhores com o layout real da garagem (acrescenta subsolo/garagem se faltar vaga)
-  const validar=(list, done)=>{ let j=0; const out=[], R=base.regras;
-    const stepV=()=>{ const ts=performance.now();
-      while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++]; const st=stOf(r);
-        let m=compute(st,{quick:true}), t=0;
-        while(m.vagas<m.vagasReq && t<4){ if(st.produto.subsolos<=st.produto.garAcima+1 && st.produto.subsolos<5) st.produto.subsolos++; else st.produto.garAcima++; m=compute(st,{quick:true}); t++ }
-        if(m.vagas<m.vagasReq || !m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...r, sc:score(f,m), sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma)};
-        v.key=otimKey(v); v.est=false; if(mc) extras(st,m,v); out.push(v) }
+  const R0=base.regras, cabe=m=>m.T.every(x=>x.fit) && m.H<=(m.hLim ?? R0.hMax)+1e-6 && m.CA<=R0.caMax+1e-6;
+  /* conferência com o layout real da garagem. As vagas por pavimento variam muito com o empilhamento das rampas e a posição do núcleo
+     (no 20 × 40: de 5 a 13 por subsolo), então a estimativa só ORDENA; quem decide é o layout. Faltando vagas, testa as três saídas de
+     um incorporador e fica com a de melhor nota que fecha as vagas (ou, se nenhuma fecha, a que mais se aproxima): menos pavimentos
+     tipo (menos unidades = menos vagas exigidas), +1 subsolo, +1 garagem elevada (só se a torre continuar cabendo). Sobrando vagas de
+     um pavimento inteiro, tenta tirar um subsolo/uma elevada. No máximo 3 rodadas de reparo + 1 de corte por opção. */
+  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m);
+  const avalia=st=>{ const mm=compute(st,{quick:true}), f=fin(st,mm); return {st, m:mm, f, sc:score(f,mm)} };
+  const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
+  // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
+  // rascunho {st, sc0} (nota da massa) sem calcular a garagem — quem calcula é `confere`
+  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null; const {m0, sc0}=notaMassa(s2);
+    if(!cabe(m0) || m0.minApto<R0.aptoMin) return null;
+    if(forma && (m0.T.some(t=>t.blcIgn && t.blcIgn.length) || otimDesvio(m0)>rTol)) return null;
+    return {st:s2, sc0} };
+  const confere=r=>{ if(!r) return null; const c=avalia(r.st); return forma && otimDesvio(c.m)>rTol ? null : c };
+  const melhorDe=l=>l.filter(Boolean).sort((a,b)=>(nivelOk(b)-nivelOk(a)) || (nivelOk(a)? b.sc-a.sc : (a.m.vagasReq-a.m.vagas)-(b.m.vagasReq-b.m.vagas) || b.sc-a.sc))[0];
+  const repara=(cur, subir)=>{
+    for(let t=0; t<3 && !nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, nT=P.torres.length, pav=P.torres[0].pav;
+      const porPav=Math.max(1, nT*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), k=Math.max(1, Math.ceil((m.vagasReq-m.vagas)/porPav));
+      const nx=melhorDe([
+        pav-k>=pMinV ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav-k) }) : null,
+        rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++ }),
+        rascunho(cur.st, p=>{ if(p.garAcima>=3) return false; p.garAcima++ })].map(confere));
+      if(!nx) break; cur=nx }
+    // com as vagas fechadas, sobe a encosta com o layout real (só nas primeiras opções da lista, `subir` rodadas): mais andares (o que
+    // sobra de vagas, ou +1 e +2 — o rendimento da garagem muda com o núcleo, que muda com a altura), mais andares com +1 subsolo, ou um
+    // subsolo/uma elevada a menos, ou a elevada trocada por um subsolo. Vizinho fora das regras nem é calculado; os outros são calculados
+    // na ordem da nota da massa, só os que a massa diz que melhoram, até 3 por rodada — fica com o primeiro que fecha as vagas e melhora.
+    for(let t=0; t<subir && nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, mv=cur.st.regras.m2Vaga||28, sobra=m.vagas-m.vagasReq, pav=P.torres[0].pav;
+      const porPav=Math.max(1, P.torres.length*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), yS=cal.s*Math.floor((m.subA||0)/mv), yG=cal.g*Math.floor((m.embA||0)/mv);
+      const up=Math.floor(sobra/porPav), up2=Math.max(1, Math.floor((sobra+yS)/porPav)), sc0=notaMassa(clone(cur.st)).sc0;
+      const viz=[
+        rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav+Math.max(1, up)) }),
+        up<=1 ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav+2) }) : null,
+        rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++; p.torres.forEach(x=>x.pav=pav+up2) }),
+        P.subsolos>0 && sobra>=0.5*yS ? rascunho(cur.st, p=>{ p.subsolos-- }) : null,
+        P.garAcima>0 && sobra>=0.5*yG ? rascunho(cur.st, p=>{ p.garAcima-- }) : null,
+        P.garAcima>0 && P.subsolos<5 ? rascunho(cur.st, p=>{ p.garAcima--; p.subsolos++ }) : null]   // troca a elevada por um subsolo (a torre desce 1 pé-direito)
+        .filter(r=>r && r.sc0>sc0+1e-9).sort((a,b)=>b.sc0-a.sc0).slice(0,3);
+      let nx=null; for(const r of viz){ const c=confere(r); if(c && nivelOk(c) && c.sc>cur.sc){ nx=c; break } }
+      if(nx) cur=nx; else break }
+    return cur };
+  // confirma as melhores com o layout real da garagem (reparo acima)
+  const conf=new Map();   // chave → {st, m} das opções conferidas (para o "o que fecharia a conta" sem recalcular)
+  const validar=(list, done)=>{ let j=0; const out=[];
+    const stepV=()=>{ if(parou()) return cancela(); const ts=performance.now();
+      while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++];
+        const c=repara(avalia(stOf(r)), j<=3? 4 : 0), st=c.st, m=c.m, f=c.f;
+        if(!nivelOk(c) || (forma && otimDesvio(m)>rTol)) continue;   // forma: unidades além da tolerância não entram nas melhores
+        const v={...r, sc:c.sc, pav:st.produto.torres[0].pav, sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma)};
+        v.nivel=otimNivel(v, meta); v.key=otimKey(v); v.est=false; if(tPct) v.terreno=st.fin.terreno;
+        if(out.some(x=>x.key===v.key)) continue;   // o reparo pode levar duas opções à mesma combinação
+        if(mc) extras(st,m,v); out.push(v); conf.set(v.key, {st, m}) }
       prog(0.6+0.2*j/Math.max(1,list.length));
-      if(j<list.length && out.length<5) setTimeout(stepV,0); else done(out.sort((a,b)=>b.sc-a.sc)) };
+      if(j<list.length && out.length<5) setTimeout(stepV,0); else done(out.sort(otimMelhor)) };
     stepV() };
   // multicritério: confere com a garagem real alguns pontos da fronteira estimada e calcula a fronteira final
   const multi=(out, o)=>{
@@ -10352,11 +10678,11 @@ function otimizar(opts, onProg, onDone, ctx={}){
     const cand=paretoPrioridade([...a, ...paretoEspalha(fr0(pts).filter(p=>!aK.has(p.key)), nMax-a.length, "lucro")], "lucro"), val=[], t1=performance.now(); let j=0;   // extremos primeiro: se o tempo acabar, a fronteira perde o meio, não as pontas
     // tempo da conferência com a garagem real: o que sobra de tempoTotal (15 s), entre 2 s e tempoMax (9 s); os extremos da fronteira vêm primeiro
     const tBud=Math.min(opts.tempoMax ?? 9000, Math.max(2000, (opts.tempoTotal ?? 15000)-(t1-t0)));
-    const stepM=()=>{ const ts=performance.now();
+    const stepM=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<tBud){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
         if(!m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=finance(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false};
-        val.push(extras(st,m,v)) }
+        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false};
+        v.nivel=otimNivel(v, meta); if(tPct) v.terreno=st.fin.terreno; val.push(extras(st,m,v)) }
       prog(0.8+0.2*j/Math.max(1,cand.length));
       if(j<cand.length && performance.now()-t1<tBud) return setTimeout(stepM,0);
       const seen=new Set(), P=[...out, ...val].filter(r=>!seen.has(r.key) && seen.add(r.key));
@@ -19345,7 +19671,8 @@ function assProg(p, fase){
 }
 /* otimizador com o estado explícito (não toca em S): otimRodar do P3 (se aceitar ctx), Worker "job" ou a página */
 async function assOtimizar(st, onProg){
-  const opts={ ...clone(st.otim||{}), obj:"lucro", torres:true, tipologias:false, unidades:true, mc:false };
+  const opts={ ...clone(st.otim||{}), obj:"lucro", torres:true, tipologias:false, unidades:true, mc:false,
+    terrenoPct: st.fin.terreno>0? 0 : ASS_TERRENO_PCT };   // P3: sem preço do terreno, o otimizador já conta o terreno estimado (12% do VGV de cada combinação)
   if(typeof otimRodar==="function" && otimRodar.length>=3) return otimRodar(opts, onProg, {st, m:{}});
   if(typeof calcOn==="function" && calcOn() && typeof calcJob==="function" && !CALC.jobAtivo){
     const a = CALC.jobAtivo = {tipo:"ass", prog:0}; ASS.job=a;
@@ -19356,7 +19683,7 @@ async function assOtimizar(st, onProg){
   const keep=OTIM; try{ return await otimizar(opts, onProg, null, {st, m:{}}) } finally { OTIM=keep }
 }
 function assCancelar(){
-  ASS.cancel=true; if(ASS.job && typeof calcCancelar==="function") calcCancelar();
+  ASS.cancel=true; if(typeof otimCancelar==="function") otimCancelar(); if(ASS.job && typeof calcCancelar==="function") calcCancelar();
   ASS.rodando=false; ASS.passo=2; assRender(); toast("Geração cancelada");
 }
 const assEspera = ms=>new Promise(r=>setTimeout(r, ms));
@@ -19370,9 +19697,9 @@ async function assGerar(){
     if(!semLote){ r=await assOtimizar(st, p=>{ if(!ASS.cancel) assProg(0.04+0.92*p) }); if(ASS.cancel) return; best=r && r.res && r.res[0] || null }
     assProg(0.97, 3);
     const fin=clone(st); let motivo="", estimado=false;
-    if(best){ aplicarOtim(best, fin) }
+    if(best){ aplicarOtim(best, fin); if(r.semLucro && typeof otimFechaTxt==="function") motivo=otimFechaTxt(r.semLucro, true) }   // P3: sem lucro → aviso com o que fecharia a conta
     else { const n=maxPav(fin); fin.produto.torres=[{pav:Math.max(1,n)}];
-      if(!semLote) motivo = n>0? "Nenhuma combinação atendeu às regras e às vagas. Aplicamos o máximo de andares." : "O lote é pequeno demais para as regras escolhidas." }
+      if(!semLote) motivo = r && r.semOpcao? `Nenhuma combinação fecha: ${r.semOpcao.motivo}. Aplicamos o máximo de andares.` : n>0? "Nenhuma combinação atendeu às regras e às vagas. Aplicamos o máximo de andares." : "O lote é pequeno demais para as regras escolhidas." }
     if(!(fin.fin.terreno>0)){ let vgv=best && best.vgv; if(!vgv){ try{ const m=compute(fin,{layouts:false, quick:true}); vgv=finance(fin,m).vgv }catch(e){ vgv=0 } }
       fin.fin.terreno=assTerrenoEstimado(vgv); estimado=fin.fin.terreno>0 }
     await assEspera(200); if(ASS.cancel) return;
@@ -20042,7 +20369,7 @@ function blcPerto(A, B){ let best=null, bd=Infinity;
 /* ---------- seção "Forma das torres" (Produto) ---------- */
 const BLC_IC = { ret:"M3 4h10v8H3z", L:"M3 3h4v6h6v4H3z", U:"M2 3h4v6h4V3h4v10H2z", T:"M2 3h12v4H10v6H6V7H2z", H:"M2 3h4v3h4V3h4v10h-4v-3H6v3H2z", patio:"M2 3h12v10H2zM6 6v4h4V6z" };
 const blcIc = k => `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="${BLC_IC[k]}"/></svg>`;
-function blcSum(){ if(!blcAtivo(S)) return "automática"; const n=blcLista().length, N=S.produto.torres.length, nb=blcLista().reduce((s,i)=>s+blcLst(i).filter(blcValido).length,0);
+function blcSum(){ if(!blcAtivo(S)) return S.custom && S.custom.torOcupa && S.custom.tor && S.custom.tor.length? "automática · ocupa a área desenhada" : "automática"; const n=blcLista().length, N=S.produto.torres.length, nb=blcLista().reduce((s,i)=>s+blcLst(i).filter(blcValido).length,0);
   return n? `desenhada · ${n} de ${N} torre${N>1?"s":""}${nb>n? ` · ${nb} blocos` : ""}` : "desenhada · nenhuma personalizada" }
 /* eficiência real da planta (blcPrivReal) numa linha de torre: " · eficiência real 72% (informada 80%)" */
 const blcEficTxt = t => t && t.eficReal!=null ? ` · eficiência real ${pct(t.eficReal,0)} (informada ${pct(S.produto.efic,0)})` : "";
@@ -20052,8 +20379,23 @@ function blcSecHTML(){
       SEG("blocos.modo",[["auto","Automática"],["desenhada","Desenhada"]],{label:"Forma das torres"}))
     + (on ? `<div class="list" id="blcList"></div><div id="blcGeral"></div>${ADV(SW("alas.recuaTodas", `Recuar recua todas as fachadas${INFO("Por padrão, “Recuar” não mexe na fachada onde o núcleo (escada e elevadores) encosta: o núcleo sobe inteiro até o topo e o recuo o cortaria. Ligado, recua todas as fachadas — confira o aviso de núcleo cortado.","recuar")}`, {fx:"save"}), {key:"blc-opc"})}`
           : salvas ?`<p class="note">${salvas} forma${salvas>1?"s":""} guardada${salvas>1?"s":""} — volta${salvas>1?"m":""} ao escolher Desenhada.</p>` : "");
-  return SEC("Forma das torres", body, {key:"pr-forma", sum:blcSum(), info:"Planta das torres: automática pelas regras ou desenhada por você, torre a torre, numa pilha de blocos."});
+  return SEC("Forma das torres", body + blcOcupaHTML(), {key:"pr-forma", sum:blcSum(), info:"Planta das torres: automática pelas regras ou desenhada por você, torre a torre, numa pilha de blocos."});
 }
+/* "Torre ocupa a área desenhada" (C0, S.custom.torOcupa): veio de Terreno › Limites (UX v3 §4.6). Só aparece com o limite especial das
+   torres desenhado (S.custom.tor); a linha viva #torOcupaP mostra a planta, o tamanho médio das unidades e "Ajustar mix" (ACT.blcOcupaMix) */
+const BLC_OCUPA_INFO = "Desligado, a área restrita das torres (desenhada em Terreno) é só um teto: a torre fica do tamanho das unidades dentro dela. Ligado, essa área (recortada pelos recuos) vira a planta do andar tipo e as unidades crescem ou encolhem até preenchê-la. “Ajustar mix” muda a quantidade de unidades por andar para elas voltarem ao tamanho do mix.";
+function blcOcupaHTML(){
+  if(!(S.custom && S.custom.tor && S.custom.tor.length)) return "";
+  return `<div class="row" style="gap:6px;margin-top:8px">${SW("custom.torOcupa","Torre ocupa a área desenhada",{rr:true})}${INFO(BLC_OCUPA_INFO,"torre ocupa a área desenhada")}</div>${S.custom.torOcupa? `<div class="fsub" id="torOcupaP"></div>` : ""}`;
+}
+function blcOcupaLive(m){
+  if(!document.getElementById("torOcupaP") || typeof torOcupaResumo!=="function") return;
+  const R=torOcupaResumo(S, m), ajuste=R && R.A>0 && R.muda && Math.abs(R.r-1)>0.03;
+  setHTML("torOcupaP", !R ? "" : !R.A ? "A área desenhada ficou vazia depois dos recuos." :
+    `<span>${R.desiguais? R.As.map(a=>m2(a)).join(" e ") : m2(R.A)}/andar${R.real? ` · aproveitamento real ${pct(R.efic,0)} (informado ${pct(R.eficInf,0)})${INFO("Eficiência real da planta")}` : ""} · unidades com ${nf(R.media,0)} m² em média (mix: ${nf(R.mixMedia,0)} m²)</span>${ajuste? ` <button type="button" class="btn sm" data-act="blcOcupaMix" style="margin-left:6px">Ajustar mix</button>` : ""}`);
+}
+ACT.blcOcupaMix = ()=>{ const m=window._last&&window._last.m, R=m&&torOcupaResumo(S, m); if(!R||!R.A) return;
+  const q=R.q; S.produto.mix.forEach((u,j)=>u.qtd=q[j]); update(); toast(`Mix ajustado: ${q.reduce((s,n)=>s+n,0)} unidades por andar — Ctrl+Z desfaz`) };
 /* avisos curtos de uma torre e de um bloco (o texto completo fica nos avisos do estudo) */
 function blcCurtos(I){ if(!I) return []; const o=[];
   if(I.foraLote>0.5) o.push(`${m2(I.foraLote)} fora do lote`); if(I.foraRecuo>0.5) o.push(`${m2(I.foraRecuo)} sobre os recuos`);
@@ -20093,7 +20435,7 @@ function blcBlocosHTML(i, m, I){
   return rows.join("");
 }
 function blcLive(m){
-  setSum("pr-forma", blcSum());
+  setSum("pr-forma", blcSum()); blcOcupaLive(m);
   if(!blcAtivo(S) || !document.getElementById("blcList")) return;
   const P=S.produto;
   setHTML("blcList", P.torres.map((tw,i)=>{ const b=blcB(i), t=m.T[i]||{}, nome=`Torre ${i+1}`, I=(m.blc||[]).find(x=>x.i===i), cu=blcCurtos(I);
@@ -20175,7 +20517,8 @@ HOOK.pdf.push(async ctx=>{
    - update() faz o cálculo barato aqui (sem layouts de garagem, reaproveitando os últimos) e pede o completo ao Worker (calcPedir).
    - Cada pedido tem número; resposta de pedido superado (ou de estado já mudado por arraste) é descartada.
    - Se o Worker não puder ser criado ou falhar (CSP do artifact, file://), tudo volta a rodar na página (calcFalhou).
-   - calcPronto() → Promise que resolve quando o resultado completo do estado atual está na tela (exportar, salvar versão). */
+   - calcPronto() → Promise que resolve quando o resultado completo do estado atual está na tela (exportar, salvar versão).
+   - otimRodar(opts, onProg, ctx) → Promise<OTIM>: caminho único do otimizador (Produto e assistente), no Worker "job" ou na página. */
 const CALC = { estado:"off", url:null, w:null, job:null, jobAtivo:null, req:0, envId:0, aplicado:0, fila:false, ocupado:false, esperam:[], indT:0, ms:0 };
 /* código anexado ao cálculo dentro do Worker */
 const CALC_BOOT = `
@@ -20188,7 +20531,7 @@ const _calcFn = {
     const m = compute(st, opt||{}); _calcMemo.unshift({sig, m}); if(_calcMemo.length>6) _calcMemo.pop(); return m;
   },
   acessoAvalia(st, c, full){ S = st; return acessoAvalia(st, c, full) },
-  otimizar(st, mLite, opts, prog){ S = st; window._last = {m: mLite}; return new Promise(res=>otimizar(opts, p=>prog(p), r=>res(r))) },
+  otimizar(st, mLite, opts, prog){ S = st; window._last = {m: mLite}; return otimizar(opts, p=>prog(p), null, {st, m: mLite}) },
   ping(){ return true }
 };
 function _calcPost(msg){ try{ self.postMessage(msg) }catch(e){ msg.val = serialLimpa(msg.val); self.postMessage(msg) } }
@@ -20294,7 +20637,7 @@ const calcCancelado = e=> e && /cancelado/.test(e.message||"");
 /* botões de cancelar e progresso nos cards do otimizador e do estudo de acesso (refeitos a cada renderTab) */
 function calcJobUI(){
   const a=CALC.jobAtivo;
-  if(a && a.tipo==="otim"){
+  if(a && a.tipo==="otim" && a.tela){
     const b=document.querySelector('#tabbody [data-act="otim"]');
     if(b){ b.disabled=false; b.dataset.act="calcCancel"; b.classList.remove("pri"); b.textContent="Cancelar análise"; b.title="Interrompe a busca (o cálculo roda em segundo plano)" }
     const p=document.querySelector("#otProg"); if(p){ p.hidden=false; const i=p.querySelector("i"); if(i) i.style.width=((a.prog||0)*100).toFixed(0)+"%" }
@@ -20311,31 +20654,40 @@ addCard("produto", {key:"calcJobUI", order:999, html:()=>"", after:()=>calcJobUI
 addCard("projeto", {key:"calcJobUI", order:999, html:()=>"", after:()=>calcJobUI()});
 ACT.calcCancel = ()=>{ calcCancelar(); toast("Análise cancelada") };
 
-/* instalado por main.js depois que todos os arquivos carregaram (assim pega as versões finais de ACT.otim / ACT.acessoStudy) */
-function calcInstalar(){
-/* otimizador no Worker (o algoritmo é o mesmo de src/optim.js; só muda onde roda) */
-const _otimPagina = ACT.otim;
-if(_otimPagina) ACT.otim = async b=>{
-  if(!calcOn()) return _otimPagina(b);
-  if(CALC.jobAtivo) return;
-  const a = CALC.jobAtivo = {tipo:"otim", prog:0};
-  OTRUN=true; renderTab();
-  await calcPronto();
-  if(a.cancelado){ CALC.jobAtivo=null; OTRUN=false; if(TAB==="produto") renderTab(); return }
-  const mN=window._last.m, mLite={vagasLay:mN.vagasLay, vagasEst:mN.vagasEst, vf:{count:mN.vf?mN.vf.count:0}};
-  a.job = calcJob();
+/* ===== otimizador: caminho único (UX v3 P3) =====
+   otimRodar(opts, onProg, ctx) → Promise<OTIM>  (src/optim.js: otimizar; resultado documentado lá e em docs — res, pareto, fecha, semLucro, semOpcao)
+   - sem ctx: o estudo da tela. Espera o cálculo completo (calcPronto), usa S e o modelo da tela (calibra as vagas pelo layout real dela)
+     e grava o resultado em OTIM. É o que ACT.otim (Produto) chama.
+   - ctx = {st, m?}: estado explícito (assistente "Novo estudo"). S NÃO é lido nem trocado e OTIM fica como estava; sem m.gar o
+     otimizador calibra as vagas com um cálculo rápido de ctx.st.
+   - roda no Worker "job" quando ele existe; se o Worker falhar (ou não houver), roda na página. Progresso em onProg(0…1).
+   - uma análise por vez: com outra rodando rejeita com Error("ocupado"). Cancelar (otimCancelar ou calcCancelar, botão "Cancelar análise")
+     rejeita com Error("cancelado") — no Worker encerra o job; na página o otimizador para na próxima fatia. */
+async function otimRodar(opts, onProg, ctx){
+  if(CALC.jobAtivo) throw new Error("ocupado");
+  const tela=!ctx, prog=typeof onProg==="function"? onProg : ()=>{};
+  const a = CALC.jobAtivo = {tipo:"otim", prog:0, tela}, pr=p=>{ a.prog=p; if(!a.cancelado) prog(p) };
   try{
-    const r = await a.job.call("otimizar", [S, mLite, clone(S.otim)], p=>{ a.prog=p; const e=document.querySelector("#otProg i"); if(e) e.style.width=(p*100).toFixed(0)+"%" });
-    OTIM = r; CALC.jobAtivo=null; OTRUN=false; if(TAB==="produto") renderTab();
-    toast(OTIM.res.length? "Opções prontas — a melhor está no topo" : "Nenhuma combinação viável");
-  }catch(e){
-    CALC.jobAtivo=null; OTRUN=false;
-    if(a.cancelado || calcCancelado(e)){ if(TAB==="produto") renderTab(); return }
-    console.error("[calc] otimizador no Worker falhou — rodando na página:", e && e.message);
-    _otimPagina(b);
-  }
-};
+    if(tela) await calcPronto();
+    if(a.cancelado) throw new Error("cancelado");
+    const st = tela? S : ctx.st, m = tela? ((window._last && window._last.m) || null) : (ctx.m || {}), o = clone(opts||{});
+    let r = null;
+    if(calcOn()){
+      a.job = calcJob();
+      try{ r = await a.job.call("otimizar", [st, otimMLite(m), o], pr) }
+      catch(e){ if(a.cancelado || calcCancelado(e)) throw new Error("cancelado"); console.error("[calc] otimizador no Worker falhou — rodando na página:", e && e.message); r = null }
+    }
+    if(!r){ const keep=OTIM; try{ r = await otimizar(o, pr, null, {st, m: m || undefined, cancelado:()=>!!a.cancelado}) } finally { if(!tela) OTIM=keep } }
+    if(a.cancelado) throw new Error("cancelado");
+    if(tela) OTIM = r;
+    return r;
+  } finally { if(CALC.jobAtivo===a) CALC.jobAtivo=null }
+}
+/** cancela a análise do otimizador em andamento (da tela ou do assistente); true se havia uma */
+function otimCancelar(){ const a=CALC.jobAtivo; if(!a || a.tipo!=="otim") return false; calcCancelar(); return true }
 
+/* instalado por main.js depois que todos os arquivos carregaram (assim pega a versão final de ACT.acessoStudy) */
+function calcInstalar(){
 /* estudo do melhor acesso no Worker (mesma sequência de src/steps.js: análise rápida de todas, completa das 4 melhores) */
 const _acessoPagina = ACT.acessoStudy;
 if(_acessoPagina) ACT.acessoStudy = async b=>{
@@ -23143,10 +23495,13 @@ let VBH = 52;
   new ResizeObserver(mede).observe(vb); v.style.setProperty("--vbh", VBH+"px"); requestAnimationFrame(mede);
 })();
 
-/* ================= etapa Produto: trocas entre critérios (fronteira de Pareto, item 1.3) =================
+/* ================= etapa Produto › Sugestões › "Trocas entre critérios" (fronteira de Pareto, item 1.3) =================
+   Subseção (details#pfCard) dentro da seção Sugestões de src/ui/produto.js.
    Lê OTIM.pareto (gerado por otimizar() em src/optim.js, na página ou no Worker). Os pontos do gráfico são combinações
    conferidas com a garagem real; aplicar um ponto reproduz os números mostrados. Filtros mínimos ficam em S.otim. */
 let PF_SEL = null; // índice em OTIM.pareto.pts
+let PF_ABERTO = false; // subseção "Trocas entre critérios" aberta (estado de tela, fora de S)
+document.addEventListener("toggle", e=>{ if(e.target && e.target.id==="pfCard"){ PF_ABERTO=e.target.open; if(PF_ABERTO) paretoLive() } }, true);
 (function(){ const s=document.createElement("style"); s.textContent=`
 .pf-chart{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:6px 4px 2px}
 .pf-chart svg{display:block;width:100%;height:auto}
@@ -23157,6 +23512,9 @@ let PF_SEL = null; // índice em OTIM.pareto.pts
 .pf-leg i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
 .pf-tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line-2);border-radius:8px;box-shadow:var(--shadow-s);padding:6px 8px;font-size:11px;line-height:1.4;color:var(--ink);white-space:nowrap;z-index:2}
 .pf-tip b{font-family:var(--f-mono);font-weight:500}
+.pf-sub{margin-top:6px;border-top:1px solid var(--line);padding-top:6px}
+.pf-sub>summary .info{margin-left:2px}
+.pf-cb{display:grid;gap:10px;margin-top:8px}
 `; document.head.appendChild(s) })();
 
 const pfDesc = r => `${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} gar. elevada${r.gac>1?"s":""}`:""}${r.forma&&r.dev>0.005?` · unidades ${pct(r.dev,0)} maiores`:""}`;
@@ -23172,19 +23530,21 @@ function paretoCardHTML(){
   if(!OTIM || !OTIM.pareto || !OTIM.pareto.pts.length) return "";
   const O=S.otim, src=OTIM.solFonte==="unidades"? "média das unidades, com sombras (módulo Unidades)" : "horas de sol direto nas fachadas no inverno (aproximação)";
   const nomes=pfCrit().map(c=>c.nome.toLowerCase()), lista=nomes.length>1? nomes.slice(0,-1).join(", ")+" e "+nomes[nomes.length-1] : nomes.join(""), info=`Cada ponto é uma combinação conferida com a garagem real. Em destaque, a fronteira: nenhuma outra opção é melhor em ${lista} ao mesmo tempo. ${O.efic?"Eficiência global: área privativa ÷ área total construída. ":""}${O.vc?"V/C: preço por m² privativo ÷ custo de referência (CUB × fator). ":""}Toque num ponto para ver e aplicar. Sol médio: ${src}. ${OTIM.ventoOn?"Conforto ao vento: 1 − fração do lote com vento forte (vento 2D, aproximado). ":""}Vagas pelo layout rápido da garagem; na tela o layout completo pode achar mais algumas.`;
-  return SEC("Trocas entre critérios", `<div class="chips"><button type="button" class="chip" data-act="pfF" data-k="fVagas" aria-pressed="${!!O.fVagas}">Vagas ≥ exigidas</button><button type="button" class="chip" data-act="pfF" data-k="fSol" aria-pressed="${!!O.fSol}">Sol médio ≥ ${nf(+O.solMin||0,1)} h</button></div>
+  const nFr=OTIM.pareto.pts.filter(p=>p.fronteira).length;
+  // subseção da seção "Sugestões" (Produto, UX v3 §4.2): fechada por padrão, o estado aberto vale enquanto a página estiver aberta
+  return `<details class="pr-more pf-sub" id="pfCard" data-key="pr-pareto" ${PF_ABERTO?"open":""}><summary>Trocas entre critérios · ${nFr} na fronteira${INFO(info)}</summary><div class="pf-cb"><div class="chips"><button type="button" class="chip" data-act="pfF" data-k="fVagas" aria-pressed="${!!O.fVagas}">Vagas ≥ exigidas</button><button type="button" class="chip" data-act="pfF" data-k="fSol" aria-pressed="${!!O.fSol}">Sol médio ≥ ${nf(+O.solMin||0,1)} h</button></div>
     ${O.fSol? KV(NUM("otim.solMin","Sol médio mínimo","h",{step:0.5,min:0,max:14,fx:"pf"})) : ""}
     <div class="pf-chart" id="pfChart"></div>
     <div class="pf-leg"><span><i style="background:var(--accent)"></i>fronteira</span><span><i style="border:1.5px solid var(--muted)"></i>outras</span><span><i style="border:2px solid var(--brand)"></i>estudo atual</span><span>tamanho = nº de vagas</span></div>
     <p class="note" id="pfPill"></p><div id="pfDet"></div>
-    <details class="pr-more" id="pfMore" hidden><summary id="pfMoreT">Todas da fronteira</summary><div class="list" id="pfFront"></div></details>`, {id:"pfCard", key:"pr-pareto", open:true, info});
+    <details class="pr-more" id="pfMore" hidden><summary id="pfMoreT">Todas da fronteira</summary><div class="list" id="pfFront"></div></details></div></details>`;
 }
 FX.pf = ()=>{ save(); paretoLive() };
 Object.assign(ACT, {
   pfF: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; save(); renderTab() },
   pfSel: el=>{ PF_SEL=+el.dataset.i; paretoLive() },
   pfApply: b=>{ const r=OTIM&&OTIM.pareto&&OTIM.pareto.pts[+b.dataset.i]; if(!r) return; PF_SEL=+b.dataset.i; aplicarOtim(r); renderTab(); fit3d();
-    toast(`Aplicado: lucro ${mi(r.lucro)} · sol ${nf(r.sol,1)} h · ${r.vagas}/${r.req} vagas`) },
+    toast(`Aplicado: lucro ${mi(r.lucro)} · sol ${nf(r.sol,1)} h · ${r.vagas}/${r.req} vagas — Ctrl+Z desfaz`) },
   otk2: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; save(); renderTab() },
 });
 /* chips extras do otimizador (vários critérios, vento, malha) — chamados de STEP_R.produto */
@@ -23225,10 +23585,10 @@ function paretoLive(){
   const nF=frL.length, nP=L.filter(o=>o.passa).length, pill=document.getElementById("pfPill"); // detalhe do ponto escolhido
   const s=PF_SEL!=null && L[PF_SEL]? L[PF_SEL] : null;
   if(pill) pill.textContent=`${nF} na fronteira · ${nP} de ${L.length} nos filtros${s?"":" · toque num ponto"}`;
-  const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button class="btn sm ${top?"pri":""}" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
+  const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button type="button" class="btn sm" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
     <div class="note">${pfDesc(p)}${o.passa?"":" · fora dos filtros"}</div>
-    <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem s/ VGV<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
-    ${p.tir!=null?`<span>TIR<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.forma?`<span>Unidades<b>${p.dev>0.005?"+"+pct(p.dev,0):"no mix"}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
+    <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
+    ${p.tir!=null?`<span>Retorno<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.forma?`<span>Unidades<b>${p.dev>0.005?"+"+pct(p.dev,0):"no mix"}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
   setHTML("pfDet", s? card(s,true) : nF? "" : `<p class="note">Nenhuma opção passa nos filtros. Afrouxe um deles.</p>`);
   const resto=frL.slice().reverse().filter(o=>!s||o.i!==s.i), more=document.getElementById("pfMore"), mt=document.getElementById("pfMoreT");
   if(more) more.hidden=!resto.length;
@@ -23242,15 +23602,20 @@ function paretoLive(){
     el.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); PF_SEL=+el.dataset.i; paretoLive() } }) });
 }
 
-/* ================= etapa Produto (UX v2, ver docs/UX.md) =================
-   Sub-abas: Produto (potencial, torres, mix, embasamento, coberturas, quadro) · Lazer (hall + ambientes) · Otimizar
-   (objetivo, o que variar, gerar opções, resultados e trocas — o gráfico de Pareto fica em src/ui/pareto.js).
+/* ================= etapa Produto: "O que construir" (UX v3 §4.2, ver docs/UX-v3.md) =================
+   Uma tela só, sem sub-abas, de cima para baixo:
+   RES "Uso do potencial" (#pot: privativo usado/possível, unidades, vagas · #compl: conformidade com as regras, rgConformidade(m) do
+   pacote P2 quando existe, senão status()) → botão "Sugerir a melhor combinação" (data-act=otim, #otProg; vira "Cancelar análise"
+   por calcJobUI) com as opções em "Mais opções" → [quando há resultado] Sugestões (otimHTML + aviso de prejuízo/meta + "Trocas entre
+   critérios", src/ui/pareto.js) → Torres (+ disposição e pés-direitos em Mais opções) → Unidades por andar (+ sacadas e aproveitamento
+   do andar) → Garagem e térreo → [fechadas] Forma das torres (src/ui/blocos.js, com "Torre ocupa a área desenhada") · Áreas comuns e
+   lazer · Coberturas · Quadro de áreas.
    Listas (torres, mix, lazer) em linhas compactas; a edição detalhada abre dentro da linha (PR.mix / PR.lz / PR.hall).
    Linha aberta, menu de modelos e o "armar" da remoção ficam fora de S: não entram no desfazer.
-   O otimizador roda no Worker (src/ui/calcworker.js troca ACT.otim e põe o "Cancelar" no botão [data-act=otim]). */
+   O otimizador tem um caminho só: otimRodar (src/ui/calcworker.js), no Worker ou na página. ACT.aprovar = "Guardar como alternativa"
+   (salva um cenário; o botão sai do corpo e vai para o menu "…" do topo e para Entrega › Estudos). */
 let OTRUN=false;
 const PR = { mix:-1, lz:-1, hall:false, menu:false, arm:null, armT:0 };
-const PR_SUBS = [["prod","Produto"],["lazer","Lazer"],["otim","Otimizar"]];
 (function(){ const s=document.createElement("style"); s.textContent=`
 .pr-lh{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:0 0 0 12px;font-family:var(--f-display);font-variation-settings:"wdth" 118;font-size:9.5px;font-weight:650;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .pr-lh .c{flex:none;width:120px;text-align:center}
@@ -23299,7 +23664,33 @@ button.pr-tx:hover b{color:var(--accent)}
 .pr-more>summary::after{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .18s}
 .pr-more[open]>summary::after{transform:rotate(-135deg) translateY(-1px)}
 .pr-more>.list{margin-top:8px}
-.pr-apr{margin-top:2px}
+.mets.pr-pot{grid-template-columns:1.25fr 1fr 1fr;gap:6px}
+.pr-pot .met{padding:8px 10px}
+.pr-pot .met .l{font-size:11px}
+.pr-pot .met .v{font-size:17px}
+.pr-pot .met .s{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pr-pot .met .l .pill{margin-left:auto;font-size:10px;padding:0 6px}
+#compl{gap:4px;margin-top:10px}
+#compl .ur{grid-template-columns:100px 1fr 78px;font-size:11.5px}
+.pr-ok{color:var(--ok)}.pr-bad{color:var(--bad)}
+.pr-sug{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin:2px 0 4px}
+.pr-sug>.btn{grid-column:1;grid-row:1}
+.pr-sug .advbtn{grid-column:2;grid-row:1}
+.pr-sug>.prog{grid-row:2}
+.pr-sug .advb{grid-row:3}
+.pr-sug>.prog,.pr-sug .advb{grid-column:1/-1}
+.pr-sug .adv,.pr-act .adv{display:contents}
+.pr-act{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pr-act .advbtn{margin-left:auto}
+.pr-act .advb{flex-basis:100%}
+.pr-av{border-radius:var(--r);padding:9px 11px;font-size:12px;line-height:1.45;color:var(--ink);background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent)}
+.pr-av.bad{background:var(--bad-soft);border-color:color-mix(in srgb,var(--bad) 30%,transparent)}
+.pr-av b{font-weight:600}
+.pr-av .k{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.pr-av .k b{color:var(--ink);font-weight:500}
+.pr-av .k i{font-style:normal}
+.pr-lzm{display:grid;gap:10px}
+@media (max-width:520px){ .mets.pr-pot{grid-template-columns:1.2fr 1fr 1fr} .pr-pot .met{padding:8px 9px} .pr-pot .met .v{font-size:16px} }
 `; document.head.appendChild(s) })();
 
 const PR_IC = {
@@ -23320,74 +23711,83 @@ function prDesarma(){ clearTimeout(PR.armT); const k=PR.arm; PR.arm=null; if(!k)
 const prHallAuto = n => hallSocial({produto:{lazer:{hall:0}}}, n);
 
 /* ---------------- painel ---------------- */
+/* opções do "Sugerir": objetivo, o que variar e critérios extras (ficam em Mais opções, embaixo do botão) */
+function prOtimOpcoes(){
+  const P=S.produto, O=S.otim, chip=(k,l)=>`<button type="button" class="chip" data-act="otk" data-k="${k}" aria-pressed="${!!O[k]}">${l}</button>`;
+  const extra=typeof paretoChipsHTML==="function"? paretoChipsHTML() : "";
+  const fm=typeof otimFormaAtiva==="function" && otimFormaAtiva(S), nd=fm? (S.blocos.torres||[]).filter(t=>t && (t.blocos||[]).some(blcValido)).length : 0;
+  return `<div class="row sb" style="flex-wrap:nowrap"><span class="fl" style="flex:none">Maximizar${INFO("Lucro = receita líquida − custos. Margem = lucro ÷ VGV (a conta do mercado). Retorno = TIR, o rendimento anual do fluxo de caixa. VPL = valor presente do fluxo, descontado pela TMA. Em qualquer objetivo, as combinações com lucro e margem na meta vêm antes.","os objetivos")}</span>${SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","Retorno"],["vpl","VPL"]],{fx:"save",rr:false,label:"Objetivo"})}</div>
+    ${fm? GRP("Fica fixo")+`<div class="chips" id="otFixo"><span class="pill ok">Forma desenhada</span><span class="pill">${P.torres.length} torre${P.torres.length>1?"s":""}</span>${nd<P.torres.length?`<span class="pill">${P.torres.length-nd} automática${P.torres.length-nd>1?"s":""}</span>`:""}</div>` : ""}
+    ${GRP("O que variar")}<div class="chips">${(fm? "" : chip("torres","Nº de torres"))+chip("tipologias","Tipologias")+chip("unidades","Unidades por andar")}${fm? `<span class="pill" title="Pavimentos (o último bloco estica), subsolos e garagens elevadas sempre variam">pavimentos · subsolos · garagens</span>` : ""}</div>
+    ${extra? GRP("Comparar também")+`<div class="chips">${extra}</div>` : ""}`;
+}
+const PR_OT_INFO = "Testa número de torres, tipologias, unidades por andar, pavimentos, subsolos e garagens — sempre dentro das regras. As melhores são conferidas com o layout real da garagem, que sobe ou desce andares e subsolos até fechar as vagas. Combinações com lucro e margem na meta vêm antes; se nenhuma dá lucro, aparece a menos ruim e o que fecharia a conta. “Aplicar” troca torres, unidades, subsolos e garagens do estudo — Ctrl+Z desfaz.";
+const PR_OT_INFO_FORMA = "Com a forma desenhada, o número de torres e os blocos ficam como você fez. A sugestão escolhe tipologias e unidades por andar que preenchem o bloco com as unidades no tamanho do mix (até 10% maiores), o total de andares (o último bloco estica, dentro do gabarito e do CA), subsolos e garagens elevadas. As melhores são conferidas com o layout real da garagem. “Aplicar” troca só pavimentos, unidades, subsolos e garagens — Ctrl+Z desfaz.";
 STEP_R.produto = ()=>{
-  const P=S.produto, O=S.otim;
-  const tabs=SUBTABS("produto", PR_SUBS), cur=subAtual("produto");
-  let body="", desc="";
-  if(cur==="lazer"){
-    desc="Ambientes comuns e onde cada um fica.";
-    body =
-      RES("Programa de lazer", `<div class="mets" id="lzMets"></div><div class="use" id="lzCap"></div>`, {aside:`<span id="lzPill"></span>`}) +
-      SEC("Ambientes", `<div class="list" id="lzList"></div>
-        <div class="row sb"><button type="button" class="btn sm" data-act="prMenu" id="lzAddBtn" aria-expanded="${PR.menu}" aria-controls="lzMenu">+ Ambiente</button><span class="note" id="lzSum2"></span></div>
-        <div class="pr-menu" id="lzMenu" role="menu" aria-label="Modelos de ambiente" ${PR.menu?"":"hidden"}></div>`,
-        {key:"pr-lz", open:true, info:"Diga o que o empreendimento terá e onde. O hall e o lazer do térreo empurram a garagem para os fundos; a laje do embasamento, o pavimento de lazer e o rooftop entram no 3D, nas plantas e nos custos. Toque num ambiente para editar."});
-  } else if(cur==="otim"){
-    desc="Testa combinações dentro das regras e mostra as melhores.";
-    const chip=(k,l)=>`<button type="button" class="chip" data-act="otk" data-k="${k}" aria-pressed="${!!O[k]}">${l}</button>`;
-    const extra=typeof paretoChipsHTML==="function"? paretoChipsHTML() : "";
-    const fm=typeof otimFormaAtiva==="function" && otimFormaAtiva(S), nd=fm? (S.blocos.torres||[]).filter(t=>t && (t.blocos||[]).some(blcValido)).length : 0;
-    body =
-      SEC("Gerar opções", `<div class="row sb" style="flex-wrap:nowrap"><span class="fl" style="flex:none">Maximizar${INFO("Lucro = receita líquida − custos. Margem = lucro ÷ VGV (a conta do mercado). TIR = rendimento anual do fluxo de caixa. VPL = valor presente do fluxo, descontado pela TMA.","os objetivos")}</span>${SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","TIR"],["vpl","VPL"]],{fx:"save",rr:false,label:"Objetivo"})}</div>
-        ${fm? GRP("Fica fixo")+`<div class="chips" id="otFixo"><span class="pill ok">Forma desenhada</span><span class="pill">${P.torres.length} torre${P.torres.length>1?"s":""}</span>${nd<P.torres.length?`<span class="pill">${P.torres.length-nd} automática${P.torres.length-nd>1?"s":""}</span>`:""}</div>` : ""}
-        ${GRP("O que variar")}<div class="chips">${(fm? "" : chip("torres","Nº de torres"))+chip("tipologias","Tipologias")+chip("unidades","Unidades/andar")}${fm? `<span class="pill" title="Pavimentos (o último bloco estica), subsolos e garagens elevadas sempre variam">pavimentos · subsolos · garagens</span>` : ""}</div>
-        ${extra? GRP("Comparar também")+`<div class="chips">${extra}</div>` : ""}
-        <button type="button" class="btn pri full" data-act="otim" ${OTRUN?"disabled":""}>${OTRUN?"Analisando…":"Gerar opções"}</button><div class="prog" id="otProg" ${OTRUN?"":"hidden"}><i style="width:0"></i></div>`,
-        {key:"pr-otim", open:true, id:"otCard", info:fm? "Com a forma desenhada, o número de torres e os blocos ficam como você fez. O otimizador escolhe tipologias e unidades por andar que preenchem o bloco com as unidades no tamanho do mix (até 10% maiores), o total de andares (o último bloco estica, dentro do gabarito e do CA), subsolos e garagens elevadas. Unidades maiores que o mix perdem pontos. As melhores são conferidas com o layout real da garagem." : "Testa número de torres, tipologias, unidades por andar, subsolos e garagens — sempre dentro das regras — e ordena pelo objetivo. As melhores são conferidas com o layout real da garagem. Subsolos e garagens elevadas sempre variam."}) +
-      (OTIM? SEC("Melhores opções", `<div class="list" id="otRes">${otimHTML()}</div>`, {key:"pr-otres", open:true, info:"Até quatro opções, da melhor para a pior pelo objetivo. “Aplicar” troca torres, mix, subsolos e garagens do estudo (com a forma desenhada, só pavimentos, mix, subsolos e garagens — a forma fica) — dá para desfazer com Ctrl+Z."}) : "") +
-      (typeof paretoCardHTML==="function"? paretoCardHTML() : "");
-  } else {
-    desc="Torres, unidades e embasamento do empreendimento.";
-    body =
-      RES("Potencial do terreno", `<div class="mets" id="pot"></div><div class="pr-uso" id="potUso"></div>`, {aside:`<span id="potLim"></span>`}) +
-      SEC("Torres", `<div class="pr-lh"><span>Torre</span><span class="c" style="margin-right:${P.torres.length>1?90:52}px">Pavimentos</span></div><div class="list" id="torres"></div>
-        <div class="row sb"><button type="button" class="btn sm" data-act="addTorre" ${P.torres.length>=4?"disabled":""}>+ Torre</button><button type="button" class="btn sm ghost" data-act="maxPav" title="Sobe todas as torres até o limite de altura ou de CA">Máximo em todas</button></div>
-        ${P.torres.length>1? ROW("Disposição", SEG("produto.torreEixo",[["long","ao longo do lote"],["trans","transversais"]],{label:"Disposição das torres"})) : ""}`,
-        {key:"pr-torres", open:true, info:"Pavimentos tipo de cada torre. “Máx” sobe a torre até o limite de altura ou de CA. Até 4 torres; com 2 ou mais, escolha a disposição no lote."}) +
-      (typeof blcSecHTML==="function"? blcSecHTML() : "") +   // C1: forma das torres (src/ui/blocos.js)
-      SEC("Mix do andar tipo", `<div class="pr-lh"><span>Tipologia</span><span class="c" style="margin-right:44px">Un/andar</span></div><div class="list" id="mix"></div>
-        <div class="row sb"><button type="button" class="btn sm" data-act="addMix" ${P.mix.length>=5?"disabled":""}>+ Tipologia</button><span class="note" id="mixSum"></span></div>
-        ${ADV(ROW(`Sacadas${INFO("Sacada")}`, SEG("produto.sacTipo",[["embutida","embutidas"],["balanco","em balanço"]],{rr:false,label:"Sacadas"})), {key:"mix"})}`,
-        {key:"pr-mix", open:true, info:"Unidades de cada andar tipo, iguais em todas as torres. O tamanho do andar sai da área privativa do mix ÷ eficiência (na forma desenhada o andar é o desenho e vale a eficiência real da planta). Toque numa tipologia para editar nome, área, preço e sacada."}) +
-      SEC("Embasamento e garagem", KV(STP("produto.subsolos",0,6,"Subsolos",{sub:""})+STP("produto.garAcima",0,8,"Garagens elevadas",{sub:""}))+
-        SLD("produto.lojaTerreo","Lojas na frente do térreo",0,0.8,0.05,"%",{pct:true,sub:""})+SW("produto.garTerOn","Garagem no térreo, atrás do hall e do lazer")+`<div class="fsub" id="sub-terreo"></div>`+
-        ADV(SW("produto.vagasFrente","Vagas externas na frente (clientes das lojas)")+SW("produto.atico","Ático técnico (reservatório, máquinas)"), {key:"emb"}),
-        {key:"pr-emb", sum:prEmbSum(), info:"Embasamento"}) +
-      SEC("Coberturas", SW("produto.cob.on","Unidades de cobertura no último andar",{rr:true})+(P.cob.on? KV(NUM("produto.cob.qtd","Por torre","un",{int:true,min:1,step:1})+NUM("produto.cob.area","Área privativa","m²",{step:1,help:"Duplex"})+NUM("produto.cob.preco","Preço","R$/m²",{step:50,wide:true})) : ""),
-        {key:"pr-cob", sum:P.cob.on? "ligadas" : "desligadas", info:"Unidades maiores no último andar de cada torre. Maior que o andar, vira duplex com pavimento superior."}) +
-      SEC("Quadro de áreas", `<table class="tbl" id="quadro"></table>`, {key:"pr-quadro"}) +
-      `<button type="button" class="btn pri full pr-apr" data-act="aprovar">Aprovar produto e seguir para o projeto →</button>`;
-  }
-  return { sub:tabs, subKey:cur, desc, body };
+  const P=S.produto, fm=typeof otimFormaAtiva==="function" && otimFormaAtiva(S), otInfo=fm? PR_OT_INFO_FORMA : PR_OT_INFO;
+  const body =
+    RES("Uso do potencial", `<div class="mets pr-pot" id="pot"></div><div class="use" id="compl"></div>`, {aside:`<span id="complTxt"></span>`}) +
+    `<div class="pr-sug"><button type="button" class="btn" data-act="otim" ${OTRUN?"disabled":""}>${OTRUN?"Analisando…":"Sugerir a melhor combinação"}</button><div class="prog" id="otProg" ${OTRUN?"":"hidden"}><i style="width:0"></i></div>
+      ${ADV(prOtimOpcoes(), {key:"otim", label:"Opções", fechar:"Menos"})}</div>` +
+    (OTIM? SEC("Sugestões", `<div class="list" id="otRes">${otimHTML()}</div>${typeof paretoCardHTML==="function"? paretoCardHTML() : ""}`, {key:"pr-otres", open:true, sum:prOtSum(), info:otInfo}) : "") +
+    SEC("Torres", `<div class="list" id="torres"></div>
+      <div class="pr-act"><button type="button" class="btn sm" data-act="addTorre" ${P.torres.length>=4?"disabled":""}>+ Torre</button><button type="button" class="btn sm ghost" data-act="maxPav" title="Sobe todas as torres até o limite de altura ou de CA">Máximo em todas</button>
+      ${ADV((P.torres.length>1? ROW("Disposição", SEG("produto.torreEixo",[["long","ao longo do lote"],["trans","transversais"]],{label:"Disposição das torres"})) : "") +
+        GRP("Pés-direitos") + KV(NUM("produto.peTerreo","Térreo","m",{step:0.1,help:"Pé-direito"})+NUM("produto.peGar","Garagem","m",{step:0.05})+NUM("produto.pe","Andar tipo","m",{step:0.05}),3), {key:"torres"})}</div>`,
+      {key:"pr-torres", open:true, info:"Pavimentos tipo de cada torre. “Máx” sobe a torre até o limite de altura ou de CA. Até 4 torres; com 2 ou mais, escolha a disposição no lote. Pés-direitos em Mais opções."}) +
+    SEC("Unidades por andar", `<div class="pr-lh"><span>Tipologia</span><span class="c" style="margin-right:44px">Por andar</span></div><div class="list" id="mix"></div>
+      <div class="pr-act"><button type="button" class="btn sm" data-act="addMix" ${P.mix.length>=5?"disabled":""}>+ Tipologia</button>
+      ${ADV(ROW(`Sacadas${INFO("Sacada")}`, SEG("produto.sacTipo",[["embutida","embutidas"],["balanco","em balanço"]],{rr:false,label:"Sacadas"})) +
+        KV(NUM("produto.efic","Aproveitamento do andar","%",{pct:true,step:1,help:"Aproveitamento do andar"})), {key:"mix"})}</div>`,
+      {key:"pr-mix", open:true, info:"Unidades de cada andar tipo, iguais em todas as torres. O tamanho do andar sai da área privativa das unidades ÷ aproveitamento do andar (na forma desenhada, o andar é o desenho e vale o aproveitamento real da planta). Toque numa tipologia para editar nome, área, preço e sacada."}) +
+    SEC("Garagem e térreo", KV(STP("produto.subsolos",0,6,"Subsolos",{sub:""})+STP("produto.garAcima",0,8,"Garagens elevadas",{sub:""}))+
+      SW("produto.garTerOn","Garagem no térreo, atrás do hall e do lazer")+`<div class="pr-act"><div class="fsub" id="sub-terreo" style="flex:1;min-width:0"></div>`+
+      ADV(SLD("produto.lojaTerreo","Lojas na frente do térreo",0,0.8,0.05,"%",{pct:true,sub:""})+SW("produto.vagasFrente","Vagas externas na frente (clientes das lojas)")+SW("produto.atico","Ático técnico (reservatório, máquinas)"), {key:"emb"})+`</div>`,
+      {key:"pr-emb", open:true, sum:prEmbSum(), info:"Embasamento"}) +
+    (typeof blcSecHTML==="function"? blcSecHTML() : "") +   // forma das torres (src/ui/blocos.js), com "Torre ocupa a área desenhada"
+    SEC("Áreas comuns e lazer", `<div class="pr-lzm"><div class="mets" id="lzMets"></div><div class="use" id="lzCap"></div></div><div class="list" id="lzList"></div>
+      <div class="row sb"><button type="button" class="btn sm" data-act="prMenu" id="lzAddBtn" aria-expanded="${PR.menu}" aria-controls="lzMenu">+ Ambiente</button><span class="note" id="lzSum2"></span></div>
+      <div class="pr-menu" id="lzMenu" role="menu" aria-label="Modelos de ambiente" ${PR.menu?"":"hidden"}></div>`,
+      {key:"pr-lz", info:"Diga o que o empreendimento terá e onde. O hall e o lazer do térreo empurram a garagem para os fundos; a laje do embasamento, o pavimento de lazer e o rooftop entram no 3D, nas plantas e nos custos. Toque num ambiente para editar."}) +
+    SEC("Coberturas", SW("produto.cob.on","Unidades de cobertura no último andar",{rr:true})+(P.cob.on? KV(NUM("produto.cob.qtd","Por torre","un",{int:true,min:1,step:1})+NUM("produto.cob.area","Área privativa","m²",{step:1,help:"Duplex"})+NUM("produto.cob.preco","Preço","R$/m²",{step:50,wide:true})) : ""),
+      {key:"pr-cob", sum:P.cob.on? "ligadas" : "desligadas", info:"Unidades maiores no último andar de cada torre. Maior que o andar, vira duplex com pavimento superior."}) +
+    SEC("Quadro de áreas", `<table class="tbl" id="quadro"></table>`, {key:"pr-quadro"});
+  return { desc:"Torres, unidades, garagem e lazer — dentro das regras.", body };
 };
 function prEmbSum(){ const P=S.produto; return `${P.subsolos} subsolo${P.subsolos!==1?"s":""}${P.garAcima?` + ${P.garAcima} elevada${P.garAcima>1?"s":""}`:""} · lojas ${pct(P.lojaTerreo,0)}${P.garTerOn?" · garagem no térreo":""}` }
 
+/* resumo da seção Sugestões e aviso de prejuízo / margem abaixo da meta / nenhuma opção (contrato em src/optim.js: OTIM.semLucro, .fecha, .semOpcao) */
+function prOtSum(){ const O=OTIM; if(!O) return ""; const r=O.res[0];
+  return !r? `<span class="pr-bad">nenhuma opção</span>` : r.semLucro? `<span class="pr-bad">sem lucro</span> · ${mi(r.lucro)}` : `${mi(r.lucro)} · margem ${pct(r.margem,0)}` }
+function prOtAviso(O){
+  if(!O) return "";
+  if(O.semOpcao) return `<div class="pr-av bad" role="status"><b>Nenhuma combinação fecha as regras com as vagas exigidas</b> — ${esc(O.semOpcao.motivo)}.</div>`;
+  const fx=O.semLucro || O.fecha; if(!fx || !O.res.length) return "";
+  const pr=v=>`R$ ${nf(Math.ceil(v/50)*50,0)}/m²`, temT=fx.terrenoAtual>0 || fx.terrenoPct>0, qual=q=>q? ` <i>(opção ${q+1})</i>` : "";
+  const k=[`<span>Preço médio hoje <b>${pr(fx.precoAtual)}</b></span>`,
+    O.semLucro && fx.precoZero? `<span>Margem 0 <b>${pr(fx.precoZero)}</b>${qual(fx.opcaoZero)}</span>` : "",
+    fx.precoMeta? `<span>Meta de ${pct(fx.meta,0)} <b>${pr(fx.precoMeta)}</b>${qual(fx.opcaoMeta)}</span>` : "",
+    O.semLucro && temT && fx.terrenoZero>0? `<span>Terreno até <b>${mi(fx.terrenoZero)}</b></span>` : "",
+    !O.semLucro && temT && fx.terrenoMeta>0? `<span>Terreno p/ meta <b>${mi(fx.terrenoMeta)}</b></span>` : ""].filter(Boolean).join("");
+  return O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim; fecha a conta com:<div class="k">${k}</div></div>`
+    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção. Chega à meta com:<div class="k">${k}</div></div>`;
+}
 function otimHTML(){
-  const O=OTIM; if(!O.res.length) return `<p class="note">${O.forma? "Nenhuma combinação preenche a forma desenhada dentro das regras e das vagas. Ajuste a forma ou o mix." : "Nenhuma combinação atende às regras e às vagas exigidas."}</p>`;
+  const O=OTIM; if(!O.res.length) return prOtAviso(O) || `<p class="note">${O.forma? "Nenhuma combinação preenche a forma desenhada dentro das regras e das vagas. Ajuste a forma ou o mix." : "Nenhuma combinação atende às regras e às vagas exigidas."}</p>`;
   const cur=window._last.f, ob=OBJ[O.obj][2];
-  const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0?"Melhor opção":"Opção "+(k+1)} · ${MIX_PRESETS[r.pk].nome}</b><button type="button" class="btn sm ${k===0?"pri":""}" data-act="otApply" data-i="${k}">Aplicar</button></div>
+  const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0? (r.semLucro? "Menos ruim" : "Melhor opção") : "Opção "+(k+1)} · ${MIX_PRESETS[r.pk].nome}</b><button type="button" class="btn sm" data-act="otApply" data-i="${k}">Aplicar</button></div>
     <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas${r.forma?` · ${r.dev>0.005?"unidades "+pct(r.dev,0)+" maiores que o mix":"preenche a forma"}`:""}</div>
-    <div class="rm"><span>Lucro<b>${mi(r.lucro)}</b></span><span>Margem s/ VGV<b>${pct(r.margem)}</b></span><span>TIR<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
+    <div class="rm"><span>Lucro<b${r.lucro<0?' class="pr-bad"':""}>${mi(r.lucro)}</b></span><span>Margem<b>${pct(r.margem)}</b></span><span>Retorno<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
   const L=O.res.slice(0,4);
-  return card(L[0],0) + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
-    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}${O.forma?" · forma desenhada fixa":""}</p><p class="note">Hoje: lucro ${mi(cur.lucro)} · margem s/ VGV ${pct(cur.margemVGV)}</p>`;
+  return prOtAviso(O) + card(L[0],0) + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
+    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}${O.forma?" · forma desenhada fixa":""}${O.terrenoPct? ` · terreno a ${pct(O.terrenoPct,0)} do VGV`:""} · hoje: lucro ${mi(cur.lucro)}, margem ${pct(cur.margemVGV)}</p>`;
 }
 
 /* ---------------- partes vivas ---------------- */
 function prTorresLive(m){
   const P=S.produto, n=P.torres.length;
   setHTML("torres", P.torres.map((tw,i)=>{ const t=m.T[i]||{}, nome=`Torre ${i+1}`;
-    return `<div class="pr-row${t.fit===false?" warn":""}"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b></div>
+    return `<div class="pr-row${t.fit===false?" warn":""}"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b><span>pavimentos tipo</span></div>
       ${prStp(`produto.torres.${i}.pav`, tw.pav, 1, 80, `Pavimentos da ${nome.toLowerCase()}`)}
       <button type="button" class="pr-ic lbl" data-act="maxT" data-i="${i}" title="Máximo de pavimentos para esta torre" aria-label="Máximo de pavimentos para a ${nome.toLowerCase()}">Máx</button>${n>1? prRm("rmT", i, nome) : ""}</div>
       <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false && !t.desenhada? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : m.torOcupa||t.desenhada? `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar ${t.desenhada?"na forma desenhada":"no contorno desenhado"}${t.eficReal!=null? ` · eficiência real ${pct(t.eficReal,0)} (informada ${pct(P.efic,0)})` : ""} · unidades a ${pct(t.r||0,0)} do mix` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
@@ -23401,8 +23801,7 @@ function prMixLive(m){
       ${prStp(`produto.mix.${i}.qtd`, u.qtd, 0, 20, `Unidades por andar — ${nome}`)}${prChev("mix", i, open, nome)}</div>
       ${open? `<div class="pr-rb">${KV(TXT(`produto.mix.${i}.nome`,"Nome",{fx:"upd"})+NUM(`produto.mix.${i}.area`,"Área privativa","m²",{step:1,min:10,help:"Área privativa"})+NUM(`produto.mix.${i}.preco`,"Preço","R$/m²",{step:50,min:0})+NUM(`produto.mix.${i}.sac`,"Sacada","m²",{step:0.5,min:0,help:"Sacada"}))}
         <div class="pr-rf"><span class="fsub">${ur.n||0} unidades · ${mi((ur.area||0)*u.preco)}</span>${P.mix.length>1? prRm("rmMix", i, nome, "Remover tipologia") : ""}</div></div>` : `<div class="pr-rs">${ur.n||0} unidades no total · ${mi((ur.area||0)*u.preco)}</div>`}</div>` }).join(""));
-  const ms=document.getElementById("mixSum"); if(ms) ms.textContent=`${m.mixUn} un · ${m2(m.mixPriv)} priv. → ${m2(m.mixPriv/P.efic)}/andar`;
-  setSum("pr-mix", `${P.mix.length} tipologia${P.mix.length>1?"s":""} · ${m.mixUn} un/andar`);
+  setSum("pr-mix", `${m.mixUn} un · ${m2(m.mixPriv)} → ${m2(m.mixPriv/P.efic)}/andar`);
 }
 function prLazerLive(m){
   const P=S.produto, LZ=m.lzLay||{miss:[]}, miss=new Set(LZ.miss), it=(P.lazer&&P.lazer.itens)||[], lz=m.lz, nT=P.torres.length;
@@ -23420,27 +23819,42 @@ function prLazerLive(m){
   setHTML("lzMenu", Object.entries(LZ_LOCAIS).map(([k,l])=>{ const ps=LZ_PRESETS.map((p,i)=>[p,i]).filter(([p])=>p.local===k && !used.has(p.nome)); return ps.length? GRP(l)+ps.map(([p,i])=>`<button type="button" class="pr-mi" role="menuitem" data-act="lzAdd" data-i="${i}">${p.nome}<span>${m2(p.area)}${p.desc?" · descoberto":""}</span></button>`).join("") : "" }).join("")
     + GRP("Outro") + `<button type="button" class="pr-mi" role="menuitem" data-act="lzAdd" data-i="-1">Ambiente em branco<span>30 m² · Térreo</span></button>`);
   const tot=hall+lz.c+lz.d;
-  const pill=document.getElementById("lzPill"); if(pill) pill.innerHTML = miss.size? `<span style="color:var(--bad)">${miss.size} não coube${miss.size>1?"ram":""}</span>` : `${lz.n} ambiente${lz.n!==1?"s":""}`;
   setHTML("lzMets", `<div class="met"><div class="l">Total do programa</div><div class="v">${m2(tot)}</div><div class="s">com hall de ${m2(hall)}</div></div>
     <div class="met"><div class="l">Equipamentos</div><div class="v">≈ ${mi(m.lzCusto)}</div><div class="s">acabamento e mobiliário</div></div>`);
   const T=m.ter||{}, roofFree=Math.max(1,m.embA-m.T.reduce((s,t)=>s+t.A,0)), plate=m.T[0]?m.T[0].A:1;
   const cap=[["Térreo", T.HT||0, P.garTerOn? (T.HT||0)+m.gTer : T.hallDisp||1], ["Laje do emb.", lz.emb.c+lz.emb.d, roofFree], ["Pav. de lazer", lz.pav.c+lz.pav.d, plate*0.8], ["Rooftop", lz.cob.c+lz.cob.d, plate*0.85]].filter(r=>r[1]>0);
   setHTML("lzCap", cap.map(([l,a,c])=>useRow(l, a/Math.max(1,c), `${m2(a)}`, a>c?"bad":"ok")).join("") + (m.lzExtraA>0? `<p class="note">Fora do térreo: ${m2(m.lzExtraA)} construídos${S.regras.ncTerreo?" (não computáveis)":""}</p>` : ""));
   const s2=document.getElementById("lzSum2"); if(s2) s2.textContent=`${it.length} ambiente${it.length!==1?"s":""} · ${m2(lz.c+lz.d)}`;
-  setSum("pr-lz", `${it.length} ambientes · ${m2(tot)}`);
+  setSum("pr-lz", `${it.length} ambiente${it.length!==1?"s":""} · ${m2(tot)}${miss.size? ` · <span class="pr-bad">${miss.size} não coube${miss.size>1?"ram":""}</span>` : ""}`);
+}
+/* conformidade com as regras: rgConformidade(m) (pacote P2, src/ui/etapa-terreno.js) quando existe — linhas [rótulo, fração, texto, estado]
+   ou objetos {l|nome|rot, v|frac, txt|t, st|estado}; senão as mesmas linhas a partir de status() */
+function prConfLinhas(m){
+  if(typeof rgConformidade==="function"){ try{ const r=rgConformidade(m), L=Array.isArray(r)? r : r && (r.rows||r.linhas);
+    if(Array.isArray(L) && L.length) return L.map(x=>Array.isArray(x)? x : [x.l??x.nome??x.rot??"", +(x.v??x.frac??0), x.txt??x.t??"", x.st??x.estado??"ok"]) }catch(e){ console.error("[produto] rgConformidade", e) } }
+  const R=S.regras, s=status(m,S), tor=m.T.reduce((a,t)=>a+(t.Aproj||t.A),0), hL=m.hLim ?? R.hMax;
+  return [
+    ["Aproveitamento", m.CA/Math.max(1e-9,R.caMax), `${nf(m.CA,2)} / ${nf(R.caMax,2)}`, s.ca],
+    ["Altura", m.H/Math.max(1e-9,hL), `${nf(m.H,1)} / ${nf(hL,0)} m`, s.h],
+    ["Ocupação torres", tor/Math.max(1,R.toTorre*m.A), `${pct(tor/Math.max(1,m.A),0)} / ${pct(R.toTorre,0)}`, tor>R.toTorre*m.A+1?"bad":"ok"],
+    ["Ocupação emb.", m.TO/Math.max(1e-9,R.toEmb), `${pct(m.TO,0)} / ${pct(R.toEmb,0)}`, m.TO>R.toEmb+1e-6?"bad":"ok"],
+    ["Permeável", Math.min(1,m.perm/Math.max(1e-9,R.permeab||1e-9)), `${pct(m.perm,0)} / ${pct(R.permeab,0)}`, s.perm],
+    ["Vagas", m.vagas/Math.max(1,m.vagasReq), `${m.vagas} / ${m.vagasReq}`, s.vg],
+    ["Menor unidade", Math.min(1,m.minApto/Math.max(1,R.aptoMin)), `${nf(m.minApto,0)} / ${nf(R.aptoMin,0)} m²`, s.apto],
+    ...(typeof formaRows==="function"? formaRows(m) : [])];
 }
 STEP_LIVE.produto = (m,f)=>{
-  const P=S.produto, R=S.regras, cur=subAtual("produto");
-  if(cur==="otim"){ if(typeof paretoLive==="function") paretoLive(); return }
-  if(cur==="lazer"){ prLazerLive(m); return }
-  const po=potencial(S,m);
-  const lim=document.getElementById("potLim"); if(lim) lim.textContent = po.limita==="ca"? "limite: coeficiente" : "limite: altura";
-  setHTML("pot", `<div class="met big"><div class="l">Privativo possível${potInfoHTML(po)}<span class="pill ${po.uso.priv>1?"bad":"ok"}" title="Parte do potencial que o estudo usa">${pct(po.uso.priv,0)} em uso</span></div><div class="v">${m2(po.priv)}</div><div class="s">≈ ${po.un} un · ${TERMO("VGV")} ≈ ${mi(po.vgv)}</div></div>
-      <div class="met"><div class="l">Computável máx.</div><div class="v">${m2(po.compMax)}</div><div class="s">${TERMO("CA")} ${nf(R.caMax,1)} × ${m2(m.A)}</div></div>
-      <div class="met"><div class="l">Pavimentos tipo</div><div class="v">até ${po.pavH}</div><div class="s">altura de ${nf(po.hLim,0)} m</div></div>`);
-  const u=(l,v)=>`<div><span>${l}<b style="${v>1?"color:var(--bad)":""}">${pct(v,0)}</b></span>${bar(v, v>1?"bad":"")}</div>`;
-  setHTML("potUso", u("CA usado",po.uso.ca)+u("Altura",po.uso.h)+u("Ocupação",po.uso.to)+potNotaHTML(po));
-  prTorresLive(m); prMixLive(m); if(typeof blcLive==="function") blcLive(m);
+  const P=S.produto, R=S.regras;
+  // uso do potencial: privativo usado / possível, unidades, vagas
+  const po=potencial(S,m), vOk=m.vagas>=m.vagasReq;
+  setHTML("pot", `<div class="met"><div class="l">Privativo${potInfoHTML(po)}<span class="pill ${po.uso.priv>1?"bad":"ok"}" title="Parte do potencial do terreno que o estudo usa (limite: ${po.limita==="ca"? "aproveitamento" : "altura"})">${pct(po.uso.priv,0)}</span></div><div class="v">${m2(m.priv)}</div><div class="s">de ${m2(po.priv)}</div></div>
+    <div class="met"><div class="l">Unidades</div><div class="v">${nf(m.units)}</div><div class="s">≈ ${nf(po.un)} possíveis</div></div>
+    <div class="met"><div class="l">Vagas</div><div class="v${vOk?"":" pr-bad"}">${m.vagas}<span style="font-size:13px;color:var(--muted);font-weight:500"> / ${m.vagasReq}</span></div><div class="s">exigidas</div></div>`);
+  const rows=prConfLinhas(m), fora=rows.filter(r=>r[3]==="bad").length;
+  setHTML("compl", rows.map(r=>useRow(r[0],r[1],r[2],r[3]==="ok"?"ok":r[3])).join(""));
+  const ct=document.getElementById("complTxt"); if(ct) ct.innerHTML = fora? `<span class="pr-bad">${fora} fora das regras</span>` : `<span class="pr-ok">dentro das regras</span>`;
+  prTorresLive(m); prMixLive(m); prLazerLive(m); if(typeof blcLive==="function") blcLive(m);
+  if(OTIM && typeof paretoLive==="function") paretoLive();
   setSub("produto.subsolos",`${m2(m.subA)} · ${m.gar&&m.gar.s1? m.gar.s1.count+" vg no 1º" : Math.floor(m.subA/R.m2Vaga)+" vg (est.)"}`);
   setSub("produto.garAcima",`${m2(m.embA)} · ${m.gar&&m.gar.g1? m.gar.g1.count+" vg no 1º" : Math.floor(m.embA/R.m2Vaga)+" vg (est.)"}`);
   setSub("terreo", `${P.garTerOn? `garagem ${m2(m.gTer)} · ${m.gar&&m.gar.ter? m.gar.ter.count : Math.floor(m.gTer/R.m2Vaga)} vagas · `:""}hall e lazer ${m2(m.hallA)} · acesso de veículos ${m2(m.driveA||0)}`);
@@ -23485,8 +23899,18 @@ Object.assign(ACT,{
   lzRm: b=>{ const i=+b.dataset.i, x=S.produto.lazer.itens[i]; if(!x) return; S.produto.lazer.itens.splice(i,1); PR.lz=-1; update(); toast(`${x.nome||"Ambiente"} removido — Ctrl+Z desfaz`) },
   lzDesc: b=>{ const x=S.produto.lazer.itens[+b.dataset.i]; if(!x) return; x.desc=!x.desc; update() },
   otk: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; b.setAttribute("aria-pressed",S.otim[k]); save() },
-  otim: ()=>{ OTRUN=true; renderTab();
-    otimizar(S.otim, p=>{ const e=document.querySelector("#otProg i"); if(e) e.style.width=(p*100).toFixed(0)+"%" }, ()=>{ OTRUN=false; if(TAB==="produto") renderTab(); toast(OTIM.res.length? "Opções prontas — a melhor está no topo" : "Nenhuma combinação viável") }) },
+  // "Sugerir a melhor combinação": um caminho só (otimRodar: Worker ou página); "Cancelar análise" = calcCancel (calcJobUI troca o botão)
+  otim: async ()=>{
+    if(OTRUN || (typeof CALC!=="undefined" && CALC.jobAtivo)) return;
+    // otimRodar marca CALC.jobAtivo antes do primeiro await: o renderTab já desenha "Cancelar análise" (calcJobUI)
+    const job=otimRodar(clone(S.otim), p=>{ const e=document.querySelector("#otProg i"); if(e) e.style.width=(p*100).toFixed(0)+"%" });
+    OTRUN=true; renderTab();
+    try{
+      const r=await job;
+      OTRUN=false; if(TAB==="produto") renderTab();
+      toast(!r.res.length? "Nenhuma combinação viável — veja o motivo em Sugestões" : r.semLucro? "Nenhuma combinação dá lucro — veja o que fecharia a conta" : "Sugestões prontas — a melhor está no topo");
+    }catch(e){ OTRUN=false; if(TAB==="produto") renderTab();
+      if(!/cancelado|ocupado/.test(e && e.message||"")){ console.error("[produto] otimizador", e); toast("Não foi possível sugerir agora. Tente de novo.") } } },
   otApply: b=>{ const r=OTIM&&OTIM.res[+b.dataset.i]; if(!r) return; aplicarOtim(r); PR.mix=-1; renderTab(); fit3d(); toast("Opção aplicada — Ctrl+Z desfaz") },
   addTorre: ()=>{ const T=S.produto.torres; if(T.length<4){ T.push({pav:T.at(-1)?.pav||8}); if(typeof blcTorreNova==="function") blcTorreNova(T.length-1); renderTab(); toast(`Torre ${T.length} adicionada`) } },
   rmT: b=>{ const T=S.produto.torres, i=+b.dataset.i; if(T.length<2 || !T[i]) return; T.splice(i,1); if(typeof blcTorreRemovida==="function") blcTorreRemovida(i); renderTab(); toast(`Torre ${i+1} removida — Ctrl+Z desfaz`) },
@@ -23496,7 +23920,8 @@ Object.assign(ACT,{
     T[i].pav=best||keep; update(); toast(best? `Torre ${i+1}: ${best} pavimentos` : `Torre ${i+1}: nenhum pavimento a mais cabe`) },
   addMix: ()=>{ const X=S.produto.mix; if(X.length<5){ X.push({nome:"Studio",area:35,qtd:1,preco:12000,sac:3}); PR.mix=X.length-1; update(); requestAnimationFrame(()=>prRelista("mix", PR.mix)) } },
   rmMix: b=>{ const X=S.produto.mix, i=+b.dataset.i; if(X.length<2 || !X[i]) return; const nome=X[i].nome; X.splice(i,1); PR.mix=-1; update(); toast(`${nome||"Tipologia"} removida — Ctrl+Z desfaz`) },
-  aprovar: ()=>{ saveScenario(null,true); goStep("projeto","gar"); toast("Produto aprovado e salvo em Cenários") },
+  // "Guardar como alternativa" (menu "…" do topo e Entrega › Estudos): grava o estudo como cenário, sem sair da etapa
+  aprovar: ()=>{ saveScenario(null,true); toast("Guardado como alternativa — compare em Entrega") },
 });
 
 /* ================= checklist do estudo e próximo passo — interface (UX v3 §3.3 e §6.3) =================

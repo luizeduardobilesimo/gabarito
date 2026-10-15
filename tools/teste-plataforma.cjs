@@ -48,7 +48,7 @@ async function travamento(p, fn) {
   ok(igual.eq, 'números do Worker = números do cálculo na página', igual.eq ? igual.a : igual);
   // arrastar um slider: a página não trava
   await step(p, 'produto');
-  await p.evaluate(() => { SUBX.produto = 'prod'; renderTab(); const d = document.querySelector('#tabbody details[data-key="pr-emb"]'); if (d) d.open = true }); await p.waitForTimeout(200);   // o slider de lojas fica em "Embasamento e garagem"
+  await p.evaluate(() => { SUBX.produto = 'prod'; renderTab(); const d = document.querySelector('#tabbody details[data-key="pr-emb"]'); if (d) { d.open = true; const a = d.querySelector('.adv .advb'); if (a && a.hidden) d.querySelector('.adv .advbtn').click() } }); await p.waitForTimeout(200);   // o slider de lojas fica em "Garagem e térreo" › Mais opções (UX v3)
   const sl = await p.$('#tabbody input[type=range][data-fx="upd"]');
   if (sl) {
     const box = await sl.boundingBox();

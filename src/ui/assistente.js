@@ -339,7 +339,8 @@ function assProg(p, fase){
 }
 /* otimizador com o estado explícito (não toca em S): otimRodar do P3 (se aceitar ctx), Worker "job" ou a página */
 async function assOtimizar(st, onProg){
-  const opts={ ...clone(st.otim||{}), obj:"lucro", torres:true, tipologias:false, unidades:true, mc:false };
+  const opts={ ...clone(st.otim||{}), obj:"lucro", torres:true, tipologias:false, unidades:true, mc:false,
+    terrenoPct: st.fin.terreno>0? 0 : ASS_TERRENO_PCT };   // P3: sem preço do terreno, o otimizador já conta o terreno estimado (12% do VGV de cada combinação)
   if(typeof otimRodar==="function" && otimRodar.length>=3) return otimRodar(opts, onProg, {st, m:{}});
   if(typeof calcOn==="function" && calcOn() && typeof calcJob==="function" && !CALC.jobAtivo){
     const a = CALC.jobAtivo = {tipo:"ass", prog:0}; ASS.job=a;
@@ -350,7 +351,7 @@ async function assOtimizar(st, onProg){
   const keep=OTIM; try{ return await otimizar(opts, onProg, null, {st, m:{}}) } finally { OTIM=keep }
 }
 function assCancelar(){
-  ASS.cancel=true; if(ASS.job && typeof calcCancelar==="function") calcCancelar();
+  ASS.cancel=true; if(typeof otimCancelar==="function") otimCancelar(); if(ASS.job && typeof calcCancelar==="function") calcCancelar();
   ASS.rodando=false; ASS.passo=2; assRender(); toast("Geração cancelada");
 }
 const assEspera = ms=>new Promise(r=>setTimeout(r, ms));
@@ -364,9 +365,9 @@ async function assGerar(){
     if(!semLote){ r=await assOtimizar(st, p=>{ if(!ASS.cancel) assProg(0.04+0.92*p) }); if(ASS.cancel) return; best=r && r.res && r.res[0] || null }
     assProg(0.97, 3);
     const fin=clone(st); let motivo="", estimado=false;
-    if(best){ aplicarOtim(best, fin) }
+    if(best){ aplicarOtim(best, fin); if(r.semLucro && typeof otimFechaTxt==="function") motivo=otimFechaTxt(r.semLucro, true) }   // P3: sem lucro → aviso com o que fecharia a conta
     else { const n=maxPav(fin); fin.produto.torres=[{pav:Math.max(1,n)}];
-      if(!semLote) motivo = n>0? "Nenhuma combinação atendeu às regras e às vagas. Aplicamos o máximo de andares." : "O lote é pequeno demais para as regras escolhidas." }
+      if(!semLote) motivo = r && r.semOpcao? `Nenhuma combinação fecha: ${r.semOpcao.motivo}. Aplicamos o máximo de andares.` : n>0? "Nenhuma combinação atendeu às regras e às vagas. Aplicamos o máximo de andares." : "O lote é pequeno demais para as regras escolhidas." }
     if(!(fin.fin.terreno>0)){ let vgv=best && best.vgv; if(!vgv){ try{ const m=compute(fin,{layouts:false, quick:true}); vgv=finance(fin,m).vgv }catch(e){ vgv=0 } }
       fin.fin.terreno=assTerrenoEstimado(vgv); estimado=fin.fin.terreno>0 }
     await assEspera(200); if(ASS.cancel) return;

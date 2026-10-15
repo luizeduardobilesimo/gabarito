@@ -1,12 +1,17 @@
-/* ================= etapa Produto (UX v2, ver docs/UX.md) =================
-   Sub-abas: Produto (potencial, torres, mix, embasamento, coberturas, quadro) · Lazer (hall + ambientes) · Otimizar
-   (objetivo, o que variar, gerar opções, resultados e trocas — o gráfico de Pareto fica em src/ui/pareto.js).
+/* ================= etapa Produto: "O que construir" (UX v3 §4.2, ver docs/UX-v3.md) =================
+   Uma tela só, sem sub-abas, de cima para baixo:
+   RES "Uso do potencial" (#pot: privativo usado/possível, unidades, vagas · #compl: conformidade com as regras, rgConformidade(m) do
+   pacote P2 quando existe, senão status()) → botão "Sugerir a melhor combinação" (data-act=otim, #otProg; vira "Cancelar análise"
+   por calcJobUI) com as opções em "Mais opções" → [quando há resultado] Sugestões (otimHTML + aviso de prejuízo/meta + "Trocas entre
+   critérios", src/ui/pareto.js) → Torres (+ disposição e pés-direitos em Mais opções) → Unidades por andar (+ sacadas e aproveitamento
+   do andar) → Garagem e térreo → [fechadas] Forma das torres (src/ui/blocos.js, com "Torre ocupa a área desenhada") · Áreas comuns e
+   lazer · Coberturas · Quadro de áreas.
    Listas (torres, mix, lazer) em linhas compactas; a edição detalhada abre dentro da linha (PR.mix / PR.lz / PR.hall).
    Linha aberta, menu de modelos e o "armar" da remoção ficam fora de S: não entram no desfazer.
-   O otimizador roda no Worker (src/ui/calcworker.js troca ACT.otim e põe o "Cancelar" no botão [data-act=otim]). */
+   O otimizador tem um caminho só: otimRodar (src/ui/calcworker.js), no Worker ou na página. ACT.aprovar = "Guardar como alternativa"
+   (salva um cenário; o botão sai do corpo e vai para o menu "…" do topo e para Entrega › Estudos). */
 let OTRUN=false;
 const PR = { mix:-1, lz:-1, hall:false, menu:false, arm:null, armT:0 };
-const PR_SUBS = [["prod","Produto"],["lazer","Lazer"],["otim","Otimizar"]];
 (function(){ const s=document.createElement("style"); s.textContent=`
 .pr-lh{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:0 0 0 12px;font-family:var(--f-display);font-variation-settings:"wdth" 118;font-size:9.5px;font-weight:650;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .pr-lh .c{flex:none;width:120px;text-align:center}
@@ -55,7 +60,33 @@ button.pr-tx:hover b{color:var(--accent)}
 .pr-more>summary::after{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .18s}
 .pr-more[open]>summary::after{transform:rotate(-135deg) translateY(-1px)}
 .pr-more>.list{margin-top:8px}
-.pr-apr{margin-top:2px}
+.mets.pr-pot{grid-template-columns:1.25fr 1fr 1fr;gap:6px}
+.pr-pot .met{padding:8px 10px}
+.pr-pot .met .l{font-size:11px}
+.pr-pot .met .v{font-size:17px}
+.pr-pot .met .s{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pr-pot .met .l .pill{margin-left:auto;font-size:10px;padding:0 6px}
+#compl{gap:4px;margin-top:10px}
+#compl .ur{grid-template-columns:100px 1fr 78px;font-size:11.5px}
+.pr-ok{color:var(--ok)}.pr-bad{color:var(--bad)}
+.pr-sug{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin:2px 0 4px}
+.pr-sug>.btn{grid-column:1;grid-row:1}
+.pr-sug .advbtn{grid-column:2;grid-row:1}
+.pr-sug>.prog{grid-row:2}
+.pr-sug .advb{grid-row:3}
+.pr-sug>.prog,.pr-sug .advb{grid-column:1/-1}
+.pr-sug .adv,.pr-act .adv{display:contents}
+.pr-act{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pr-act .advbtn{margin-left:auto}
+.pr-act .advb{flex-basis:100%}
+.pr-av{border-radius:var(--r);padding:9px 11px;font-size:12px;line-height:1.45;color:var(--ink);background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent)}
+.pr-av.bad{background:var(--bad-soft);border-color:color-mix(in srgb,var(--bad) 30%,transparent)}
+.pr-av b{font-weight:600}
+.pr-av .k{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.pr-av .k b{color:var(--ink);font-weight:500}
+.pr-av .k i{font-style:normal}
+.pr-lzm{display:grid;gap:10px}
+@media (max-width:520px){ .mets.pr-pot{grid-template-columns:1.2fr 1fr 1fr} .pr-pot .met{padding:8px 9px} .pr-pot .met .v{font-size:16px} }
 `; document.head.appendChild(s) })();
 
 const PR_IC = {
@@ -76,74 +107,83 @@ function prDesarma(){ clearTimeout(PR.armT); const k=PR.arm; PR.arm=null; if(!k)
 const prHallAuto = n => hallSocial({produto:{lazer:{hall:0}}}, n);
 
 /* ---------------- painel ---------------- */
+/* opções do "Sugerir": objetivo, o que variar e critérios extras (ficam em Mais opções, embaixo do botão) */
+function prOtimOpcoes(){
+  const P=S.produto, O=S.otim, chip=(k,l)=>`<button type="button" class="chip" data-act="otk" data-k="${k}" aria-pressed="${!!O[k]}">${l}</button>`;
+  const extra=typeof paretoChipsHTML==="function"? paretoChipsHTML() : "";
+  const fm=typeof otimFormaAtiva==="function" && otimFormaAtiva(S), nd=fm? (S.blocos.torres||[]).filter(t=>t && (t.blocos||[]).some(blcValido)).length : 0;
+  return `<div class="row sb" style="flex-wrap:nowrap"><span class="fl" style="flex:none">Maximizar${INFO("Lucro = receita líquida − custos. Margem = lucro ÷ VGV (a conta do mercado). Retorno = TIR, o rendimento anual do fluxo de caixa. VPL = valor presente do fluxo, descontado pela TMA. Em qualquer objetivo, as combinações com lucro e margem na meta vêm antes.","os objetivos")}</span>${SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","Retorno"],["vpl","VPL"]],{fx:"save",rr:false,label:"Objetivo"})}</div>
+    ${fm? GRP("Fica fixo")+`<div class="chips" id="otFixo"><span class="pill ok">Forma desenhada</span><span class="pill">${P.torres.length} torre${P.torres.length>1?"s":""}</span>${nd<P.torres.length?`<span class="pill">${P.torres.length-nd} automática${P.torres.length-nd>1?"s":""}</span>`:""}</div>` : ""}
+    ${GRP("O que variar")}<div class="chips">${(fm? "" : chip("torres","Nº de torres"))+chip("tipologias","Tipologias")+chip("unidades","Unidades por andar")}${fm? `<span class="pill" title="Pavimentos (o último bloco estica), subsolos e garagens elevadas sempre variam">pavimentos · subsolos · garagens</span>` : ""}</div>
+    ${extra? GRP("Comparar também")+`<div class="chips">${extra}</div>` : ""}`;
+}
+const PR_OT_INFO = "Testa número de torres, tipologias, unidades por andar, pavimentos, subsolos e garagens — sempre dentro das regras. As melhores são conferidas com o layout real da garagem, que sobe ou desce andares e subsolos até fechar as vagas. Combinações com lucro e margem na meta vêm antes; se nenhuma dá lucro, aparece a menos ruim e o que fecharia a conta. “Aplicar” troca torres, unidades, subsolos e garagens do estudo — Ctrl+Z desfaz.";
+const PR_OT_INFO_FORMA = "Com a forma desenhada, o número de torres e os blocos ficam como você fez. A sugestão escolhe tipologias e unidades por andar que preenchem o bloco com as unidades no tamanho do mix (até 10% maiores), o total de andares (o último bloco estica, dentro do gabarito e do CA), subsolos e garagens elevadas. As melhores são conferidas com o layout real da garagem. “Aplicar” troca só pavimentos, unidades, subsolos e garagens — Ctrl+Z desfaz.";
 STEP_R.produto = ()=>{
-  const P=S.produto, O=S.otim;
-  const tabs=SUBTABS("produto", PR_SUBS), cur=subAtual("produto");
-  let body="", desc="";
-  if(cur==="lazer"){
-    desc="Ambientes comuns e onde cada um fica.";
-    body =
-      RES("Programa de lazer", `<div class="mets" id="lzMets"></div><div class="use" id="lzCap"></div>`, {aside:`<span id="lzPill"></span>`}) +
-      SEC("Ambientes", `<div class="list" id="lzList"></div>
-        <div class="row sb"><button type="button" class="btn sm" data-act="prMenu" id="lzAddBtn" aria-expanded="${PR.menu}" aria-controls="lzMenu">+ Ambiente</button><span class="note" id="lzSum2"></span></div>
-        <div class="pr-menu" id="lzMenu" role="menu" aria-label="Modelos de ambiente" ${PR.menu?"":"hidden"}></div>`,
-        {key:"pr-lz", open:true, info:"Diga o que o empreendimento terá e onde. O hall e o lazer do térreo empurram a garagem para os fundos; a laje do embasamento, o pavimento de lazer e o rooftop entram no 3D, nas plantas e nos custos. Toque num ambiente para editar."});
-  } else if(cur==="otim"){
-    desc="Testa combinações dentro das regras e mostra as melhores.";
-    const chip=(k,l)=>`<button type="button" class="chip" data-act="otk" data-k="${k}" aria-pressed="${!!O[k]}">${l}</button>`;
-    const extra=typeof paretoChipsHTML==="function"? paretoChipsHTML() : "";
-    const fm=typeof otimFormaAtiva==="function" && otimFormaAtiva(S), nd=fm? (S.blocos.torres||[]).filter(t=>t && (t.blocos||[]).some(blcValido)).length : 0;
-    body =
-      SEC("Gerar opções", `<div class="row sb" style="flex-wrap:nowrap"><span class="fl" style="flex:none">Maximizar${INFO("Lucro = receita líquida − custos. Margem = lucro ÷ VGV (a conta do mercado). TIR = rendimento anual do fluxo de caixa. VPL = valor presente do fluxo, descontado pela TMA.","os objetivos")}</span>${SEG("otim.obj",[["lucro","Lucro"],["margem","Margem"],["tir","TIR"],["vpl","VPL"]],{fx:"save",rr:false,label:"Objetivo"})}</div>
-        ${fm? GRP("Fica fixo")+`<div class="chips" id="otFixo"><span class="pill ok">Forma desenhada</span><span class="pill">${P.torres.length} torre${P.torres.length>1?"s":""}</span>${nd<P.torres.length?`<span class="pill">${P.torres.length-nd} automática${P.torres.length-nd>1?"s":""}</span>`:""}</div>` : ""}
-        ${GRP("O que variar")}<div class="chips">${(fm? "" : chip("torres","Nº de torres"))+chip("tipologias","Tipologias")+chip("unidades","Unidades/andar")}${fm? `<span class="pill" title="Pavimentos (o último bloco estica), subsolos e garagens elevadas sempre variam">pavimentos · subsolos · garagens</span>` : ""}</div>
-        ${extra? GRP("Comparar também")+`<div class="chips">${extra}</div>` : ""}
-        <button type="button" class="btn pri full" data-act="otim" ${OTRUN?"disabled":""}>${OTRUN?"Analisando…":"Gerar opções"}</button><div class="prog" id="otProg" ${OTRUN?"":"hidden"}><i style="width:0"></i></div>`,
-        {key:"pr-otim", open:true, id:"otCard", info:fm? "Com a forma desenhada, o número de torres e os blocos ficam como você fez. O otimizador escolhe tipologias e unidades por andar que preenchem o bloco com as unidades no tamanho do mix (até 10% maiores), o total de andares (o último bloco estica, dentro do gabarito e do CA), subsolos e garagens elevadas. Unidades maiores que o mix perdem pontos. As melhores são conferidas com o layout real da garagem." : "Testa número de torres, tipologias, unidades por andar, subsolos e garagens — sempre dentro das regras — e ordena pelo objetivo. As melhores são conferidas com o layout real da garagem. Subsolos e garagens elevadas sempre variam."}) +
-      (OTIM? SEC("Melhores opções", `<div class="list" id="otRes">${otimHTML()}</div>`, {key:"pr-otres", open:true, info:"Até quatro opções, da melhor para a pior pelo objetivo. “Aplicar” troca torres, mix, subsolos e garagens do estudo (com a forma desenhada, só pavimentos, mix, subsolos e garagens — a forma fica) — dá para desfazer com Ctrl+Z."}) : "") +
-      (typeof paretoCardHTML==="function"? paretoCardHTML() : "");
-  } else {
-    desc="Torres, unidades e embasamento do empreendimento.";
-    body =
-      RES("Potencial do terreno", `<div class="mets" id="pot"></div><div class="pr-uso" id="potUso"></div>`, {aside:`<span id="potLim"></span>`}) +
-      SEC("Torres", `<div class="pr-lh"><span>Torre</span><span class="c" style="margin-right:${P.torres.length>1?90:52}px">Pavimentos</span></div><div class="list" id="torres"></div>
-        <div class="row sb"><button type="button" class="btn sm" data-act="addTorre" ${P.torres.length>=4?"disabled":""}>+ Torre</button><button type="button" class="btn sm ghost" data-act="maxPav" title="Sobe todas as torres até o limite de altura ou de CA">Máximo em todas</button></div>
-        ${P.torres.length>1? ROW("Disposição", SEG("produto.torreEixo",[["long","ao longo do lote"],["trans","transversais"]],{label:"Disposição das torres"})) : ""}`,
-        {key:"pr-torres", open:true, info:"Pavimentos tipo de cada torre. “Máx” sobe a torre até o limite de altura ou de CA. Até 4 torres; com 2 ou mais, escolha a disposição no lote."}) +
-      (typeof blcSecHTML==="function"? blcSecHTML() : "") +   // C1: forma das torres (src/ui/blocos.js)
-      SEC("Mix do andar tipo", `<div class="pr-lh"><span>Tipologia</span><span class="c" style="margin-right:44px">Un/andar</span></div><div class="list" id="mix"></div>
-        <div class="row sb"><button type="button" class="btn sm" data-act="addMix" ${P.mix.length>=5?"disabled":""}>+ Tipologia</button><span class="note" id="mixSum"></span></div>
-        ${ADV(ROW(`Sacadas${INFO("Sacada")}`, SEG("produto.sacTipo",[["embutida","embutidas"],["balanco","em balanço"]],{rr:false,label:"Sacadas"})), {key:"mix"})}`,
-        {key:"pr-mix", open:true, info:"Unidades de cada andar tipo, iguais em todas as torres. O tamanho do andar sai da área privativa do mix ÷ eficiência (na forma desenhada o andar é o desenho e vale a eficiência real da planta). Toque numa tipologia para editar nome, área, preço e sacada."}) +
-      SEC("Embasamento e garagem", KV(STP("produto.subsolos",0,6,"Subsolos",{sub:""})+STP("produto.garAcima",0,8,"Garagens elevadas",{sub:""}))+
-        SLD("produto.lojaTerreo","Lojas na frente do térreo",0,0.8,0.05,"%",{pct:true,sub:""})+SW("produto.garTerOn","Garagem no térreo, atrás do hall e do lazer")+`<div class="fsub" id="sub-terreo"></div>`+
-        ADV(SW("produto.vagasFrente","Vagas externas na frente (clientes das lojas)")+SW("produto.atico","Ático técnico (reservatório, máquinas)"), {key:"emb"}),
-        {key:"pr-emb", sum:prEmbSum(), info:"Embasamento"}) +
-      SEC("Coberturas", SW("produto.cob.on","Unidades de cobertura no último andar",{rr:true})+(P.cob.on? KV(NUM("produto.cob.qtd","Por torre","un",{int:true,min:1,step:1})+NUM("produto.cob.area","Área privativa","m²",{step:1,help:"Duplex"})+NUM("produto.cob.preco","Preço","R$/m²",{step:50,wide:true})) : ""),
-        {key:"pr-cob", sum:P.cob.on? "ligadas" : "desligadas", info:"Unidades maiores no último andar de cada torre. Maior que o andar, vira duplex com pavimento superior."}) +
-      SEC("Quadro de áreas", `<table class="tbl" id="quadro"></table>`, {key:"pr-quadro"}) +
-      `<button type="button" class="btn pri full pr-apr" data-act="aprovar">Aprovar produto e seguir para o projeto →</button>`;
-  }
-  return { sub:tabs, subKey:cur, desc, body };
+  const P=S.produto, fm=typeof otimFormaAtiva==="function" && otimFormaAtiva(S), otInfo=fm? PR_OT_INFO_FORMA : PR_OT_INFO;
+  const body =
+    RES("Uso do potencial", `<div class="mets pr-pot" id="pot"></div><div class="use" id="compl"></div>`, {aside:`<span id="complTxt"></span>`}) +
+    `<div class="pr-sug"><button type="button" class="btn" data-act="otim" ${OTRUN?"disabled":""}>${OTRUN?"Analisando…":"Sugerir a melhor combinação"}</button><div class="prog" id="otProg" ${OTRUN?"":"hidden"}><i style="width:0"></i></div>
+      ${ADV(prOtimOpcoes(), {key:"otim", label:"Opções", fechar:"Menos"})}</div>` +
+    (OTIM? SEC("Sugestões", `<div class="list" id="otRes">${otimHTML()}</div>${typeof paretoCardHTML==="function"? paretoCardHTML() : ""}`, {key:"pr-otres", open:true, sum:prOtSum(), info:otInfo}) : "") +
+    SEC("Torres", `<div class="list" id="torres"></div>
+      <div class="pr-act"><button type="button" class="btn sm" data-act="addTorre" ${P.torres.length>=4?"disabled":""}>+ Torre</button><button type="button" class="btn sm ghost" data-act="maxPav" title="Sobe todas as torres até o limite de altura ou de CA">Máximo em todas</button>
+      ${ADV((P.torres.length>1? ROW("Disposição", SEG("produto.torreEixo",[["long","ao longo do lote"],["trans","transversais"]],{label:"Disposição das torres"})) : "") +
+        GRP("Pés-direitos") + KV(NUM("produto.peTerreo","Térreo","m",{step:0.1,help:"Pé-direito"})+NUM("produto.peGar","Garagem","m",{step:0.05})+NUM("produto.pe","Andar tipo","m",{step:0.05}),3), {key:"torres"})}</div>`,
+      {key:"pr-torres", open:true, info:"Pavimentos tipo de cada torre. “Máx” sobe a torre até o limite de altura ou de CA. Até 4 torres; com 2 ou mais, escolha a disposição no lote. Pés-direitos em Mais opções."}) +
+    SEC("Unidades por andar", `<div class="pr-lh"><span>Tipologia</span><span class="c" style="margin-right:44px">Por andar</span></div><div class="list" id="mix"></div>
+      <div class="pr-act"><button type="button" class="btn sm" data-act="addMix" ${P.mix.length>=5?"disabled":""}>+ Tipologia</button>
+      ${ADV(ROW(`Sacadas${INFO("Sacada")}`, SEG("produto.sacTipo",[["embutida","embutidas"],["balanco","em balanço"]],{rr:false,label:"Sacadas"})) +
+        KV(NUM("produto.efic","Aproveitamento do andar","%",{pct:true,step:1,help:"Aproveitamento do andar"})), {key:"mix"})}</div>`,
+      {key:"pr-mix", open:true, info:"Unidades de cada andar tipo, iguais em todas as torres. O tamanho do andar sai da área privativa das unidades ÷ aproveitamento do andar (na forma desenhada, o andar é o desenho e vale o aproveitamento real da planta). Toque numa tipologia para editar nome, área, preço e sacada."}) +
+    SEC("Garagem e térreo", KV(STP("produto.subsolos",0,6,"Subsolos",{sub:""})+STP("produto.garAcima",0,8,"Garagens elevadas",{sub:""}))+
+      SW("produto.garTerOn","Garagem no térreo, atrás do hall e do lazer")+`<div class="pr-act"><div class="fsub" id="sub-terreo" style="flex:1;min-width:0"></div>`+
+      ADV(SLD("produto.lojaTerreo","Lojas na frente do térreo",0,0.8,0.05,"%",{pct:true,sub:""})+SW("produto.vagasFrente","Vagas externas na frente (clientes das lojas)")+SW("produto.atico","Ático técnico (reservatório, máquinas)"), {key:"emb"})+`</div>`,
+      {key:"pr-emb", open:true, sum:prEmbSum(), info:"Embasamento"}) +
+    (typeof blcSecHTML==="function"? blcSecHTML() : "") +   // forma das torres (src/ui/blocos.js), com "Torre ocupa a área desenhada"
+    SEC("Áreas comuns e lazer", `<div class="pr-lzm"><div class="mets" id="lzMets"></div><div class="use" id="lzCap"></div></div><div class="list" id="lzList"></div>
+      <div class="row sb"><button type="button" class="btn sm" data-act="prMenu" id="lzAddBtn" aria-expanded="${PR.menu}" aria-controls="lzMenu">+ Ambiente</button><span class="note" id="lzSum2"></span></div>
+      <div class="pr-menu" id="lzMenu" role="menu" aria-label="Modelos de ambiente" ${PR.menu?"":"hidden"}></div>`,
+      {key:"pr-lz", info:"Diga o que o empreendimento terá e onde. O hall e o lazer do térreo empurram a garagem para os fundos; a laje do embasamento, o pavimento de lazer e o rooftop entram no 3D, nas plantas e nos custos. Toque num ambiente para editar."}) +
+    SEC("Coberturas", SW("produto.cob.on","Unidades de cobertura no último andar",{rr:true})+(P.cob.on? KV(NUM("produto.cob.qtd","Por torre","un",{int:true,min:1,step:1})+NUM("produto.cob.area","Área privativa","m²",{step:1,help:"Duplex"})+NUM("produto.cob.preco","Preço","R$/m²",{step:50,wide:true})) : ""),
+      {key:"pr-cob", sum:P.cob.on? "ligadas" : "desligadas", info:"Unidades maiores no último andar de cada torre. Maior que o andar, vira duplex com pavimento superior."}) +
+    SEC("Quadro de áreas", `<table class="tbl" id="quadro"></table>`, {key:"pr-quadro"});
+  return { desc:"Torres, unidades, garagem e lazer — dentro das regras.", body };
 };
 function prEmbSum(){ const P=S.produto; return `${P.subsolos} subsolo${P.subsolos!==1?"s":""}${P.garAcima?` + ${P.garAcima} elevada${P.garAcima>1?"s":""}`:""} · lojas ${pct(P.lojaTerreo,0)}${P.garTerOn?" · garagem no térreo":""}` }
 
+/* resumo da seção Sugestões e aviso de prejuízo / margem abaixo da meta / nenhuma opção (contrato em src/optim.js: OTIM.semLucro, .fecha, .semOpcao) */
+function prOtSum(){ const O=OTIM; if(!O) return ""; const r=O.res[0];
+  return !r? `<span class="pr-bad">nenhuma opção</span>` : r.semLucro? `<span class="pr-bad">sem lucro</span> · ${mi(r.lucro)}` : `${mi(r.lucro)} · margem ${pct(r.margem,0)}` }
+function prOtAviso(O){
+  if(!O) return "";
+  if(O.semOpcao) return `<div class="pr-av bad" role="status"><b>Nenhuma combinação fecha as regras com as vagas exigidas</b> — ${esc(O.semOpcao.motivo)}.</div>`;
+  const fx=O.semLucro || O.fecha; if(!fx || !O.res.length) return "";
+  const pr=v=>`R$ ${nf(Math.ceil(v/50)*50,0)}/m²`, temT=fx.terrenoAtual>0 || fx.terrenoPct>0, qual=q=>q? ` <i>(opção ${q+1})</i>` : "";
+  const k=[`<span>Preço médio hoje <b>${pr(fx.precoAtual)}</b></span>`,
+    O.semLucro && fx.precoZero? `<span>Margem 0 <b>${pr(fx.precoZero)}</b>${qual(fx.opcaoZero)}</span>` : "",
+    fx.precoMeta? `<span>Meta de ${pct(fx.meta,0)} <b>${pr(fx.precoMeta)}</b>${qual(fx.opcaoMeta)}</span>` : "",
+    O.semLucro && temT && fx.terrenoZero>0? `<span>Terreno até <b>${mi(fx.terrenoZero)}</b></span>` : "",
+    !O.semLucro && temT && fx.terrenoMeta>0? `<span>Terreno p/ meta <b>${mi(fx.terrenoMeta)}</b></span>` : ""].filter(Boolean).join("");
+  return O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim; fecha a conta com:<div class="k">${k}</div></div>`
+    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção. Chega à meta com:<div class="k">${k}</div></div>`;
+}
 function otimHTML(){
-  const O=OTIM; if(!O.res.length) return `<p class="note">${O.forma? "Nenhuma combinação preenche a forma desenhada dentro das regras e das vagas. Ajuste a forma ou o mix." : "Nenhuma combinação atende às regras e às vagas exigidas."}</p>`;
+  const O=OTIM; if(!O.res.length) return prOtAviso(O) || `<p class="note">${O.forma? "Nenhuma combinação preenche a forma desenhada dentro das regras e das vagas. Ajuste a forma ou o mix." : "Nenhuma combinação atende às regras e às vagas exigidas."}</p>`;
   const cur=window._last.f, ob=OBJ[O.obj][2];
-  const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0?"Melhor opção":"Opção "+(k+1)} · ${MIX_PRESETS[r.pk].nome}</b><button type="button" class="btn sm ${k===0?"pri":""}" data-act="otApply" data-i="${k}">Aplicar</button></div>
+  const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0? (r.semLucro? "Menos ruim" : "Melhor opção") : "Opção "+(k+1)} · ${MIX_PRESETS[r.pk].nome}</b><button type="button" class="btn sm" data-act="otApply" data-i="${k}">Aplicar</button></div>
     <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas${r.forma?` · ${r.dev>0.005?"unidades "+pct(r.dev,0)+" maiores que o mix":"preenche a forma"}`:""}</div>
-    <div class="rm"><span>Lucro<b>${mi(r.lucro)}</b></span><span>Margem s/ VGV<b>${pct(r.margem)}</b></span><span>TIR<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
+    <div class="rm"><span>Lucro<b${r.lucro<0?' class="pr-bad"':""}>${mi(r.lucro)}</b></span><span>Margem<b>${pct(r.margem)}</b></span><span>Retorno<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
   const L=O.res.slice(0,4);
-  return card(L[0],0) + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
-    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}${O.forma?" · forma desenhada fixa":""}</p><p class="note">Hoje: lucro ${mi(cur.lucro)} · margem s/ VGV ${pct(cur.margemVGV)}</p>`;
+  return prOtAviso(O) + card(L[0],0) + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
+    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}${O.forma?" · forma desenhada fixa":""}${O.terrenoPct? ` · terreno a ${pct(O.terrenoPct,0)} do VGV`:""} · hoje: lucro ${mi(cur.lucro)}, margem ${pct(cur.margemVGV)}</p>`;
 }
 
 /* ---------------- partes vivas ---------------- */
 function prTorresLive(m){
   const P=S.produto, n=P.torres.length;
   setHTML("torres", P.torres.map((tw,i)=>{ const t=m.T[i]||{}, nome=`Torre ${i+1}`;
-    return `<div class="pr-row${t.fit===false?" warn":""}"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b></div>
+    return `<div class="pr-row${t.fit===false?" warn":""}"><div class="pr-rh"><div class="pr-tx"><b>${nome}</b><span>pavimentos tipo</span></div>
       ${prStp(`produto.torres.${i}.pav`, tw.pav, 1, 80, `Pavimentos da ${nome.toLowerCase()}`)}
       <button type="button" class="pr-ic lbl" data-act="maxT" data-i="${i}" title="Máximo de pavimentos para esta torre" aria-label="Máximo de pavimentos para a ${nome.toLowerCase()}">Máx</button>${n>1? prRm("rmT", i, nome) : ""}</div>
       <div class="pr-rs${t.fit===false?" w":""}">${t.fit===false && !t.desenhada? `o mix pede ${m2(m.mixPriv/P.efic)}/andar e cabem ${m2(t.maxA||0)} · unidades a ${pct(t.r||0,0)}` : m.torOcupa||t.desenhada? `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar ${t.desenhada?"na forma desenhada":"no contorno desenhado"}${t.eficReal!=null? ` · eficiência real ${pct(t.eficReal,0)} (informada ${pct(P.efic,0)})` : ""} · unidades a ${pct(t.r||0,0)} do mix` : `${nf(t.H||0,1)} m · ${t.units||0} un · ${m2(t.A||0)}/andar de ${m2(t.maxA||0)}`}</div></div>` }).join(""));
@@ -157,8 +197,7 @@ function prMixLive(m){
       ${prStp(`produto.mix.${i}.qtd`, u.qtd, 0, 20, `Unidades por andar — ${nome}`)}${prChev("mix", i, open, nome)}</div>
       ${open? `<div class="pr-rb">${KV(TXT(`produto.mix.${i}.nome`,"Nome",{fx:"upd"})+NUM(`produto.mix.${i}.area`,"Área privativa","m²",{step:1,min:10,help:"Área privativa"})+NUM(`produto.mix.${i}.preco`,"Preço","R$/m²",{step:50,min:0})+NUM(`produto.mix.${i}.sac`,"Sacada","m²",{step:0.5,min:0,help:"Sacada"}))}
         <div class="pr-rf"><span class="fsub">${ur.n||0} unidades · ${mi((ur.area||0)*u.preco)}</span>${P.mix.length>1? prRm("rmMix", i, nome, "Remover tipologia") : ""}</div></div>` : `<div class="pr-rs">${ur.n||0} unidades no total · ${mi((ur.area||0)*u.preco)}</div>`}</div>` }).join(""));
-  const ms=document.getElementById("mixSum"); if(ms) ms.textContent=`${m.mixUn} un · ${m2(m.mixPriv)} priv. → ${m2(m.mixPriv/P.efic)}/andar`;
-  setSum("pr-mix", `${P.mix.length} tipologia${P.mix.length>1?"s":""} · ${m.mixUn} un/andar`);
+  setSum("pr-mix", `${m.mixUn} un · ${m2(m.mixPriv)} → ${m2(m.mixPriv/P.efic)}/andar`);
 }
 function prLazerLive(m){
   const P=S.produto, LZ=m.lzLay||{miss:[]}, miss=new Set(LZ.miss), it=(P.lazer&&P.lazer.itens)||[], lz=m.lz, nT=P.torres.length;
@@ -176,27 +215,42 @@ function prLazerLive(m){
   setHTML("lzMenu", Object.entries(LZ_LOCAIS).map(([k,l])=>{ const ps=LZ_PRESETS.map((p,i)=>[p,i]).filter(([p])=>p.local===k && !used.has(p.nome)); return ps.length? GRP(l)+ps.map(([p,i])=>`<button type="button" class="pr-mi" role="menuitem" data-act="lzAdd" data-i="${i}">${p.nome}<span>${m2(p.area)}${p.desc?" · descoberto":""}</span></button>`).join("") : "" }).join("")
     + GRP("Outro") + `<button type="button" class="pr-mi" role="menuitem" data-act="lzAdd" data-i="-1">Ambiente em branco<span>30 m² · Térreo</span></button>`);
   const tot=hall+lz.c+lz.d;
-  const pill=document.getElementById("lzPill"); if(pill) pill.innerHTML = miss.size? `<span style="color:var(--bad)">${miss.size} não coube${miss.size>1?"ram":""}</span>` : `${lz.n} ambiente${lz.n!==1?"s":""}`;
   setHTML("lzMets", `<div class="met"><div class="l">Total do programa</div><div class="v">${m2(tot)}</div><div class="s">com hall de ${m2(hall)}</div></div>
     <div class="met"><div class="l">Equipamentos</div><div class="v">≈ ${mi(m.lzCusto)}</div><div class="s">acabamento e mobiliário</div></div>`);
   const T=m.ter||{}, roofFree=Math.max(1,m.embA-m.T.reduce((s,t)=>s+t.A,0)), plate=m.T[0]?m.T[0].A:1;
   const cap=[["Térreo", T.HT||0, P.garTerOn? (T.HT||0)+m.gTer : T.hallDisp||1], ["Laje do emb.", lz.emb.c+lz.emb.d, roofFree], ["Pav. de lazer", lz.pav.c+lz.pav.d, plate*0.8], ["Rooftop", lz.cob.c+lz.cob.d, plate*0.85]].filter(r=>r[1]>0);
   setHTML("lzCap", cap.map(([l,a,c])=>useRow(l, a/Math.max(1,c), `${m2(a)}`, a>c?"bad":"ok")).join("") + (m.lzExtraA>0? `<p class="note">Fora do térreo: ${m2(m.lzExtraA)} construídos${S.regras.ncTerreo?" (não computáveis)":""}</p>` : ""));
   const s2=document.getElementById("lzSum2"); if(s2) s2.textContent=`${it.length} ambiente${it.length!==1?"s":""} · ${m2(lz.c+lz.d)}`;
-  setSum("pr-lz", `${it.length} ambientes · ${m2(tot)}`);
+  setSum("pr-lz", `${it.length} ambiente${it.length!==1?"s":""} · ${m2(tot)}${miss.size? ` · <span class="pr-bad">${miss.size} não coube${miss.size>1?"ram":""}</span>` : ""}`);
+}
+/* conformidade com as regras: rgConformidade(m) (pacote P2, src/ui/etapa-terreno.js) quando existe — linhas [rótulo, fração, texto, estado]
+   ou objetos {l|nome|rot, v|frac, txt|t, st|estado}; senão as mesmas linhas a partir de status() */
+function prConfLinhas(m){
+  if(typeof rgConformidade==="function"){ try{ const r=rgConformidade(m), L=Array.isArray(r)? r : r && (r.rows||r.linhas);
+    if(Array.isArray(L) && L.length) return L.map(x=>Array.isArray(x)? x : [x.l??x.nome??x.rot??"", +(x.v??x.frac??0), x.txt??x.t??"", x.st??x.estado??"ok"]) }catch(e){ console.error("[produto] rgConformidade", e) } }
+  const R=S.regras, s=status(m,S), tor=m.T.reduce((a,t)=>a+(t.Aproj||t.A),0), hL=m.hLim ?? R.hMax;
+  return [
+    ["Aproveitamento", m.CA/Math.max(1e-9,R.caMax), `${nf(m.CA,2)} / ${nf(R.caMax,2)}`, s.ca],
+    ["Altura", m.H/Math.max(1e-9,hL), `${nf(m.H,1)} / ${nf(hL,0)} m`, s.h],
+    ["Ocupação torres", tor/Math.max(1,R.toTorre*m.A), `${pct(tor/Math.max(1,m.A),0)} / ${pct(R.toTorre,0)}`, tor>R.toTorre*m.A+1?"bad":"ok"],
+    ["Ocupação emb.", m.TO/Math.max(1e-9,R.toEmb), `${pct(m.TO,0)} / ${pct(R.toEmb,0)}`, m.TO>R.toEmb+1e-6?"bad":"ok"],
+    ["Permeável", Math.min(1,m.perm/Math.max(1e-9,R.permeab||1e-9)), `${pct(m.perm,0)} / ${pct(R.permeab,0)}`, s.perm],
+    ["Vagas", m.vagas/Math.max(1,m.vagasReq), `${m.vagas} / ${m.vagasReq}`, s.vg],
+    ["Menor unidade", Math.min(1,m.minApto/Math.max(1,R.aptoMin)), `${nf(m.minApto,0)} / ${nf(R.aptoMin,0)} m²`, s.apto],
+    ...(typeof formaRows==="function"? formaRows(m) : [])];
 }
 STEP_LIVE.produto = (m,f)=>{
-  const P=S.produto, R=S.regras, cur=subAtual("produto");
-  if(cur==="otim"){ if(typeof paretoLive==="function") paretoLive(); return }
-  if(cur==="lazer"){ prLazerLive(m); return }
-  const po=potencial(S,m);
-  const lim=document.getElementById("potLim"); if(lim) lim.textContent = po.limita==="ca"? "limite: coeficiente" : "limite: altura";
-  setHTML("pot", `<div class="met big"><div class="l">Privativo possível${potInfoHTML(po)}<span class="pill ${po.uso.priv>1?"bad":"ok"}" title="Parte do potencial que o estudo usa">${pct(po.uso.priv,0)} em uso</span></div><div class="v">${m2(po.priv)}</div><div class="s">≈ ${po.un} un · ${TERMO("VGV")} ≈ ${mi(po.vgv)}</div></div>
-      <div class="met"><div class="l">Computável máx.</div><div class="v">${m2(po.compMax)}</div><div class="s">${TERMO("CA")} ${nf(R.caMax,1)} × ${m2(m.A)}</div></div>
-      <div class="met"><div class="l">Pavimentos tipo</div><div class="v">até ${po.pavH}</div><div class="s">altura de ${nf(po.hLim,0)} m</div></div>`);
-  const u=(l,v)=>`<div><span>${l}<b style="${v>1?"color:var(--bad)":""}">${pct(v,0)}</b></span>${bar(v, v>1?"bad":"")}</div>`;
-  setHTML("potUso", u("CA usado",po.uso.ca)+u("Altura",po.uso.h)+u("Ocupação",po.uso.to)+potNotaHTML(po));
-  prTorresLive(m); prMixLive(m); if(typeof blcLive==="function") blcLive(m);
+  const P=S.produto, R=S.regras;
+  // uso do potencial: privativo usado / possível, unidades, vagas
+  const po=potencial(S,m), vOk=m.vagas>=m.vagasReq;
+  setHTML("pot", `<div class="met"><div class="l">Privativo${potInfoHTML(po)}<span class="pill ${po.uso.priv>1?"bad":"ok"}" title="Parte do potencial do terreno que o estudo usa (limite: ${po.limita==="ca"? "aproveitamento" : "altura"})">${pct(po.uso.priv,0)}</span></div><div class="v">${m2(m.priv)}</div><div class="s">de ${m2(po.priv)}</div></div>
+    <div class="met"><div class="l">Unidades</div><div class="v">${nf(m.units)}</div><div class="s">≈ ${nf(po.un)} possíveis</div></div>
+    <div class="met"><div class="l">Vagas</div><div class="v${vOk?"":" pr-bad"}">${m.vagas}<span style="font-size:13px;color:var(--muted);font-weight:500"> / ${m.vagasReq}</span></div><div class="s">exigidas</div></div>`);
+  const rows=prConfLinhas(m), fora=rows.filter(r=>r[3]==="bad").length;
+  setHTML("compl", rows.map(r=>useRow(r[0],r[1],r[2],r[3]==="ok"?"ok":r[3])).join(""));
+  const ct=document.getElementById("complTxt"); if(ct) ct.innerHTML = fora? `<span class="pr-bad">${fora} fora das regras</span>` : `<span class="pr-ok">dentro das regras</span>`;
+  prTorresLive(m); prMixLive(m); prLazerLive(m); if(typeof blcLive==="function") blcLive(m);
+  if(OTIM && typeof paretoLive==="function") paretoLive();
   setSub("produto.subsolos",`${m2(m.subA)} · ${m.gar&&m.gar.s1? m.gar.s1.count+" vg no 1º" : Math.floor(m.subA/R.m2Vaga)+" vg (est.)"}`);
   setSub("produto.garAcima",`${m2(m.embA)} · ${m.gar&&m.gar.g1? m.gar.g1.count+" vg no 1º" : Math.floor(m.embA/R.m2Vaga)+" vg (est.)"}`);
   setSub("terreo", `${P.garTerOn? `garagem ${m2(m.gTer)} · ${m.gar&&m.gar.ter? m.gar.ter.count : Math.floor(m.gTer/R.m2Vaga)} vagas · `:""}hall e lazer ${m2(m.hallA)} · acesso de veículos ${m2(m.driveA||0)}`);
@@ -241,8 +295,18 @@ Object.assign(ACT,{
   lzRm: b=>{ const i=+b.dataset.i, x=S.produto.lazer.itens[i]; if(!x) return; S.produto.lazer.itens.splice(i,1); PR.lz=-1; update(); toast(`${x.nome||"Ambiente"} removido — Ctrl+Z desfaz`) },
   lzDesc: b=>{ const x=S.produto.lazer.itens[+b.dataset.i]; if(!x) return; x.desc=!x.desc; update() },
   otk: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; b.setAttribute("aria-pressed",S.otim[k]); save() },
-  otim: ()=>{ OTRUN=true; renderTab();
-    otimizar(S.otim, p=>{ const e=document.querySelector("#otProg i"); if(e) e.style.width=(p*100).toFixed(0)+"%" }, ()=>{ OTRUN=false; if(TAB==="produto") renderTab(); toast(OTIM.res.length? "Opções prontas — a melhor está no topo" : "Nenhuma combinação viável") }) },
+  // "Sugerir a melhor combinação": um caminho só (otimRodar: Worker ou página); "Cancelar análise" = calcCancel (calcJobUI troca o botão)
+  otim: async ()=>{
+    if(OTRUN || (typeof CALC!=="undefined" && CALC.jobAtivo)) return;
+    // otimRodar marca CALC.jobAtivo antes do primeiro await: o renderTab já desenha "Cancelar análise" (calcJobUI)
+    const job=otimRodar(clone(S.otim), p=>{ const e=document.querySelector("#otProg i"); if(e) e.style.width=(p*100).toFixed(0)+"%" });
+    OTRUN=true; renderTab();
+    try{
+      const r=await job;
+      OTRUN=false; if(TAB==="produto") renderTab();
+      toast(!r.res.length? "Nenhuma combinação viável — veja o motivo em Sugestões" : r.semLucro? "Nenhuma combinação dá lucro — veja o que fecharia a conta" : "Sugestões prontas — a melhor está no topo");
+    }catch(e){ OTRUN=false; if(TAB==="produto") renderTab();
+      if(!/cancelado|ocupado/.test(e && e.message||"")){ console.error("[produto] otimizador", e); toast("Não foi possível sugerir agora. Tente de novo.") } } },
   otApply: b=>{ const r=OTIM&&OTIM.res[+b.dataset.i]; if(!r) return; aplicarOtim(r); PR.mix=-1; renderTab(); fit3d(); toast("Opção aplicada — Ctrl+Z desfaz") },
   addTorre: ()=>{ const T=S.produto.torres; if(T.length<4){ T.push({pav:T.at(-1)?.pav||8}); if(typeof blcTorreNova==="function") blcTorreNova(T.length-1); renderTab(); toast(`Torre ${T.length} adicionada`) } },
   rmT: b=>{ const T=S.produto.torres, i=+b.dataset.i; if(T.length<2 || !T[i]) return; T.splice(i,1); if(typeof blcTorreRemovida==="function") blcTorreRemovida(i); renderTab(); toast(`Torre ${i+1} removida — Ctrl+Z desfaz`) },
@@ -252,5 +316,6 @@ Object.assign(ACT,{
     T[i].pav=best||keep; update(); toast(best? `Torre ${i+1}: ${best} pavimentos` : `Torre ${i+1}: nenhum pavimento a mais cabe`) },
   addMix: ()=>{ const X=S.produto.mix; if(X.length<5){ X.push({nome:"Studio",area:35,qtd:1,preco:12000,sac:3}); PR.mix=X.length-1; update(); requestAnimationFrame(()=>prRelista("mix", PR.mix)) } },
   rmMix: b=>{ const X=S.produto.mix, i=+b.dataset.i; if(X.length<2 || !X[i]) return; const nome=X[i].nome; X.splice(i,1); PR.mix=-1; update(); toast(`${nome||"Tipologia"} removida — Ctrl+Z desfaz`) },
-  aprovar: ()=>{ saveScenario(null,true); goStep("projeto","gar"); toast("Produto aprovado e salvo em Cenários") },
+  // "Guardar como alternativa" (menu "…" do topo e Entrega › Estudos): grava o estudo como cenário, sem sair da etapa
+  aprovar: ()=>{ saveScenario(null,true); toast("Guardado como alternativa — compare em Entrega") },
 });

@@ -348,14 +348,15 @@ async function tRegras(b) {
 }
 
 /* =====================================================================================
-   PRODUTO — torres, mix, embasamento, coberturas, lazer, otimizar/cancelar/aplicar, Pareto, aprovar
+   PRODUTO (UX v3: uma tela só) — torres, mix, garagem e térreo, coberturas, lazer, sugerir/cancelar/aplicar, Pareto, guardar alternativa
    ===================================================================================== */
 async function tProduto(b) {
-  const { ctx, p, h } = await abrir(b); const { ev, W, undo, desfazAte, fim, etapa, sub, arma, preenche, faixa } = h;
+  const { ctx, p, h } = await abrir(b); const { ev, W, undo, desfazAte, fim, etapa, arma, preenche, faixa, mais } = h;
   const st = k => ev(k => JSON.parse(JSON.stringify(eval(k))), k);
   const canon = o => JSON.stringify(o, (k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v).sort().reduce((a, k) => (a[k] = v[k], a), {}) : v);
   const SEL = (pth, v) => `[data-set="${pth}"][data-v='"${v}"']`;
-  await etapa('produto', 'prod');
+  await etapa('produto');
+  ok(!(await p.$('#phead .sub [data-v]')), 'Produto sem sub-abas');
   // torres
   const T0 = await st('S.produto.torres'), T0j = JSON.stringify(T0);
   await p.click('#tabbody [data-act=addTorre]'); await fim();
@@ -375,7 +376,7 @@ async function tProduto(b) {
   await p.click('#tabbody [data-act=maxPav]'); await fim();
   const tp = await st('S.produto.torres'); ok(tp[0].pav === tp[1].pav, 'máximo em todas');
   await undo(); ok(JSON.stringify(await st('S.produto.torres')) === T0j, '  Ctrl+Z desfaz');
-  await p.click(SEL('produto.torreEixo', 'trans')); await fim();
+  await mais('pr-torres'); await p.click(SEL('produto.torreEixo', 'trans')); await fim();
   ok((await st('S.produto.torreEixo')) === 'trans', 'disposição transversal');
   await undo(); ok((await st('S.produto.torreEixo')) === 'long', '  Ctrl+Z desfaz');
   // mix
@@ -403,11 +404,11 @@ async function tProduto(b) {
   await p.click('details[data-key="pr-emb"] input[data-p="produto.subsolos"] + button'); await fim();
   await p.click('details[data-key="pr-emb"] input[data-p="produto.garAcima"] + button'); await fim();
   ok((await st('S.produto.subsolos')) === P0.subsolos + 1 && (await st('S.produto.garAcima')) === P0.garAcima + 1, 'subsolos e garagens elevadas');
-  await faixa('input[data-p="produto.lojaTerreo"]', 0.4); await fim();
+  await mais('pr-emb'); await faixa('input[data-p="produto.lojaTerreo"]', 0.4); await fim();
   ok(Math.abs((await st('S.produto.lojaTerreo')) - 0.4) < 1e-9, 'lojas no térreo');
   await p.click('details[data-key="pr-emb"] label.sw:has(input[data-p="produto.garTerOn"])'); await fim();
   ok((await st('S.produto.garTerOn')) === !P0.garTerOn, 'garagem no térreo');
-  await p.click('details[data-key="pr-emb"] .advbtn'); await W(200);
+  await mais('pr-emb');
   await p.click('details[data-key="pr-emb"] label.sw:has(input[data-p="produto.atico"])'); await fim();
   await p.click('details[data-key="pr-emb"] label.sw:has(input[data-p="produto.vagasFrente"])'); await fim();
   ok((await st('S.produto.atico')) === !P0.atico && (await st('S.produto.vagasFrente')) === !P0.vagasFrente, 'ático e vagas na frente (Mais opções)');
@@ -417,8 +418,8 @@ async function tProduto(b) {
   await p.click('details[data-key="pr-cob"] label.sw:has(input[data-p="produto.cob.on"])'); await fim();
   ok((await st('S.produto.cob.on')) === false && !(await p.$('input[data-p="produto.cob.qtd"]')), 'desligar coberturas esconde os campos');
   await undo(); ok((await st('S.produto.cob.on')) === true && !!(await p.$('input[data-p="produto.cob.qtd"]')), '  Ctrl+Z religa');
-  // lazer
-  await sub('lazer');
+  // lazer (seção fechada "Áreas comuns e lazer")
+  await h.abre('pr-lz');
   const L0 = await st('S.produto.lazer'), L0j = JSON.stringify(L0);
   await p.click('#lzAddBtn'); await W(250); ok(await p.isVisible('#lzMenu'), 'menu de modelos de ambiente');
   await p.click('#lzMenu [data-act=lzAdd]:has-text("Brinquedoteca")'); await fim();
@@ -438,8 +439,8 @@ async function tProduto(b) {
   ok((await st('S.produto.lazer.hall')) === 120, 'hall social');
   await undo(); ok((await st('S.produto.lazer.hall')) === L0.hall, '  Ctrl+Z desfaz');
   await p.click('#lzAddBtn'); await W(200); await p.keyboard.press('Escape'); await W(200); ok(!(await p.isVisible('#lzMenu')), 'Esc fecha o menu');
-  // otimizar
-  await sub('otim');
+  // sugerir a melhor combinação (opções em "Opções", ao lado do botão)
+  await ev(() => { const a = document.querySelector('#tabbody .pr-sug .advb'); if (a && a.hidden) document.querySelector('#tabbody .pr-sug .advbtn').click() }); await W(200);
   const O0 = await st('S.otim');
   await p.click('[data-act=otk][data-k=torres]'); await fim(); ok((await st('S.otim.torres')) === !O0.torres, 'chip "Nº de torres"');
   await undo(); ok((await st('S.otim.torres')) === O0.torres, '  Ctrl+Z desfaz');
@@ -463,6 +464,7 @@ async function tProduto(b) {
   ok(!p.errs.some(e => /comodos|bordas/.test(e)), 'opções do otimizador + troca do mix sem erro nos cômodos', p.errs.filter(e => /comodos/.test(e)).slice(0, 2).join(' | ') || undefined);
   for (let i = 0; i < 8 && canon(await st('S.produto')) !== antes; i++) await undo();
   ok(canon(await st('S.produto')) === antes, '  Ctrl+Z desfaz as opções aplicadas');
+  await ev(() => { const d = document.getElementById('pfCard'); if (d) d.open = true }); await W(400);
   if (await p.$('#pfChart .pt')) {
     await p.click('#pfChart .pt >> nth=0', { force: true }); await W(300);
     ok(!!(await p.$('#pfDet [data-act=pfApply]')), 'ponto do Pareto mostra o detalhe');
@@ -474,11 +476,11 @@ async function tProduto(b) {
     await p.click('[data-act=pfF][data-k=fVagas]'); await fim(); ok((await st('S.otim.fVagas')) === true, 'filtro do Pareto (vagas)');
     await p.click('[data-act=pfF][data-k=fVagas]'); await fim();
   } else ok(false, 'gráfico do Pareto presente');
-  // aprovar
-  await sub('prod');
+  // guardar como alternativa (ACT.aprovar: o botão saiu do corpo; fica no menu "…" do topo e em Entrega)
   const nc = await ev(() => (LS.get('gabarito.cenarios2') || []).length);
-  await p.click('#tabbody [data-act=aprovar]'); await W(800);
-  ok(await ev(n => TAB === 'projeto' && (LS.get('gabarito.cenarios2') || []).length === n + 1, nc), 'aprovar produto → vai ao Projeto e salva cenário');
+  ok(!(await p.$('#tabbody [data-act=aprovar]')), 'sem botão "Aprovar produto" no corpo');
+  await ev(() => ACT.aprovar()); await W(800);
+  ok(await ev(n => TAB === 'produto' && (LS.get('gabarito.cenarios2') || []).length === n + 1, nc), 'guardar como alternativa salva um cenário (fica no Produto)');
   semErros(p, 'produto'); await ctx.close();
 }
 

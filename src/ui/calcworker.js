@@ -6,7 +6,8 @@
    - update() faz o cálculo barato aqui (sem layouts de garagem, reaproveitando os últimos) e pede o completo ao Worker (calcPedir).
    - Cada pedido tem número; resposta de pedido superado (ou de estado já mudado por arraste) é descartada.
    - Se o Worker não puder ser criado ou falhar (CSP do artifact, file://), tudo volta a rodar na página (calcFalhou).
-   - calcPronto() → Promise que resolve quando o resultado completo do estado atual está na tela (exportar, salvar versão). */
+   - calcPronto() → Promise que resolve quando o resultado completo do estado atual está na tela (exportar, salvar versão).
+   - otimRodar(opts, onProg, ctx) → Promise<OTIM>: caminho único do otimizador (Produto e assistente), no Worker "job" ou na página. */
 const CALC = { estado:"off", url:null, w:null, job:null, jobAtivo:null, req:0, envId:0, aplicado:0, fila:false, ocupado:false, esperam:[], indT:0, ms:0 };
 /* código anexado ao cálculo dentro do Worker */
 const CALC_BOOT = `
@@ -19,7 +20,7 @@ const _calcFn = {
     const m = compute(st, opt||{}); _calcMemo.unshift({sig, m}); if(_calcMemo.length>6) _calcMemo.pop(); return m;
   },
   acessoAvalia(st, c, full){ S = st; return acessoAvalia(st, c, full) },
-  otimizar(st, mLite, opts, prog){ S = st; window._last = {m: mLite}; return new Promise(res=>otimizar(opts, p=>prog(p), r=>res(r))) },
+  otimizar(st, mLite, opts, prog){ S = st; window._last = {m: mLite}; return otimizar(opts, p=>prog(p), null, {st, m: mLite}) },
   ping(){ return true }
 };
 function _calcPost(msg){ try{ self.postMessage(msg) }catch(e){ msg.val = serialLimpa(msg.val); self.postMessage(msg) } }
@@ -125,7 +126,7 @@ const calcCancelado = e=> e && /cancelado/.test(e.message||"");
 /* botões de cancelar e progresso nos cards do otimizador e do estudo de acesso (refeitos a cada renderTab) */
 function calcJobUI(){
   const a=CALC.jobAtivo;
-  if(a && a.tipo==="otim"){
+  if(a && a.tipo==="otim" && a.tela){
     const b=document.querySelector('#tabbody [data-act="otim"]');
     if(b){ b.disabled=false; b.dataset.act="calcCancel"; b.classList.remove("pri"); b.textContent="Cancelar análise"; b.title="Interrompe a busca (o cálculo roda em segundo plano)" }
     const p=document.querySelector("#otProg"); if(p){ p.hidden=false; const i=p.querySelector("i"); if(i) i.style.width=((a.prog||0)*100).toFixed(0)+"%" }
@@ -142,31 +143,40 @@ addCard("produto", {key:"calcJobUI", order:999, html:()=>"", after:()=>calcJobUI
 addCard("projeto", {key:"calcJobUI", order:999, html:()=>"", after:()=>calcJobUI()});
 ACT.calcCancel = ()=>{ calcCancelar(); toast("Análise cancelada") };
 
-/* instalado por main.js depois que todos os arquivos carregaram (assim pega as versões finais de ACT.otim / ACT.acessoStudy) */
-function calcInstalar(){
-/* otimizador no Worker (o algoritmo é o mesmo de src/optim.js; só muda onde roda) */
-const _otimPagina = ACT.otim;
-if(_otimPagina) ACT.otim = async b=>{
-  if(!calcOn()) return _otimPagina(b);
-  if(CALC.jobAtivo) return;
-  const a = CALC.jobAtivo = {tipo:"otim", prog:0};
-  OTRUN=true; renderTab();
-  await calcPronto();
-  if(a.cancelado){ CALC.jobAtivo=null; OTRUN=false; if(TAB==="produto") renderTab(); return }
-  const mN=window._last.m, mLite={vagasLay:mN.vagasLay, vagasEst:mN.vagasEst, vf:{count:mN.vf?mN.vf.count:0}};
-  a.job = calcJob();
+/* ===== otimizador: caminho único (UX v3 P3) =====
+   otimRodar(opts, onProg, ctx) → Promise<OTIM>  (src/optim.js: otimizar; resultado documentado lá e em docs — res, pareto, fecha, semLucro, semOpcao)
+   - sem ctx: o estudo da tela. Espera o cálculo completo (calcPronto), usa S e o modelo da tela (calibra as vagas pelo layout real dela)
+     e grava o resultado em OTIM. É o que ACT.otim (Produto) chama.
+   - ctx = {st, m?}: estado explícito (assistente "Novo estudo"). S NÃO é lido nem trocado e OTIM fica como estava; sem m.gar o
+     otimizador calibra as vagas com um cálculo rápido de ctx.st.
+   - roda no Worker "job" quando ele existe; se o Worker falhar (ou não houver), roda na página. Progresso em onProg(0…1).
+   - uma análise por vez: com outra rodando rejeita com Error("ocupado"). Cancelar (otimCancelar ou calcCancelar, botão "Cancelar análise")
+     rejeita com Error("cancelado") — no Worker encerra o job; na página o otimizador para na próxima fatia. */
+async function otimRodar(opts, onProg, ctx){
+  if(CALC.jobAtivo) throw new Error("ocupado");
+  const tela=!ctx, prog=typeof onProg==="function"? onProg : ()=>{};
+  const a = CALC.jobAtivo = {tipo:"otim", prog:0, tela}, pr=p=>{ a.prog=p; if(!a.cancelado) prog(p) };
   try{
-    const r = await a.job.call("otimizar", [S, mLite, clone(S.otim)], p=>{ a.prog=p; const e=document.querySelector("#otProg i"); if(e) e.style.width=(p*100).toFixed(0)+"%" });
-    OTIM = r; CALC.jobAtivo=null; OTRUN=false; if(TAB==="produto") renderTab();
-    toast(OTIM.res.length? "Opções prontas — a melhor está no topo" : "Nenhuma combinação viável");
-  }catch(e){
-    CALC.jobAtivo=null; OTRUN=false;
-    if(a.cancelado || calcCancelado(e)){ if(TAB==="produto") renderTab(); return }
-    console.error("[calc] otimizador no Worker falhou — rodando na página:", e && e.message);
-    _otimPagina(b);
-  }
-};
+    if(tela) await calcPronto();
+    if(a.cancelado) throw new Error("cancelado");
+    const st = tela? S : ctx.st, m = tela? ((window._last && window._last.m) || null) : (ctx.m || {}), o = clone(opts||{});
+    let r = null;
+    if(calcOn()){
+      a.job = calcJob();
+      try{ r = await a.job.call("otimizar", [st, otimMLite(m), o], pr) }
+      catch(e){ if(a.cancelado || calcCancelado(e)) throw new Error("cancelado"); console.error("[calc] otimizador no Worker falhou — rodando na página:", e && e.message); r = null }
+    }
+    if(!r){ const keep=OTIM; try{ r = await otimizar(o, pr, null, {st, m: m || undefined, cancelado:()=>!!a.cancelado}) } finally { if(!tela) OTIM=keep } }
+    if(a.cancelado) throw new Error("cancelado");
+    if(tela) OTIM = r;
+    return r;
+  } finally { if(CALC.jobAtivo===a) CALC.jobAtivo=null }
+}
+/** cancela a análise do otimizador em andamento (da tela ou do assistente); true se havia uma */
+function otimCancelar(){ const a=CALC.jobAtivo; if(!a || a.tipo!=="otim") return false; calcCancelar(); return true }
 
+/* instalado por main.js depois que todos os arquivos carregaram (assim pega a versão final de ACT.acessoStudy) */
+function calcInstalar(){
 /* estudo do melhor acesso no Worker (mesma sequência de src/steps.js: análise rápida de todas, completa das 4 melhores) */
 const _acessoPagina = ACT.acessoStudy;
 if(_acessoPagina) ACT.acessoStudy = async b=>{

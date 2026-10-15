@@ -267,7 +267,7 @@ function blcPerto(A, B){ let best=null, bd=Infinity;
 /* ---------- seção "Forma das torres" (Produto) ---------- */
 const BLC_IC = { ret:"M3 4h10v8H3z", L:"M3 3h4v6h6v4H3z", U:"M2 3h4v6h4V3h4v10H2z", T:"M2 3h12v4H10v6H6V7H2z", H:"M2 3h4v3h4V3h4v10h-4v-3H6v3H2z", patio:"M2 3h12v10H2zM6 6v4h4V6z" };
 const blcIc = k => `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="${BLC_IC[k]}"/></svg>`;
-function blcSum(){ if(!blcAtivo(S)) return "automática"; const n=blcLista().length, N=S.produto.torres.length, nb=blcLista().reduce((s,i)=>s+blcLst(i).filter(blcValido).length,0);
+function blcSum(){ if(!blcAtivo(S)) return S.custom && S.custom.torOcupa && S.custom.tor && S.custom.tor.length? "automática · ocupa a área desenhada" : "automática"; const n=blcLista().length, N=S.produto.torres.length, nb=blcLista().reduce((s,i)=>s+blcLst(i).filter(blcValido).length,0);
   return n? `desenhada · ${n} de ${N} torre${N>1?"s":""}${nb>n? ` · ${nb} blocos` : ""}` : "desenhada · nenhuma personalizada" }
 /* eficiência real da planta (blcPrivReal) numa linha de torre: " · eficiência real 72% (informada 80%)" */
 const blcEficTxt = t => t && t.eficReal!=null ? ` · eficiência real ${pct(t.eficReal,0)} (informada ${pct(S.produto.efic,0)})` : "";
@@ -277,8 +277,23 @@ function blcSecHTML(){
       SEG("blocos.modo",[["auto","Automática"],["desenhada","Desenhada"]],{label:"Forma das torres"}))
     + (on ? `<div class="list" id="blcList"></div><div id="blcGeral"></div>${ADV(SW("alas.recuaTodas", `Recuar recua todas as fachadas${INFO("Por padrão, “Recuar” não mexe na fachada onde o núcleo (escada e elevadores) encosta: o núcleo sobe inteiro até o topo e o recuo o cortaria. Ligado, recua todas as fachadas — confira o aviso de núcleo cortado.","recuar")}`, {fx:"save"}), {key:"blc-opc"})}`
           : salvas ?`<p class="note">${salvas} forma${salvas>1?"s":""} guardada${salvas>1?"s":""} — volta${salvas>1?"m":""} ao escolher Desenhada.</p>` : "");
-  return SEC("Forma das torres", body, {key:"pr-forma", sum:blcSum(), info:"Planta das torres: automática pelas regras ou desenhada por você, torre a torre, numa pilha de blocos."});
+  return SEC("Forma das torres", body + blcOcupaHTML(), {key:"pr-forma", sum:blcSum(), info:"Planta das torres: automática pelas regras ou desenhada por você, torre a torre, numa pilha de blocos."});
 }
+/* "Torre ocupa a área desenhada" (C0, S.custom.torOcupa): veio de Terreno › Limites (UX v3 §4.6). Só aparece com o limite especial das
+   torres desenhado (S.custom.tor); a linha viva #torOcupaP mostra a planta, o tamanho médio das unidades e "Ajustar mix" (ACT.blcOcupaMix) */
+const BLC_OCUPA_INFO = "Desligado, a área restrita das torres (desenhada em Terreno) é só um teto: a torre fica do tamanho das unidades dentro dela. Ligado, essa área (recortada pelos recuos) vira a planta do andar tipo e as unidades crescem ou encolhem até preenchê-la. “Ajustar mix” muda a quantidade de unidades por andar para elas voltarem ao tamanho do mix.";
+function blcOcupaHTML(){
+  if(!(S.custom && S.custom.tor && S.custom.tor.length)) return "";
+  return `<div class="row" style="gap:6px;margin-top:8px">${SW("custom.torOcupa","Torre ocupa a área desenhada",{rr:true})}${INFO(BLC_OCUPA_INFO,"torre ocupa a área desenhada")}</div>${S.custom.torOcupa? `<div class="fsub" id="torOcupaP"></div>` : ""}`;
+}
+function blcOcupaLive(m){
+  if(!document.getElementById("torOcupaP") || typeof torOcupaResumo!=="function") return;
+  const R=torOcupaResumo(S, m), ajuste=R && R.A>0 && R.muda && Math.abs(R.r-1)>0.03;
+  setHTML("torOcupaP", !R ? "" : !R.A ? "A área desenhada ficou vazia depois dos recuos." :
+    `<span>${R.desiguais? R.As.map(a=>m2(a)).join(" e ") : m2(R.A)}/andar${R.real? ` · aproveitamento real ${pct(R.efic,0)} (informado ${pct(R.eficInf,0)})${INFO("Eficiência real da planta")}` : ""} · unidades com ${nf(R.media,0)} m² em média (mix: ${nf(R.mixMedia,0)} m²)</span>${ajuste? ` <button type="button" class="btn sm" data-act="blcOcupaMix" style="margin-left:6px">Ajustar mix</button>` : ""}`);
+}
+ACT.blcOcupaMix = ()=>{ const m=window._last&&window._last.m, R=m&&torOcupaResumo(S, m); if(!R||!R.A) return;
+  const q=R.q; S.produto.mix.forEach((u,j)=>u.qtd=q[j]); update(); toast(`Mix ajustado: ${q.reduce((s,n)=>s+n,0)} unidades por andar — Ctrl+Z desfaz`) };
 /* avisos curtos de uma torre e de um bloco (o texto completo fica nos avisos do estudo) */
 function blcCurtos(I){ if(!I) return []; const o=[];
   if(I.foraLote>0.5) o.push(`${m2(I.foraLote)} fora do lote`); if(I.foraRecuo>0.5) o.push(`${m2(I.foraRecuo)} sobre os recuos`);
@@ -318,7 +333,7 @@ function blcBlocosHTML(i, m, I){
   return rows.join("");
 }
 function blcLive(m){
-  setSum("pr-forma", blcSum());
+  setSum("pr-forma", blcSum()); blcOcupaLive(m);
   if(!blcAtivo(S) || !document.getElementById("blcList")) return;
   const P=S.produto;
   setHTML("blcList", P.torres.map((tw,i)=>{ const b=blcB(i), t=m.T[i]||{}, nome=`Torre ${i+1}`, I=(m.blc||[]).find(x=>x.i===i), cu=blcCurtos(I);
