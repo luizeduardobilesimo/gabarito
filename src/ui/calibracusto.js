@@ -16,7 +16,7 @@ const CCAL_UI = { abertas: new Set() };
 .ccal-o .row{margin-top:8px}
 .ccal-warn+.row,.ccal-err+.row{margin-top:10px}
 .ccal-err td:nth-child(2),.ccal-err td:nth-child(3){font-family:var(--f-mono);font-size:12px;text-align:right;white-space:nowrap}
-.ccal-warn{color:var(--warn);font-size:12px;margin:4px 0 0}
+.ccal-warn{color:var(--warn-t);font-size:12px;margin:4px 0 0}
 #ccalRes .mets{grid-template-columns:repeat(3,minmax(0,1fr))}
 #ccalRes .met{padding:8px 10px}
 #ccalRes .met .v{font-size:16px}`; document.head.appendChild(st) }

@@ -2,7 +2,9 @@
    Cálculo puro em src/calc/progresso.js (progressoItens, progressoResumo, proximoPasso). Aqui:
    - S.guia.conf {regras, preco, custo}: flags de interface (extendDEF). NÃO entram em compute/finance. Viram true quando o campo é
      editado (listener de "change" no documento: regras.*, preços do mix/cobertura/lojas, fin.terreno/cub/fator), quando a calibração
-     de custo é aplicada, pelo "Conferi" do checklist ou pelo próximo passo ("Confirmar o preço de venda").
+     de custo é aplicada ou pelo botão "Conferi" que fica ao lado dos campos (Viabilidade › Premissas principais; Terreno › Regras da
+     prefeitura: `progConfHTML`). O checklist e o próximo passo só LEVAM ao campo (`progIrItem`/`campo` do próximo passo, com destaque);
+     nenhum clique à distância marca como conferido.
    - progressoAnelHTML()            → botão com o anel "6/9" (o P1 põe no topo, ao lado do nome do estudo). Abre o checklist ao clicar.
    - progressoLinhaHTML()           → a mesma informação como uma linha ("6 de 9 conferidos · ver"), para o Resultado da Viabilidade.
    - progressoAbrir(anchorEl)       → popover com os 9 itens agrupados por etapa; pendente = "Resolver" (vai para etapa/sub/seção).
@@ -10,7 +12,8 @@
    - proximoPassoAtual()            → proximoPasso(S, m, f, TAB, sub atual) com o último resultado da tela (para o rodapé do P1).
    - progressoExecuta(pp)           → executa um próximo passo: ACT[pp.act] quando houver, senão progIr(pp.etapa, pp.sub, pp.sec).
    - progIr(etapa, sub, sec)        → irPara (P0) quando existir; senão goStep com os nomes atuais das etapas e abre a seção.
-   ACT novos: progSubsolo, progGaragem, progLayout, progConfPreco, progConfCusto, progConfRegras, progPdf. */
+   - progConfHTML(ks)               → linha/botões "Conferi" (regras|preco|custo) com estado ligado; progressoAtualiza mantém o estado.
+   ACT novos: progSubsolo, progGaragem, progLayout, progConf (liga/desliga o "Conferi"), progPdf. */
 extendDEF("guia", { conf:{ regras:false, preco:false, custo:false } });
 
 (function(){ const s=document.createElement("style"); s.textContent=`
@@ -25,6 +28,11 @@ extendDEF("guia", { conf:{ regras:false, preco:false, custo:false } });
 .prog-linha .bar{flex:1;height:4px;border-radius:9px;background:var(--line);overflow:hidden;min-width:40px}
 .prog-linha .bar i{display:block;height:100%;background:var(--sel);border-radius:9px}
 .prog-linha .ver{color:var(--ink-2);text-decoration:underline;text-underline-offset:2px}
+.prog-conf{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.btn.conf{gap:7px;white-space:nowrap}
+.btn.conf::before{content:"";width:8px;height:8px;border-radius:50%;border:1.5px solid var(--line-2);flex:none;transition:background .15s var(--ease),border-color .15s var(--ease)}
+.btn.conf[aria-pressed="true"]{background:var(--ok-soft);border-color:color-mix(in srgb,var(--ok) 35%,transparent);color:var(--ok-t)}
+.btn.conf[aria-pressed="true"]::before{background:var(--ok);border-color:var(--ok)}
 .prog-pop{position:fixed;z-index:62;width:min(380px,calc(100vw - 24px));max-height:min(78vh,640px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg,16px);box-shadow:var(--shadow-pop);padding:16px 16px 12px;color:var(--ink)}
 .prog-pop[hidden]{display:none}
 .prog-pop .pp-h{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin-bottom:6px}
@@ -72,7 +80,7 @@ function progressoLinhaHTML(){
 function progPopHTML(){
   const r=progressoResumoAtual(), tudo=r.feitos===r.total;
   const item=i=>{ const cls=i.ok===true? "ok" : i.ok==null? "wait" : "pend", conf=PROG_CONF[i.k];
-    const acts = i.ok===false? `<button type="button" class="btn sm" data-prog-ir="${i.k}">Resolver</button>${conf?`<button type="button" class="btn sm ghost" data-prog-conf="${conf}" title="Marcar como conferido">Conferi</button>`:""}` : "";
+    const acts = i.ok===false? `<button type="button" class="btn sm" data-prog-ir="${i.k}">${conf?"Conferir":"Resolver"}</button>` : "";
     return `<div class="pp-i ${cls}"><span class="pp-ic">${PROG_OK}</span><div class="pp-t"><b>${esc(i.nome)}</b><span>${esc(i.dica)}</span></div><div class="pp-a">${acts}</div></div>` };
   return `<div class="pp-h${tudo?" ok":""}"><svg viewBox="0 0 40 40" aria-hidden="true"><circle class="tr" cx="20" cy="20" r="16"/><circle class="ar" cx="20" cy="20" r="16" ${progArco(16, r.pct)}/></svg>
       <div><b>${tudo? "Estudo confiável" : `${r.feitos} de ${r.total} conferidos`}</b><span>${tudo? "Tudo o que importa foi conferido." : "O que falta para o estudo ficar confiável"}</span></div>
@@ -98,14 +106,14 @@ function progressoFechar(){ if(PROG_POP) PROG_POP.hidden=true; if(PROG_ANCORA) P
 function progPopClique(e){
   if(e.target.closest("[data-prog-x]")){ progressoFechar(); return }
   const ir=e.target.closest("[data-prog-ir]");
-  if(ir){ const i=progressoResumoAtual().itens.find(x=>x.k===ir.dataset.progIr); progressoFechar(); if(i) progIr(i.etapa, i.sub, i.sec); return }
-  const c=e.target.closest("[data-prog-conf]");
-  if(c){ progMarca(c.dataset.progConf, true) }
+  if(ir){ const i=progressoResumoAtual().itens.find(x=>x.k===ir.dataset.progIr); progressoFechar(); if(i) progIrItem(i); return }
 }
 function progressoAtualiza(){
   const r=progressoResumoAtual();
   document.querySelectorAll("[data-prog-anel]:not([data-prog-linha])").forEach(el=>{ const h=progressoAnelHTML(); if(el.outerHTML!==h) el.outerHTML=h });
   document.querySelectorAll("[data-prog-linha]").forEach(el=>{ const h=progressoLinhaHTML(); if(el.outerHTML!==h) el.outerHTML=h });
+  document.querySelectorAll("[data-act=progConf]").forEach(b=>{ const k=b.dataset.k, on=!!(S.guia&&S.guia.conf&&S.guia.conf[k]); if(b.getAttribute("aria-pressed")!==String(on)){ b.setAttribute("aria-pressed",on); b.textContent=PROG_CONF_ROT[k][on?1:0] } });
+  if(typeof rodapeLive==="function") try{ rodapeLive() }catch(e){}   // o "Próximo passo" acompanha o que acabou de ser conferido
   if(PROG_POP && !PROG_POP.hidden){ const h=progPopHTML(); if(PROG_POP.innerHTML!==h) PROG_POP.innerHTML=h;
     if(PROG_ANCORA && !PROG_ANCORA.isConnected){ PROG_ANCORA=document.querySelector("[data-prog-anel]") } }
   return r;
@@ -118,9 +126,26 @@ function progMarca(k, aviso){
   if(aviso) toast({regras:"Regras marcadas como conferidas", preco:"Preço de venda conferido", custo:"Terreno e custo da obra conferidos"}[k]||"Conferido");
   return true;
 }
-/* navegação: irPara (P0) quando existir; senão, os nomes das etapas de hoje */
-function progIr(etapa, sub, sec){
-  if(typeof irPara==="function"){ try{ return irPara(etapa, sub||undefined, sec||undefined) }catch(e){ console.error("[progresso] irPara", e) } }
+function progDesmarca(k){
+  if(!S.guia || !S.guia.conf || !S.guia.conf[k]) return false;
+  S.guia.conf[k]=false; save(); progressoAtualiza(); return true;
+}
+/* botões "Conferi" (regras|preco|custo): ficam ao lado dos campos; o estado liga/desliga (Ctrl+Z também desfaz) */
+const PROG_CONF_ROT = { regras:["Conferi","Conferidas"], preco:["Conferi o preço","Preço conferido"], custo:["Conferi terreno e obra","Terreno e obra conferidos"] };
+const PROG_CONF_TIT = { regras:"Marcar as regras como conferidas na lei municipal", preco:"Marcar o preço de venda como conferido", custo:"Marcar o terreno e o custo da obra como conferidos" };
+function progConfBtn(k){ const on=!!(S.guia&&S.guia.conf&&S.guia.conf[k]);
+  return `<button type="button" class="btn sm conf" data-act="progConf" data-k="${k}" aria-pressed="${on}" title="${PROG_CONF_TIT[k]}">${PROG_CONF_ROT[k][on?1:0]}</button>` }
+function progConfHTML(ks){ return `<div class="prog-conf" data-prog-conf-row>${(ks||["preco","custo"]).map(progConfBtn).join("")}</div>` }
+/* campo a focar de cada item do checklist que o usuário confere */
+const PROG_ALVO = { preco:"produto.mix.0.preco", custo:"fin.terreno" };
+function progIrItem(i){ return progIr(i.etapa, i.sub, i.sec, PROG_ALVO[i.k]) }
+function progLuz(el){ if(!el) return; el.classList.remove("bq-luz"); void el.offsetWidth; el.classList.add("bq-luz"); setTimeout(()=>el.classList.remove("bq-luz"), 1800) }
+/* navegação: irPara (P0) quando existir; senão, os nomes das etapas de hoje. `campo` (caminho em S) foca o campo e acende a linha "Conferi" da seção */
+function progIr(etapa, sub, sec, campo){
+  if(typeof irPara==="function"){ try{ const alvo=irPara(etapa, sub||undefined, sec||undefined, campo||undefined);
+      if(campo) setTimeout(()=>{ const f=alvo && alvo.isConnected? alvo : document.querySelector(`#tabbody [data-p="${CSS.escape(campo)}"]`);
+        if(f){ progLuz(f.closest(".fld")||f); const d=f.closest("details"); progLuz(d && d.querySelector("[data-prog-conf-row]")) } }, 120);
+      return alvo }catch(e){ console.error("[progresso] irPara", e) } }
   const tem=k=>typeof STEPS!=="undefined" && STEPS.some(s=>s.k===k);
   let k=etapa, s=sub, sc=sec;
   if(k==="terreno" && sc==="regras" && tem("regras")){ k="regras"; sc="cidade"; if(typeof SUBX!=="undefined"){ SUBX.regras="pref"; LS.set("gabarito.subx",SUBX) } }
@@ -137,15 +162,13 @@ function progIr(etapa, sub, sec){
 function progressoExecuta(pp, el){
   if(!pp) return;
   if(pp.act && typeof ACT!=="undefined" && ACT[pp.act]){ if(pp.act==="otim" && TAB!=="produto") progIr("produto"); return ACT[pp.act](el||document.createElement("button")) }
-  progIr(pp.etapa, pp.sub, pp.sec);
+  progIr(pp.etapa, pp.sub, pp.sec, pp.campo);
 }
 Object.assign(ACT, {
   progSubsolo: ()=>{ S.produto.subsolos=Math.min(5,(+S.produto.subsolos||0)+1); update(); renderTab(); toast(`${S.produto.subsolos} subsolo${S.produto.subsolos>1?"s":""} — Ctrl+Z desfaz`) },
   progGaragem: ()=>{ S.produto.garAcima=(+S.produto.garAcima||0)+1; update(); renderTab(); toast("Garagem elevada adicionada — Ctrl+Z desfaz") },
   progLayout: ()=>{ S.estudo.usarLayout=true; update(); renderTab(); toast("As contas usam as vagas do layout") },
-  progConfPreco: ()=>{ progMarca("preco", true); renderTab(); toast("Preço de venda conferido") },
-  progConfCusto: ()=>{ progMarca("custo", true); renderTab(); toast("Terreno e custo da obra conferidos") },
-  progConfRegras: ()=>{ progMarca("regras", true); renderTab() },
+  progConf: b=>{ const k=b.dataset.k; if(!PROG_CONF[k]) return; if(S.guia&&S.guia.conf&&S.guia.conf[k]) progDesmarca(k); else progMarca(k, true) },
   progPdf: ()=>{ if(typeof exportPDF==="function") calcPronto().then(()=>exportPDF()) },
   progAbrir: b=>progressoAbrir(b),
 });

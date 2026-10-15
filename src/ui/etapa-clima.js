@@ -51,15 +51,14 @@ function climaVentoHTML(modo){
     (on("pressao")? GRP(`Pressão nas fachadas${INFO("Cp")}`)+SLD("cfd.opac","Opacidade",0.1,1,0.05,"%",{fx:"cfdBld",pct:true}) : "");
   const pontos = (c.semente && on("linhas")? `<div class="row sb"><span class="pill">linhas pelo ponto da sonda</span><button class="btn sm ghost" data-act="semX">Soltar da entrada</button></div>` : "") +
     (c.emissor && on("fumaca")? `<div class="row sb"><span class="pill">fumaça no ponto da sonda</span><button class="btn sm ghost" data-act="emX">Voltar a barlavento</button></div>` : "");
-  const rodando = typeof CFD!=="undefined" && CFD.running;
+  // Simular/Pausar/Reiniciar e o andamento ficam só na barra do palco (cfdBarUI); aqui só se configura
   return climaVmodoHTML("v3d") +
-    SEC("Simular", `<div class="row" style="flex-wrap:nowrap"><button class="btn${rodando?" on":""}" data-act="cfdPlay" style="flex:1">${rodando?"Pausar":"Simular"}</button><button class="btn ghost" data-act="cfdReset">Reiniciar</button></div><span class="cfstat note" id="cfdStat2"></span>
-      <div style="display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px;align-items:center">${compassSVG(C.ventoDir)}${SLD("clima.ventoVel","Velocidade a 10 m",1,20,0.5,"m/s",{fx:"cfdStart",wide:false})}</div>`+
+    SEC("Vento de referência", `<div style="display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px;align-items:center">${compassSVG(C.ventoDir)}${SLD("clima.ventoVel","Velocidade a 10 m",1,20,0.5,"m/s",{fx:"cfdStart",wide:false})}</div>`+
       ADV(ROW(`Entorno${INFO("Rugosidade")}`,SEG("cfd.rug",[["aberto","aberto"],["suburbano","subúrbio"],["urbano","urbano"]],{fx:"cfdStart",rr:false}))+
         ROW(`Precisão${INFO("“Alta” mostra melhor esteiras e cantos, mas leva minutos.","a precisão")}`,SEG("cfd.res",Object.entries(CFD_RES).map(([k,v])=>[k,v[1]]),{fx:"cfdStart",rr:false})), {key:"cSim"}),
       {open:true, key:"cSim", sum:climaSum("v3d"), info:"LBM"}) +
     SEC("O que ver", `<div class="chips">${CFD_VIZ.map(([k,l])=>`<button type="button" class="chip" data-act="cviz" data-k="${k}" aria-pressed="${on(k)}">${l}</button>`).join("")}</div>
-      <div class="fld wide"><label class="fl" for="cfdVarSel">Colorir por${INFO("Lawson")}</label><select class="sel" id="cfdVarSel" data-p="cfd.var" data-t="s" data-fx="cfdRef" data-rr="1">${Object.entries(CFD_VARS).map(([k,l])=>`<option value="${k}" ${c.var===k?"selected":""}>${l}</option>`).join("")}</select></div>${pontos}`+
+      <div class="fld wide"><label class="fl" for="cfdVarSel">Colorir por${INFO("Lawson")}</label><select class="sel" id="cfdVarSel" data-p="cfd.var" data-t="s" data-fx="cfdVar" data-rr="1">${Object.entries(CFD_VARS).map(([k,l])=>`<option value="${k}" ${c.var===k?"selected":""}>${l}</option>`).join("")}</select></div>${pontos}`+
       ADV(ROW("Escala",SEG("cfd.escala",[["auto","automática"],["fixa","fixa"]],{fx:"cfdRef"}))+(c.escala==="fixa"? KV(NUM("cfd.min","Mínimo","",{fx:"cfdRef",step:0.5})+NUM("cfd.max","Máximo","",{fx:"cfdRef",step:0.5})) : "")+
         grupos+GRP("Aparência")+ROW("Fundo",SEG("cfd.fundo",[["claro","claro"],["escuro","escuro"]],{fx:"cfdLook",rr:false}))+SW("cfd.vidro","Prédios em vidro (ver através)",{fx:"cfdLook"})+SLD("cfd.animVel","Velocidade da animação",0.1,4,0.1,"×",{fx:"save"}), {key:"cVer"}),
       {open:true, key:"cVer", sum:climaSum("ver"), info:"Toque num ponto do 3D para medir com a sonda: dali dá para soltar fumaça ou linhas de corrente."});
@@ -111,8 +110,6 @@ Object.assign(ACT,{
   entClear: b=>{ if(b.dataset.arm){ S.entorno=[]; renderTab() } else { b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on") } },
   entX: b=>{ S.entorno.splice(+b.dataset.i,1); renderTab() },
   cviz: b=>{ const k=b.dataset.k; S.cfd.viz[k]=!S.cfd.viz[k]; save(); if(cfdOn()){ if(k==="particulas"||k==="fumaca") cfdParticlesInit(); else if(k==="linhas") cfdLines(); else cfdRefresh(false); cfdBarUI(); render3() } renderTab() },
-  cfdPlay: ()=>{ if(VIEW!=="v3d"){ setView("v3d"); return } CFD.running? cfdPause() : (CFD.worker? cfdRun() : cfdStart()); renderTab() },
-  cfdReset: ()=>{ if(VIEW!=="v3d") setView("v3d"); else cfdStart(true) },
   semX: ()=>{ S.cfd.semente=null; save(); if(cfdOn()){ cfdLines(); render3() } renderTab() },
   emX: ()=>{ S.cfd.emissor=null; save(); if(cfdOn()) cfdParticlesInit(); renderTab() },
 });

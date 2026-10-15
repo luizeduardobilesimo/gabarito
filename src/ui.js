@@ -54,6 +54,7 @@ const FX = {
   cfdLines: live=>{ save(); if(!live && cfdOn()){ cfdLines(); render3() } },
   cfdParts: live=>{ save(); if(!live && cfdOn()) cfdParticlesInit() },
   cfdRef:   live=>{ save(); if(!live && cfdOn()){ cfdRefresh(true); cfdBarUI() } },
+  cfdVar:   live=>{ if(S.cfd.var==="lawson"){ S.cfd.viz.plano=true; S.cfd.plano.orient="h"; S.cfd.plano.h=1.5 } save(); if(!live && cfdOn()){ cfdRefresh(true); cfdBarUI() } },   // conforto de Lawson liga o plano de cor a 1,5 m
   cfdBld:   ()=>{ save(); if(cfdOn()){ cfdColorBuildings(); render3() } },
   cfdLook:  live=>{ save(); if(!live && cfdOn()){ cfdBuildings(); cfdBuildStatic(); cfdRefresh(true); cfdBarUI() } },
   r3:       ()=>{ save(); if(window._last) rebuild3d(window._last.m) },

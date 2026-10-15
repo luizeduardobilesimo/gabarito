@@ -70,7 +70,7 @@
 .top .rail button::before{display:none}
 .top .rail .n{position:relative;display:grid;place-items:center;width:23px;height:23px;border-radius:50%;border:1.5px solid var(--line-2);font-size:11.5px;font-weight:650;color:var(--muted);background:var(--surface);flex:none;transition:background .2s var(--ease),border-color .2s var(--ease),color .2s var(--ease)}
 .top .rail .n svg{display:none;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
-.top .rail button.feito .n{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.top .rail button.feito .n{background:var(--ok-soft);border-color:transparent;color:var(--ok-t)}
 .top .rail button.feito .n b{display:none}
 .top .rail button.feito .n svg{display:block}
 .top .rail button[aria-current="page"]{color:var(--ink);font-weight:650;background:var(--soft)}
@@ -90,7 +90,7 @@
 .panel>.rail button::before{display:none}
 .panel>.rail .n{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line-2);font-size:11.5px;font-weight:650;background:var(--surface)}
 .panel>.rail .n svg{display:none;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
-.panel>.rail button.feito .n{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.panel>.rail button.feito .n{background:var(--ok-soft);border-color:transparent;color:var(--ok-t)}
 .panel>.rail button.feito .n b{display:none}.panel>.rail button.feito .n svg{display:block}
 .panel>.rail button[aria-current="page"]{color:var(--ink);padding-right:10px}
 .panel>.rail button[aria-current="page"] .n{background:var(--sel);border-color:var(--sel);color:var(--sel-ink)}
@@ -215,6 +215,17 @@
   /* folha cheia: o palco fica só como uma faixa — sem as barras e dicas flutuantes por cima dela */
   .nv-cheia .stage .view>:not(canvas):not(#c2d):not(#c3d){visibility:hidden}
   .hint{font-size:11.5px;padding:6px 10px;line-height:1.35}
+  /* acabamento: a planta fica à mostra — barras do palco mais baixas e as ferramentas da vista numa faixa só, rolável (um botão ≥ 40 px) */
+  .vacts .btn{width:40px;height:40px;min-height:40px}
+  .viewbar .seg button{min-height:40px}
+  .vtools{bottom:6px;flex-direction:row;align-items:center;gap:6px;overflow-x:auto;overflow-y:hidden;padding:0 22px 4px 0;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 22px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 22px),transparent)}
+  .vtools::-webkit-scrollbar{display:none}
+  .vtools .seg{flex:none;max-width:none;overflow:visible}
+  .vtools .seg button{min-height:40px;white-space:nowrap}
+  .cfdbar:not(#vdBar){display:flex;align-items:center;gap:8px;padding:6px 8px;right:auto;max-width:calc(100% - 16px)}
+  .cfdbar:not(#vdBar) .cfstat{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .cfstat .det{display:none}
+  .view:has(#vtools>:not([hidden])) .hint,.view:has(#vtools>:not([hidden])~:not([hidden])) .hint{bottom:60px}
 }
 @media (max-width:900px){ .top .prog-anel{min-height:40px;min-width:40px;justify-content:center} }
 @media (max-width:520px){ .top .prog-anel{padding:3px;gap:0} .top .prog-anel span{display:none} }

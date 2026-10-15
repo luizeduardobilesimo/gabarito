@@ -79,7 +79,7 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass-note{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--ink-2);line-height:1.45;margin:0}
 .ass-note svg{width:18px;height:18px;flex:none;fill:none;stroke:var(--muted);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;margin-top:1px}
 .ass-st{font-size:12.5px;color:var(--muted);min-height:18px;margin:0}
-.ass-st.bad{color:var(--bad)} .ass-st.ok{color:var(--ok)}
+.ass-st.bad{color:var(--bad)} .ass-st.ok{color:var(--ok-t)}
 .ass-tag{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
 .ass-tag i{width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none}
 .ass-tag.ok i{background:var(--ok)}
@@ -127,8 +127,8 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass-feito{position:fixed;right:20px;bottom:92px;z-index:58;width:min(372px,calc(100vw - 24px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg,16px);box-shadow:var(--shadow-pop);padding:16px 16px 12px;color:var(--ink);animation:assIn .35s var(--ease) both}
 .ass-feito[hidden]{display:none}
 .ass-feito .fh{display:flex;align-items:flex-start;gap:10px}
-.ass-feito .fh .ic{width:28px;height:28px;border-radius:50%;background:var(--ok-soft,var(--surface-2));color:var(--ok);display:grid;place-items:center;flex:none}
-.ass-feito .fh .ic.warn{background:var(--warn-soft,var(--surface-2));color:var(--warn)}
+.ass-feito .fh .ic{width:28px;height:28px;border-radius:50%;background:var(--ok-soft,var(--surface-2));color:var(--ok-t);display:grid;place-items:center;flex:none}
+.ass-feito .fh .ic.warn{background:var(--warn-soft,var(--surface-2));color:var(--warn-t)}
 .ass-feito .fh .ic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .ass-feito .fh b{display:block;font-size:15px;font-weight:650;letter-spacing:-.01em}
 .ass-feito .fh span{display:block;font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.4}
@@ -137,7 +137,7 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass-feito .fx svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 .ass-feito dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:14px 0 4px;font-size:12.5px}
 .ass-feito dt{color:var(--muted)} .ass-feito dd{margin:0;color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
-.ass-feito dd.warn{color:var(--warn)}
+.ass-feito dd.warn{color:var(--warn-t)}
 .ass-feito .pg{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint,var(--muted));font-weight:600;margin:12px 0 2px}
 .ass-feito .pi{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
 .ass-feito .pg+.pi{border-top:0}
@@ -415,7 +415,7 @@ function assFeitoMostra(info){
       const b=e.target.closest("[data-fi]"); if(!b) return;
       const k=b.dataset.fi;
       if(k==="ia"){ assFeitoFecha(); assIA(); return }
-      const i=progressoItens(S, (window._last||{}).m, (window._last||{}).f).find(x=>x.k===k); if(i){ progIr(i.etapa, i.sub, i.sec); if(k!=="preco"&&k!=="custo") assFeitoFecha() } });
+      const i=progressoItens(S, (window._last||{}).m, (window._last||{}).f).find(x=>x.k===k); if(i){ if(typeof progIrItem==="function") progIrItem(i); else progIr(i.etapa, i.sub, i.sec); if(k!=="preco"&&k!=="custo") assFeitoFecha() } });
     // desfazer: o cartão perde o sentido
     document.addEventListener("keydown", e=>{ if((e.ctrlKey||e.metaKey) && (e.key||"").toLowerCase()==="z") assFeitoFecha() }, true);
     const u=document.getElementById("undoBtn"); if(u) u.addEventListener("click", ()=>assFeitoFecha());

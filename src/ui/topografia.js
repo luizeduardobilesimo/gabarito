@@ -39,7 +39,7 @@ function topoLive(m){
   if(!S.topo.on){ setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`); return }
   const t=m.topo, T=S.topo; if(!t) return;
   const sf=t.sf, n=sf.N;
-  setHTML("topoInfo", `${n} pontos · cotas ${topoN(sf.zmin)} a ${topoN(sf.zmax)} m${T.fonte? " · "+esc(T.fonte):""}${t.fora? ` · <span style="color:var(--warn)">lote parcialmente fora da área levantada</span>`:""}`);
+  setHTML("topoInfo", `${n} pontos · cotas ${topoN(sf.zmin)} a ${topoN(sf.zmax)} m${T.fonte? " · "+esc(T.fonte):""}${t.fora? ` · <span style="color:var(--warn-t)">lote parcialmente fora da área levantada</span>`:""}`);
   setHTML("topoCotaTxt", `${topoN(t.cOtima)} m`);
   const dif=t.c-t.calc, met=(l,v,s,cls)=>`<div class="met"><div class="l">${l}</div><div class="v"${cls?` style="color:var(--${cls})"`:""}>${v}</div><div class="s">${s}</div></div>`;
   setHTML("topoMets",

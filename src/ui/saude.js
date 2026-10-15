@@ -48,12 +48,12 @@ function saudeStatusHTML(f){
 
 /* ---------- Metas e referências (Premissas) ---------- */
 function finMetasHTML(){
-  const M = S.metas, E = M.efic, par = (rot, a, b, o = {}) => `<span class="fl">${rot}</span>${finIN(a, o.unit || "", { pct: !!o.pct, step: o.step, label: rot + " (1º valor)" })}${finIN(b, o.unit || "", { pct: !!o.pct, step: o.step, label: rot + " (2º valor)" })}`;   // sem wrapper: as células entram direto na grade .fcen
+  const M = S.metas, E = M.efic, par = (rot, a, b, o = {}) => `<span class="fl">${rot}${o.info ? INFO(o.info) : ""}</span>${finIN(a, o.unit || "", { pct: !!o.pct, step: o.step, label: rot + " (1º valor)" })}${finIN(b, o.unit || "", { pct: !!o.pct, step: o.step, label: rot + " (2º valor)" })}`;   // sem wrapper: as células entram direto na grade .fcen
   const emp = !!saudePadraoEmpresa();
   const faixas = `<div class="fcen"><span></span><span class="fl">De</span><span class="fl">Até</span>
       ${par("V/C (cuidado · excelente)", "metas.vc.min", "metas.vc.bom", { step: 0.1, unit: "×", q: "venda custo" })}
       ${par("Terreno (bom até · máx.)", "metas.terreno.ok", "metas.terreno.max", { pct: true, step: 1, unit: "%", q: "terreno % vgv" })}
-      ${par("Indiretos % VGV", "metas.soft.min", "metas.soft.max", { pct: true, step: 1, unit: "%", q: "soft costs custos indiretos" })}
+      ${par("Indiretos % VGV", "metas.soft.min", "metas.soft.max", { pct: true, step: 1, unit: "%", q: "soft costs custos indiretos", info: "Soft costs" })}
       ${par("Imprevistos % obra", "metas.imprev.min", "metas.imprev.max", { pct: true, step: 1, unit: "%", q: "contingência" })}</div>`;
   const efic = `<div class="fcen"><span></span><span class="fl">Mín.</span><span class="fl">Máx.</span>
       ${Object.keys(SAUDE_TIPOS).map(k => par(SAUDE_TIPOS[k][0].toUpperCase() + SAUDE_TIPOS[k].slice(1), `metas.efic.${k}.0`, `metas.efic.${k}.1`, { pct: true, step: 1, unit: "%", q: "eficiência global tipologia" })).join("")}</div>`;
@@ -61,7 +61,7 @@ function finMetasHTML(){
     KV(NUM("fin.margemAlvo", "Margem alvo", "% VGV", { pct: true, step: 1, help: "Margem s/ VGV", q: "meta lucro" }) + NUM("metas.margem.min", "Margem mínima", "% VGV", { pct: true, step: 1, q: "não toque piso" }) +
       NUM("metas.tir.alvo", "TIR alvo", "% a.a.", { pct: true, step: 1, help: "TIR alvo", q: "retorno meta" }) + NUM("fin.tma", "TMA", "% a.a.", { pct: true, step: 0.5, help: "TMA", q: "taxa mínima atratividade desconto vpl" })) +
     `<div class="row"><button type="button" class="btn sm" data-act="metasPadrao">Salvar como padrão</button><button type="button" class="btn sm ghost" data-act="metasSug">Restaurar sugeridas</button>${emp ? `<button type="button" class="btn sm ghost" data-act="metasEmpresa">Padrão da empresa</button>` : ""}</div>` +
-    ADV(KV(NUM("metas.margem.otimo", "Margem ótima desde", "% VGV", { pct: true, step: 1 }) + NUM("metas.tir.otimo", "TIR ótima desde", "% a.a.", { pct: true, step: 1 }) +
+    ADV(KV(NUM("metas.margem.otimo", "Margem ótima desde", "% VGV", { pct: true, step: 1 }) + NUM("metas.tir.otimo", "TIR ótima desde", "% a.a.", { pct: true, step: 1, help: "TIR" }) +
         NUM("metas.vc.ruim", "V/C ruim abaixo de", "×", { step: 0.1 })) +
       GRP("Faixas de referência") + faixas + GRP(`Eficiência por tipologia ${INFO("Faixa de eficiência global (área privativa ÷ construída) esperada para cada tipo de produto. O Gabarito detecta o tipo pelo projeto; abaixo da faixa o semáforo muda.")}`) + efic +
       GRP(`Detecção da tipologia ${INFO("Regras para escolher a faixa de eficiência: studios se a área média das unidades fica abaixo do limite; sem elevador se nenhuma torre passa do número de andares; muito lazer se o lazer passa dessa fração da área construída. Sem nenhuma delas: garagem em pavimento (garagem elevada ou sem subsolo) ou em subsolo.")}`) +
@@ -88,5 +88,5 @@ Object.assign(FX, {
 function saudePermutaSub(){
   const F = S.fin;
   setSub("fin.permuta", F.permuta > 0 && F.terreno > 0
-    ? `<span class="note" style="color:var(--warn)">Terreno também lançado (${mi(F.terreno)}).</span> <button type="button" class="btn sm ghost" data-act="zerarTerreno">Zerar terreno</button>` : "");
+    ? `<span class="note" style="color:var(--warn-t)">Terreno também lançado (${mi(F.terreno)}).</span> <button type="button" class="btn sm ghost" data-act="zerarTerreno">Zerar terreno</button>` : "");
 }

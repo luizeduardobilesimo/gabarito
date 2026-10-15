@@ -168,7 +168,7 @@ function blcCss(){ if(document.getElementById("blcCss")) return; const s=documen
 .blc-fm .chip::before{display:none}
 .blc-fm .chip svg{width:14px;height:14px;fill:currentColor;opacity:.8;flex:none}
 .blc-av{display:grid;gap:3px}
-.blc-av p{margin:0;font-size:11.5px;line-height:1.4;color:var(--warn)}
+.blc-av p{margin:0;font-size:11.5px;line-height:1.4;color:var(--warn-t)}
 .blc-pl{display:grid;gap:4px}
 .blc-b{border-radius:9px;background:var(--surface);border:1px solid var(--line);transition:border-color .15s,box-shadow .15s}
 .pr-row.on .blc-b{background:var(--surface-2)}
@@ -180,7 +180,7 @@ function blcCss(){ if(document.getElementById("blcCss")) return; const s=documen
 .blc-bh b{font-weight:550;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .blc-bh .a{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .blc-bh .tg{font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:999px;padding:1px 6px;white-space:nowrap}
-.blc-bh .w{grid-column:2/-1;font-family:var(--f-mono);font-size:10.5px;color:var(--warn);line-height:1.35}
+.blc-bh .w{grid-column:2/-1;font-family:var(--f-mono);font-size:10.5px;color:var(--warn-t);line-height:1.35}
 .blc-sil{display:flex;justify-content:center;align-items:center;height:12px}
 .blc-sil i{display:block;height:9px;min-width:5px;border-radius:2px;background:var(--muted);opacity:.55}
 .blc-b.ref .blc-sil i{background:var(--accent);opacity:.85}
@@ -309,8 +309,8 @@ function blcAlasTxt(l){ const A=l && l.alas; if(!A) return null;
   const onde = A.nucleo==="nó" ? (/^[TH]$/.test(A.forma)? "no encontro das alas" : "no canto") : A.nucleo==="meio" ? "no meio da ala" : "na ponta da ala";
   return `por alas · ${A.forma} · núcleo ${onde}${esc} · ${A.dist!=null? nf(A.dist,0)+" m até a escada" : ""}` }
 function blcAlasLinha(m, i){ const l=m.tipo && m.tipo[i]; if(!l) return "";
-  if(l.alasFalha) return `<p class="note blc-al" style="color:var(--warn)">Pavimento tipo aproximado: ${esc(l.alasFalha)}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>`;
-  const t=blcAlasTxt(l); return t ? `<p class="note blc-al"${l.alas.dist>l.alas.lim+1e-6? ' style="color:var(--warn)"' : ""}>Tipo ${t}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>` : "" }
+  if(l.alasFalha) return `<p class="note blc-al" style="color:var(--warn-t)">Pavimento tipo aproximado: ${esc(l.alasFalha)}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>`;
+  const t=blcAlasTxt(l); return t ? `<p class="note blc-al"${l.alas.dist>l.alas.lim+1e-6? ' style="color:var(--warn-t)"' : ""}>Tipo ${t}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>` : "" }
 /* linhas dos blocos de uma torre (de cima para baixo) */
 function blcBlocosHTML(i, m, I){
   const L=blcLst(i), t=m.T[i]||{}, N=t.pav||1, kAt=blcK(i), maxA=Math.max(1, ...L.map((_,k)=>(blcFx(m,i,k)||{}).A||0));
@@ -351,7 +351,7 @@ function blcLive(m){
         <div class="pr-rf"><button type="button" class="btn sm" data-act="blcAdd" data-i="${i}" title="Novo bloco no topo, cópia do de cima, começando no meio dele">+ Bloco</button>${nb===1? `<button type="button" class="btn sm ghost" data-act="blcRefaz" data-i="${i}" title="Copia de novo a forma automática">Refazer da automática</button>` : ""}${prRm("blcDel", i, "forma da "+nome.toLowerCase(), "Apagar forma")}</div></div>` : ""}</div>` }).join(""));
   const R=blcResumo(S,m), G2=(m.blcGeral||[]).filter(a=>!/^O mix ocupa/.test(a));
   setHTML("blcGeral", (R && R.real? `<p class="note blc-ef">Eficiência real da planta <b>${pct(R.efic,0)}</b> (informada ${pct(R.eficInf,0)}) · ${m2(R.priv)} de unidades/andar${INFO("Eficiência real da planta")}</p>` : "")
-    + (R? `<div class="row sb"><span class="note"${R.desvio?' style="color:var(--warn)"':""}>O mix ocupa ${pct(R.ocupa,0)} do pavimento ${m.T.some(t=>t.desenhada && (t.faixas||[]).length>1)? "tipo " : ""}desenhado</span>${R.muda? `<button type="button" class="btn sm" data-act="blcMix" title="Muda a quantidade de unidades por andar para o mix voltar ao tamanho original, pela área real que a planta desenhada tem para unidades (no bloco tipo; os outros blocos acompanham)">Ajustar mix</button>` : ""}</div>` : "")
+    + (R? `<div class="row sb"><span class="note"${R.desvio?' style="color:var(--warn-t)"':""}>O mix ocupa ${pct(R.ocupa,0)} do pavimento ${m.T.some(t=>t.desenhada && (t.faixas||[]).length>1)? "tipo " : ""}desenhado</span>${R.muda? `<button type="button" class="btn sm" data-act="blcMix" title="Muda a quantidade de unidades por andar para o mix voltar ao tamanho original, pela área real que a planta desenhada tem para unidades (no bloco tipo; os outros blocos acompanham)">Ajustar mix</button>` : ""}</div>` : "")
     + (G2.length? `<div class="blc-av">${G2.map(a=>`<p>${esc(a)}</p>`).join("")}</div>` : ""));
 }
 
@@ -360,7 +360,7 @@ const blcTemAlas = m => !!(m && m.tipo && m.tipo.some(l=>l && (l.alas || l.alasF
 function blcAlasCard(){
   const m=blcM(), mt=(l,v,s,c)=>`<div class="met"><div class="l">${l}</div><div class="v"${c?` style="color:var(--${c})"`:""}>${v}</div>${s?`<div class="s">${s}</div>`:""}</div>`;
   const rows=(m && m.tipo || []).map((l,i)=>{ if(!l) return ""; const nm=m.T.length>1? `Torre ${i+1} · ` : "";
-    if(l.alasFalha) return `<p class="note" style="color:var(--warn)">${nm}aproximado: ${esc(l.alasFalha)}</p>`;
+    if(l.alasFalha) return `<p class="note" style="color:var(--warn-t)">${nm}aproximado: ${esc(l.alasFalha)}</p>`;
     const A=l.alas; if(!A) return ""; const alto=A.dist>A.lim+1e-6;
     return `${m.T.length>1? `<p class="fl" style="margin:4px 0 2px">Torre ${i+1}</p>` : ""}<div class="mets">${mt("Forma", A.forma, `${A.alas} trechos de corredor`)}${mt(`Até a escada${INFO("Distância a percorrer da porta da unidade mais distante até a escada, pelo corredor (IN 09 CBMSC; limite da saída única sem chuveiros: 30 m).","distância a percorrer")}`, nf(A.dist||0,1)+" m", `limite ${nf(A.lim||30,0)} m`, alto? "warn" : "")}${mt("Escadas", 1+(A.esc2||0), A.esc2? "extra na ponta da ala" : "no núcleo")}${mt("Livre", m2(A.livreA||0), "sem uso")}</div>` }).join("");
   return SEC("Alas do pavimento tipo", (rows || `<p class="note">Sem planta em alas.</p>`)

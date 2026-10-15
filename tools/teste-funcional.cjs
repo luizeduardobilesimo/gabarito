@@ -512,6 +512,13 @@ async function tViab(b) {
   ok(await ev(() => document.querySelectorAll('#tabbody section.card.res').length === 1 && /Caixa necessário/.test(document.getElementById('finTop').textContent)), 'um único resultado (lucro, margem, retorno, caixa necessário)');
   ok(await ev(() => SUBDEF.viab.map(x => x[0]).join() === 'res,prem,risco'), 'sub-abas Resultado · Premissas · Riscos');
   await sec('dre'); ok(await ev(() => document.querySelectorAll('#dre tr').length > 5), 'DRE abre e preenche');
+  // o "Próximo passo" de Viabilidade só LEVA ao campo (focado, destacado): nada é marcado como conferido à distância; "Conferi" confirma ali
+  ok(await ev(() => /Conferir/.test(document.getElementById('nvProx').textContent) && !S.guia.conf.preco && !S.guia.conf.custo), 'próximo passo pede para conferir preço/custo');
+  await p.click('#nvProx'); await W(700);
+  ok(await ev(() => !S.guia.conf.preco && !S.guia.conf.custo && /produto\.mix\.0\.preco|fin\.terreno/.test((document.activeElement.dataset || {}).p || '')), 'conferir leva ao campo sem marcar como conferido');
+  await p.click('#tabbody [data-act=progConf][data-k=preco]'); await W(300);
+  ok(await ev(() => S.guia.conf.preco === true), '"Conferi o preço" confirma explicitamente');
+  await undo(); ok(await ev(() => S.guia.conf.preco === false), '  Ctrl+Z desfaz a confirmação');
   // Premissas principais (Resultado): terreno e preço; editar confirma os itens do checklist
   const l0 = await lucro(), t0 = await S_('fin.terreno');
   await preenche('#f-fin-terreno', 3000000); await fim();
@@ -750,9 +757,9 @@ async function tClima(b) {
   // túnel de vento 3D
   await p.click('#tabbody [data-act=vmodo][data-v=v3d]'); await W(4000);
   ok(await ev(() => VIEW === 'v3d' && !!CFD.dom), 'túnel 3D: vista');
-  const r0 = await ev(() => CFD.running); await p.click('#tabbody [data-act=cfdPlay]'); await W(500);
+  const r0 = await ev(() => CFD.running); await p.click('#cfPlay'); await W(500);
   ok(await ev(() => CFD.running) !== r0, 'túnel 3D: iniciar/pausar', `${r0} → ${await ev(() => CFD.running)}`);
-  if (!await ev(() => CFD.running)) { await p.click('#tabbody [data-act=cfdPlay]'); await W(300) }
+  if (!await ev(() => CFD.running)) { await p.click('#cfPlay'); await W(300) }
   ok(await ev(() => CFD.running), 'túnel 3D: simulação rodando');
   await W(5000);
   await p.click('#tabbody [data-act=cviz][data-k=fumaca]'); await W(800); ok(await ev(() => S.cfd.viz.fumaca), 'túnel 3D: ligar fumaça');
@@ -765,8 +772,9 @@ async function tClima(b) {
     await p.click('#pbX').catch(() => {}); await W(200);
   }
   await p.selectOption('#cfdVarSel', 'lawson'); await W(800); ok(await ev(() => S.cfd.var === 'lawson'), 'túnel 3D: colorir por conforto (Lawson)');
-  await p.click('#tabbody [data-act=cfdReset]'); await W(800); ok(true, 'túnel 3D: reiniciar');
-  await p.click('#tabbody [data-act=cfdPlay]'); await W(300); ok(await ev(() => !CFD.running), 'túnel 3D: pausar');
+  ok(await ev(() => !document.querySelector('#cfdBar select') && !document.querySelector('#tabbody [data-act=cfdPlay]')), 'túnel 3D: cada controle num lugar só (barra do palco só reproduz; o painel só configura)');
+  await p.click('#cfReset'); await W(800); ok(true, 'túnel 3D: reiniciar (barra do palco)');
+  await p.click('#cfPlay'); await W(300); ok(await ev(() => !CFD.running), 'túnel 3D: pausar');
   semErros(p, 'clima'); await ctx.close();
 }
 
@@ -940,7 +948,7 @@ async function tCelular(b) {
         const over = document.documentElement.scrollWidth > innerWidth + 1;
         const cut = [...document.querySelectorAll('.top *, #kpis *')].filter(e => e.children.length === 0 && e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow === 'hidden').map(e => e.textContent.trim().slice(0, 20));
         // ferramentas do palco: cada botão inteiro dentro da tela e do seu contêiner (a faixa de vistas #viewSeg rola de propósito, com esmaecido)
-        const barra = [...document.querySelectorAll('#view .viewbar button:not(#viewSeg button), #vtools button')].filter(vis).filter(e => { const r = e.getBoundingClientRect(); let c = e.parentElement; while (c && c.id !== 'view') { const s = getComputedStyle(c); if (/(hidden|auto|scroll|clip)/.test(s.overflowX)) { const q = c.getBoundingClientRect(); if (r.left < q.left - 1 || r.right > q.right + 1) return true } c = c.parentElement } return r.left < -1 || r.right > innerWidth + 1 }).map(e => e.textContent.trim().slice(0, 14));
+        const barra = [...document.querySelectorAll('#view .viewbar button:not(#viewSeg button), #vtools button')].filter(vis).filter(e => { const r = e.getBoundingClientRect(); const vt = e.closest('#vtools'); if (vt) { const q = vt.getBoundingClientRect(); return q.left < -1 || q.right > innerWidth + 1 }   /* a faixa de ferramentas rola de propósito (com esmaecido), como #viewSeg: vale a faixa inteira dentro da tela */ let c = e.parentElement; while (c && c.id !== 'view') { const s = getComputedStyle(c); if (/(hidden|auto|scroll|clip)/.test(s.overflowX)) { const q = c.getBoundingClientRect(); if (r.left < q.left - 1 || r.right > q.right + 1) return true } c = c.parentElement } return r.left < -1 || r.right > innerWidth + 1 }).map(e => e.textContent.trim().slice(0, 14));
         const pn = document.getElementById('projName'); const nomeCorta = pn ? pn.scrollWidth > pn.clientWidth + 1 : false;
         const rail = document.getElementById('rail').getBoundingClientRect(), pb = Math.round(rail.top - document.querySelector('.panel').getBoundingClientRect().bottom + rail.height);   // a folha termina acima da barra de etapas
         return { small: small.slice(0, 10), over, cut, barra, nomeCorta, nome: pn && pn.value, railH: Math.round(rail.height), pb };

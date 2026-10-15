@@ -113,9 +113,9 @@ function repoNuvem(local, api, o){
         try{ const r=await api("GET","/api/estudos?id="+encodeURIComponent(id)); await cacheEst(r); return {...r, nuvem:{dono, rev:r.rev, pendente:false}} }
         catch(e){ if(offline(e)) return meu(l)? l : null; if(e.status===404) return null; throw e }
       },
-      async put(e){
+      async put(e, o){
         const id=e.id||local.novoId(), ant=await B.um("estudos", id), t=agora();
-        const rec={...e, id, dono, criado:e.criado||(ant&&ant.criado)||t, atualizado:t, nuvem:{dono, rev:(meu(ant)&&ant.nuvem.rev)||0, pendente:true}};
+        const rec={...e, id, dono, criado:e.criado||(ant&&ant.criado)||t, atualizado:o && o.manterData && e.atualizado? e.atualizado : t, nuvem:{dono, rev:(meu(ant)&&ant.nuvem.rev)||0, pendente:true}};
         await B.grava("estudos", rec); enfileira("e:"+id);
         return rec;
       },

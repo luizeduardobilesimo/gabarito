@@ -36,7 +36,7 @@ function cmpChart(c){
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Fluxo do Gabarito e da planilha, sobrepostos">${shade}${ticks}${z}
     <path d="${path(G)}" fill="none" stroke="var(--accent)" stroke-width="2"/><path d="${path(P)}" fill="none" stroke="var(--mark)" stroke-width="2" stroke-dasharray="5 3"/>
     <text x="${pl}" y="${H-5}" font-size="9" fill="var(--muted)">mês 0</text><text x="${W-pr}" y="${H-5}" font-size="9" text-anchor="end" fill="var(--muted)">mês ${N-1} · R$ mi</text></svg>
-    <div class="cmpLeg"><span><i style="border-color:var(--accent)"></i>Gabarito</span><span><i style="border-color:var(--mark);border-top-style:dashed"></i>Planilha</span>${shade?`<span style="color:var(--warn)">trecho divergente</span>`:""}</div>`;
+    <div class="cmpLeg"><span><i style="border-color:var(--accent)"></i>Gabarito</span><span><i style="border-color:var(--mark);border-top-style:dashed"></i>Planilha</span>${shade?`<span style="color:var(--warn-t)">trecho divergente</span>`:""}</div>`;
 }
 
 function cmpBody(){

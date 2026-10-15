@@ -28,7 +28,7 @@ function estrCmpHTML(){
   const C=ESTR_CMP; if(!C || !C.list) return "";
   const cur=S.estrutura.malha, nM=Math.round(S.estudo.porModulo), best=Math.min(...C.list.map(r=>r.custo));
   return `<table class="tbl" style="margin-top:6px"><tr><th>Malha</th><th>Transições</th></tr>` + C.list.map((r,i)=>{ const on=r.malha===cur && r.porModulo===nM;
-    return `<tr><td><b style="font-weight:600">${esc(r.nome)}</b><div class="note">${r.vagas} vagas · ${r.nPil} pilares${r.nDesloc? ` · ${r.nDesloc} ajustados` : ""}${r.custo===best? ` · <span style="color:var(--ok)">menor custo</span>` : ""}</div>
+    return `<tr><td><b style="font-weight:600">${esc(r.nome)}</b><div class="note">${r.vagas} vagas · ${r.nPil} pilares${r.nDesloc? ` · ${r.nDesloc} ajustados` : ""}${r.custo===best? ` · <span style="color:var(--ok-t)">menor custo</span>` : ""}</div>
       ${on? `<span class="pill ok">em uso</span>` : `<button type="button" class="btn sm ghost" data-act="estrAplicar" data-i="${i}" style="margin-top:4px">Usar esta</button>`}</td><td>${r.nTrans}<div class="note">${r.nTrans? brl(r.custo) : "—"}</div></td></tr>` }).join("") + `</table>` +
     `<p class="note">O módulo alternativo refaz a garagem em modo rápido; as vagas são estimadas pela diferença.</p>`;
 }

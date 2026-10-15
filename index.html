@@ -19,7 +19,7 @@
   --sel:#1d1d1f; --sel-ink:#ffffff; --sel-soft:rgba(29,29,31,.06);
   --bg:#f5f5f7; --surface:#ffffff; --surface-2:#f5f5f7; --surface-3:#ebebef; --soft:#f0f0f3; --field:#ffffff; --seg-on:#ffffff;
   --ink:#1d1d1f; --ink-2:#3a3a3e; --muted:#6e6e73; --faint:#a1a1a6; --line:#e4e4e9; --line-2:#d2d2d7;
-  --ok:#1f9d55; --ok-soft:rgba(31,157,85,.12); --warn:#b8740f; --warn-soft:rgba(201,134,22,.14); --bad:#d0342c; --bad-soft:rgba(208,52,44,.11); --info:#2f6fed; --info-soft:rgba(47,111,237,.11); --neutral-soft:rgba(29,29,31,.07);
+  --ok-t:#136f37; --warn-t:#8a5606; --ok:#1f9d55; --ok-soft:rgba(31,157,85,.12); --warn:#b8740f; --warn-soft:rgba(201,134,22,.14); --bad:#d0342c; --bad-soft:rgba(208,52,44,.11); --info:#2f6fed; --info-soft:rgba(47,111,237,.11); --neutral-soft:rgba(29,29,31,.07);
   --shadow-s:0 1px 2px rgba(16,16,20,.05); --shadow-card:0 1px 2px rgba(16,16,20,.04),0 2px 8px rgba(16,16,20,.04);
   --shadow:0 10px 30px rgba(16,16,20,.10),0 1px 3px rgba(16,16,20,.06); --shadow-pop:0 24px 60px rgba(16,16,20,.18),0 2px 8px rgba(16,16,20,.08);
   --glass:rgba(255,255,255,.86); --glass-line:rgba(29,29,31,.08);
@@ -44,7 +44,7 @@
   --sel:#f5f5f7; --sel-ink:#151517; --sel-soft:rgba(245,245,247,.08);
   --bg:#0c0c0e; --surface:#151517; --surface-2:#1c1c1f; --surface-3:#26262a; --soft:#212124; --field:#1a1a1d; --seg-on:#2e2e33;
   --ink:#f5f5f7; --ink-2:#d9d9de; --muted:#9a9aa1; --faint:#6b6b72; --line:#27272b; --line-2:#353539;
-  --ok:#3ccd7a; --ok-soft:rgba(60,205,122,.14); --warn:#e5a83a; --warn-soft:rgba(229,168,58,.14); --bad:#f0605a; --bad-soft:rgba(240,96,90,.14); --info:#6b9cff; --info-soft:rgba(107,156,255,.14); --neutral-soft:rgba(245,245,247,.08);
+  --ok-t:#3ccd7a; --warn-t:#e5a83a; --ok:#3ccd7a; --ok-soft:rgba(60,205,122,.14); --warn:#e5a83a; --warn-soft:rgba(229,168,58,.14); --bad:#f0605a; --bad-soft:rgba(240,96,90,.14); --info:#6b9cff; --info-soft:rgba(107,156,255,.14); --neutral-soft:rgba(245,245,247,.08);
   --shadow-s:0 1px 2px rgba(0,0,0,.4); --shadow-card:0 1px 2px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.02);
   --shadow:0 12px 32px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04); --shadow-pop:0 24px 60px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.05);
   --glass:rgba(21,21,23,.84); --glass-line:rgba(245,245,247,.08);
@@ -60,7 +60,7 @@
   --sel:#f5f5f7; --sel-ink:#151517; --sel-soft:rgba(245,245,247,.08);
   --bg:#0c0c0e; --surface:#151517; --surface-2:#1c1c1f; --surface-3:#26262a; --soft:#212124; --field:#1a1a1d; --seg-on:#2e2e33;
   --ink:#f5f5f7; --ink-2:#d9d9de; --muted:#9a9aa1; --faint:#6b6b72; --line:#27272b; --line-2:#353539;
-  --ok:#3ccd7a; --ok-soft:rgba(60,205,122,.14); --warn:#e5a83a; --warn-soft:rgba(229,168,58,.14); --bad:#f0605a; --bad-soft:rgba(240,96,90,.14); --info:#6b9cff; --info-soft:rgba(107,156,255,.14); --neutral-soft:rgba(245,245,247,.08);
+  --ok-t:#3ccd7a; --warn-t:#e5a83a; --ok:#3ccd7a; --ok-soft:rgba(60,205,122,.14); --warn:#e5a83a; --warn-soft:rgba(229,168,58,.14); --bad:#f0605a; --bad-soft:rgba(240,96,90,.14); --info:#6b9cff; --info-soft:rgba(107,156,255,.14); --neutral-soft:rgba(245,245,247,.08);
   --shadow-s:0 1px 2px rgba(0,0,0,.4); --shadow-card:0 1px 2px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.02);
   --shadow:0 12px 32px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.04); --shadow-pop:0 24px 60px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.05);
   --glass:rgba(21,21,23,.84); --glass-line:rgba(245,245,247,.08);
@@ -223,8 +223,8 @@ input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(-
 .chip[aria-pressed="true"]{background:var(--sel);border-color:var(--sel);color:var(--sel-ink)}
 .chip[aria-pressed="true"]::before{background:var(--sel-ink);border-color:var(--sel-ink)}
 .pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;font-size:11px;font-weight:600;line-height:1;padding:4px 9px;background:var(--neutral-soft);color:var(--ink-2);border:0;white-space:nowrap}
-.pill.ok{background:var(--ok-soft);color:var(--ok)}
-.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.ok{background:var(--ok-soft);color:var(--ok-t)}
+.pill.warn{background:var(--warn-soft);color:var(--warn-t)}
 .pill.bad{background:var(--bad-soft);color:var(--bad)}
 .note{color:var(--muted);font-size:12px;margin:0;line-height:1.5}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);display:inline-block;flex:none}
@@ -236,10 +236,10 @@ input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(-
 .tbl tr:last-child td{border-bottom:0}
 .tbl tr.tot td{font-weight:650;border-top:1px solid var(--line-2)}
 .tbl tr.neg td:last-child{color:var(--bad)}
-.tbl tr.pos td:last-child{color:var(--ok)}
+.tbl tr.pos td:last-child{color:var(--ok-t)}
 .tbl.multi td:not(:first-child),.tbl.multi th:not(:first-child){text-align:right;font-size:12px;padding-left:10px;white-space:nowrap}
 .tbl.multi th{font-size:11.5px;font-weight:600;white-space:normal;min-width:90px;max-width:150px}
-.tbl .best{color:var(--ok);font-weight:650}
+.tbl .best{color:var(--ok-t);font-weight:650}
 .scroll{overflow-x:auto}
 .mets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .met{background:var(--surface-2);border:1px solid transparent;border-radius:var(--r);padding:11px 13px;min-width:0}
@@ -403,7 +403,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(-
 .aps-tile .l{font-size:12.5px;font-weight:500;color:var(--muted)}
 .aps-tile .v{font-size:clamp(20px,2.4vw,34px);font-weight:600;letter-spacing:-.03em;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .aps-tile .s{font-size:12px;color:var(--muted);margin-top:1px}
-.aps-tile .v.ok{color:var(--ok)}.aps-tile .v.warn{color:var(--warn)}.aps-tile .v.bad{color:var(--bad)}
+.aps-tile .v.ok{color:var(--ok-t)}.aps-tile .v.warn{color:var(--warn-t)}.aps-tile .v.bad{color:var(--bad)}
 .aps-card{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px 18px;min-width:0;box-shadow:var(--shadow-card)}
 .aps-card h3{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .aps-use{display:grid;gap:10px}.aps-use .ur{display:grid;grid-template-columns:110px 1fr 54px;gap:12px;align-items:center;font-size:13px}.aps-use .ur span:last-child{text-align:right;font-weight:550}
@@ -701,6 +701,16 @@ html.auth-on body{overflow:hidden}
 .auth-oferta{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:45;width:min(340px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-pop);padding:16px;display:grid;gap:8px;animation:apIn .25s var(--ease) both}
 @media (max-width:860px){.auth-oferta{bottom:calc(86px + env(safe-area-inset-bottom,0px))}}
 @media (max-width:520px){.conta-n{display:none}.conta-b{padding:4px}.auth-card{padding:24px 20px 20px}}
+/* densidade do inspetor no desktop (acabamento UX v3): painel ≤ 1.300 px sem esconder conteúdo; celular mantém os alvos de toque */
+@media (min-width:901px){
+  .pbody{gap:8px;padding:10px 12px 16px}  details.card>summary{min-height:42px;padding-top:9px;padding-bottom:9px}
+  .card>.cb{gap:10px;padding-bottom:14px}
+  .card>.ch{padding:11px 16px 8px}
+  .met{padding:9px 12px}
+  .tbl td,.tbl th{padding:5px 0}
+  .fld{gap:4px}
+  .pbody .kv{gap:10px 12px}
+}
 </style>
 
 <div class="app">
@@ -7442,8 +7452,9 @@ function plaCSVTexto(cab, linhas){
    progressoItens(st, m?, f?) → [{k, nome, ok, etapa, sub, sec, dica}] — 9 itens fixos, nesta ordem.
      ok: true (conferido) · false (pendente) · null (ainda não calculado: sem m, ou sem o pavimento tipo/garagem no m)
    progressoResumo(st, m?, f?) → {feitos, total, pct, pendentes:[nome…], nivel:'rascunho'|'em andamento'|'confiável', itens}
-   proximoPasso(st, m?, f?, tab, sub?) → {rotulo, etapa, sub, sec, act?, dica} — nunca vazio:
-     resolve a primeira pendência da etapa atual (act = ACT a chamar, senão ir para etapa/sub/sec) ou avança para a próxima.
+   proximoPasso(st, m?, f?, tab, sub?) → {rotulo, etapa, sub, sec, campo?, act?, dica} — nunca vazio:
+     resolve a primeira pendência da etapa atual (act = ACT a chamar, senão ir para etapa/sub/sec e focar o `campo`) ou avança para a próxima.
+     Preço e custo (conf.preco/custo) NÃO têm act: o passo leva ao campo e a confirmação é explícita lá (editar ou "Conferi").
    S.guia.conf {regras, preco, custo} são só flags de interface (src/ui/progresso.js): não entram em compute/finance. */
 
 const PROG_ETAPAS = ["terreno","produto","viab","projeto","cen"];
@@ -7503,7 +7514,7 @@ function progressoResumo(st, m, f){
 }
 
 /* rótulo do botão para resolver cada pendência (act = ACT a chamar; sem act, ir para etapa/sub/sec) */
-function progResolve(i, st, m, aqui){
+function progResolve(i, st, m){
   switch(i.k){
     case "lote": return {rotulo:"Desenhar o lote", dica:"O lote ainda é o do exemplo"};
     case "ruas": return {rotulo:"Marcar a frente", dica:"Marque os lados do lote na rua"};
@@ -7511,8 +7522,9 @@ function progResolve(i, st, m, aqui){
     case "produto": return {rotulo:"Sugerir a melhor combinação", act:"otim", dica:("Fora das regras: "+i.dica.replace(/^fora: /,"")).slice(0,60)};
     case "vagas": { const sub=(st.produto.subsolos||0)<5;
       return sub? {rotulo:"Adicionar 1 subsolo", act:"progSubsolo", dica:("Vagas: "+i.dica).slice(0,60)} : {rotulo:"Adicionar 1 garagem elevada", act:"progGaragem", dica:("Vagas: "+i.dica).slice(0,60)} }
-    case "preco": return aqui? {rotulo:"Confirmar o preço de venda", act:"progConfPreco", dica:"Falta conferir o preço de venda"} : {rotulo:"Conferir o preço de venda", dica:"Falta conferir o preço de venda"};
-    case "custo": return aqui? {rotulo:"Confirmar terreno e obra", act:"progConfCusto", dica:"Falta conferir o terreno e o custo da obra"} : {rotulo:"Conferir terreno e obra", dica:"Falta conferir o terreno e o custo da obra"};
+    // preço e custo nunca se confirmam com um clique à distância: o passo leva ao campo (irPara com `campo`), onde o usuário edita ou aperta "Conferi"
+    case "preco": return {rotulo:"Conferir o preço de venda", campo:"produto.mix.0.preco", dica:"Falta conferir o preço de venda"};
+    case "custo": return {rotulo:"Conferir terreno e obra", campo:"fin.terreno", dica:"Falta conferir o terreno e o custo da obra"};
     case "garagem": return !st.estudo.usarLayout? {rotulo:"Usar as vagas do layout", act:"progLayout", dica:"As vagas ainda são estimadas"} : {rotulo:"Ajustar o acesso da garagem", dica:"O carro não chega a algum pavimento"};
     case "normas": return {rotulo:"Ver as normas", dica:("Normas: "+i.dica).slice(0,60)};
   }
@@ -7535,9 +7547,8 @@ function proximoPasso(st, m, f, tab, sub){
   // projeto: só as pendências da sub-aba atual (o resto é refino); nas outras etapas, a primeira pendência da etapa
   const pend = itens.find(i=>i.ok===false && i.etapa===etapa && (etapa!=="projeto" || !sub || i.sub===sub));
   if(pend && etapa!=="cen"){
-    const aqui = etapa==="viab";
-    const x = progResolve(pend, st, m, aqui);
-    return { rotulo:x.rotulo, etapa:pend.etapa, sub:pend.sub, sec:pend.sec, ...(x.act? {act:x.act} : {}), dica:x.dica, k:pend.k };
+    const x = progResolve(pend, st, m);
+    return { rotulo:x.rotulo, etapa:pend.etapa, sub:pend.sub, sec:pend.sec, ...(x.campo? {campo:x.campo} : {}), ...(x.act? {act:x.act} : {}), dica:x.dica, k:pend.k };
   }
   const a = PROG_AVANCA[etapa](sub);
   const dica = r.feitos===r.total? "Estudo confiável: tudo conferido" : `${r.feitos} de ${r.total} itens conferidos`;
@@ -15514,8 +15525,9 @@ function plaCSVTexto(cab, linhas){
    progressoItens(st, m?, f?) → [{k, nome, ok, etapa, sub, sec, dica}] — 9 itens fixos, nesta ordem.
      ok: true (conferido) · false (pendente) · null (ainda não calculado: sem m, ou sem o pavimento tipo/garagem no m)
    progressoResumo(st, m?, f?) → {feitos, total, pct, pendentes:[nome…], nivel:'rascunho'|'em andamento'|'confiável', itens}
-   proximoPasso(st, m?, f?, tab, sub?) → {rotulo, etapa, sub, sec, act?, dica} — nunca vazio:
-     resolve a primeira pendência da etapa atual (act = ACT a chamar, senão ir para etapa/sub/sec) ou avança para a próxima.
+   proximoPasso(st, m?, f?, tab, sub?) → {rotulo, etapa, sub, sec, campo?, act?, dica} — nunca vazio:
+     resolve a primeira pendência da etapa atual (act = ACT a chamar, senão ir para etapa/sub/sec e focar o `campo`) ou avança para a próxima.
+     Preço e custo (conf.preco/custo) NÃO têm act: o passo leva ao campo e a confirmação é explícita lá (editar ou "Conferi").
    S.guia.conf {regras, preco, custo} são só flags de interface (src/ui/progresso.js): não entram em compute/finance. */
 
 const PROG_ETAPAS = ["terreno","produto","viab","projeto","cen"];
@@ -15575,7 +15587,7 @@ function progressoResumo(st, m, f){
 }
 
 /* rótulo do botão para resolver cada pendência (act = ACT a chamar; sem act, ir para etapa/sub/sec) */
-function progResolve(i, st, m, aqui){
+function progResolve(i, st, m){
   switch(i.k){
     case "lote": return {rotulo:"Desenhar o lote", dica:"O lote ainda é o do exemplo"};
     case "ruas": return {rotulo:"Marcar a frente", dica:"Marque os lados do lote na rua"};
@@ -15583,8 +15595,9 @@ function progResolve(i, st, m, aqui){
     case "produto": return {rotulo:"Sugerir a melhor combinação", act:"otim", dica:("Fora das regras: "+i.dica.replace(/^fora: /,"")).slice(0,60)};
     case "vagas": { const sub=(st.produto.subsolos||0)<5;
       return sub? {rotulo:"Adicionar 1 subsolo", act:"progSubsolo", dica:("Vagas: "+i.dica).slice(0,60)} : {rotulo:"Adicionar 1 garagem elevada", act:"progGaragem", dica:("Vagas: "+i.dica).slice(0,60)} }
-    case "preco": return aqui? {rotulo:"Confirmar o preço de venda", act:"progConfPreco", dica:"Falta conferir o preço de venda"} : {rotulo:"Conferir o preço de venda", dica:"Falta conferir o preço de venda"};
-    case "custo": return aqui? {rotulo:"Confirmar terreno e obra", act:"progConfCusto", dica:"Falta conferir o terreno e o custo da obra"} : {rotulo:"Conferir terreno e obra", dica:"Falta conferir o terreno e o custo da obra"};
+    // preço e custo nunca se confirmam com um clique à distância: o passo leva ao campo (irPara com `campo`), onde o usuário edita ou aperta "Conferi"
+    case "preco": return {rotulo:"Conferir o preço de venda", campo:"produto.mix.0.preco", dica:"Falta conferir o preço de venda"};
+    case "custo": return {rotulo:"Conferir terreno e obra", campo:"fin.terreno", dica:"Falta conferir o terreno e o custo da obra"};
     case "garagem": return !st.estudo.usarLayout? {rotulo:"Usar as vagas do layout", act:"progLayout", dica:"As vagas ainda são estimadas"} : {rotulo:"Ajustar o acesso da garagem", dica:"O carro não chega a algum pavimento"};
     case "normas": return {rotulo:"Ver as normas", dica:("Normas: "+i.dica).slice(0,60)};
   }
@@ -15607,9 +15620,8 @@ function proximoPasso(st, m, f, tab, sub){
   // projeto: só as pendências da sub-aba atual (o resto é refino); nas outras etapas, a primeira pendência da etapa
   const pend = itens.find(i=>i.ok===false && i.etapa===etapa && (etapa!=="projeto" || !sub || i.sub===sub));
   if(pend && etapa!=="cen"){
-    const aqui = etapa==="viab";
-    const x = progResolve(pend, st, m, aqui);
-    return { rotulo:x.rotulo, etapa:pend.etapa, sub:pend.sub, sec:pend.sec, ...(x.act? {act:x.act} : {}), dica:x.dica, k:pend.k };
+    const x = progResolve(pend, st, m);
+    return { rotulo:x.rotulo, etapa:pend.etapa, sub:pend.sub, sec:pend.sec, ...(x.campo? {campo:x.campo} : {}), ...(x.act? {act:x.act} : {}), dica:x.dica, k:pend.k };
   }
   const a = PROG_AVANCA[etapa](sub);
   const dica = r.feitos===r.total? "Estudo confiável: tudo conferido" : `${r.feitos} de ${r.total} itens conferidos`;
@@ -17551,6 +17563,7 @@ const FX = {
   cfdLines: live=>{ save(); if(!live && cfdOn()){ cfdLines(); render3() } },
   cfdParts: live=>{ save(); if(!live && cfdOn()) cfdParticlesInit() },
   cfdRef:   live=>{ save(); if(!live && cfdOn()){ cfdRefresh(true); cfdBarUI() } },
+  cfdVar:   live=>{ if(S.cfd.var==="lawson"){ S.cfd.viz.plano=true; S.cfd.plano.orient="h"; S.cfd.plano.h=1.5 } save(); if(!live && cfdOn()){ cfdRefresh(true); cfdBarUI() } },   // conforto de Lawson liga o plano de cor a 1,5 m
   cfdBld:   ()=>{ save(); if(cfdOn()){ cfdColorBuildings(); render3() } },
   cfdLook:  live=>{ save(); if(!live && cfdOn()){ cfdBuildings(); cfdBuildStatic(); cfdRefresh(true); cfdBarUI() } },
   r3:       ()=>{ save(); if(window._last) rebuild3d(window._last.m) },
@@ -18018,7 +18031,15 @@ function floorsList(m){
   if(P.atico) out.push({key:"atc", nome:"Ático técnico", tipo:"atico", z0:m.hEmb+dz+maxP*P.pe+(m.duplex?P.pe:0), h:3});
   return out;
 }
-function fit2d(){ if(VIEW==="3d") return; const r=c2.getBoundingClientRect(); if(!r.width) return; VS[VIEW]=fitView(viewPolys(), r.width, r.height, VIEW==="impl"?1.5:VIEW==="clima"?1.25:1.15); redraw2d() }
+function fit2d(){ if(VIEW==="3d") return; const r=c2.getBoundingClientRect(); if(!r.width) return;
+  // celular: a planta se ajusta à faixa livre entre a barra de vistas (em cima) e a faixa de ferramentas (embaixo), não ao palco todo
+  let top=0, bot=0;
+  if(typeof navCel==="function" && navCel()){ const vb=document.querySelector("#view .viewbar"), vt=document.getElementById("vtools");
+    if(vb){ const q=vb.getBoundingClientRect(); top=Math.max(0, q.bottom-r.top+4) }
+    if(vt){ const q=vt.getBoundingClientRect(); if(q.height>0) bot=Math.max(0, r.bottom-q.top+4) } }
+  const H=r.height-top-bot, livre=(top||bot) && H>=r.height*0.3, pad=VIEW==="impl"?1.5:VIEW==="clima"?1.25:1.15;
+  const v=fitView(viewPolys(), r.width, livre? H : r.height, pad); if(livre) v.oy+=top;
+  VS[VIEW]=v; redraw2d() }
 function fitBG(){ if(!BG) return; const r=c2.getBoundingClientRect(); const w=BG.img.width*BG.mpp, h=BG.img.height*BG.mpp; const s=Math.min(r.width/w, r.height/h)*0.95; VS.impl={s, ox:r.width/2-(BG.x+w/2)*s, oy:r.height/2+(BG.y-h/2)*s}; redraw2d() }
 let T2=null;
 function redraw2d(){
@@ -18900,10 +18921,12 @@ function cfdStop(){
   if(CFD.running) cfdPause();
 }
 function cfdStatus(msg){
-  const el=document.getElementById("cfdStat"), el2=document.getElementById("cfdStat2"); const F=CFD.field, d=CFD.dom;
-  const txt = msg || (!F? "Preparando a malha…" : `${CFD.running?"Simulando":"Pausado"} · passo ${nf(F.step,0)} · ${F.navg>2? "médias com "+nf(F.navg,0)+" amostras" : pct(Math.min(1,F.step/(1.2*d.nx/0.085)),0)+" até o regime"} · ${d.nx}×${d.ny}×${d.nz} células de ${nf(d.dx,1)} m`);
-  if(el) el.textContent=txt; if(el2) el2.textContent=txt;
-  const pb=document.querySelector('#tabbody [data-act="cfdPlay"]'), lb=CFD.running?"Pausar":"Simular"; if(pb && pb.textContent!==lb) pb.textContent=lb;   // o painel acompanha o estado real
+  const el=document.getElementById("cfdStat"); const F=CFD.field, d=CFD.dom;
+  // o essencial primeiro; o detalhe da malha ("det") some no celular para a barra não cobrir o 3D
+  const txt = msg || (!F? "Preparando a malha…" : `${CFD.running?"Simulando":"Pausado"} · ${F.navg>2? "médias com "+nf(F.navg,0)+" amostras" : pct(Math.min(1,F.step/(1.2*d.nx/0.085)),0)+" até o regime"}`),
+    det = !msg && F? ` · passo ${nf(F.step,0)} · ${d.nx}×${d.ny}×${d.nz} células de ${nf(d.dx,1)} m` : "";
+  if(el) el.innerHTML=esc(txt)+(det? `<span class="det">${esc(det)}</span>` : "");
+  const pb=document.getElementById("cfPlay"), lb=CFD.running?"Pausar":"Simular"; if(pb && pb.textContent!==lb) pb.textContent=lb;   // o botão acompanha o estado real
 }
 function cfdLegend(){
   const el=document.getElementById("cfdLegend"); if(!el) return; const v=S.cfd.var, [a,b]=cfdRange(v);
@@ -18951,13 +18974,11 @@ function cfdProbeAt(pt){
 const CFD_VIZ=[["linhas","Linhas"],["particulas","Partículas"],["fumaca","Fumaça"],["setas","Setas"],["plano","Plano de cor"],["pressao","Pressão nas fachadas"]];
 function cfdBarUI(){
   const bar=document.getElementById("cfdBar"); if(!bar) return;
-  bar.innerHTML=`<div class="row" style="margin:0;gap:6px;flex-wrap:nowrap"><button class="btn sm ${CFD.running?"":"pri"}" id="cfPlay">${CFD.running?"Pausar":"Simular"}</button><button class="btn sm" id="cfReset" title="Recomeçar a simulação">Reiniciar</button>
-    <select id="cfVar" aria-label="Colorir por">${Object.entries(CFD_VARS).map(([k,l])=>`<option value="${k}" ${S.cfd.var===k?"selected":""}>${l}</option>`).join("")}</select>
-    <span class="cfchips">${CFD_VIZ.filter(([k])=>S.cfd.viz[k]).map(([k,l])=>`<span class="pill">${l}</span>`).join("")}</span></div>
+  // a barra do palco só reproduz: Simular/Pausar, Reiniciar e o andamento. O que mostrar (colorir por, linhas, fumaça…) e o vento ficam no painel
+  bar.innerHTML=`<div class="row" style="margin:0;gap:6px;flex-wrap:nowrap"><button class="btn sm" id="cfPlay">${CFD.running?"Pausar":"Simular"}</button><button class="btn sm" id="cfReset" title="Recomeçar a simulação">Reiniciar</button></div>
     <div class="cfstat" id="cfdStat"></div>`;
-  document.getElementById("cfPlay").onclick=()=>{ CFD.running? cfdPause() : (CFD.worker? cfdRun() : cfdStart()); if(emClima()) renderTab() };
+  document.getElementById("cfPlay").onclick=()=>{ CFD.running? cfdPause() : (CFD.worker? cfdRun() : cfdStart()) };
   document.getElementById("cfReset").onclick=()=>{ cfdStart(true) };
-  document.getElementById("cfVar").onchange=e=>{ S.cfd.var=e.target.value; if(S.cfd.var==="lawson"){ S.cfd.viz.plano=true; S.cfd.plano.orient="h"; S.cfd.plano.h=1.5 } save(); cfdRefresh(true); cfdBarUI(); if(emClima()) renderTab() };
   cfdStatus();
 }
 
@@ -19360,7 +19381,7 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass-note{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--ink-2);line-height:1.45;margin:0}
 .ass-note svg{width:18px;height:18px;flex:none;fill:none;stroke:var(--muted);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;margin-top:1px}
 .ass-st{font-size:12.5px;color:var(--muted);min-height:18px;margin:0}
-.ass-st.bad{color:var(--bad)} .ass-st.ok{color:var(--ok)}
+.ass-st.bad{color:var(--bad)} .ass-st.ok{color:var(--ok-t)}
 .ass-tag{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
 .ass-tag i{width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none}
 .ass-tag.ok i{background:var(--ok)}
@@ -19408,8 +19429,8 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass-feito{position:fixed;right:20px;bottom:92px;z-index:58;width:min(372px,calc(100vw - 24px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg,16px);box-shadow:var(--shadow-pop);padding:16px 16px 12px;color:var(--ink);animation:assIn .35s var(--ease) both}
 .ass-feito[hidden]{display:none}
 .ass-feito .fh{display:flex;align-items:flex-start;gap:10px}
-.ass-feito .fh .ic{width:28px;height:28px;border-radius:50%;background:var(--ok-soft,var(--surface-2));color:var(--ok);display:grid;place-items:center;flex:none}
-.ass-feito .fh .ic.warn{background:var(--warn-soft,var(--surface-2));color:var(--warn)}
+.ass-feito .fh .ic{width:28px;height:28px;border-radius:50%;background:var(--ok-soft,var(--surface-2));color:var(--ok-t);display:grid;place-items:center;flex:none}
+.ass-feito .fh .ic.warn{background:var(--warn-soft,var(--surface-2));color:var(--warn-t)}
 .ass-feito .fh .ic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .ass-feito .fh b{display:block;font-size:15px;font-weight:650;letter-spacing:-.01em}
 .ass-feito .fh span{display:block;font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.4}
@@ -19418,7 +19439,7 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass-feito .fx svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 .ass-feito dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:14px 0 4px;font-size:12.5px}
 .ass-feito dt{color:var(--muted)} .ass-feito dd{margin:0;color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
-.ass-feito dd.warn{color:var(--warn)}
+.ass-feito dd.warn{color:var(--warn-t)}
 .ass-feito .pg{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint,var(--muted));font-weight:600;margin:12px 0 2px}
 .ass-feito .pi{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
 .ass-feito .pg+.pi{border-top:0}
@@ -19696,7 +19717,7 @@ function assFeitoMostra(info){
       const b=e.target.closest("[data-fi]"); if(!b) return;
       const k=b.dataset.fi;
       if(k==="ia"){ assFeitoFecha(); assIA(); return }
-      const i=progressoItens(S, (window._last||{}).m, (window._last||{}).f).find(x=>x.k===k); if(i){ progIr(i.etapa, i.sub, i.sec); if(k!=="preco"&&k!=="custo") assFeitoFecha() } });
+      const i=progressoItens(S, (window._last||{}).m, (window._last||{}).f).find(x=>x.k===k); if(i){ if(typeof progIrItem==="function") progIrItem(i); else progIr(i.etapa, i.sub, i.sec); if(k!=="preco"&&k!=="custo") assFeitoFecha() } });
     // desfazer: o cartão perde o sentido
     document.addEventListener("keydown", e=>{ if((e.ctrlKey||e.metaKey) && (e.key||"").toLowerCase()==="z") assFeitoFecha() }, true);
     const u=document.getElementById("undoBtn"); if(u) u.addEventListener("click", ()=>assFeitoFecha());
@@ -20221,7 +20242,7 @@ function blcCss(){ if(document.getElementById("blcCss")) return; const s=documen
 .blc-fm .chip::before{display:none}
 .blc-fm .chip svg{width:14px;height:14px;fill:currentColor;opacity:.8;flex:none}
 .blc-av{display:grid;gap:3px}
-.blc-av p{margin:0;font-size:11.5px;line-height:1.4;color:var(--warn)}
+.blc-av p{margin:0;font-size:11.5px;line-height:1.4;color:var(--warn-t)}
 .blc-pl{display:grid;gap:4px}
 .blc-b{border-radius:9px;background:var(--surface);border:1px solid var(--line);transition:border-color .15s,box-shadow .15s}
 .pr-row.on .blc-b{background:var(--surface-2)}
@@ -20233,7 +20254,7 @@ function blcCss(){ if(document.getElementById("blcCss")) return; const s=documen
 .blc-bh b{font-weight:550;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .blc-bh .a{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .blc-bh .tg{font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:999px;padding:1px 6px;white-space:nowrap}
-.blc-bh .w{grid-column:2/-1;font-family:var(--f-mono);font-size:10.5px;color:var(--warn);line-height:1.35}
+.blc-bh .w{grid-column:2/-1;font-family:var(--f-mono);font-size:10.5px;color:var(--warn-t);line-height:1.35}
 .blc-sil{display:flex;justify-content:center;align-items:center;height:12px}
 .blc-sil i{display:block;height:9px;min-width:5px;border-radius:2px;background:var(--muted);opacity:.55}
 .blc-b.ref .blc-sil i{background:var(--accent);opacity:.85}
@@ -20362,8 +20383,8 @@ function blcAlasTxt(l){ const A=l && l.alas; if(!A) return null;
   const onde = A.nucleo==="nó" ? (/^[TH]$/.test(A.forma)? "no encontro das alas" : "no canto") : A.nucleo==="meio" ? "no meio da ala" : "na ponta da ala";
   return `por alas · ${A.forma} · núcleo ${onde}${esc} · ${A.dist!=null? nf(A.dist,0)+" m até a escada" : ""}` }
 function blcAlasLinha(m, i){ const l=m.tipo && m.tipo[i]; if(!l) return "";
-  if(l.alasFalha) return `<p class="note blc-al" style="color:var(--warn)">Pavimento tipo aproximado: ${esc(l.alasFalha)}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>`;
-  const t=blcAlasTxt(l); return t ? `<p class="note blc-al"${l.alas.dist>l.alas.lim+1e-6? ' style="color:var(--warn)"' : ""}>Tipo ${t}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>` : "" }
+  if(l.alasFalha) return `<p class="note blc-al" style="color:var(--warn-t)">Pavimento tipo aproximado: ${esc(l.alasFalha)}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>`;
+  const t=blcAlasTxt(l); return t ? `<p class="note blc-al"${l.alas.dist>l.alas.lim+1e-6? ' style="color:var(--warn-t)"' : ""}>Tipo ${t}${INFO(BLC_INFO_ALAS,"pavimento por alas")}</p>` : "" }
 /* linhas dos blocos de uma torre (de cima para baixo) */
 function blcBlocosHTML(i, m, I){
   const L=blcLst(i), t=m.T[i]||{}, N=t.pav||1, kAt=blcK(i), maxA=Math.max(1, ...L.map((_,k)=>(blcFx(m,i,k)||{}).A||0));
@@ -20404,7 +20425,7 @@ function blcLive(m){
         <div class="pr-rf"><button type="button" class="btn sm" data-act="blcAdd" data-i="${i}" title="Novo bloco no topo, cópia do de cima, começando no meio dele">+ Bloco</button>${nb===1? `<button type="button" class="btn sm ghost" data-act="blcRefaz" data-i="${i}" title="Copia de novo a forma automática">Refazer da automática</button>` : ""}${prRm("blcDel", i, "forma da "+nome.toLowerCase(), "Apagar forma")}</div></div>` : ""}</div>` }).join(""));
   const R=blcResumo(S,m), G2=(m.blcGeral||[]).filter(a=>!/^O mix ocupa/.test(a));
   setHTML("blcGeral", (R && R.real? `<p class="note blc-ef">Eficiência real da planta <b>${pct(R.efic,0)}</b> (informada ${pct(R.eficInf,0)}) · ${m2(R.priv)} de unidades/andar${INFO("Eficiência real da planta")}</p>` : "")
-    + (R? `<div class="row sb"><span class="note"${R.desvio?' style="color:var(--warn)"':""}>O mix ocupa ${pct(R.ocupa,0)} do pavimento ${m.T.some(t=>t.desenhada && (t.faixas||[]).length>1)? "tipo " : ""}desenhado</span>${R.muda? `<button type="button" class="btn sm" data-act="blcMix" title="Muda a quantidade de unidades por andar para o mix voltar ao tamanho original, pela área real que a planta desenhada tem para unidades (no bloco tipo; os outros blocos acompanham)">Ajustar mix</button>` : ""}</div>` : "")
+    + (R? `<div class="row sb"><span class="note"${R.desvio?' style="color:var(--warn-t)"':""}>O mix ocupa ${pct(R.ocupa,0)} do pavimento ${m.T.some(t=>t.desenhada && (t.faixas||[]).length>1)? "tipo " : ""}desenhado</span>${R.muda? `<button type="button" class="btn sm" data-act="blcMix" title="Muda a quantidade de unidades por andar para o mix voltar ao tamanho original, pela área real que a planta desenhada tem para unidades (no bloco tipo; os outros blocos acompanham)">Ajustar mix</button>` : ""}</div>` : "")
     + (G2.length? `<div class="blc-av">${G2.map(a=>`<p>${esc(a)}</p>`).join("")}</div>` : ""));
 }
 
@@ -20413,7 +20434,7 @@ const blcTemAlas = m => !!(m && m.tipo && m.tipo.some(l=>l && (l.alas || l.alasF
 function blcAlasCard(){
   const m=blcM(), mt=(l,v,s,c)=>`<div class="met"><div class="l">${l}</div><div class="v"${c?` style="color:var(--${c})"`:""}>${v}</div>${s?`<div class="s">${s}</div>`:""}</div>`;
   const rows=(m && m.tipo || []).map((l,i)=>{ if(!l) return ""; const nm=m.T.length>1? `Torre ${i+1} · ` : "";
-    if(l.alasFalha) return `<p class="note" style="color:var(--warn)">${nm}aproximado: ${esc(l.alasFalha)}</p>`;
+    if(l.alasFalha) return `<p class="note" style="color:var(--warn-t)">${nm}aproximado: ${esc(l.alasFalha)}</p>`;
     const A=l.alas; if(!A) return ""; const alto=A.dist>A.lim+1e-6;
     return `${m.T.length>1? `<p class="fl" style="margin:4px 0 2px">Torre ${i+1}</p>` : ""}<div class="mets">${mt("Forma", A.forma, `${A.alas} trechos de corredor`)}${mt(`Até a escada${INFO("Distância a percorrer da porta da unidade mais distante até a escada, pelo corredor (IN 09 CBMSC; limite da saída única sem chuveiros: 30 m).","distância a percorrer")}`, nf(A.dist||0,1)+" m", `limite ${nf(A.lim||30,0)} m`, alto? "warn" : "")}${mt("Escadas", 1+(A.esc2||0), A.esc2? "extra na ponta da ala" : "no núcleo")}${mt("Livre", m2(A.livreA||0), "sem uso")}</div>` }).join("");
   return SEC("Alas do pavimento tipo", (rows || `<p class="note">Sem planta em alas.</p>`)
@@ -20879,7 +20900,7 @@ extendDEF("vcal", { info:null });
 .calOr span{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);white-space:nowrap}
 .calOr em{font-family:var(--f-mono);font-size:11.5px;font-style:normal;font-weight:600;color:var(--ink)}
 .calOr .sem em{color:var(--muted);font-weight:400}
-.calAv{color:var(--warn);font-size:11.5px;line-height:1.35}`; document.head.appendChild(st) }
+.calAv{color:var(--warn-t);font-size:11.5px;line-height:1.35}`; document.head.appendChild(st) }
 
 const VCAL = { dados:[], cab:[], nome:"", mapa:{}, off:2, ln:null, res:null, opts:{ tetoAuto:true, usaOrient:true, usaVista:true }, sig:"" };
 const calP = v => v==null||!isFinite(v)? "—" : Math.abs(v)<0.00005? "0,0%" : (v>0?"+":"−")+nf(Math.abs(v)*100,1)+"%";
@@ -21010,7 +21031,7 @@ const CCAL_UI = { abertas: new Set() };
 .ccal-o .row{margin-top:8px}
 .ccal-warn+.row,.ccal-err+.row{margin-top:10px}
 .ccal-err td:nth-child(2),.ccal-err td:nth-child(3){font-family:var(--f-mono);font-size:12px;text-align:right;white-space:nowrap}
-.ccal-warn{color:var(--warn);font-size:12px;margin:4px 0 0}
+.ccal-warn{color:var(--warn-t);font-size:12px;margin:4px 0 0}
 #ccalRes .mets{grid-template-columns:repeat(3,minmax(0,1fr))}
 #ccalRes .met{padding:8px 10px}
 #ccalRes .met .v{font-size:16px}`; document.head.appendChild(st) }
@@ -21381,7 +21402,7 @@ function cmpChart(c){
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Fluxo do Gabarito e da planilha, sobrepostos">${shade}${ticks}${z}
     <path d="${path(G)}" fill="none" stroke="var(--accent)" stroke-width="2"/><path d="${path(P)}" fill="none" stroke="var(--mark)" stroke-width="2" stroke-dasharray="5 3"/>
     <text x="${pl}" y="${H-5}" font-size="9" fill="var(--muted)">mês 0</text><text x="${W-pr}" y="${H-5}" font-size="9" text-anchor="end" fill="var(--muted)">mês ${N-1} · R$ mi</text></svg>
-    <div class="cmpLeg"><span><i style="border-color:var(--accent)"></i>Gabarito</span><span><i style="border-color:var(--mark);border-top-style:dashed"></i>Planilha</span>${shade?`<span style="color:var(--warn)">trecho divergente</span>`:""}</div>`;
+    <div class="cmpLeg"><span><i style="border-color:var(--accent)"></i>Gabarito</span><span><i style="border-color:var(--mark);border-top-style:dashed"></i>Planilha</span>${shade?`<span style="color:var(--warn-t)">trecho divergente</span>`:""}</div>`;
 }
 
 function cmpBody(){
@@ -21919,7 +21940,7 @@ function estrCmpHTML(){
   const C=ESTR_CMP; if(!C || !C.list) return "";
   const cur=S.estrutura.malha, nM=Math.round(S.estudo.porModulo), best=Math.min(...C.list.map(r=>r.custo));
   return `<table class="tbl" style="margin-top:6px"><tr><th>Malha</th><th>Transições</th></tr>` + C.list.map((r,i)=>{ const on=r.malha===cur && r.porModulo===nM;
-    return `<tr><td><b style="font-weight:600">${esc(r.nome)}</b><div class="note">${r.vagas} vagas · ${r.nPil} pilares${r.nDesloc? ` · ${r.nDesloc} ajustados` : ""}${r.custo===best? ` · <span style="color:var(--ok)">menor custo</span>` : ""}</div>
+    return `<tr><td><b style="font-weight:600">${esc(r.nome)}</b><div class="note">${r.vagas} vagas · ${r.nPil} pilares${r.nDesloc? ` · ${r.nDesloc} ajustados` : ""}${r.custo===best? ` · <span style="color:var(--ok-t)">menor custo</span>` : ""}</div>
       ${on? `<span class="pill ok">em uso</span>` : `<button type="button" class="btn sm ghost" data-act="estrAplicar" data-i="${i}" style="margin-top:4px">Usar esta</button>`}</td><td>${r.nTrans}<div class="note">${r.nTrans? brl(r.custo) : "—"}</div></td></tr>` }).join("") + `</table>` +
     `<p class="note">O módulo alternativo refaz a garagem em modo rápido; as vagas são estimadas pela diferença.</p>`;
 }
@@ -22315,15 +22336,14 @@ function climaVentoHTML(modo){
     (on("pressao")? GRP(`Pressão nas fachadas${INFO("Cp")}`)+SLD("cfd.opac","Opacidade",0.1,1,0.05,"%",{fx:"cfdBld",pct:true}) : "");
   const pontos = (c.semente && on("linhas")? `<div class="row sb"><span class="pill">linhas pelo ponto da sonda</span><button class="btn sm ghost" data-act="semX">Soltar da entrada</button></div>` : "") +
     (c.emissor && on("fumaca")? `<div class="row sb"><span class="pill">fumaça no ponto da sonda</span><button class="btn sm ghost" data-act="emX">Voltar a barlavento</button></div>` : "");
-  const rodando = typeof CFD!=="undefined" && CFD.running;
+  // Simular/Pausar/Reiniciar e o andamento ficam só na barra do palco (cfdBarUI); aqui só se configura
   return climaVmodoHTML("v3d") +
-    SEC("Simular", `<div class="row" style="flex-wrap:nowrap"><button class="btn${rodando?" on":""}" data-act="cfdPlay" style="flex:1">${rodando?"Pausar":"Simular"}</button><button class="btn ghost" data-act="cfdReset">Reiniciar</button></div><span class="cfstat note" id="cfdStat2"></span>
-      <div style="display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px;align-items:center">${compassSVG(C.ventoDir)}${SLD("clima.ventoVel","Velocidade a 10 m",1,20,0.5,"m/s",{fx:"cfdStart",wide:false})}</div>`+
+    SEC("Vento de referência", `<div style="display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px;align-items:center">${compassSVG(C.ventoDir)}${SLD("clima.ventoVel","Velocidade a 10 m",1,20,0.5,"m/s",{fx:"cfdStart",wide:false})}</div>`+
       ADV(ROW(`Entorno${INFO("Rugosidade")}`,SEG("cfd.rug",[["aberto","aberto"],["suburbano","subúrbio"],["urbano","urbano"]],{fx:"cfdStart",rr:false}))+
         ROW(`Precisão${INFO("“Alta” mostra melhor esteiras e cantos, mas leva minutos.","a precisão")}`,SEG("cfd.res",Object.entries(CFD_RES).map(([k,v])=>[k,v[1]]),{fx:"cfdStart",rr:false})), {key:"cSim"}),
       {open:true, key:"cSim", sum:climaSum("v3d"), info:"LBM"}) +
     SEC("O que ver", `<div class="chips">${CFD_VIZ.map(([k,l])=>`<button type="button" class="chip" data-act="cviz" data-k="${k}" aria-pressed="${on(k)}">${l}</button>`).join("")}</div>
-      <div class="fld wide"><label class="fl" for="cfdVarSel">Colorir por${INFO("Lawson")}</label><select class="sel" id="cfdVarSel" data-p="cfd.var" data-t="s" data-fx="cfdRef" data-rr="1">${Object.entries(CFD_VARS).map(([k,l])=>`<option value="${k}" ${c.var===k?"selected":""}>${l}</option>`).join("")}</select></div>${pontos}`+
+      <div class="fld wide"><label class="fl" for="cfdVarSel">Colorir por${INFO("Lawson")}</label><select class="sel" id="cfdVarSel" data-p="cfd.var" data-t="s" data-fx="cfdVar" data-rr="1">${Object.entries(CFD_VARS).map(([k,l])=>`<option value="${k}" ${c.var===k?"selected":""}>${l}</option>`).join("")}</select></div>${pontos}`+
       ADV(ROW("Escala",SEG("cfd.escala",[["auto","automática"],["fixa","fixa"]],{fx:"cfdRef"}))+(c.escala==="fixa"? KV(NUM("cfd.min","Mínimo","",{fx:"cfdRef",step:0.5})+NUM("cfd.max","Máximo","",{fx:"cfdRef",step:0.5})) : "")+
         grupos+GRP("Aparência")+ROW("Fundo",SEG("cfd.fundo",[["claro","claro"],["escuro","escuro"]],{fx:"cfdLook",rr:false}))+SW("cfd.vidro","Prédios em vidro (ver através)",{fx:"cfdLook"})+SLD("cfd.animVel","Velocidade da animação",0.1,4,0.1,"×",{fx:"save"}), {key:"cVer"}),
       {open:true, key:"cVer", sum:climaSum("ver"), info:"Toque num ponto do 3D para medir com a sonda: dali dá para soltar fumaça ou linhas de corrente."});
@@ -22375,8 +22395,6 @@ Object.assign(ACT,{
   entClear: b=>{ if(b.dataset.arm){ S.entorno=[]; renderTab() } else { b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on") } },
   entX: b=>{ S.entorno.splice(+b.dataset.i,1); renderTab() },
   cviz: b=>{ const k=b.dataset.k; S.cfd.viz[k]=!S.cfd.viz[k]; save(); if(cfdOn()){ if(k==="particulas"||k==="fumaca") cfdParticlesInit(); else if(k==="linhas") cfdLines(); else cfdRefresh(false); cfdBarUI(); render3() } renderTab() },
-  cfdPlay: ()=>{ if(VIEW!=="v3d"){ setView("v3d"); return } CFD.running? cfdPause() : (CFD.worker? cfdRun() : cfdStart()); renderTab() },
-  cfdReset: ()=>{ if(VIEW!=="v3d") setView("v3d"); else cfdStart(true) },
   semX: ()=>{ S.cfd.semente=null; save(); if(cfdOn()){ cfdLines(); render3() } renderTab() },
   emX: ()=>{ S.cfd.emissor=null; save(); if(cfdOn()) cfdParticlesInit(); renderTab() },
 });
@@ -22566,7 +22584,7 @@ function projNormasLive(m, fast){
   normasLive(m, fast);
   if(typeof normasSecHTML==="function") return;   // a versão do P2 escreve o próprio resumo
   const n=s=>document.querySelectorAll(`#nrmList .nrm-it .dot.${s}`).length, ok=n("ok"), wa=n("warn"), bd=n("bad");
-  if(ok+wa+bd) setSum("nrmList", [ok? `${ok} atende${ok>1?"m":""}` : "", wa? `<span style="color:var(--warn)">${wa} atenção</span>` : "", bd? `<span style="color:var(--bad)">${bd} não atende${bd>1?"m":""}</span>` : ""].filter(Boolean).join(" · "));
+  if(ok+wa+bd) setSum("nrmList", [ok? `${ok} atende${ok>1?"m":""}` : "", wa? `<span style="color:var(--warn-t)">${wa} atenção</span>` : "", bd? `<span style="color:var(--bad)">${bd} não atende${bd>1?"m":""}</span>` : ""].filter(Boolean).join(" · "));
 }
 STEP_R.projeto = ()=>{
   const E=S.estudo, X=S.garagem||DEF.garagem, subs=projSubs();
@@ -22634,7 +22652,7 @@ STEP_R.projeto = ()=>{
 };
 /* Andares: lista de todos os pavimentos (antiga sub-aba) e as saídas/acessibilidade, depois de alas (52) e cômodos (55) */
 addCard("projeto", { key:"andares", order:60, sub:"tipo", html:()=>SEC("Todos os andares", `<div class="list andpilha" id="andList"></div><button class="btn full" data-act="corte3d">Ver o andar cortado no 3D</button>`,
-  {open:true, key:"andares", sum:"", info:"Toque num andar para ver a planta dele no palco. Nas garagens, toque nas vagas para editar."}) });
+  {open:false, key:"andares", sum:"", info:"Toque num andar para ver a planta dele no palco. Nas garagens, toque nas vagas para editar."}) });
 addCard("projeto", { key:"nrmList", order:65, sub:"tipo", html:()=>projNormasHTML() });
 /* textos de ajuda e resumos das seções do Projeto */
 const GAR_RAMPA_INFO = { reta:"Todas na mesma projeção: em cada pavimento o carro chega pela ponta de dentro e volta até a frente para descer de novo.",
@@ -22665,11 +22683,11 @@ STEP_LIVE.projeto = (m, f, fast)=>{
   if(PSUB==="gar" && m.gar){
     const flo=Object.keys(m.gar).sort((a,b)=>{ const o=k=>k==="ter"?0:k[0]==="s"? -(+k.slice(1)) : +k.slice(1); return o(a)-o(b) });
     const ok=m.vagas>=m.vagasReq, gs=document.getElementById("garStat"); if(gs) gs.innerHTML = `<span class="pill ${ok?"ok":"bad"}">${ok?"atende":"faltam "+(m.vagasReq-m.vagas)}</span>`;
-    const q=m.quadroVagas, quadro = q? garQuadroRows(m).filter(([l])=>!/^Total/.test(l)) : [], simples=quadro.every(([l])=>/^(Comuns|PCD|Idosos)$/.test(l));
-    const tipos = q? [q.comum!=null?`${q.comum} comuns`:"", q.pcd?`${q.pcd} PCD`:"", q.idoso?`${q.idoso} idosos`:""].filter(Boolean).join(" · ") : "";
+    const q=m.quadroVagas, quadro = q? garQuadroRows(m).filter(([l])=>!/^Total/.test(l)) : [], simples=quadro.every(([l])=>/^(Comuns|PCD|Idosos|Na frente \(lojas\))$/.test(l));
+    const tipos = q? [q.comum!=null?`${q.comum} comuns`:"", q.pcd?`${q.pcd} PCD`:"", q.idoso?`${q.idoso} idosos`:"", q.frente?`${q.frente} na frente`:""].filter(Boolean).join(" · ") : "";
     setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${tipos? tipos+" · " : ""}${nf(m.vagas/Math.max(1,m.units),2)} por unidade${S.estudo.usarLayout? "" : ` · estimativa ${m.vagasEst}`}</div></div></div>
       ${quadro.length>1 && !simples? `<table class="tbl">${quadro.map(([l,v])=>`<tr><td>${esc(l)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
-      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="Ver este pavimento"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).filter(a=>!/^Não couberam/.test(a)).map(a=>`<p class="note" style="color:var(--warn)">${esc(a)}</p>`).join("")}`);
+      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="Ver este pavimento"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).filter(a=>!/^Não couberam/.test(a)).map(a=>`<p class="note" style="color:var(--warn-t)">${esc(a)}</p>`).join("")}`);
     const ri=document.getElementById("rampInfo"); if(ri && m.vert){ const V_=m.vert, s0=V_.strips[0], pend=V_.ok?"":" · verifique os avisos";
       ri.textContent = !s0? "" : V_.helix? `helicoidal Ø ${nf(2*V_.helix.Re,1)} m · faixa ${nf(V_.helix.faixa,2)} m · ${nf(V_.helix.incl*100,1)}% no eixo${pend}`
         : V_.elev? `${V_.elev.n} poço${V_.elev.n>1?"s":""} de ${nf(EC_CAB[0]+2*EC_PAREDE,1)} × ${nf(EC_CAB[1]+2*EC_PAREDE,1)} m · ${V_.elev.espera.length} vaga${V_.elev.espera.length>1?"s":""} de espera · saída ${V_.elev.porta==="frente"?"pela frente (de ré)":"pelo fundo"}${pend}`
@@ -22776,7 +22794,7 @@ let LADOAB = new Set();   // lados abertos na lista para editar comprimento e re
 .tr-geo>.adv{display:contents}
 .tr-geo>.adv>.advbtn{grid-row:1;grid-column:1;white-space:nowrap}
 .tr-geo>.adv>.advb{grid-row:2;grid-column:1/-1;margin-top:8px}
-.geoNote{grid-row:1;grid-column:2;justify-self:end;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--warn);white-space:nowrap;min-width:0;max-width:100%}
+.geoNote{grid-row:1;grid-column:2;justify-self:end;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--warn-t);white-space:nowrap;min-width:0;max-width:100%}
 .geoNote>span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .geoNote>.btn{flex:none}
 .geoNote::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none}
@@ -22785,17 +22803,17 @@ let LADOAB = new Set();   // lados abertos na lista para editar comprimento e re
 .tr-res{gap:6px}
 .tr-res .met{padding:7px 11px 8px}
 .tr-res .met .l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tr-res .met .l i{font-style:normal;color:var(--faint);font-weight:400}
+.tr-res .met .l i{font-style:normal;color:var(--muted);font-weight:400}
 .tr-res .met .v{font-size:17px;margin-top:1px}
 .tr-res .met .v small{font-size:11.5px;font-weight:500;color:var(--muted);letter-spacing:0;margin-left:3px}
 .seg.tr-meth{margin-bottom:0}
 .seg.tr-meth button{padding:5px 6px;font-size:12px;flex:1 1 auto}
 #edges{gap:4px}
-#edges .edge{padding:4px 6px 4px 10px}
+#edges .edge{padding:2px 6px 2px 10px}
 #edges .edge .xp{width:24px;height:22px}
 #frBox>.row:first-child{margin-top:6px!important}
-.tr-rg>.kv{gap:9px 12px}
-.tr-rg>.kv .inp input{padding-top:6px;padding-bottom:6px}
+.tr-rg>.kv{gap:8px 12px}
+.tr-rg>.kv .inp input{padding-top:5px;padding-bottom:5px}
 .tr-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .tr-rg .grp:first-child{margin-top:0}
 .tr-lei{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
@@ -23123,6 +23141,7 @@ function finEssHTML(){
        (par? "" : NUM("fin.fator","Custo ÷ CUB","×",{step:0.01,help:"Custo ÷ CUB",fx:"confCusto"}))) +
     GRP("Preço de venda por m²") + KV(precos) +
     GRP("Prazos") + KV(NUM("fin.venda","Vender tudo em","meses",{step:1,int:true,min:1,q:"velocidade prazo de vendas"}) + NUM("fin.obra","Prazo de obra","meses",{step:1,int:true,min:1,q:"cronograma"})) +
+    (typeof progConfHTML==="function"? progConfHTML(["custo","preco"]) : "") +
     `<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="prem" data-open="terAlt">Comparar compra, permuta e SPE →</button></div>`,
     {key:"essencial", open:true, info:"O que todo estudo precisa conferir: o preço do terreno, o custo da obra (CUB × fator) e o preço de venda de cada tipologia — o mesmo do mix, na etapa Produto. Preço × área das unidades = VGV. O resto das premissas fica na sub-aba Premissas.", sum:""});
 }
@@ -23200,7 +23219,7 @@ function finIndHTML(){
 function finRecHTML(){
   return SEC("Receita e comissões", KV(NUM("fin.vendaLanc","Vendido no lançamento","%",{pct:true,step:5,min:0,max:1,q:"velocidade vendas lançamento"}) + NUM("fin.corret","Corretagem","%",{pct:true,step:0.5,q:"comissão"}) +
       NUM("fin.mkt","Marketing","%",{pct:true,step:0.5,q:"publicidade stand"}) + NUM("fin.imp","Impostos (RET)","%",{pct:true,step:0.25,help:"RET",q:"tributos"}) + NUM("fin.reaj","Reajuste da tabela","% a.a.",{pct:true,step:0.5})) +
-      finQ("incc correção parcelas", SW("fin.correcao","Parcelas corrigidas pelo INCC até as chaves")) +
+      finQ("incc correção parcelas", SW("fin.correcao",`Parcelas corrigidas pelo ${TERMO("INCC")} até as chaves`)) +
       ADV(KV(NUM("fin.precoLoja","Preço das lojas","R$/m²",{step:50,fx:"confPreco"}) + NUM("fin.permuta","Permuta física","% un.",{pct:true,step:1,help:"Permuta física",fx:"permuta"}) +
         NUM("fin.permutaFin","Permuta financeira","% receita",{pct:true,step:0.5,help:"Permuta financeira"})), {key:"rec"}),
     {key:"rec", cls:"fq", sum:""});
@@ -23283,7 +23302,7 @@ function finOrcLive(m, f){
   setSum("orc", `${par?"paramétrico":"CUB × fator"} · <b>${mi(tot)}</b>`);
   if(par) setSub("fin.cub", `obra pelo orçamento paramétrico: ${mi(tot)}`);
   if(!finVis("orcTop")) return;
-  setHTML("orcTop", `<div class="mets"><div class="met"><div class="l">Obra (sem INCC)</div><div class="v">${mi(tot)}</div><div class="s">${par?"soma dos sistemas":"CUB × fator"}</div></div>
+  setHTML("orcTop", `<div class="mets"><div class="met"><div class="l">Obra (sem ${TERMO("INCC")})</div><div class="v">${mi(tot)}</div><div class="s">${par?"soma dos sistemas":"CUB × fator"}</div></div>
     <div class="met"><div class="l">Custo / m² construído</div><div class="v">${brl(tot/Math.max(1,m.constr))}</div><div class="s">${nf(tot/Math.max(1,m.constr)/Math.max(1,C),2)} × CUB</div></div></div>`);
   const its=o.itens.filter(i=>i.total>0), mx=Math.max(1,...its.map(i=>i.total));
   setHTML("orcBars", its.map(i=>`<div class="ur" style="grid-template-columns:minmax(0,118px) 1fr 74px" title="${esc(i.nome)}${i.extra?` · inclui ${mi(i.extra)} de ${esc(i.extras.map(x=>x.nome).join("; "))}`:""}"><span>${esc(i.nome)}</span>
@@ -23322,7 +23341,7 @@ function finCenHTML(){
 function finCenVarHTML(){
   const lin=(k,l,u,step,lab)=>`<span class="fl">${l}</span>${finIN(`flx.cen.pess.${k}`,u,{pct:true,step,label:"Pessimista: "+lab})}${finIN(`flx.cen.otim.${k}`,u,{pct:true,step,label:"Otimista: "+lab})}`;
   return SEC("O que muda em cada cenário", `<div class="fcen"><span></span><span class="fl">Pessimista</span><span class="fl">Otimista</span>
-      ${lin("preco","Preço de venda","%",1,"preço")}${lin("vel","Prazo de vendas","%",5,"prazo de vendas")}${lin("custo","Custo de obra","%",1,"custo")}${lin("juros","Juros e TMA","p.p.",0.25,"juros")}</div>`,
+      ${lin("preco","Preço de venda","%",1,"preço")}${lin("vel","Prazo de vendas","%",5,"prazo de vendas")}${lin("custo","Custo de obra","%",1,"custo")}${lin("juros",`Juros e ${TERMO("TMA")}`,"p.p.",0.25,"juros")}</div>`,
       {key:"cenVar", info:"Variações sobre o estudo base, todas ao mesmo tempo em cada cenário. Prazo de vendas positivo = vende mais devagar.", sum:""});
 }
 function finCenLive(m, f){
@@ -23403,7 +23422,7 @@ function finTerHTML(){
       NUM("terAlt.speS","SPE: terreneiro","% lucro",{pct:true,step:1,help:"SPE"}) + NUM("terAlt.taxa","Taxa do terreneiro","% a.a.",{pct:true,step:0.5,help:"Desconto que o terreneiro aplica ao que recebe no futuro"})) +
     (us? `<details class="sub"><summary class="note" style="cursor:pointer">Unidades da permuta física (${(A.unidades||[]).length} escolhidas)</summary><div class="list" id="terUn" style="max-height:220px;overflow:auto;margin-top:6px"></div></details>` : "") +
     ADV(GRP("Compra parcelada") + KV(NUM("terAlt.parcEntrada","Entrada","%",{pct:true,step:5})+NUM("terAlt.parcN","Parcelas","meses",{step:1,int:true,min:1})+NUM("terAlt.parcAcresc","Acréscimo","%",{pct:true,step:1}),3) +
-      SW("terAlt.parcCorr","Parcelas corrigidas pelo INCC") +
+      SW("terAlt.parcCorr",`Parcelas corrigidas pelo ${TERMO("INCC")}`) +
       finCampoSeg("Base da permuta financeira", "permuta financeira base", SEG("terAlt.permBase",[["receita","Receita"],["vgv","VGV"]],{full:true,label:"Base da permuta financeira"})), {key:"terAlt"}) +
     `<div id="terBox"></div>` : "");
   return SEC("Pagamento do terreno", body, {key:"terAlt", info:"Compra à vista ou parcelada, permuta física, permuta financeira e SPE, lado a lado, com o fluxo e o VPL dos dois lados. ITBI sobre o preço pedido em todas. Na física o terreneiro recebe as unidades nas chaves; na SPE o incorporador recupera o investimento e depois divide o caixa.", sum:""});
@@ -23973,7 +23992,7 @@ function histInit(){
                           #ver=; preferência "sempre"/"nunca" em localStorage gabarito.inicio (interruptor no pé da tela).
    O P1 liga inicioAbrir() na marca do topo, no menu do estudo e na inicialização; assInicio() (P7) chama inicioAbrir() na 1ª visita. */
 
-const INI = { el:null, aberto:false, q:"", f:"todos", ord:"recentes", lista:[], carregou:false, menu:null, arm:null, ren:null, desf:null, desfT:0, abrindo:null, voltar:false };
+const INI = { fill:{ rodando:false, tent:new Set(), falhou:new Set(), atual:null }, el:null, aberto:false, q:"", f:"todos", ord:"recentes", lista:[], carregou:false, menu:null, arm:null, ren:null, desf:null, desfT:0, abrindo:null, voltar:false };
 const INI_F = [["todos","Todos"],["rascunho","Rascunho"],["andamento","Em andamento"],["confiavel","Confiável"]];
 const INI_ORD = [["recentes","Recentes"],["nome","Nome"],["margem","Margem"]];
 const INI_ST = { rascunho:"Rascunho", andamento:"Em andamento", confiavel:"Confiável" };
@@ -24049,6 +24068,9 @@ const iniIc = (k, cls="ico")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidd
 .ini-st .bar{flex:1;height:3px;border-radius:9px;background:var(--line);overflow:hidden;min-width:36px}
 .ini-st .bar i{display:block;height:100%;border-radius:9px;background:var(--ink-2)}
 .ini-st .bar i.ok{background:var(--ok)}
+.ini-st .bar.ind i{width:40%;background:var(--brand);animation:iniInd 1.3s var(--ease) infinite}
+@keyframes iniInd{0%{margin-left:-40%}100%{margin-left:100%}}
+@media (prefers-reduced-motion:reduce){.ini-st .bar.ind i{animation:none;width:60%}}
 .ini-k{display:grid;grid-template-columns:1.25fr 1fr .8fr;margin:3px 0 0;padding:11px 0 0;border-top:1px solid var(--line)}
 .ini-k>div{min-width:0;padding:0 10px;border-left:1px solid var(--line)}
 .ini-k>div:first-child{padding-left:0;border-left:0}
@@ -24166,7 +24188,8 @@ function iniPastaHTML(e){
   const meta = [r.cidade? `<b>${esc(String(r.cidade).split(/ [—·-] /)[0])}</b>` : ex? "Cidade fictícia" : "Cidade a definir", r.area? m2(r.area) : "", quando? (quando==="agora"? "editado agora" : "editado "+quando) : ""].filter(Boolean).join(" · ");
   const pr = r.total? r.feitos/r.total : 0;
   const pill = st? `<span class="pill ${st==="confiavel"?"ok":st==="andamento"?"and":""}">${INI_ST[st]}</span><span>${nf(r.feitos||0)}/${nf(r.total||9)}</span><span class="bar" aria-hidden="true"><i class="${st==="confiavel"?"ok":""}" style="width:${(pr*100).toFixed(0)}%"></i></span>`
-    : `<span class="pill">Sem resumo</span><span>abra para atualizar</span>`;
+    : INI.fill.falhou.has(e.id)? `<span class="pill">Sem resumo</span><span>abra para atualizar</span>`
+    : `<span class="pill">Calculando…</span><span>${INI.fill.atual===e.id? "agora" : "na fila"}</span>${INI.fill.atual===e.id? `<span class="bar ind" aria-hidden="true"><i></i></span>` : ""}`;
   const n=(l,v,cls="")=>`<div><dt>${l}</dt><dd class="${v==null?"vz":cls}">${v==null? "—" : v}</dd></div>`;
   const mg = r.margem!=null? `<span class="dot ${typeof sdCls==="function"? sdCls(r.nivelMargem) : ({ruim:"bad",atencao:"warn"})[r.nivelMargem]||"ok"}" title="${esc(typeof sdTxt==="function"? sdTxt(r.nivelMargem) : "")}"></span>${pct(r.margem)}` : null;
   const fig = typeof inicioMiniSVG==="function"? inicioMiniSVG(r.mini, {label:"Lote e torres de "+nome}) : "";
@@ -24373,6 +24396,60 @@ function iniTecla(e){
 }
 function iniSai(e){ const t=e.target; if(t.dataset && t.dataset.ren && INI.ren===t.dataset.ren) iniRenomeia(t.dataset.ren, t.value) }
 
+/* ---------- resumos que faltam ----------
+   Estudos salvos antes da v3 não têm `resumo` (VGV, margem, unidades, status): a pasta ficaria com "—" até ser aberta. Ao abrir a tela,
+   em segundo plano e UM por vez, calcula cada um (Worker "job"; sem Worker, na página, com S trocado só durante a conta) e grava o
+   resumo SEM mexer no "editado há" (Repo.estudos.put(…, {manterData:true})). A pasta é redesenhada sozinha ao terminar; a tela segue livre. */
+const iniSemResumo = e=>{ const r=iniRes(e); return r.vgv==null || !r.nivel };
+const iniPausa = ms=>new Promise(r=>setTimeout(r, ms));
+async function iniCalcula(st){
+  if(typeof calcOn==="function" && calcOn() && typeof calcJob==="function"){
+    try{ return await calcJob().call("compute", [st, {}]) }
+    catch(e){ if(!(typeof calcCancelado==="function" && calcCancelado(e))) console.warn("[inicio] cálculo no Worker falhou — calculando na página:", e && e.message); else return null }
+  }
+  await iniPausa(30);
+  const keep=S; S=st; try{ return compute(st, {}) } finally { S=keep }
+}
+/** calcula e grava o resumo de um estudo (o aberto: pelo caminho normal do app). → o registro atualizado ou null */
+async function iniResumoDe(e){
+  if(typeof EST!=="undefined" && e.id===EST.id){
+    if(window._last && window._last.m && window._last.f && (typeof calcOcioso!=="function" || calcOcioso()) && typeof estGrava==="function"){ await estGrava(); return (EST.lista.find(x=>x.id===e.id)) || null }
+    return null;   // o estudo aberto ganha o dele quando o cálculo completo chega (estAbrir/estGrava)
+  }
+  const rec=await Repo.estudos.get(e.id); if(!rec || !rec.S) return null;
+  const st=merge(clone(DEF), clone(rec.S)), m=await iniCalcula(st); if(!m || !m.T) return null;
+  const keep=S; let resumo; S=st;
+  try{ const f=finance(st, m); resumo=inicioResumo(st, m, f, inicioDoRegistro(rec)) } finally { S=keep }
+  if(!resumo || resumo.vgv==null) return null;
+  const k={...(rec.k||{}), resumo}, novo=await Repo.estudos.put({...rec, k, resumo}, {manterData:true});
+  const r={...novo}; delete r.S;
+  if(typeof EST!=="undefined"){ const i=EST.lista.findIndex(x=>x.id===r.id); if(i>=0) EST.lista[i]=r }
+  return r;
+}
+function iniRedesenhaPasta(e){
+  const g=document.getElementById("iniGrid"); if(!g || !INI.el) return;
+  const li=g.querySelector(`.ini-p[data-id="${CSS.escape(e.id)}"]`);
+  // filtro por status ou ordem por margem dependem do resumo: refaz a lista; senão, só a pasta (sem tirar o foco de quem digita ou renomeia)
+  if(INI.f!=="todos" || INI.ord==="margem" || !li){ if(INI.ren==null) iniGrid(); return }
+  if(INI.ren===e.id || INI.menu===e.id) return;
+  const t=document.createElement("template"); t.innerHTML=iniPastaHTML(e).trim(); if(t.content.firstElementChild) li.replaceWith(t.content.firstElementChild);
+}
+async function iniCompleta(){
+  const F=INI.fill; if(F.rodando) return; F.rodando=true;
+  try{
+    for(let n=0; n<200 && INI.aberto; n++){
+      const e=INI.lista.find(x=>iniSemResumo(x) && !F.tent.has(x.id)); if(!e) break;
+      F.tent.add(e.id); F.atual=e.id; iniRedesenhaPasta(e);
+      let r=null; try{ r=await iniResumoDe(e) }catch(err){ console.warn("[inicio] resumo de "+e.id+":", err && err.message) }
+      F.atual=null;
+      const i=INI.lista.findIndex(x=>x.id===e.id);
+      if(r && i>=0){ INI.lista[i]={...INI.lista[i], ...r}; F.falhou.delete(e.id) } else F.falhou.add(e.id);
+      if(i>=0) iniRedesenhaPasta(INI.lista[i]);
+      await iniPausa(60);   // respira entre um estudo e outro: a tela nunca fica presa
+    }
+  } finally { F.rodando=false; F.atual=null }
+}
+
 /* ---------- abrir e fechar ---------- */
 function inicioAbrir(){
   // a entrada pela Rixel (auth.js) vem antes: espera ela sair da frente
@@ -24400,7 +24477,7 @@ function inicioAbrir(){
   document.documentElement.style.overflow="hidden";
   iniRender();
   if(!jaAberto) setTimeout(()=>{ try{ INI.el.focus({preventScroll:true}) }catch(e){} }, 20);
-  iniCarrega().then(()=>{ if(!INI.aberto) return; INI.voltar = typeof EST!=="undefined" && !!EST.id && INI.lista.some(e=>e.id===EST.id); iniRender() });
+  iniCarrega().then(()=>{ if(!INI.aberto) return; INI.voltar = typeof EST!=="undefined" && !!EST.id && INI.lista.some(e=>e.id===EST.id); iniRender(); iniCompleta() });
 }
 function inicioFechar(){
   if(!INI.el) return; INI.aberto=false; INI.menu=null; INI.ren=null; INI.arm=null;
@@ -24880,7 +24957,7 @@ ACT.mkLogoDel =()=>{ _marcaLogo=null; _logoMini=null; LS.set(MARCA_LS,null); ren
 .top .rail button::before{display:none}
 .top .rail .n{position:relative;display:grid;place-items:center;width:23px;height:23px;border-radius:50%;border:1.5px solid var(--line-2);font-size:11.5px;font-weight:650;color:var(--muted);background:var(--surface);flex:none;transition:background .2s var(--ease),border-color .2s var(--ease),color .2s var(--ease)}
 .top .rail .n svg{display:none;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
-.top .rail button.feito .n{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.top .rail button.feito .n{background:var(--ok-soft);border-color:transparent;color:var(--ok-t)}
 .top .rail button.feito .n b{display:none}
 .top .rail button.feito .n svg{display:block}
 .top .rail button[aria-current="page"]{color:var(--ink);font-weight:650;background:var(--soft)}
@@ -24900,7 +24977,7 @@ ACT.mkLogoDel =()=>{ _marcaLogo=null; _logoMini=null; LS.set(MARCA_LS,null); ren
 .panel>.rail button::before{display:none}
 .panel>.rail .n{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line-2);font-size:11.5px;font-weight:650;background:var(--surface)}
 .panel>.rail .n svg{display:none;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
-.panel>.rail button.feito .n{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.panel>.rail button.feito .n{background:var(--ok-soft);border-color:transparent;color:var(--ok-t)}
 .panel>.rail button.feito .n b{display:none}.panel>.rail button.feito .n svg{display:block}
 .panel>.rail button[aria-current="page"]{color:var(--ink);padding-right:10px}
 .panel>.rail button[aria-current="page"] .n{background:var(--sel);border-color:var(--sel);color:var(--sel-ink)}
@@ -25025,6 +25102,17 @@ ACT.mkLogoDel =()=>{ _marcaLogo=null; _logoMini=null; LS.set(MARCA_LS,null); ren
   /* folha cheia: o palco fica só como uma faixa — sem as barras e dicas flutuantes por cima dela */
   .nv-cheia .stage .view>:not(canvas):not(#c2d):not(#c3d){visibility:hidden}
   .hint{font-size:11.5px;padding:6px 10px;line-height:1.35}
+  /* acabamento: a planta fica à mostra — barras do palco mais baixas e as ferramentas da vista numa faixa só, rolável (um botão ≥ 40 px) */
+  .vacts .btn{width:40px;height:40px;min-height:40px}
+  .viewbar .seg button{min-height:40px}
+  .vtools{bottom:6px;flex-direction:row;align-items:center;gap:6px;overflow-x:auto;overflow-y:hidden;padding:0 22px 4px 0;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 22px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 22px),transparent)}
+  .vtools::-webkit-scrollbar{display:none}
+  .vtools .seg{flex:none;max-width:none;overflow:visible}
+  .vtools .seg button{min-height:40px;white-space:nowrap}
+  .cfdbar:not(#vdBar){display:flex;align-items:center;gap:8px;padding:6px 8px;right:auto;max-width:calc(100% - 16px)}
+  .cfdbar:not(#vdBar) .cfstat{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .cfstat .det{display:none}
+  .view:has(#vtools>:not([hidden])) .hint,.view:has(#vtools>:not([hidden])~:not([hidden])) .hint{bottom:60px}
 }
 @media (max-width:900px){ .top .prog-anel{min-height:40px;min-width:40px;justify-content:center} }
 @media (max-width:520px){ .top .prog-anel{padding:3px;gap:0} .top .prog-anel span{display:none} }
@@ -25187,7 +25275,7 @@ function navEtapaMudou(){ if(navCel()) folhaSet("media"); navMenuFecha(); navKpi
 let CID_UNDO = null; // {regras, ref, nome} — desfazer a última aplicação de regras de cidade
 (function(){ const s=document.createElement("style"); s.textContent=`
 .nrm-aviso{border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 9%,var(--surface));color:var(--ink-2);border-radius:9px;padding:7px 10px;font-size:11.5px;line-height:1.45}
-.nrm-aviso b{color:var(--warn);font-weight:600}
+.nrm-aviso b{color:var(--warn-t);font-weight:600}
 .nrm-res{display:flex;gap:6px;flex-wrap:wrap}
 .nrm-g{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 2px;font-weight:600}
 .nrm-it{border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
@@ -25199,7 +25287,7 @@ let CID_UNDO = null; // {regras, ref, nome} — desfazer a última aplicação d
 .nrm-it .bd{padding:0 10px 9px 27px;display:grid;gap:4px;font-size:11.5px;color:var(--ink-2);line-height:1.45}
 .nrm-it .bd .src{color:var(--muted);font-size:10.5px}
 .nrm-st{font-size:10.5px;font-family:var(--f-mono);white-space:nowrap}
-.nrm-st.ok{color:var(--ok)} .nrm-st.warn{color:var(--warn)} .nrm-st.bad{color:var(--bad)} .nrm-st.na{color:var(--muted)}
+.nrm-st.ok{color:var(--ok-t)} .nrm-st.warn{color:var(--warn-t)} .nrm-st.bad{color:var(--bad)} .nrm-st.na{color:var(--muted)}
 .dot.na{background:var(--line-2)}
 .cid-ref{display:grid;gap:2px;border-left:2px solid var(--line-2);padding:2px 0 2px 10px;margin:8px 0 2px}
 .cid-undo{margin-top:4px}
@@ -25216,8 +25304,8 @@ function cidSeletorHTML(){
   lista.forEach(c=>{ (grupos[c.fonteNome]=grupos[c.fonteNome]||[]).push(c) });
   const sel=`<select class="sel" id="cidLib" aria-label="Aplicar regras de uma cidade" style="flex:1;min-width:0"><option value="">${ref.id? "Trocar cidade e zona…" : "Aplicar regras de…"}</option>${Object.entries(grupos).map(([g,l])=>`<optgroup label="${esc(g)}">${l.map(c=>`<option value="${esc(c.id)}">${esc(cidadeRotulo(c))}</option>`).join("")}</optgroup>`).join("")}</select>`;
   const info = ref.id? `<div class="cid-ref"><span class="note"><b style="color:var(--ink)">${esc(S.regras.cidade)}</b>${ref.lei?` · ${esc(ref.lei)}`:""}${ref.data&&ref.data!=="—"?` · ${esc(ref.data)}`:""}</span>
-      ${ref.ilustrativo? `<span class="note" style="color:var(--warn)">Valores ilustrativos ${INFO(CIDADES_AVISO)}</span>` : `<span class="note">Da sua biblioteca ${INFO("Regras salvas neste navegador. Confira se continuam vigentes.")}</span>`}</div>` : "";
-  return `<div class="row cid-sel" data-q="cidade zona lei plano diretor aplicar regras" style="flex-wrap:nowrap">${sel}${INFO("Escolha a cidade e a zona do lote para preencher as regras de uma vez. Os exemplos são ilustrativos: confira no plano diretor (LUOS). Ctrl+Z ou “Desfazer” voltam às regras anteriores.","cidade e zona")}</div>` + info +
+      ${ref.ilustrativo? `<span class="note" style="color:var(--warn-t)">Valores ilustrativos ${INFO(CIDADES_AVISO)}</span>` : `<span class="note">Da sua biblioteca ${INFO("Regras salvas neste navegador. Confira se continuam vigentes.")}</span>`}</div>` : "";
+  return `<div class="row cid-sel" data-q="cidade zona lei plano diretor aplicar regras" style="flex-wrap:nowrap">${sel}${typeof progConfBtn==="function"? progConfBtn("regras") : ""}${INFO("Escolha a cidade e a zona do lote para preencher as regras de uma vez. Os exemplos são ilustrativos: confira no plano diretor (LUOS). Ctrl+Z ou “Desfazer” voltam às regras anteriores.","cidade e zona")}</div>` + info +
     (CID_UNDO? `<div class="row sb cid-undo" style="flex-wrap:nowrap"><span class="note">Antes: ${esc(CID_UNDO.regras.cidade||"regras anteriores")}</span><button class="btn sm ghost" data-act="cidUndo">Desfazer</button></div>` : "");
 }
 function cidSalvarHTML(){ return `<button class="btn sm" data-act="cidSave" title="Guardar as regras atuais na biblioteca deste navegador">Salvar na biblioteca</button>` }
@@ -25255,8 +25343,8 @@ function normasLive(m, fast){
   if(fast && document.querySelector("#nrmList .nrm-it")) return; // arrastando: mantém o último (o completo vem logo depois)
   let v; try{ v=normasAvaliar(S, m) }catch(e){ console.error("[normas]", e); setHTML("nrmList", `<p class="note">Não foi possível avaliar as normas neste estudo.</p>`); return }
   const c=normasResumo(v.itens);
-  const pill=document.getElementById("nrmPill"); if(pill) pill.innerHTML = c.bad? `<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>` : c.warn? `<span style="color:var(--warn)">${c.warn} em atenção</span>` : `<span style="color:var(--ok)">atende</span>`;
-  setSum("nrmList", [c.ok&&`${c.ok} atende${c.ok>1?"m":""}`, c.warn&&`<span style="color:var(--warn)">${c.warn} em atenção</span>`, c.bad&&`<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>`].filter(Boolean).join(" · ") || "preliminar");
+  const pill=document.getElementById("nrmPill"); if(pill) pill.innerHTML = c.bad? `<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>` : c.warn? `<span style="color:var(--warn-t)">${c.warn} em atenção</span>` : `<span style="color:var(--ok-t)">atende</span>`;
+  setSum("nrmList", [c.ok&&`${c.ok} atende${c.ok>1?"m":""}`, c.warn&&`<span style="color:var(--warn-t)">${c.warn} em atenção</span>`, c.bad&&`<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>`].filter(Boolean).join(" · ") || "preliminar");
   setHTML("nrmRes", ["ok","warn","bad"].filter(k=>c[k]).map(k=>`<span class="pill ${k}">${c[k]} ${NRM_ST[k]}</span>`).join("") + `<span class="pill">h = ${nf(v.h,1)} m</span>`);
   const open=new Set([...document.querySelectorAll("#nrmList details[open]")].map(d=>d.dataset.id));
   setHTML("nrmList", NORMAS_GRUPOS.map(g=>{ const l=v.itens.filter(x=>x.grupo===g); if(!l.length) return "";
@@ -25284,7 +25372,10 @@ let VBH = 52;
 (function palcoBarra(){
   const vb=document.querySelector("#view .viewbar"), v=document.getElementById("view"); if(!vb || !v || typeof ResizeObserver==="undefined") return;
   const mede=()=>{ const r=vb.getBoundingClientRect(), rv=v.getBoundingClientRect(); if(!r.height) return; const h=Math.round(r.bottom-rv.top);
-    if(h>0 && h!==VBH){ VBH=h; v.style.setProperty("--vbh", h+"px"); if(typeof redraw2d==="function" && window._last) try{ redraw2d() }catch(e){} } };
+    if(h>0 && h!==VBH){ VBH=h; v.style.setProperty("--vbh", h+"px");
+      // celular: a barra mudou de altura (pavimentos, torres…) → a planta se ajusta de novo à faixa livre
+      if(typeof navCel==="function" && navCel() && typeof fit2d==="function" && typeof VIEW!=="undefined" && VIEW!=="3d" && window._last) try{ fit2d(); return }catch(e){}
+      if(typeof redraw2d==="function" && window._last) try{ redraw2d() }catch(e){} } };
   new ResizeObserver(mede).observe(vb); v.style.setProperty("--vbh", VBH+"px"); requestAnimationFrame(mede);
 })();
 
@@ -25417,18 +25508,18 @@ const PR = { mix:-1, lz:-1, hall:false, menu:false, arm:null, armT:0 };
 .pr-row.on{background:var(--surface);border-color:var(--line-2);box-shadow:var(--shadow-s)}
 .pr-row.warn{border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
 .pr-row.bad{border-color:color-mix(in srgb,var(--bad) 50%,transparent)}
-.pr-rh{display:flex;align-items:center;gap:6px;padding:6px 6px 6px 12px;min-height:46px}
+.pr-rh{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 12px;min-height:42px}
 .pr-rh .sw8{flex:none;margin-right:2px}
 .pr-tx{flex:1;min-width:0;display:grid;gap:1px;align-content:center;min-height:34px}
 .pr-tx b{font-weight:550;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pr-tx span{font-size:10.5px;color:var(--muted);font-family:var(--f-mono);line-height:1.35}
-.pr-tx span.w{color:var(--warn)}.pr-tx span.b{color:var(--bad)}
+.pr-tx span.w{color:var(--warn-t)}.pr-tx span.b{color:var(--bad)}
 button.pr-tx{border:0;background:none;padding:0;text-align:left;color:inherit;cursor:pointer;font:inherit}
 button.pr-tx:hover b{color:var(--accent)}
 .pr-rh .stp{flex:none;width:120px;background:var(--surface);grid-template-columns:30px 1fr 30px}
 .pr-row.on .pr-rh .stp{background:var(--surface-2)}
 .pr-rs{padding:0 12px 9px;margin-top:-4px;font-size:10.5px;color:var(--muted);font-family:var(--f-mono);line-height:1.4}
-.pr-rs.w{color:var(--warn)}
+.pr-rs.w{color:var(--warn-t)}
 .pr-ic{flex:none;display:grid;place-items:center;min-width:32px;height:32px;border:0;border-radius:8px;background:none;color:var(--muted);cursor:pointer;transition:background .15s,color .15s;padding:0}
 .pr-ic:hover{background:var(--surface-3);color:var(--ink)}
 .pr-ic svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -25463,9 +25554,9 @@ button.pr-tx:hover b{color:var(--accent)}
 .pr-pot .met .v{font-size:17px}
 .pr-pot .met .s{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pr-pot .met .l .pill{margin-left:auto;font-size:10px;padding:0 6px}
-#compl{gap:4px;margin-top:10px}
+#compl{gap:2px;margin-top:8px}
 #compl .ur{grid-template-columns:100px 1fr 78px;font-size:11.5px}
-.pr-ok{color:var(--ok)}.pr-bad{color:var(--bad)}
+.pr-ok{color:var(--ok-t)}.pr-bad{color:var(--bad)}
 .pr-sug{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin:2px 0 4px}
 .pr-sug>.btn{grid-column:1;grid-row:1}
 .pr-sug .advbtn{grid-column:2;grid-row:1}
@@ -25721,7 +25812,9 @@ Object.assign(ACT,{
    Cálculo puro em src/calc/progresso.js (progressoItens, progressoResumo, proximoPasso). Aqui:
    - S.guia.conf {regras, preco, custo}: flags de interface (extendDEF). NÃO entram em compute/finance. Viram true quando o campo é
      editado (listener de "change" no documento: regras.*, preços do mix/cobertura/lojas, fin.terreno/cub/fator), quando a calibração
-     de custo é aplicada, pelo "Conferi" do checklist ou pelo próximo passo ("Confirmar o preço de venda").
+     de custo é aplicada ou pelo botão "Conferi" que fica ao lado dos campos (Viabilidade › Premissas principais; Terreno › Regras da
+     prefeitura: `progConfHTML`). O checklist e o próximo passo só LEVAM ao campo (`progIrItem`/`campo` do próximo passo, com destaque);
+     nenhum clique à distância marca como conferido.
    - progressoAnelHTML()            → botão com o anel "6/9" (o P1 põe no topo, ao lado do nome do estudo). Abre o checklist ao clicar.
    - progressoLinhaHTML()           → a mesma informação como uma linha ("6 de 9 conferidos · ver"), para o Resultado da Viabilidade.
    - progressoAbrir(anchorEl)       → popover com os 9 itens agrupados por etapa; pendente = "Resolver" (vai para etapa/sub/seção).
@@ -25729,7 +25822,8 @@ Object.assign(ACT,{
    - proximoPassoAtual()            → proximoPasso(S, m, f, TAB, sub atual) com o último resultado da tela (para o rodapé do P1).
    - progressoExecuta(pp)           → executa um próximo passo: ACT[pp.act] quando houver, senão progIr(pp.etapa, pp.sub, pp.sec).
    - progIr(etapa, sub, sec)        → irPara (P0) quando existir; senão goStep com os nomes atuais das etapas e abre a seção.
-   ACT novos: progSubsolo, progGaragem, progLayout, progConfPreco, progConfCusto, progConfRegras, progPdf. */
+   - progConfHTML(ks)               → linha/botões "Conferi" (regras|preco|custo) com estado ligado; progressoAtualiza mantém o estado.
+   ACT novos: progSubsolo, progGaragem, progLayout, progConf (liga/desliga o "Conferi"), progPdf. */
 extendDEF("guia", { conf:{ regras:false, preco:false, custo:false } });
 
 (function(){ const s=document.createElement("style"); s.textContent=`
@@ -25744,6 +25838,11 @@ extendDEF("guia", { conf:{ regras:false, preco:false, custo:false } });
 .prog-linha .bar{flex:1;height:4px;border-radius:9px;background:var(--line);overflow:hidden;min-width:40px}
 .prog-linha .bar i{display:block;height:100%;background:var(--sel);border-radius:9px}
 .prog-linha .ver{color:var(--ink-2);text-decoration:underline;text-underline-offset:2px}
+.prog-conf{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.btn.conf{gap:7px;white-space:nowrap}
+.btn.conf::before{content:"";width:8px;height:8px;border-radius:50%;border:1.5px solid var(--line-2);flex:none;transition:background .15s var(--ease),border-color .15s var(--ease)}
+.btn.conf[aria-pressed="true"]{background:var(--ok-soft);border-color:color-mix(in srgb,var(--ok) 35%,transparent);color:var(--ok-t)}
+.btn.conf[aria-pressed="true"]::before{background:var(--ok);border-color:var(--ok)}
 .prog-pop{position:fixed;z-index:62;width:min(380px,calc(100vw - 24px));max-height:min(78vh,640px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg,16px);box-shadow:var(--shadow-pop);padding:16px 16px 12px;color:var(--ink)}
 .prog-pop[hidden]{display:none}
 .prog-pop .pp-h{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin-bottom:6px}
@@ -25791,7 +25890,7 @@ function progressoLinhaHTML(){
 function progPopHTML(){
   const r=progressoResumoAtual(), tudo=r.feitos===r.total;
   const item=i=>{ const cls=i.ok===true? "ok" : i.ok==null? "wait" : "pend", conf=PROG_CONF[i.k];
-    const acts = i.ok===false? `<button type="button" class="btn sm" data-prog-ir="${i.k}">Resolver</button>${conf?`<button type="button" class="btn sm ghost" data-prog-conf="${conf}" title="Marcar como conferido">Conferi</button>`:""}` : "";
+    const acts = i.ok===false? `<button type="button" class="btn sm" data-prog-ir="${i.k}">${conf?"Conferir":"Resolver"}</button>` : "";
     return `<div class="pp-i ${cls}"><span class="pp-ic">${PROG_OK}</span><div class="pp-t"><b>${esc(i.nome)}</b><span>${esc(i.dica)}</span></div><div class="pp-a">${acts}</div></div>` };
   return `<div class="pp-h${tudo?" ok":""}"><svg viewBox="0 0 40 40" aria-hidden="true"><circle class="tr" cx="20" cy="20" r="16"/><circle class="ar" cx="20" cy="20" r="16" ${progArco(16, r.pct)}/></svg>
       <div><b>${tudo? "Estudo confiável" : `${r.feitos} de ${r.total} conferidos`}</b><span>${tudo? "Tudo o que importa foi conferido." : "O que falta para o estudo ficar confiável"}</span></div>
@@ -25817,14 +25916,14 @@ function progressoFechar(){ if(PROG_POP) PROG_POP.hidden=true; if(PROG_ANCORA) P
 function progPopClique(e){
   if(e.target.closest("[data-prog-x]")){ progressoFechar(); return }
   const ir=e.target.closest("[data-prog-ir]");
-  if(ir){ const i=progressoResumoAtual().itens.find(x=>x.k===ir.dataset.progIr); progressoFechar(); if(i) progIr(i.etapa, i.sub, i.sec); return }
-  const c=e.target.closest("[data-prog-conf]");
-  if(c){ progMarca(c.dataset.progConf, true) }
+  if(ir){ const i=progressoResumoAtual().itens.find(x=>x.k===ir.dataset.progIr); progressoFechar(); if(i) progIrItem(i); return }
 }
 function progressoAtualiza(){
   const r=progressoResumoAtual();
   document.querySelectorAll("[data-prog-anel]:not([data-prog-linha])").forEach(el=>{ const h=progressoAnelHTML(); if(el.outerHTML!==h) el.outerHTML=h });
   document.querySelectorAll("[data-prog-linha]").forEach(el=>{ const h=progressoLinhaHTML(); if(el.outerHTML!==h) el.outerHTML=h });
+  document.querySelectorAll("[data-act=progConf]").forEach(b=>{ const k=b.dataset.k, on=!!(S.guia&&S.guia.conf&&S.guia.conf[k]); if(b.getAttribute("aria-pressed")!==String(on)){ b.setAttribute("aria-pressed",on); b.textContent=PROG_CONF_ROT[k][on?1:0] } });
+  if(typeof rodapeLive==="function") try{ rodapeLive() }catch(e){}   // o "Próximo passo" acompanha o que acabou de ser conferido
   if(PROG_POP && !PROG_POP.hidden){ const h=progPopHTML(); if(PROG_POP.innerHTML!==h) PROG_POP.innerHTML=h;
     if(PROG_ANCORA && !PROG_ANCORA.isConnected){ PROG_ANCORA=document.querySelector("[data-prog-anel]") } }
   return r;
@@ -25837,9 +25936,26 @@ function progMarca(k, aviso){
   if(aviso) toast({regras:"Regras marcadas como conferidas", preco:"Preço de venda conferido", custo:"Terreno e custo da obra conferidos"}[k]||"Conferido");
   return true;
 }
-/* navegação: irPara (P0) quando existir; senão, os nomes das etapas de hoje */
-function progIr(etapa, sub, sec){
-  if(typeof irPara==="function"){ try{ return irPara(etapa, sub||undefined, sec||undefined) }catch(e){ console.error("[progresso] irPara", e) } }
+function progDesmarca(k){
+  if(!S.guia || !S.guia.conf || !S.guia.conf[k]) return false;
+  S.guia.conf[k]=false; save(); progressoAtualiza(); return true;
+}
+/* botões "Conferi" (regras|preco|custo): ficam ao lado dos campos; o estado liga/desliga (Ctrl+Z também desfaz) */
+const PROG_CONF_ROT = { regras:["Conferi","Conferidas"], preco:["Conferi o preço","Preço conferido"], custo:["Conferi terreno e obra","Terreno e obra conferidos"] };
+const PROG_CONF_TIT = { regras:"Marcar as regras como conferidas na lei municipal", preco:"Marcar o preço de venda como conferido", custo:"Marcar o terreno e o custo da obra como conferidos" };
+function progConfBtn(k){ const on=!!(S.guia&&S.guia.conf&&S.guia.conf[k]);
+  return `<button type="button" class="btn sm conf" data-act="progConf" data-k="${k}" aria-pressed="${on}" title="${PROG_CONF_TIT[k]}">${PROG_CONF_ROT[k][on?1:0]}</button>` }
+function progConfHTML(ks){ return `<div class="prog-conf" data-prog-conf-row>${(ks||["preco","custo"]).map(progConfBtn).join("")}</div>` }
+/* campo a focar de cada item do checklist que o usuário confere */
+const PROG_ALVO = { preco:"produto.mix.0.preco", custo:"fin.terreno" };
+function progIrItem(i){ return progIr(i.etapa, i.sub, i.sec, PROG_ALVO[i.k]) }
+function progLuz(el){ if(!el) return; el.classList.remove("bq-luz"); void el.offsetWidth; el.classList.add("bq-luz"); setTimeout(()=>el.classList.remove("bq-luz"), 1800) }
+/* navegação: irPara (P0) quando existir; senão, os nomes das etapas de hoje. `campo` (caminho em S) foca o campo e acende a linha "Conferi" da seção */
+function progIr(etapa, sub, sec, campo){
+  if(typeof irPara==="function"){ try{ const alvo=irPara(etapa, sub||undefined, sec||undefined, campo||undefined);
+      if(campo) setTimeout(()=>{ const f=alvo && alvo.isConnected? alvo : document.querySelector(`#tabbody [data-p="${CSS.escape(campo)}"]`);
+        if(f){ progLuz(f.closest(".fld")||f); const d=f.closest("details"); progLuz(d && d.querySelector("[data-prog-conf-row]")) } }, 120);
+      return alvo }catch(e){ console.error("[progresso] irPara", e) } }
   const tem=k=>typeof STEPS!=="undefined" && STEPS.some(s=>s.k===k);
   let k=etapa, s=sub, sc=sec;
   if(k==="terreno" && sc==="regras" && tem("regras")){ k="regras"; sc="cidade"; if(typeof SUBX!=="undefined"){ SUBX.regras="pref"; LS.set("gabarito.subx",SUBX) } }
@@ -25856,15 +25972,13 @@ function progIr(etapa, sub, sec){
 function progressoExecuta(pp, el){
   if(!pp) return;
   if(pp.act && typeof ACT!=="undefined" && ACT[pp.act]){ if(pp.act==="otim" && TAB!=="produto") progIr("produto"); return ACT[pp.act](el||document.createElement("button")) }
-  progIr(pp.etapa, pp.sub, pp.sec);
+  progIr(pp.etapa, pp.sub, pp.sec, pp.campo);
 }
 Object.assign(ACT, {
   progSubsolo: ()=>{ S.produto.subsolos=Math.min(5,(+S.produto.subsolos||0)+1); update(); renderTab(); toast(`${S.produto.subsolos} subsolo${S.produto.subsolos>1?"s":""} — Ctrl+Z desfaz`) },
   progGaragem: ()=>{ S.produto.garAcima=(+S.produto.garAcima||0)+1; update(); renderTab(); toast("Garagem elevada adicionada — Ctrl+Z desfaz") },
   progLayout: ()=>{ S.estudo.usarLayout=true; update(); renderTab(); toast("As contas usam as vagas do layout") },
-  progConfPreco: ()=>{ progMarca("preco", true); renderTab(); toast("Preço de venda conferido") },
-  progConfCusto: ()=>{ progMarca("custo", true); renderTab(); toast("Terreno e custo da obra conferidos") },
-  progConfRegras: ()=>{ progMarca("regras", true); renderTab() },
+  progConf: b=>{ const k=b.dataset.k; if(!PROG_CONF[k]) return; if(S.guia&&S.guia.conf&&S.guia.conf[k]) progDesmarca(k); else progMarca(k, true) },
   progPdf: ()=>{ if(typeof exportPDF==="function") calcPronto().then(()=>exportPDF()) },
   progAbrir: b=>progressoAbrir(b),
 });
@@ -25946,7 +26060,7 @@ function relevoBlocoHTML(){
     {key:"relevo", label:"Mais opções"});
   return `<div class="relevo" id="relevoBox" style="margin-bottom:14px">
     <div class="row"><button class="btn sm" id="relevoBtn" data-act="relevoBusca" ${geo?"":'disabled aria-disabled="true"'}>Buscar relevo do local</button>${INFO("Relevo")}</div>
-    <p class="note" id="relevoMsg" ${msg?"":"hidden"} style="${REL.erro?"color:var(--warn)":""}">${aviso? esc(msg) : msg}</p>
+    <p class="note" id="relevoMsg" ${msg?"":"hidden"} style="${REL.erro?"color:var(--warn-t)":""}">${aviso? esc(msg) : msg}</p>
     <div id="relevoRes">${relevoResHTML()}</div>${adv}</div>`;
 }
 function relevoVivo(){
@@ -26277,9 +26391,9 @@ function repoNuvem(local, api, o){
         try{ const r=await api("GET","/api/estudos?id="+encodeURIComponent(id)); await cacheEst(r); return {...r, nuvem:{dono, rev:r.rev, pendente:false}} }
         catch(e){ if(offline(e)) return meu(l)? l : null; if(e.status===404) return null; throw e }
       },
-      async put(e){
+      async put(e, o){
         const id=e.id||local.novoId(), ant=await B.um("estudos", id), t=agora();
-        const rec={...e, id, dono, criado:e.criado||(ant&&ant.criado)||t, atualizado:t, nuvem:{dono, rev:(meu(ant)&&ant.nuvem.rev)||0, pendente:true}};
+        const rec={...e, id, dono, criado:e.criado||(ant&&ant.criado)||t, atualizado:o && o.manterData && e.atualizado? e.atualizado : t, nuvem:{dono, rev:(meu(ant)&&ant.nuvem.rev)||0, pendente:true}};
         await B.grava("estudos", rec); enfileira("e:"+id);
         return rec;
       },
@@ -26336,7 +26450,8 @@ function repoNuvem(local, api, o){
    (ver docs/BACKEND.md). Todos os métodos devolvem Promise e trabalham com objetos JSON simples.
      Repo.estudos.list()            → [{id,nome,k,criado,atualizado,dono}]   (sem o estado, mais recente primeiro)
      Repo.estudos.get(id)           → {id,nome,S,k,criado,atualizado,dono} | null
-     Repo.estudos.put(estudo)       → estudo gravado (cria id/datas se faltarem; atualiza "atualizado")
+     Repo.estudos.put(estudo, {manterData}?) → estudo gravado (cria id/datas se faltarem; atualiza "atualizado" — menos com manterData: true,
+                                      usado só para completar o `resumo` da tela inicial sem mudar o "editado há")
      Repo.estudos.remove(id)        → apaga o estudo e as versões dele
      Repo.versoes.list(estudoId)    → [{id,estudoId,nome,auto,autor,criado,k}] (sem o estado, mais recente primeiro)
      Repo.versoes.get(id) · put(v) · remove(id)
@@ -26393,7 +26508,7 @@ const RepoLocal = (()=>{
     estudos: {
       list: ()=>todos("estudos").then(l=>l.map(r=>resumo(r,["S"])).sort(recentes)),
       get: id=>um("estudos", id),
-      put: e=>{ const t=agora(); return grava("estudos", {dono:"local", ...e, id:e.id||novoId(), criado:e.criado||t, atualizado:t}) },
+      put: (e, o)=>{ const t=agora(); return grava("estudos", {dono:"local", ...e, id:e.id||novoId(), criado:e.criado||t, atualizado:o && o.manterData && e.atualizado? e.atualizado : t}) },
       remove: async id=>{ const vs=await todos("versoes","estudoId",id); for(const v of vs) await apaga("versoes", v.id); return apaga("estudos", id) },
     },
     versoes: {
@@ -26463,12 +26578,12 @@ function saudeStatusHTML(f){
 
 /* ---------- Metas e referências (Premissas) ---------- */
 function finMetasHTML(){
-  const M = S.metas, E = M.efic, par = (rot, a, b, o = {}) => `<span class="fl">${rot}</span>${finIN(a, o.unit || "", { pct: !!o.pct, step: o.step, label: rot + " (1º valor)" })}${finIN(b, o.unit || "", { pct: !!o.pct, step: o.step, label: rot + " (2º valor)" })}`;   // sem wrapper: as células entram direto na grade .fcen
+  const M = S.metas, E = M.efic, par = (rot, a, b, o = {}) => `<span class="fl">${rot}${o.info ? INFO(o.info) : ""}</span>${finIN(a, o.unit || "", { pct: !!o.pct, step: o.step, label: rot + " (1º valor)" })}${finIN(b, o.unit || "", { pct: !!o.pct, step: o.step, label: rot + " (2º valor)" })}`;   // sem wrapper: as células entram direto na grade .fcen
   const emp = !!saudePadraoEmpresa();
   const faixas = `<div class="fcen"><span></span><span class="fl">De</span><span class="fl">Até</span>
       ${par("V/C (cuidado · excelente)", "metas.vc.min", "metas.vc.bom", { step: 0.1, unit: "×", q: "venda custo" })}
       ${par("Terreno (bom até · máx.)", "metas.terreno.ok", "metas.terreno.max", { pct: true, step: 1, unit: "%", q: "terreno % vgv" })}
-      ${par("Indiretos % VGV", "metas.soft.min", "metas.soft.max", { pct: true, step: 1, unit: "%", q: "soft costs custos indiretos" })}
+      ${par("Indiretos % VGV", "metas.soft.min", "metas.soft.max", { pct: true, step: 1, unit: "%", q: "soft costs custos indiretos", info: "Soft costs" })}
       ${par("Imprevistos % obra", "metas.imprev.min", "metas.imprev.max", { pct: true, step: 1, unit: "%", q: "contingência" })}</div>`;
   const efic = `<div class="fcen"><span></span><span class="fl">Mín.</span><span class="fl">Máx.</span>
       ${Object.keys(SAUDE_TIPOS).map(k => par(SAUDE_TIPOS[k][0].toUpperCase() + SAUDE_TIPOS[k].slice(1), `metas.efic.${k}.0`, `metas.efic.${k}.1`, { pct: true, step: 1, unit: "%", q: "eficiência global tipologia" })).join("")}</div>`;
@@ -26476,7 +26591,7 @@ function finMetasHTML(){
     KV(NUM("fin.margemAlvo", "Margem alvo", "% VGV", { pct: true, step: 1, help: "Margem s/ VGV", q: "meta lucro" }) + NUM("metas.margem.min", "Margem mínima", "% VGV", { pct: true, step: 1, q: "não toque piso" }) +
       NUM("metas.tir.alvo", "TIR alvo", "% a.a.", { pct: true, step: 1, help: "TIR alvo", q: "retorno meta" }) + NUM("fin.tma", "TMA", "% a.a.", { pct: true, step: 0.5, help: "TMA", q: "taxa mínima atratividade desconto vpl" })) +
     `<div class="row"><button type="button" class="btn sm" data-act="metasPadrao">Salvar como padrão</button><button type="button" class="btn sm ghost" data-act="metasSug">Restaurar sugeridas</button>${emp ? `<button type="button" class="btn sm ghost" data-act="metasEmpresa">Padrão da empresa</button>` : ""}</div>` +
-    ADV(KV(NUM("metas.margem.otimo", "Margem ótima desde", "% VGV", { pct: true, step: 1 }) + NUM("metas.tir.otimo", "TIR ótima desde", "% a.a.", { pct: true, step: 1 }) +
+    ADV(KV(NUM("metas.margem.otimo", "Margem ótima desde", "% VGV", { pct: true, step: 1 }) + NUM("metas.tir.otimo", "TIR ótima desde", "% a.a.", { pct: true, step: 1, help: "TIR" }) +
         NUM("metas.vc.ruim", "V/C ruim abaixo de", "×", { step: 0.1 })) +
       GRP("Faixas de referência") + faixas + GRP(`Eficiência por tipologia ${INFO("Faixa de eficiência global (área privativa ÷ construída) esperada para cada tipo de produto. O Gabarito detecta o tipo pelo projeto; abaixo da faixa o semáforo muda.")}`) + efic +
       GRP(`Detecção da tipologia ${INFO("Regras para escolher a faixa de eficiência: studios se a área média das unidades fica abaixo do limite; sem elevador se nenhuma torre passa do número de andares; muito lazer se o lazer passa dessa fração da área construída. Sem nenhuma delas: garagem em pavimento (garagem elevada ou sem subsolo) ou em subsolo.")}`) +
@@ -26503,7 +26618,7 @@ Object.assign(FX, {
 function saudePermutaSub(){
   const F = S.fin;
   setSub("fin.permuta", F.permuta > 0 && F.terreno > 0
-    ? `<span class="note" style="color:var(--warn)">Terreno também lançado (${mi(F.terreno)}).</span> <button type="button" class="btn sm ghost" data-act="zerarTerreno">Zerar terreno</button>` : "");
+    ? `<span class="note" style="color:var(--warn-t)">Terreno também lançado (${mi(F.terreno)}).</span> <button type="button" class="btn sm ghost" data-act="zerarTerreno">Zerar terreno</button>` : "");
 }
 
 /* ================= topografia: seção "Terreno inclinado" da etapa Terreno, curvas na implantação e relevo no 3D (item 2.3) =================
@@ -26547,7 +26662,7 @@ function topoLive(m){
   if(!S.topo.on){ setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`); return }
   const t=m.topo, T=S.topo; if(!t) return;
   const sf=t.sf, n=sf.N;
-  setHTML("topoInfo", `${n} pontos · cotas ${topoN(sf.zmin)} a ${topoN(sf.zmax)} m${T.fonte? " · "+esc(T.fonte):""}${t.fora? ` · <span style="color:var(--warn)">lote parcialmente fora da área levantada</span>`:""}`);
+  setHTML("topoInfo", `${n} pontos · cotas ${topoN(sf.zmin)} a ${topoN(sf.zmax)} m${T.fonte? " · "+esc(T.fonte):""}${t.fora? ` · <span style="color:var(--warn-t)">lote parcialmente fora da área levantada</span>`:""}`);
   setHTML("topoCotaTxt", `${topoN(t.cOtima)} m`);
   const dif=t.c-t.calc, met=(l,v,s,cls)=>`<div class="met"><div class="l">${l}</div><div class="v"${cls?` style="color:var(--${cls})"`:""}>${v}</div><div class="s">${s}</div></div>`;
   setHTML("topoMets",

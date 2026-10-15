@@ -28,7 +28,15 @@ function floorsList(m){
   if(P.atico) out.push({key:"atc", nome:"Ático técnico", tipo:"atico", z0:m.hEmb+dz+maxP*P.pe+(m.duplex?P.pe:0), h:3});
   return out;
 }
-function fit2d(){ if(VIEW==="3d") return; const r=c2.getBoundingClientRect(); if(!r.width) return; VS[VIEW]=fitView(viewPolys(), r.width, r.height, VIEW==="impl"?1.5:VIEW==="clima"?1.25:1.15); redraw2d() }
+function fit2d(){ if(VIEW==="3d") return; const r=c2.getBoundingClientRect(); if(!r.width) return;
+  // celular: a planta se ajusta à faixa livre entre a barra de vistas (em cima) e a faixa de ferramentas (embaixo), não ao palco todo
+  let top=0, bot=0;
+  if(typeof navCel==="function" && navCel()){ const vb=document.querySelector("#view .viewbar"), vt=document.getElementById("vtools");
+    if(vb){ const q=vb.getBoundingClientRect(); top=Math.max(0, q.bottom-r.top+4) }
+    if(vt){ const q=vt.getBoundingClientRect(); if(q.height>0) bot=Math.max(0, r.bottom-q.top+4) } }
+  const H=r.height-top-bot, livre=(top||bot) && H>=r.height*0.3, pad=VIEW==="impl"?1.5:VIEW==="clima"?1.25:1.15;
+  const v=fitView(viewPolys(), r.width, livre? H : r.height, pad); if(livre) v.oy+=top;
+  VS[VIEW]=v; redraw2d() }
 function fitBG(){ if(!BG) return; const r=c2.getBoundingClientRect(); const w=BG.img.width*BG.mpp, h=BG.img.height*BG.mpp; const s=Math.min(r.width/w, r.height/h)*0.95; VS.impl={s, ox:r.width/2-(BG.x+w/2)*s, oy:r.height/2+(BG.y-h/2)*s}; redraw2d() }
 let T2=null;
 function redraw2d(){

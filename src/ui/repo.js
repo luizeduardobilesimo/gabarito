@@ -3,7 +3,8 @@
    (ver docs/BACKEND.md). Todos os métodos devolvem Promise e trabalham com objetos JSON simples.
      Repo.estudos.list()            → [{id,nome,k,criado,atualizado,dono}]   (sem o estado, mais recente primeiro)
      Repo.estudos.get(id)           → {id,nome,S,k,criado,atualizado,dono} | null
-     Repo.estudos.put(estudo)       → estudo gravado (cria id/datas se faltarem; atualiza "atualizado")
+     Repo.estudos.put(estudo, {manterData}?) → estudo gravado (cria id/datas se faltarem; atualiza "atualizado" — menos com manterData: true,
+                                      usado só para completar o `resumo` da tela inicial sem mudar o "editado há")
      Repo.estudos.remove(id)        → apaga o estudo e as versões dele
      Repo.versoes.list(estudoId)    → [{id,estudoId,nome,auto,autor,criado,k}] (sem o estado, mais recente primeiro)
      Repo.versoes.get(id) · put(v) · remove(id)
@@ -60,7 +61,7 @@ const RepoLocal = (()=>{
     estudos: {
       list: ()=>todos("estudos").then(l=>l.map(r=>resumo(r,["S"])).sort(recentes)),
       get: id=>um("estudos", id),
-      put: e=>{ const t=agora(); return grava("estudos", {dono:"local", ...e, id:e.id||novoId(), criado:e.criado||t, atualizado:t}) },
+      put: (e, o)=>{ const t=agora(); return grava("estudos", {dono:"local", ...e, id:e.id||novoId(), criado:e.criado||t, atualizado:o && o.manterData && e.atualizado? e.atualizado : t}) },
       remove: async id=>{ const vs=await todos("versoes","estudoId",id); for(const v of vs) await apaga("versoes", v.id); return apaga("estudos", id) },
     },
     versoes: {

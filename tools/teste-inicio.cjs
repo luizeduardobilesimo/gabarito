@@ -168,6 +168,21 @@ const ok = (c, msg) => { console.log((c ? '  ok   ' : '  FALHA ') + msg); if (!c
     await p.evaluate(() => inicioAbrir()); await p.waitForTimeout(500);
     if (md === 'm') { await p.evaluate(() => { document.getElementById('inicio').scrollTop = 99999 }); await p.waitForTimeout(250); await shot('cheia-fim') }
 
+    // estudos salvos antes da v3 (sem `resumo`): a tela calcula em segundo plano, um por vez, e a pasta se atualiza sozinha sem mudar o "editado há"
+    if (completo) {
+      const antigo = await p.evaluate(async () => {
+        const st = clone(S); st.nome = 'Antigo sem resumo'; st.lote.pts = [[0, 0], [30, 0], [30, 50], [0, 50]]; st.lote.front = [0]; st.lote.principal = 0;
+        const r = await Repo.estudos.put({ nome: st.nome, S: st }); await Repo.estudos.put({ ...r, atualizado: '2026-09-01T10:00:00.000Z' }, { manterData: true });
+        return r.id;
+      });
+      await p.evaluate(() => { inicioFechar(); inicioAbrir() });
+      await p.waitForSelector(`.ini-p[data-id="${antigo}"]`, { timeout: 15000 }).catch(() => {});
+      ok(await p.evaluate(id => { const li = document.querySelector(`.ini-p[data-id="${id}"]`); return !!li && /Calculando|Sem resumo|Rascunho|Em andamento|Confiável/.test(li.querySelector('.ini-st').textContent) }, antigo), 'estudo antigo aparece (calculando ou já calculado)');
+      await p.waitForFunction(id => { const li = document.querySelector(`.ini-p[data-id="${id}"] .ini-k dd:not(.vz)`); return !!li }, antigo, { timeout: 90000 }).catch(() => {});
+      ok(await p.$(`.ini-p[data-id="${antigo}"] .ini-k dd:not(.vz)`) !== null, 'o estudo antigo ganha VGV, margem e unidades em segundo plano');
+      ok(await p.evaluate(async id => { const r = await Repo.estudos.get(id); return r.atualizado === '2026-09-01T10:00:00.000Z' && !!(r.resumo && r.resumo.vgv > 0) }, antigo), '  gravado sem mudar o "editado há"');
+    }
+
     ok(!errs.length, 'sem erros de JS' + (errs.length ? ': ' + errs.slice(0, 4).join(' | ') : ''));
     await ctx.close();
   }

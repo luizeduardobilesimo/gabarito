@@ -11,7 +11,7 @@
                           #ver=; preferência "sempre"/"nunca" em localStorage gabarito.inicio (interruptor no pé da tela).
    O P1 liga inicioAbrir() na marca do topo, no menu do estudo e na inicialização; assInicio() (P7) chama inicioAbrir() na 1ª visita. */
 
-const INI = { el:null, aberto:false, q:"", f:"todos", ord:"recentes", lista:[], carregou:false, menu:null, arm:null, ren:null, desf:null, desfT:0, abrindo:null, voltar:false };
+const INI = { fill:{ rodando:false, tent:new Set(), falhou:new Set(), atual:null }, el:null, aberto:false, q:"", f:"todos", ord:"recentes", lista:[], carregou:false, menu:null, arm:null, ren:null, desf:null, desfT:0, abrindo:null, voltar:false };
 const INI_F = [["todos","Todos"],["rascunho","Rascunho"],["andamento","Em andamento"],["confiavel","Confiável"]];
 const INI_ORD = [["recentes","Recentes"],["nome","Nome"],["margem","Margem"]];
 const INI_ST = { rascunho:"Rascunho", andamento:"Em andamento", confiavel:"Confiável" };
@@ -87,6 +87,9 @@ const iniIc = (k, cls="ico")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidd
 .ini-st .bar{flex:1;height:3px;border-radius:9px;background:var(--line);overflow:hidden;min-width:36px}
 .ini-st .bar i{display:block;height:100%;border-radius:9px;background:var(--ink-2)}
 .ini-st .bar i.ok{background:var(--ok)}
+.ini-st .bar.ind i{width:40%;background:var(--brand);animation:iniInd 1.3s var(--ease) infinite}
+@keyframes iniInd{0%{margin-left:-40%}100%{margin-left:100%}}
+@media (prefers-reduced-motion:reduce){.ini-st .bar.ind i{animation:none;width:60%}}
 .ini-k{display:grid;grid-template-columns:1.25fr 1fr .8fr;margin:3px 0 0;padding:11px 0 0;border-top:1px solid var(--line)}
 .ini-k>div{min-width:0;padding:0 10px;border-left:1px solid var(--line)}
 .ini-k>div:first-child{padding-left:0;border-left:0}
@@ -204,7 +207,8 @@ function iniPastaHTML(e){
   const meta = [r.cidade? `<b>${esc(String(r.cidade).split(/ [—·-] /)[0])}</b>` : ex? "Cidade fictícia" : "Cidade a definir", r.area? m2(r.area) : "", quando? (quando==="agora"? "editado agora" : "editado "+quando) : ""].filter(Boolean).join(" · ");
   const pr = r.total? r.feitos/r.total : 0;
   const pill = st? `<span class="pill ${st==="confiavel"?"ok":st==="andamento"?"and":""}">${INI_ST[st]}</span><span>${nf(r.feitos||0)}/${nf(r.total||9)}</span><span class="bar" aria-hidden="true"><i class="${st==="confiavel"?"ok":""}" style="width:${(pr*100).toFixed(0)}%"></i></span>`
-    : `<span class="pill">Sem resumo</span><span>abra para atualizar</span>`;
+    : INI.fill.falhou.has(e.id)? `<span class="pill">Sem resumo</span><span>abra para atualizar</span>`
+    : `<span class="pill">Calculando…</span><span>${INI.fill.atual===e.id? "agora" : "na fila"}</span>${INI.fill.atual===e.id? `<span class="bar ind" aria-hidden="true"><i></i></span>` : ""}`;
   const n=(l,v,cls="")=>`<div><dt>${l}</dt><dd class="${v==null?"vz":cls}">${v==null? "—" : v}</dd></div>`;
   const mg = r.margem!=null? `<span class="dot ${typeof sdCls==="function"? sdCls(r.nivelMargem) : ({ruim:"bad",atencao:"warn"})[r.nivelMargem]||"ok"}" title="${esc(typeof sdTxt==="function"? sdTxt(r.nivelMargem) : "")}"></span>${pct(r.margem)}` : null;
   const fig = typeof inicioMiniSVG==="function"? inicioMiniSVG(r.mini, {label:"Lote e torres de "+nome}) : "";
@@ -411,6 +415,60 @@ function iniTecla(e){
 }
 function iniSai(e){ const t=e.target; if(t.dataset && t.dataset.ren && INI.ren===t.dataset.ren) iniRenomeia(t.dataset.ren, t.value) }
 
+/* ---------- resumos que faltam ----------
+   Estudos salvos antes da v3 não têm `resumo` (VGV, margem, unidades, status): a pasta ficaria com "—" até ser aberta. Ao abrir a tela,
+   em segundo plano e UM por vez, calcula cada um (Worker "job"; sem Worker, na página, com S trocado só durante a conta) e grava o
+   resumo SEM mexer no "editado há" (Repo.estudos.put(…, {manterData:true})). A pasta é redesenhada sozinha ao terminar; a tela segue livre. */
+const iniSemResumo = e=>{ const r=iniRes(e); return r.vgv==null || !r.nivel };
+const iniPausa = ms=>new Promise(r=>setTimeout(r, ms));
+async function iniCalcula(st){
+  if(typeof calcOn==="function" && calcOn() && typeof calcJob==="function"){
+    try{ return await calcJob().call("compute", [st, {}]) }
+    catch(e){ if(!(typeof calcCancelado==="function" && calcCancelado(e))) console.warn("[inicio] cálculo no Worker falhou — calculando na página:", e && e.message); else return null }
+  }
+  await iniPausa(30);
+  const keep=S; S=st; try{ return compute(st, {}) } finally { S=keep }
+}
+/** calcula e grava o resumo de um estudo (o aberto: pelo caminho normal do app). → o registro atualizado ou null */
+async function iniResumoDe(e){
+  if(typeof EST!=="undefined" && e.id===EST.id){
+    if(window._last && window._last.m && window._last.f && (typeof calcOcioso!=="function" || calcOcioso()) && typeof estGrava==="function"){ await estGrava(); return (EST.lista.find(x=>x.id===e.id)) || null }
+    return null;   // o estudo aberto ganha o dele quando o cálculo completo chega (estAbrir/estGrava)
+  }
+  const rec=await Repo.estudos.get(e.id); if(!rec || !rec.S) return null;
+  const st=merge(clone(DEF), clone(rec.S)), m=await iniCalcula(st); if(!m || !m.T) return null;
+  const keep=S; let resumo; S=st;
+  try{ const f=finance(st, m); resumo=inicioResumo(st, m, f, inicioDoRegistro(rec)) } finally { S=keep }
+  if(!resumo || resumo.vgv==null) return null;
+  const k={...(rec.k||{}), resumo}, novo=await Repo.estudos.put({...rec, k, resumo}, {manterData:true});
+  const r={...novo}; delete r.S;
+  if(typeof EST!=="undefined"){ const i=EST.lista.findIndex(x=>x.id===r.id); if(i>=0) EST.lista[i]=r }
+  return r;
+}
+function iniRedesenhaPasta(e){
+  const g=document.getElementById("iniGrid"); if(!g || !INI.el) return;
+  const li=g.querySelector(`.ini-p[data-id="${CSS.escape(e.id)}"]`);
+  // filtro por status ou ordem por margem dependem do resumo: refaz a lista; senão, só a pasta (sem tirar o foco de quem digita ou renomeia)
+  if(INI.f!=="todos" || INI.ord==="margem" || !li){ if(INI.ren==null) iniGrid(); return }
+  if(INI.ren===e.id || INI.menu===e.id) return;
+  const t=document.createElement("template"); t.innerHTML=iniPastaHTML(e).trim(); if(t.content.firstElementChild) li.replaceWith(t.content.firstElementChild);
+}
+async function iniCompleta(){
+  const F=INI.fill; if(F.rodando) return; F.rodando=true;
+  try{
+    for(let n=0; n<200 && INI.aberto; n++){
+      const e=INI.lista.find(x=>iniSemResumo(x) && !F.tent.has(x.id)); if(!e) break;
+      F.tent.add(e.id); F.atual=e.id; iniRedesenhaPasta(e);
+      let r=null; try{ r=await iniResumoDe(e) }catch(err){ console.warn("[inicio] resumo de "+e.id+":", err && err.message) }
+      F.atual=null;
+      const i=INI.lista.findIndex(x=>x.id===e.id);
+      if(r && i>=0){ INI.lista[i]={...INI.lista[i], ...r}; F.falhou.delete(e.id) } else F.falhou.add(e.id);
+      if(i>=0) iniRedesenhaPasta(INI.lista[i]);
+      await iniPausa(60);   // respira entre um estudo e outro: a tela nunca fica presa
+    }
+  } finally { F.rodando=false; F.atual=null }
+}
+
 /* ---------- abrir e fechar ---------- */
 function inicioAbrir(){
   // a entrada pela Rixel (auth.js) vem antes: espera ela sair da frente
@@ -438,7 +496,7 @@ function inicioAbrir(){
   document.documentElement.style.overflow="hidden";
   iniRender();
   if(!jaAberto) setTimeout(()=>{ try{ INI.el.focus({preventScroll:true}) }catch(e){} }, 20);
-  iniCarrega().then(()=>{ if(!INI.aberto) return; INI.voltar = typeof EST!=="undefined" && !!EST.id && INI.lista.some(e=>e.id===EST.id); iniRender() });
+  iniCarrega().then(()=>{ if(!INI.aberto) return; INI.voltar = typeof EST!=="undefined" && !!EST.id && INI.lista.some(e=>e.id===EST.id); iniRender(); iniCompleta() });
 }
 function inicioFechar(){
   if(!INI.el) return; INI.aberto=false; INI.menu=null; INI.ren=null; INI.arm=null;

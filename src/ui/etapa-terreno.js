@@ -33,7 +33,7 @@ let LADOAB = new Set();   // lados abertos na lista para editar comprimento e re
 .tr-geo>.adv{display:contents}
 .tr-geo>.adv>.advbtn{grid-row:1;grid-column:1;white-space:nowrap}
 .tr-geo>.adv>.advb{grid-row:2;grid-column:1/-1;margin-top:8px}
-.geoNote{grid-row:1;grid-column:2;justify-self:end;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--warn);white-space:nowrap;min-width:0;max-width:100%}
+.geoNote{grid-row:1;grid-column:2;justify-self:end;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--warn-t);white-space:nowrap;min-width:0;max-width:100%}
 .geoNote>span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .geoNote>.btn{flex:none}
 .geoNote::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none}
@@ -42,17 +42,17 @@ let LADOAB = new Set();   // lados abertos na lista para editar comprimento e re
 .tr-res{gap:6px}
 .tr-res .met{padding:7px 11px 8px}
 .tr-res .met .l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tr-res .met .l i{font-style:normal;color:var(--faint);font-weight:400}
+.tr-res .met .l i{font-style:normal;color:var(--muted);font-weight:400}
 .tr-res .met .v{font-size:17px;margin-top:1px}
 .tr-res .met .v small{font-size:11.5px;font-weight:500;color:var(--muted);letter-spacing:0;margin-left:3px}
 .seg.tr-meth{margin-bottom:0}
 .seg.tr-meth button{padding:5px 6px;font-size:12px;flex:1 1 auto}
 #edges{gap:4px}
-#edges .edge{padding:4px 6px 4px 10px}
+#edges .edge{padding:2px 6px 2px 10px}
 #edges .edge .xp{width:24px;height:22px}
 #frBox>.row:first-child{margin-top:6px!important}
-.tr-rg>.kv{gap:9px 12px}
-.tr-rg>.kv .inp input{padding-top:6px;padding-bottom:6px}
+.tr-rg>.kv{gap:8px 12px}
+.tr-rg>.kv .inp input{padding-top:5px;padding-bottom:5px}
 .tr-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .tr-rg .grp:first-child{margin-top:0}
 .tr-lei{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}

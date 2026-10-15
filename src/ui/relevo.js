@@ -59,7 +59,7 @@ function relevoBlocoHTML(){
     {key:"relevo", label:"Mais opções"});
   return `<div class="relevo" id="relevoBox" style="margin-bottom:14px">
     <div class="row"><button class="btn sm" id="relevoBtn" data-act="relevoBusca" ${geo?"":'disabled aria-disabled="true"'}>Buscar relevo do local</button>${INFO("Relevo")}</div>
-    <p class="note" id="relevoMsg" ${msg?"":"hidden"} style="${REL.erro?"color:var(--warn)":""}">${aviso? esc(msg) : msg}</p>
+    <p class="note" id="relevoMsg" ${msg?"":"hidden"} style="${REL.erro?"color:var(--warn-t)":""}">${aviso? esc(msg) : msg}</p>
     <div id="relevoRes">${relevoResHTML()}</div>${adv}</div>`;
 }
 function relevoVivo(){

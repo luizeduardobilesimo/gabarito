@@ -66,7 +66,7 @@ describe('proximoPasso', () => {
     const t = A.proximoPasso(st, m, f, 'terreno');
     expect(t.rotulo).toBe('Desenhar o lote'); expect(t.etapa).toBe('terreno'); expect(t.sec).toBe('contorno');
     const v = A.proximoPasso(st, m, f, 'viab', 'res');
-    expect(v.act).toBe('progConfPreco');
+    expect(v.act).toBeUndefined(); expect(v.rotulo).toMatch(/Conferir o preço/); expect(v.campo).toBe('produto.mix.0.preco'); expect(v.sec).toBe('essencial');   // leva ao campo: nada de confirmar à distância
     const ok = estado(A, { nome: 'X', lote: { pts: [[0, 0], [34, 0], [36, 52], [-1.5, 55]] } });
     ok.guia = { conf: { regras: true, preco: true, custo: true } };
     const m2 = A.compute(ok), f2 = A.finance(ok, m2);

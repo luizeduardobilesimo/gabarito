@@ -114,6 +114,7 @@ function finEssHTML(){
        (par? "" : NUM("fin.fator","Custo ÷ CUB","×",{step:0.01,help:"Custo ÷ CUB",fx:"confCusto"}))) +
     GRP("Preço de venda por m²") + KV(precos) +
     GRP("Prazos") + KV(NUM("fin.venda","Vender tudo em","meses",{step:1,int:true,min:1,q:"velocidade prazo de vendas"}) + NUM("fin.obra","Prazo de obra","meses",{step:1,int:true,min:1,q:"cronograma"})) +
+    (typeof progConfHTML==="function"? progConfHTML(["custo","preco"]) : "") +
     `<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="prem" data-open="terAlt">Comparar compra, permuta e SPE →</button></div>`,
     {key:"essencial", open:true, info:"O que todo estudo precisa conferir: o preço do terreno, o custo da obra (CUB × fator) e o preço de venda de cada tipologia — o mesmo do mix, na etapa Produto. Preço × área das unidades = VGV. O resto das premissas fica na sub-aba Premissas.", sum:""});
 }
@@ -191,7 +192,7 @@ function finIndHTML(){
 function finRecHTML(){
   return SEC("Receita e comissões", KV(NUM("fin.vendaLanc","Vendido no lançamento","%",{pct:true,step:5,min:0,max:1,q:"velocidade vendas lançamento"}) + NUM("fin.corret","Corretagem","%",{pct:true,step:0.5,q:"comissão"}) +
       NUM("fin.mkt","Marketing","%",{pct:true,step:0.5,q:"publicidade stand"}) + NUM("fin.imp","Impostos (RET)","%",{pct:true,step:0.25,help:"RET",q:"tributos"}) + NUM("fin.reaj","Reajuste da tabela","% a.a.",{pct:true,step:0.5})) +
-      finQ("incc correção parcelas", SW("fin.correcao","Parcelas corrigidas pelo INCC até as chaves")) +
+      finQ("incc correção parcelas", SW("fin.correcao",`Parcelas corrigidas pelo ${TERMO("INCC")} até as chaves`)) +
       ADV(KV(NUM("fin.precoLoja","Preço das lojas","R$/m²",{step:50,fx:"confPreco"}) + NUM("fin.permuta","Permuta física","% un.",{pct:true,step:1,help:"Permuta física",fx:"permuta"}) +
         NUM("fin.permutaFin","Permuta financeira","% receita",{pct:true,step:0.5,help:"Permuta financeira"})), {key:"rec"}),
     {key:"rec", cls:"fq", sum:""});
@@ -274,7 +275,7 @@ function finOrcLive(m, f){
   setSum("orc", `${par?"paramétrico":"CUB × fator"} · <b>${mi(tot)}</b>`);
   if(par) setSub("fin.cub", `obra pelo orçamento paramétrico: ${mi(tot)}`);
   if(!finVis("orcTop")) return;
-  setHTML("orcTop", `<div class="mets"><div class="met"><div class="l">Obra (sem INCC)</div><div class="v">${mi(tot)}</div><div class="s">${par?"soma dos sistemas":"CUB × fator"}</div></div>
+  setHTML("orcTop", `<div class="mets"><div class="met"><div class="l">Obra (sem ${TERMO("INCC")})</div><div class="v">${mi(tot)}</div><div class="s">${par?"soma dos sistemas":"CUB × fator"}</div></div>
     <div class="met"><div class="l">Custo / m² construído</div><div class="v">${brl(tot/Math.max(1,m.constr))}</div><div class="s">${nf(tot/Math.max(1,m.constr)/Math.max(1,C),2)} × CUB</div></div></div>`);
   const its=o.itens.filter(i=>i.total>0), mx=Math.max(1,...its.map(i=>i.total));
   setHTML("orcBars", its.map(i=>`<div class="ur" style="grid-template-columns:minmax(0,118px) 1fr 74px" title="${esc(i.nome)}${i.extra?` · inclui ${mi(i.extra)} de ${esc(i.extras.map(x=>x.nome).join("; "))}`:""}"><span>${esc(i.nome)}</span>
@@ -313,7 +314,7 @@ function finCenHTML(){
 function finCenVarHTML(){
   const lin=(k,l,u,step,lab)=>`<span class="fl">${l}</span>${finIN(`flx.cen.pess.${k}`,u,{pct:true,step,label:"Pessimista: "+lab})}${finIN(`flx.cen.otim.${k}`,u,{pct:true,step,label:"Otimista: "+lab})}`;
   return SEC("O que muda em cada cenário", `<div class="fcen"><span></span><span class="fl">Pessimista</span><span class="fl">Otimista</span>
-      ${lin("preco","Preço de venda","%",1,"preço")}${lin("vel","Prazo de vendas","%",5,"prazo de vendas")}${lin("custo","Custo de obra","%",1,"custo")}${lin("juros","Juros e TMA","p.p.",0.25,"juros")}</div>`,
+      ${lin("preco","Preço de venda","%",1,"preço")}${lin("vel","Prazo de vendas","%",5,"prazo de vendas")}${lin("custo","Custo de obra","%",1,"custo")}${lin("juros",`Juros e ${TERMO("TMA")}`,"p.p.",0.25,"juros")}</div>`,
       {key:"cenVar", info:"Variações sobre o estudo base, todas ao mesmo tempo em cada cenário. Prazo de vendas positivo = vende mais devagar.", sum:""});
 }
 function finCenLive(m, f){
@@ -394,7 +395,7 @@ function finTerHTML(){
       NUM("terAlt.speS","SPE: terreneiro","% lucro",{pct:true,step:1,help:"SPE"}) + NUM("terAlt.taxa","Taxa do terreneiro","% a.a.",{pct:true,step:0.5,help:"Desconto que o terreneiro aplica ao que recebe no futuro"})) +
     (us? `<details class="sub"><summary class="note" style="cursor:pointer">Unidades da permuta física (${(A.unidades||[]).length} escolhidas)</summary><div class="list" id="terUn" style="max-height:220px;overflow:auto;margin-top:6px"></div></details>` : "") +
     ADV(GRP("Compra parcelada") + KV(NUM("terAlt.parcEntrada","Entrada","%",{pct:true,step:5})+NUM("terAlt.parcN","Parcelas","meses",{step:1,int:true,min:1})+NUM("terAlt.parcAcresc","Acréscimo","%",{pct:true,step:1}),3) +
-      SW("terAlt.parcCorr","Parcelas corrigidas pelo INCC") +
+      SW("terAlt.parcCorr",`Parcelas corrigidas pelo ${TERMO("INCC")}`) +
       finCampoSeg("Base da permuta financeira", "permuta financeira base", SEG("terAlt.permBase",[["receita","Receita"],["vgv","VGV"]],{full:true,label:"Base da permuta financeira"})), {key:"terAlt"}) +
     `<div id="terBox"></div>` : "");
   return SEC("Pagamento do terreno", body, {key:"terAlt", info:"Compra à vista ou parcelada, permuta física, permuta financeira e SPE, lado a lado, com o fluxo e o VPL dos dois lados. ITBI sobre o preço pedido em todas. Na física o terreneiro recebe as unidades nas chaves; na SPE o incorporador recupera o investimento e depois divide o caixa.", sum:""});

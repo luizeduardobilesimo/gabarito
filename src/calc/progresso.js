@@ -6,8 +6,9 @@
    progressoItens(st, m?, f?) → [{k, nome, ok, etapa, sub, sec, dica}] — 9 itens fixos, nesta ordem.
      ok: true (conferido) · false (pendente) · null (ainda não calculado: sem m, ou sem o pavimento tipo/garagem no m)
    progressoResumo(st, m?, f?) → {feitos, total, pct, pendentes:[nome…], nivel:'rascunho'|'em andamento'|'confiável', itens}
-   proximoPasso(st, m?, f?, tab, sub?) → {rotulo, etapa, sub, sec, act?, dica} — nunca vazio:
-     resolve a primeira pendência da etapa atual (act = ACT a chamar, senão ir para etapa/sub/sec) ou avança para a próxima.
+   proximoPasso(st, m?, f?, tab, sub?) → {rotulo, etapa, sub, sec, campo?, act?, dica} — nunca vazio:
+     resolve a primeira pendência da etapa atual (act = ACT a chamar, senão ir para etapa/sub/sec e focar o `campo`) ou avança para a próxima.
+     Preço e custo (conf.preco/custo) NÃO têm act: o passo leva ao campo e a confirmação é explícita lá (editar ou "Conferi").
    S.guia.conf {regras, preco, custo} são só flags de interface (src/ui/progresso.js): não entram em compute/finance. */
 
 const PROG_ETAPAS = ["terreno","produto","viab","projeto","cen"];
@@ -67,7 +68,7 @@ function progressoResumo(st, m, f){
 }
 
 /* rótulo do botão para resolver cada pendência (act = ACT a chamar; sem act, ir para etapa/sub/sec) */
-function progResolve(i, st, m, aqui){
+function progResolve(i, st, m){
   switch(i.k){
     case "lote": return {rotulo:"Desenhar o lote", dica:"O lote ainda é o do exemplo"};
     case "ruas": return {rotulo:"Marcar a frente", dica:"Marque os lados do lote na rua"};
@@ -75,8 +76,9 @@ function progResolve(i, st, m, aqui){
     case "produto": return {rotulo:"Sugerir a melhor combinação", act:"otim", dica:("Fora das regras: "+i.dica.replace(/^fora: /,"")).slice(0,60)};
     case "vagas": { const sub=(st.produto.subsolos||0)<5;
       return sub? {rotulo:"Adicionar 1 subsolo", act:"progSubsolo", dica:("Vagas: "+i.dica).slice(0,60)} : {rotulo:"Adicionar 1 garagem elevada", act:"progGaragem", dica:("Vagas: "+i.dica).slice(0,60)} }
-    case "preco": return aqui? {rotulo:"Confirmar o preço de venda", act:"progConfPreco", dica:"Falta conferir o preço de venda"} : {rotulo:"Conferir o preço de venda", dica:"Falta conferir o preço de venda"};
-    case "custo": return aqui? {rotulo:"Confirmar terreno e obra", act:"progConfCusto", dica:"Falta conferir o terreno e o custo da obra"} : {rotulo:"Conferir terreno e obra", dica:"Falta conferir o terreno e o custo da obra"};
+    // preço e custo nunca se confirmam com um clique à distância: o passo leva ao campo (irPara com `campo`), onde o usuário edita ou aperta "Conferi"
+    case "preco": return {rotulo:"Conferir o preço de venda", campo:"produto.mix.0.preco", dica:"Falta conferir o preço de venda"};
+    case "custo": return {rotulo:"Conferir terreno e obra", campo:"fin.terreno", dica:"Falta conferir o terreno e o custo da obra"};
     case "garagem": return !st.estudo.usarLayout? {rotulo:"Usar as vagas do layout", act:"progLayout", dica:"As vagas ainda são estimadas"} : {rotulo:"Ajustar o acesso da garagem", dica:"O carro não chega a algum pavimento"};
     case "normas": return {rotulo:"Ver as normas", dica:("Normas: "+i.dica).slice(0,60)};
   }
@@ -99,9 +101,8 @@ function proximoPasso(st, m, f, tab, sub){
   // projeto: só as pendências da sub-aba atual (o resto é refino); nas outras etapas, a primeira pendência da etapa
   const pend = itens.find(i=>i.ok===false && i.etapa===etapa && (etapa!=="projeto" || !sub || i.sub===sub));
   if(pend && etapa!=="cen"){
-    const aqui = etapa==="viab";
-    const x = progResolve(pend, st, m, aqui);
-    return { rotulo:x.rotulo, etapa:pend.etapa, sub:pend.sub, sec:pend.sec, ...(x.act? {act:x.act} : {}), dica:x.dica, k:pend.k };
+    const x = progResolve(pend, st, m);
+    return { rotulo:x.rotulo, etapa:pend.etapa, sub:pend.sub, sec:pend.sec, ...(x.campo? {campo:x.campo} : {}), ...(x.act? {act:x.act} : {}), dica:x.dica, k:pend.k };
   }
   const a = PROG_AVANCA[etapa](sub);
   const dica = r.feitos===r.total? "Estudo confiável: tudo conferido" : `${r.feitos} de ${r.total} itens conferidos`;

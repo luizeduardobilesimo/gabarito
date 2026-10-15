@@ -48,7 +48,8 @@ A especificação completa da reforma (diagnóstico, destino de cada campo, paco
 
 ## "Próximo passo"
 
-- `proximoPasso(st, m, f, tab, sub)` (puro) decide o botão: com pendência na etapa, ele a resolve ("Desenhar o lote", "Escolher a cidade", "Adicionar 1 subsolo", "Confirmar o preço de venda"); sem pendência, avança ("Definir o produto →", "Ver a viabilidade →", "Conferir o projeto →", "Conferir os andares →", "Ver o sol →", "Ver o vento →", "Entregar →"). Na Entrega é "Baixar relatório PDF", com "Apresentar" ao lado.
+- `proximoPasso(st, m, f, tab, sub)` (puro) decide o botão: com pendência na etapa, ele a resolve ("Desenhar o lote", "Escolher a cidade", "Adicionar 1 subsolo", "Conferir o preço de venda"); sem pendência, avança ("Definir o produto →", "Ver a viabilidade →", "Conferir o projeto →", "Conferir os andares →", "Ver o sol →", "Ver o vento →", "Entregar →"). Na Entrega é "Baixar relatório PDF", com "Apresentar" ao lado.
+- **Conferir ≠ clicar à distância:** "Conferir o preço de venda" e "Conferir terreno e obra" levam ao campo (focado e destacado) e a confirmação é feita ali — editando o valor ou no botão "Conferi" da seção. O mesmo vale para as regras (botão "Conferi" ao lado do seletor de cidade). O checklist do topo só leva aos campos; nunca marca por conta própria.
 - Nunca vazio, nunca beco sem saída: todo rótulo leva a uma etapa, sub-aba e seção, ou executa uma ação.
 
 ## Componentes (`src/ui/ux.js` e `src/ui.js`) — use só estes

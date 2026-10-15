@@ -401,10 +401,12 @@ function cfdStop(){
   if(CFD.running) cfdPause();
 }
 function cfdStatus(msg){
-  const el=document.getElementById("cfdStat"), el2=document.getElementById("cfdStat2"); const F=CFD.field, d=CFD.dom;
-  const txt = msg || (!F? "Preparando a malha…" : `${CFD.running?"Simulando":"Pausado"} · passo ${nf(F.step,0)} · ${F.navg>2? "médias com "+nf(F.navg,0)+" amostras" : pct(Math.min(1,F.step/(1.2*d.nx/0.085)),0)+" até o regime"} · ${d.nx}×${d.ny}×${d.nz} células de ${nf(d.dx,1)} m`);
-  if(el) el.textContent=txt; if(el2) el2.textContent=txt;
-  const pb=document.querySelector('#tabbody [data-act="cfdPlay"]'), lb=CFD.running?"Pausar":"Simular"; if(pb && pb.textContent!==lb) pb.textContent=lb;   // o painel acompanha o estado real
+  const el=document.getElementById("cfdStat"); const F=CFD.field, d=CFD.dom;
+  // o essencial primeiro; o detalhe da malha ("det") some no celular para a barra não cobrir o 3D
+  const txt = msg || (!F? "Preparando a malha…" : `${CFD.running?"Simulando":"Pausado"} · ${F.navg>2? "médias com "+nf(F.navg,0)+" amostras" : pct(Math.min(1,F.step/(1.2*d.nx/0.085)),0)+" até o regime"}`),
+    det = !msg && F? ` · passo ${nf(F.step,0)} · ${d.nx}×${d.ny}×${d.nz} células de ${nf(d.dx,1)} m` : "";
+  if(el) el.innerHTML=esc(txt)+(det? `<span class="det">${esc(det)}</span>` : "");
+  const pb=document.getElementById("cfPlay"), lb=CFD.running?"Pausar":"Simular"; if(pb && pb.textContent!==lb) pb.textContent=lb;   // o botão acompanha o estado real
 }
 function cfdLegend(){
   const el=document.getElementById("cfdLegend"); if(!el) return; const v=S.cfd.var, [a,b]=cfdRange(v);
@@ -452,12 +454,10 @@ function cfdProbeAt(pt){
 const CFD_VIZ=[["linhas","Linhas"],["particulas","Partículas"],["fumaca","Fumaça"],["setas","Setas"],["plano","Plano de cor"],["pressao","Pressão nas fachadas"]];
 function cfdBarUI(){
   const bar=document.getElementById("cfdBar"); if(!bar) return;
-  bar.innerHTML=`<div class="row" style="margin:0;gap:6px;flex-wrap:nowrap"><button class="btn sm ${CFD.running?"":"pri"}" id="cfPlay">${CFD.running?"Pausar":"Simular"}</button><button class="btn sm" id="cfReset" title="Recomeçar a simulação">Reiniciar</button>
-    <select id="cfVar" aria-label="Colorir por">${Object.entries(CFD_VARS).map(([k,l])=>`<option value="${k}" ${S.cfd.var===k?"selected":""}>${l}</option>`).join("")}</select>
-    <span class="cfchips">${CFD_VIZ.filter(([k])=>S.cfd.viz[k]).map(([k,l])=>`<span class="pill">${l}</span>`).join("")}</span></div>
+  // a barra do palco só reproduz: Simular/Pausar, Reiniciar e o andamento. O que mostrar (colorir por, linhas, fumaça…) e o vento ficam no painel
+  bar.innerHTML=`<div class="row" style="margin:0;gap:6px;flex-wrap:nowrap"><button class="btn sm" id="cfPlay">${CFD.running?"Pausar":"Simular"}</button><button class="btn sm" id="cfReset" title="Recomeçar a simulação">Reiniciar</button></div>
     <div class="cfstat" id="cfdStat"></div>`;
-  document.getElementById("cfPlay").onclick=()=>{ CFD.running? cfdPause() : (CFD.worker? cfdRun() : cfdStart()); if(emClima()) renderTab() };
+  document.getElementById("cfPlay").onclick=()=>{ CFD.running? cfdPause() : (CFD.worker? cfdRun() : cfdStart()) };
   document.getElementById("cfReset").onclick=()=>{ cfdStart(true) };
-  document.getElementById("cfVar").onchange=e=>{ S.cfd.var=e.target.value; if(S.cfd.var==="lawson"){ S.cfd.viz.plano=true; S.cfd.plano.orient="h"; S.cfd.plano.h=1.5 } save(); cfdRefresh(true); cfdBarUI(); if(emClima()) renderTab() };
   cfdStatus();
 }

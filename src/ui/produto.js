@@ -20,18 +20,18 @@ const PR = { mix:-1, lz:-1, hall:false, menu:false, arm:null, armT:0 };
 .pr-row.on{background:var(--surface);border-color:var(--line-2);box-shadow:var(--shadow-s)}
 .pr-row.warn{border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
 .pr-row.bad{border-color:color-mix(in srgb,var(--bad) 50%,transparent)}
-.pr-rh{display:flex;align-items:center;gap:6px;padding:6px 6px 6px 12px;min-height:46px}
+.pr-rh{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 12px;min-height:42px}
 .pr-rh .sw8{flex:none;margin-right:2px}
 .pr-tx{flex:1;min-width:0;display:grid;gap:1px;align-content:center;min-height:34px}
 .pr-tx b{font-weight:550;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pr-tx span{font-size:10.5px;color:var(--muted);font-family:var(--f-mono);line-height:1.35}
-.pr-tx span.w{color:var(--warn)}.pr-tx span.b{color:var(--bad)}
+.pr-tx span.w{color:var(--warn-t)}.pr-tx span.b{color:var(--bad)}
 button.pr-tx{border:0;background:none;padding:0;text-align:left;color:inherit;cursor:pointer;font:inherit}
 button.pr-tx:hover b{color:var(--accent)}
 .pr-rh .stp{flex:none;width:120px;background:var(--surface);grid-template-columns:30px 1fr 30px}
 .pr-row.on .pr-rh .stp{background:var(--surface-2)}
 .pr-rs{padding:0 12px 9px;margin-top:-4px;font-size:10.5px;color:var(--muted);font-family:var(--f-mono);line-height:1.4}
-.pr-rs.w{color:var(--warn)}
+.pr-rs.w{color:var(--warn-t)}
 .pr-ic{flex:none;display:grid;place-items:center;min-width:32px;height:32px;border:0;border-radius:8px;background:none;color:var(--muted);cursor:pointer;transition:background .15s,color .15s;padding:0}
 .pr-ic:hover{background:var(--surface-3);color:var(--ink)}
 .pr-ic svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -66,9 +66,9 @@ button.pr-tx:hover b{color:var(--accent)}
 .pr-pot .met .v{font-size:17px}
 .pr-pot .met .s{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pr-pot .met .l .pill{margin-left:auto;font-size:10px;padding:0 6px}
-#compl{gap:4px;margin-top:10px}
+#compl{gap:2px;margin-top:8px}
 #compl .ur{grid-template-columns:100px 1fr 78px;font-size:11.5px}
-.pr-ok{color:var(--ok)}.pr-bad{color:var(--bad)}
+.pr-ok{color:var(--ok-t)}.pr-bad{color:var(--bad)}
 .pr-sug{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin:2px 0 4px}
 .pr-sug>.btn{grid-column:1;grid-row:1}
 .pr-sug .advbtn{grid-column:2;grid-row:1}

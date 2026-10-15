@@ -6,7 +6,7 @@
 let CID_UNDO = null; // {regras, ref, nome} — desfazer a última aplicação de regras de cidade
 (function(){ const s=document.createElement("style"); s.textContent=`
 .nrm-aviso{border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 9%,var(--surface));color:var(--ink-2);border-radius:9px;padding:7px 10px;font-size:11.5px;line-height:1.45}
-.nrm-aviso b{color:var(--warn);font-weight:600}
+.nrm-aviso b{color:var(--warn-t);font-weight:600}
 .nrm-res{display:flex;gap:6px;flex-wrap:wrap}
 .nrm-g{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 2px;font-weight:600}
 .nrm-it{border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
@@ -18,7 +18,7 @@ let CID_UNDO = null; // {regras, ref, nome} — desfazer a última aplicação d
 .nrm-it .bd{padding:0 10px 9px 27px;display:grid;gap:4px;font-size:11.5px;color:var(--ink-2);line-height:1.45}
 .nrm-it .bd .src{color:var(--muted);font-size:10.5px}
 .nrm-st{font-size:10.5px;font-family:var(--f-mono);white-space:nowrap}
-.nrm-st.ok{color:var(--ok)} .nrm-st.warn{color:var(--warn)} .nrm-st.bad{color:var(--bad)} .nrm-st.na{color:var(--muted)}
+.nrm-st.ok{color:var(--ok-t)} .nrm-st.warn{color:var(--warn-t)} .nrm-st.bad{color:var(--bad)} .nrm-st.na{color:var(--muted)}
 .dot.na{background:var(--line-2)}
 .cid-ref{display:grid;gap:2px;border-left:2px solid var(--line-2);padding:2px 0 2px 10px;margin:8px 0 2px}
 .cid-undo{margin-top:4px}
@@ -35,8 +35,8 @@ function cidSeletorHTML(){
   lista.forEach(c=>{ (grupos[c.fonteNome]=grupos[c.fonteNome]||[]).push(c) });
   const sel=`<select class="sel" id="cidLib" aria-label="Aplicar regras de uma cidade" style="flex:1;min-width:0"><option value="">${ref.id? "Trocar cidade e zona…" : "Aplicar regras de…"}</option>${Object.entries(grupos).map(([g,l])=>`<optgroup label="${esc(g)}">${l.map(c=>`<option value="${esc(c.id)}">${esc(cidadeRotulo(c))}</option>`).join("")}</optgroup>`).join("")}</select>`;
   const info = ref.id? `<div class="cid-ref"><span class="note"><b style="color:var(--ink)">${esc(S.regras.cidade)}</b>${ref.lei?` · ${esc(ref.lei)}`:""}${ref.data&&ref.data!=="—"?` · ${esc(ref.data)}`:""}</span>
-      ${ref.ilustrativo? `<span class="note" style="color:var(--warn)">Valores ilustrativos ${INFO(CIDADES_AVISO)}</span>` : `<span class="note">Da sua biblioteca ${INFO("Regras salvas neste navegador. Confira se continuam vigentes.")}</span>`}</div>` : "";
-  return `<div class="row cid-sel" data-q="cidade zona lei plano diretor aplicar regras" style="flex-wrap:nowrap">${sel}${INFO("Escolha a cidade e a zona do lote para preencher as regras de uma vez. Os exemplos são ilustrativos: confira no plano diretor (LUOS). Ctrl+Z ou “Desfazer” voltam às regras anteriores.","cidade e zona")}</div>` + info +
+      ${ref.ilustrativo? `<span class="note" style="color:var(--warn-t)">Valores ilustrativos ${INFO(CIDADES_AVISO)}</span>` : `<span class="note">Da sua biblioteca ${INFO("Regras salvas neste navegador. Confira se continuam vigentes.")}</span>`}</div>` : "";
+  return `<div class="row cid-sel" data-q="cidade zona lei plano diretor aplicar regras" style="flex-wrap:nowrap">${sel}${typeof progConfBtn==="function"? progConfBtn("regras") : ""}${INFO("Escolha a cidade e a zona do lote para preencher as regras de uma vez. Os exemplos são ilustrativos: confira no plano diretor (LUOS). Ctrl+Z ou “Desfazer” voltam às regras anteriores.","cidade e zona")}</div>` + info +
     (CID_UNDO? `<div class="row sb cid-undo" style="flex-wrap:nowrap"><span class="note">Antes: ${esc(CID_UNDO.regras.cidade||"regras anteriores")}</span><button class="btn sm ghost" data-act="cidUndo">Desfazer</button></div>` : "");
 }
 function cidSalvarHTML(){ return `<button class="btn sm" data-act="cidSave" title="Guardar as regras atuais na biblioteca deste navegador">Salvar na biblioteca</button>` }
@@ -74,8 +74,8 @@ function normasLive(m, fast){
   if(fast && document.querySelector("#nrmList .nrm-it")) return; // arrastando: mantém o último (o completo vem logo depois)
   let v; try{ v=normasAvaliar(S, m) }catch(e){ console.error("[normas]", e); setHTML("nrmList", `<p class="note">Não foi possível avaliar as normas neste estudo.</p>`); return }
   const c=normasResumo(v.itens);
-  const pill=document.getElementById("nrmPill"); if(pill) pill.innerHTML = c.bad? `<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>` : c.warn? `<span style="color:var(--warn)">${c.warn} em atenção</span>` : `<span style="color:var(--ok)">atende</span>`;
-  setSum("nrmList", [c.ok&&`${c.ok} atende${c.ok>1?"m":""}`, c.warn&&`<span style="color:var(--warn)">${c.warn} em atenção</span>`, c.bad&&`<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>`].filter(Boolean).join(" · ") || "preliminar");
+  const pill=document.getElementById("nrmPill"); if(pill) pill.innerHTML = c.bad? `<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>` : c.warn? `<span style="color:var(--warn-t)">${c.warn} em atenção</span>` : `<span style="color:var(--ok-t)">atende</span>`;
+  setSum("nrmList", [c.ok&&`${c.ok} atende${c.ok>1?"m":""}`, c.warn&&`<span style="color:var(--warn-t)">${c.warn} em atenção</span>`, c.bad&&`<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>`].filter(Boolean).join(" · ") || "preliminar");
   setHTML("nrmRes", ["ok","warn","bad"].filter(k=>c[k]).map(k=>`<span class="pill ${k}">${c[k]} ${NRM_ST[k]}</span>`).join("") + `<span class="pill">h = ${nf(v.h,1)} m</span>`);
   const open=new Set([...document.querySelectorAll("#nrmList details[open]")].map(d=>d.dataset.id));
   setHTML("nrmList", NORMAS_GRUPOS.map(g=>{ const l=v.itens.filter(x=>x.grupo===g); if(!l.length) return "";

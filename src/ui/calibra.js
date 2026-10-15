@@ -10,7 +10,7 @@ extendDEF("vcal", { info:null });
 .calOr span{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);white-space:nowrap}
 .calOr em{font-family:var(--f-mono);font-size:11.5px;font-style:normal;font-weight:600;color:var(--ink)}
 .calOr .sem em{color:var(--muted);font-weight:400}
-.calAv{color:var(--warn);font-size:11.5px;line-height:1.35}`; document.head.appendChild(st) }
+.calAv{color:var(--warn-t);font-size:11.5px;line-height:1.35}`; document.head.appendChild(st) }
 
 const VCAL = { dados:[], cab:[], nome:"", mapa:{}, off:2, ln:null, res:null, opts:{ tetoAuto:true, usaOrient:true, usaVista:true }, sig:"" };
 const calP = v => v==null||!isFinite(v)? "—" : Math.abs(v)<0.00005? "0,0%" : (v>0?"+":"−")+nf(Math.abs(v)*100,1)+"%";

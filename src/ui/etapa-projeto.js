@@ -48,7 +48,7 @@ function projNormasLive(m, fast){
   normasLive(m, fast);
   if(typeof normasSecHTML==="function") return;   // a versão do P2 escreve o próprio resumo
   const n=s=>document.querySelectorAll(`#nrmList .nrm-it .dot.${s}`).length, ok=n("ok"), wa=n("warn"), bd=n("bad");
-  if(ok+wa+bd) setSum("nrmList", [ok? `${ok} atende${ok>1?"m":""}` : "", wa? `<span style="color:var(--warn)">${wa} atenção</span>` : "", bd? `<span style="color:var(--bad)">${bd} não atende${bd>1?"m":""}</span>` : ""].filter(Boolean).join(" · "));
+  if(ok+wa+bd) setSum("nrmList", [ok? `${ok} atende${ok>1?"m":""}` : "", wa? `<span style="color:var(--warn-t)">${wa} atenção</span>` : "", bd? `<span style="color:var(--bad)">${bd} não atende${bd>1?"m":""}</span>` : ""].filter(Boolean).join(" · "));
 }
 STEP_R.projeto = ()=>{
   const E=S.estudo, X=S.garagem||DEF.garagem, subs=projSubs();
@@ -116,7 +116,7 @@ STEP_R.projeto = ()=>{
 };
 /* Andares: lista de todos os pavimentos (antiga sub-aba) e as saídas/acessibilidade, depois de alas (52) e cômodos (55) */
 addCard("projeto", { key:"andares", order:60, sub:"tipo", html:()=>SEC("Todos os andares", `<div class="list andpilha" id="andList"></div><button class="btn full" data-act="corte3d">Ver o andar cortado no 3D</button>`,
-  {open:true, key:"andares", sum:"", info:"Toque num andar para ver a planta dele no palco. Nas garagens, toque nas vagas para editar."}) });
+  {open:false, key:"andares", sum:"", info:"Toque num andar para ver a planta dele no palco. Nas garagens, toque nas vagas para editar."}) });
 addCard("projeto", { key:"nrmList", order:65, sub:"tipo", html:()=>projNormasHTML() });
 /* textos de ajuda e resumos das seções do Projeto */
 const GAR_RAMPA_INFO = { reta:"Todas na mesma projeção: em cada pavimento o carro chega pela ponta de dentro e volta até a frente para descer de novo.",
@@ -147,11 +147,11 @@ STEP_LIVE.projeto = (m, f, fast)=>{
   if(PSUB==="gar" && m.gar){
     const flo=Object.keys(m.gar).sort((a,b)=>{ const o=k=>k==="ter"?0:k[0]==="s"? -(+k.slice(1)) : +k.slice(1); return o(a)-o(b) });
     const ok=m.vagas>=m.vagasReq, gs=document.getElementById("garStat"); if(gs) gs.innerHTML = `<span class="pill ${ok?"ok":"bad"}">${ok?"atende":"faltam "+(m.vagasReq-m.vagas)}</span>`;
-    const q=m.quadroVagas, quadro = q? garQuadroRows(m).filter(([l])=>!/^Total/.test(l)) : [], simples=quadro.every(([l])=>/^(Comuns|PCD|Idosos)$/.test(l));
-    const tipos = q? [q.comum!=null?`${q.comum} comuns`:"", q.pcd?`${q.pcd} PCD`:"", q.idoso?`${q.idoso} idosos`:""].filter(Boolean).join(" · ") : "";
+    const q=m.quadroVagas, quadro = q? garQuadroRows(m).filter(([l])=>!/^Total/.test(l)) : [], simples=quadro.every(([l])=>/^(Comuns|PCD|Idosos|Na frente \(lojas\))$/.test(l));
+    const tipos = q? [q.comum!=null?`${q.comum} comuns`:"", q.pcd?`${q.pcd} PCD`:"", q.idoso?`${q.idoso} idosos`:"", q.frente?`${q.frente} na frente`:""].filter(Boolean).join(" · ") : "";
     setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${tipos? tipos+" · " : ""}${nf(m.vagas/Math.max(1,m.units),2)} por unidade${S.estudo.usarLayout? "" : ` · estimativa ${m.vagasEst}`}</div></div></div>
       ${quadro.length>1 && !simples? `<table class="tbl">${quadro.map(([l,v])=>`<tr><td>${esc(l)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
-      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="Ver este pavimento"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).filter(a=>!/^Não couberam/.test(a)).map(a=>`<p class="note" style="color:var(--warn)">${esc(a)}</p>`).join("")}`);
+      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="Ver este pavimento"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).filter(a=>!/^Não couberam/.test(a)).map(a=>`<p class="note" style="color:var(--warn-t)">${esc(a)}</p>`).join("")}`);
     const ri=document.getElementById("rampInfo"); if(ri && m.vert){ const V_=m.vert, s0=V_.strips[0], pend=V_.ok?"":" · verifique os avisos";
       ri.textContent = !s0? "" : V_.helix? `helicoidal Ø ${nf(2*V_.helix.Re,1)} m · faixa ${nf(V_.helix.faixa,2)} m · ${nf(V_.helix.incl*100,1)}% no eixo${pend}`
         : V_.elev? `${V_.elev.n} poço${V_.elev.n>1?"s":""} de ${nf(EC_CAB[0]+2*EC_PAREDE,1)} × ${nf(EC_CAB[1]+2*EC_PAREDE,1)} m · ${V_.elev.espera.length} vaga${V_.elev.espera.length>1?"s":""} de espera · saída ${V_.elev.porta==="frente"?"pela frente (de ré)":"pelo fundo"}${pend}`
