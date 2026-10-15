@@ -139,4 +139,10 @@ const GLOSS_DATA = {
   "Estudo confiável": { t:"Estudo confiável", d:"O checklist do topo marca o que já foi conferido: lote, ruas, regras da cidade, produto dentro das regras, vagas, preço de venda, terreno e custo da obra, garagem no desenho e normas. Com tudo conferido, os números do estudo podem ser levados adiante." },
   "Estudo de exemplo": { t:"Estudo de exemplo", d:"Um estudo pronto, com números ilustrativos, para explorar a ferramenta. “Começar o meu” abre o assistente; “Usar como base” renomeia o exemplo para você seguir a partir dele." },
   "Outros indiretos": { t:"Outros custos indiretos", d:"Registro e cartório, seguros, IPTU durante a obra, jurídico, assistência técnica pós-obra e taxa de gestão. Começam em zero; “Usar sugeridos da colinha” liga todos com valores de mercado, que você deve conferir com a sua contabilidade." },
+
+  /* --- plantas de apartamento (editor de modelos) --- */
+  "Modelo de apartamento": { t:"Modelo de apartamento", d:"Planta padrão de uma tipologia que você desenha uma vez (no menu “…” › Modelos de apartamento) e usa como ponto de partida nos estudos. Fica na sua biblioteca, neste navegador." },
+  "Partido": { t:"Partido da planta", d:"A organização básica do apartamento: onde ficam a área social, a íntima e a de serviço, e como se chega a cada ambiente. O catálogo traz partidos comuns no mercado; os seus modelos entram ao lado deles." },
+  "Estica": { t:"O que estica", d:"Diz quais ambientes absorvem a diferença quando a unidade real é maior ou menor que o desenho: na frente (ao longo da fachada), na profundidade ou nos dois. Banheiros e serviço costumam ficar fixos.", ex:"Desenho com 7,20 m de frente numa unidade de 8,00 m: a sala e os quartos crescem; o banho fica igual." },
+  "Faixa do modelo": { t:"Faixa em que o modelo funciona", d:"Menor e maior frente (e profundidade) em que o modelo ainda dá uma boa planta. Fora dela o Gabarito não estica o desenho e procura outro partido." },
 };
