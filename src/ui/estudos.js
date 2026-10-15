@@ -30,13 +30,21 @@ async function estInit(){
     estNums().then(k=>{ if(k) estGrava(k) });
   }catch(e){ console.error("[estudos] repositório indisponível:", e) }
 }
+/* resumo para a tela inicial (src/calc/inicio.js): gravado em `resumo` e também em `k.resumo` (o que a nuvem guarda e lista) */
+const estResumoDe = rec=> typeof inicioDoRegistro==="function"? inicioDoRegistro(rec) : (rec && rec.resumo) || null;
+function estResumo(st, m, f, ant){
+  if(typeof inicioResumo!=="function") return ant||null;
+  try{ return inicioResumo(st, m, f, ant) }catch(e){ console.warn("[estudos] resumo:", e); return ant||null }
+}
+const estKRes = (k, r)=> r? {...(k||{}), resumo:r} : (k||null);
 /* grava o estudo aberto no repositório (com atraso; chamado a cada mudança via histTouch) */
 function estTouch(){ if(!EST.pronto) return; clearTimeout(EST.t); EST.t=setTimeout(()=>estGrava(), 1500) }
 async function estGrava(k){
   clearTimeout(EST.t); EST.t=0; if(!EST.pronto || !EST.id) return;
-  const L=window._last; if(!k && L && calcOcioso()) k=histNums(L.m, L.f);
+  const L=window._last, pronto=!!(L && L.m && L.f) && (!!k || calcOcioso()); if(!k && pronto) k=histNums(L.m, L.f);
   const ant=EST.lista.find(e=>e.id===EST.id)||{};
-  const rec=await Repo.estudos.put({id:EST.id, criado:ant.criado, nome:S.nome||"Estudo", S:clone(S), k:k||ant.k||null});
+  const resumo=estResumo(S, pronto? L.m : null, pronto? L.f : null, estResumoDe(ant));
+  const rec=await Repo.estudos.put({id:EST.id, criado:ant.criado, nome:S.nome||"Estudo", S:clone(S), k:estKRes(k||ant.k||null, resumo), resumo});
   const i=EST.lista.findIndex(e=>e.id===rec.id), r={...rec}; delete r.S; if(i>=0) EST.lista[i]=r; else EST.lista.unshift(r);
 }
 async function estRefresh(){
@@ -54,11 +62,49 @@ async function estAbrir(id, msg){
   document.getElementById("projName").value=S.nome;
   renderTab(); fit3d(); fit2d(); histReset();
   await estRefresh(); toast(msg||("Estudo aberto: "+S.nome));
+  // estudo antigo, sem resumo para a tela inicial: ganha um assim que o cálculo completo chega
+  const r0=estResumoDe(rec); if(!r0 || r0.vgv==null) calcPronto().then(()=>{ if(EST.id===id) estGrava() });
 }
-async function estNovo(st, nome, abrir=true){
-  const rec=await Repo.estudos.put({nome, S:{...clone(st), nome}});
+async function estNovo(st, nome, abrir=true, resumoBase){
+  const st2={...clone(st), nome}, resumo=estResumo(st2, null, null, resumoBase||null);
+  const rec=await Repo.estudos.put({nome, S:st2, k:estKRes(null, resumo), resumo});
   if(abrir) await estAbrir(rec.id, "Estudo criado: "+nome); else { await estRefresh(); toast("Cópia criada: "+nome) }
   return rec;
+}
+/* ---- operações por estudo (Estudos e tela inicial "Meus estudos", src/ui/inicio.js) ---- */
+/** lista atualizada do repositório (sem o estado; com `resumo`) */
+async function estListar(){ if(!EST.pronto) return EST.lista; try{ await estRefresh() }catch(e){ console.warn("[estudos] lista:", e) } return EST.lista }
+/** cópia de um estudo (o aberto: com o que está na tela) com os mesmos números; não abre. → registro novo */
+async function estDuplicar(id){
+  await estGrava(); const rec=id? await Repo.estudos.get(id) : null; const st=rec? rec.S : S;
+  return estNovo(st, (rec? rec.nome : S.nome)+" (cópia)", false, rec? estResumoDe(rec) : null);
+}
+/** renomeia; o aberto muda também na tela (e entra no desfazer do estudo). → {nome anterior} | null */
+async function estRenomear(id, nome){
+  nome=String(nome||"").trim().slice(0,120); if(!nome || !EST.pronto) return null;
+  if(id===EST.id){ const ant=S.nome; if(ant===nome) return {ant}; S.nome=nome; const pn=document.getElementById("projName"); if(pn) pn.value=nome;
+    save(); if(typeof assBanner==="function") assBanner(); await estGrava(); await estRefresh(); return {ant} }
+  const rec=await Repo.estudos.get(id); if(!rec) return null; const ant=rec.nome; if(ant===nome) return {ant};
+  const st={...rec.S, nome}, resumo=estResumo(st, null, null, estResumoDe(rec));
+  await Repo.estudos.put({...rec, nome, S:st, k:estKRes(rec.k, resumo), resumo}); await estRefresh(); return {ant};
+}
+/** exclui (com as versões). O aberto: abre antes o mais recente dos outros (ou um exemplo novo). → x para estDesfazExclusao | null */
+async function estExcluir(id){
+  if(!EST.pronto) return null;
+  const rec=await Repo.estudos.get(id); if(!rec) return null;
+  const vs=[]; for(const v of await Repo.versoes.list(id)){ const full=await Repo.versoes.get(v.id); if(full) vs.push(full) }
+  const aberto = id===EST.id;
+  if(aberto){ const outro=EST.lista.find(e=>e.id!==id);
+    if(outro) await estAbrir(outro.id, "Estudo aberto: "+outro.nome); else await estNovo(clone(DEF), DEF.nome) }
+  await Repo.estudos.remove(id); delete EST.cmpE[id]; await estRefresh();
+  return {tipo:"est", nome:rec.nome, rec, vs, aberto};
+}
+/** desfaz uma exclusão (mesmo registro, mesmas datas no repositório local) */
+async function estDesfazExclusao(x){
+  if(!x || !x.rec) return false;
+  if(Repo===RepoLocal && Repo.bruto){ await Repo.bruto.grava("estudos", x.rec); for(const v of x.vs) await Repo.bruto.grava("versoes", v) }
+  else { await Repo.estudos.put(x.rec); for(const v of x.vs) await Repo.versoes.put(v) }
+  await estRefresh(); return true;
 }
 /* ---- versões ---- */
 async function versaoSalvar(nome, auto){
@@ -175,7 +221,7 @@ function estCardsHTML(){
 function estXGuarda(x){ EST.x=x; clearTimeout(EST.xt); EST.xt=setTimeout(()=>{ EST.x=null; cenRefresh() }, 30000) }
 Object.assign(ACT, {
   estNovo: ()=>estNovo(clone(DEF), "Novo estudo"),
-  estDup: async b=>{ const id=b.dataset.id; await estGrava(); const rec=id? await Repo.estudos.get(id) : null; const st=rec? rec.S : S; await estNovo(st, (rec? rec.nome : S.nome)+" (cópia)", false) },
+  estDup: b=>estDuplicar(b.dataset.id),
   estAbrir: b=>estAbrir(b.dataset.id),
   estDel: async b=>{ const id=b.dataset.id; if(id===EST.id) return; if(!EST.arm[id]){ EST.arm={[id]:1}; cenRefresh(); return } delete EST.arm[id];
     const rec=await Repo.estudos.get(id), vs=[]; for(const v of await Repo.versoes.list(id)){ const full=await Repo.versoes.get(v.id); if(full) vs.push(full) }
