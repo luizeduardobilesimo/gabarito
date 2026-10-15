@@ -491,17 +491,21 @@ async function tViab(b) {
   const S_ = pth => ev(pth => pth.split('.').reduce((a, k) => a == null ? a : a[k], S), pth);
   const lucro = () => ev(() => window._last.f.lucro);
   const sec = async k => { await ev(k => { const d = document.querySelector(`#tabbody details[data-key=${k}]`); if (d) d.open = true }, k); await W(250) };
-  await etapa('viab', 'res');
+  await etapa('viab', 'res'); await sec('cash');
   ok(await ev(() => /Lucro/.test(document.getElementById('finTop').textContent) && !!document.querySelector('#cash svg')), 'resultado: números-chave e fluxo de caixa');
+  ok(await ev(() => document.querySelectorAll('#tabbody section.card.res').length === 1 && /Caixa necessário/.test(document.getElementById('finTop').textContent)), 'um único resultado (lucro, margem, retorno, caixa necessário)');
+  ok(await ev(() => SUBDEF.viab.map(x => x[0]).join() === 'res,prem,risco'), 'sub-abas Resultado · Premissas · Riscos');
   await sec('dre'); ok(await ev(() => document.querySelectorAll('#dre tr').length > 5), 'DRE abre e preenche');
-  await sub('prem');
+  // Premissas principais (Resultado): terreno e preço; editar confirma os itens do checklist
   const l0 = await lucro(), t0 = await S_('fin.terreno');
   await preenche('#f-fin-terreno', 3000000); await fim();
   ok(await S_('fin.terreno') === 3000000 && Math.abs(await lucro() - l0) > 1000, 'editar o terreno muda o lucro');
+  ok(await S_('guia.conf.custo') === true, '  e marca "terreno e custo conferidos"');
   await undo(); ok(await S_('fin.terreno') === t0, '  Ctrl+Z volta o terreno');
   await preenche('#f-produto-mix-0-preco', 11500); await fim();
-  ok(await S_('produto.mix.0.preco') === 11500, 'preço do mix editável na Viabilidade');
+  ok(await S_('produto.mix.0.preco') === 11500 && await S_('guia.conf.preco') === true, 'preço do mix editável na Viabilidade (marca o preço conferido)');
   await undo(); ok(await S_('produto.mix.0.preco') !== 11500, '  Ctrl+Z volta o preço');
+  await sub('prem');
   await sec('orc'); await p.click(`[data-set="orc.modo"][data-v='"param"']`); await fim();
   ok(await S_('orc.modo') === 'param' && await ev(() => !!document.getElementById('f-orc-solo') && document.querySelectorAll('#orcBars .ur').length > 3), 'orçamento paramétrico: padrões e barras');
   await p.click('#tabbody details[data-key=orc] .advbtn'); await W(300);
@@ -529,6 +533,7 @@ async function tViab(b) {
   // riscos
   await sub('risco');
   ok(await espera(() => document.querySelectorAll('#cenTab tr').length >= 6), 'tabela de cenários');
+  await sec('sens');
   ok(await espera(() => !!document.querySelector('#torn svg') && document.querySelectorAll('#sens > div').length > 10), 'sensibilidade e tornado');
   await p.click(`[data-set="flx.sens"][data-v='"tir"']`); await fim();
   ok(await ev(() => /TIR/.test(document.querySelector('#torn svg').getAttribute('aria-label'))), 'tornado pela TIR');
@@ -542,8 +547,8 @@ async function tViab(b) {
   await p.click('#tabbody [data-act=mcRun]'); ok(await espera(() => !!document.querySelector('#mcRes svg'), 90000), 'Monte Carlo roda e mostra o histograma');
   ok(await ev(() => /P50/.test(document.getElementById('sum-mc').textContent)), '  resumo com P50');
   await undo(); ok(await S_('flx.mc.on') === false, '  Ctrl+Z desliga o Monte Carlo');
-  // vendas
-  await sub('vendas');
+  // vendas (Premissas › Receitas)
+  await sub('prem'); await sec('vendas');
   ok(await espera(() => document.querySelectorAll('#vdTab tbody tr').length > 10, 30000), 'tabela de vendas por unidade');
   const n0 = await ev(() => document.querySelectorAll('#vdTab tbody tr').length);
   await p.click('#vdTab th[data-k=preco]'); await W(300);
@@ -573,8 +578,8 @@ async function tViab(b) {
   ok(await S_('fin.terreno') === 0 && await S_('fin.permuta') > 0, 'usar a permuta física nas premissas');
   await undo(); ok(await S_('fin.terreno') > 0 && await S_('fin.permuta') === 0, '  Ctrl+Z desfaz "usar alternativa"');
   await undo(); ok((await S_('terAlt.unidades')).length === 0, '  Ctrl+Z desfaz a unidade escolhida');
-  await sub('prem'); await p.click('#tabbody [data-act=finIr]'); await W(800);
-  ok(await ev(() => subAtual('viab') === 'vendas' && document.querySelector('#tabbody details[data-key=terAlt]').open), 'atalho "Comparar compra, permuta e SPE"');
+  await sub('res'); await p.click('#tabbody [data-act=finIr][data-open=terAlt]'); await W(800);
+  ok(await ev(() => subAtual('viab') === 'prem' && document.querySelector('#tabbody details[data-key=terAlt]').open), 'atalho "Comparar compra, permuta e SPE"');
   semErros(p, 'viabilidade'); await ctx.close();
 }
 

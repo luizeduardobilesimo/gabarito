@@ -1,10 +1,15 @@
-/* ================= Viabilidade: resultado, premissas, riscos e terreno (itens 3.1–3.3) =================
-   Sub-abas (STEP_R.viab em steps.js chama finViabHTML):
-     res    → RES (lucro, margem, TIR, VPL, exposição) + fluxo de caixa + DRE
-     prem   → resultado compacto, busca, essenciais abertos (terreno e obra · preço e vendas) e o resto em seções fechadas
-     risco  → cenários (RES), variações, sensibilidade, Monte Carlo
-     vendas → cards de src/ui/vendas.js (tabela e valorização) + "Terreno: compra × permuta × SPE" (addCard abaixo)
-   Partes vivas em finViabLive (STEP_LIVE.viab). Cálculo em src/calc/{orcamento,cub,fluxo,terreno}.js. */
+/* ================= Viabilidade — "Vale a pena?" (UX v3 §4.3): resultado, premissas e riscos (itens 3.1–3.3) =================
+   A etapa inteira mora aqui: STEP_R.viab / STEP_LIVE.viab (substituem os de steps.js, que é carregado antes). Sub-abas res|prem|risco
+   (a antiga "vendas" some: os cards dela foram para Premissas; chave inválida cai em Resultado, SUBX "vendas" vira "prem").
+     res   → RES único #finTop (lucro · margem · retorno ao ano · caixa necessário, veredito, linha do checklist do P7, aside #vStat)
+             + [A] Premissas principais (essencial: terreno, CUB, custo ÷ CUB, preço de cada tipologia = espelho do mix, prazos)
+             + [F] Saúde do negócio (saude) · Fluxo de caixa (cash) · Resultado detalhado (dre)
+     prem  → RES compacto #finMini + busca #vqFind + grupos finGrp(SECGRP) com seções fechadas registradas por addCard(sub "prem"):
+             Custos (orc, ind, ccal) · Receitas (rec, receb, vendas/vendaPrem, vCal) · Terreno (terAlt) · Prazos e financiamento (crono, finan) · Metas (metas)
+     risco → RES "Pessimista × otimista" #cenTab + [A] O que melhora o resultado (alavancas) + [F] O que mais pesa (sens),
+             variações (cenVar), simulação de incertezas (mc), comparar com a planilha (cmpPlan)
+   Checklist (P7): editar preço → S.guia.conf.preco; terreno/CUB/fator → S.guia.conf.custo (FX.confPreco/confCusto/confCub, que chamam upd).
+   Partes vivas em finViabLive. Cálculo em src/calc/{orcamento,cub,fluxo,terreno}.js. */
 const FIN_UI = { mc: { sig:null, res:null, run:false, prog:0, tok:0 } };
 /* uma parte viva só é calculada quando está na tela (existe e a seção que a contém está aberta) */
 const finVis = id => { const e=document.getElementById(id); if(!e) return false; const d=e.closest("details"); return !d || d.open };
@@ -12,17 +17,54 @@ const finOpen = key => { const d=document.querySelector(`#tabbody details[data-k
 const finPP = (v,d=1) => (v>=0?"+":"−")+nf(Math.abs(v)*100,d);
 const finTir = v => v==null? "—" : pct(v);
 const finSCol = v => v<0||v<S.metas.margem.min?"var(--bad)": v<S.fin.margemAlvo?"var(--warn)":"var(--ok)";   // v = margem s/ VGV · metas em S.metas (src/calc/saude.js)
+const finNivMargem = g => g<0||g<S.metas.margem.min? "bad" : g<S.fin.margemAlvo? "warn" : "ok";
+const finNivTir = t => t==null||t<S.fin.tma? "bad" : t<S.metas.tir.alvo? "warn" : "ok";
+/* rótulo de grupo entre seções: SECGRP (P0, src/ui/ux.js) quando existir */
+const finGrp = t => typeof SECGRP==="function"? SECGRP(t) : `<div class="fgrp" role="heading" aria-level="3">${t}</div>`;
 { const st=document.createElement("style"); st.id="finCSS"; st.textContent=`
 #tabbody[data-tab^="viab"] details.sec:not([open])>.cb{display:none}
 .fmini{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .fmini .met{padding:8px 10px;border-radius:10px}
 .fmini .met .v{font-size:16px;margin-top:1px}
 .fres .met .l .info,.fmini .met .l .info{width:15px;height:15px;font-size:9px}
+.fr{display:grid;gap:4px}
+.fr .met.big{padding:12px 14px}
+.fr .met.big .v{font-size:30px}
+.fr .met.big .s{margin-top:2px}
+.frk{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 12px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line)}
+.frk .l{grid-column:1;display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-2);min-width:0}
+.frk .l .dot{width:6px;height:6px}
+.frk .l .nd{width:6px;flex:none}
+.frk .s{grid-column:1;font-size:11.5px;color:var(--muted);padding-left:13px;line-height:1.4}
+.frk .v{grid-column:2;grid-row:1/3;font-size:18px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.met .bad-v,.frk .bad-v{color:var(--bad)}
+.fver{display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--ink-2);padding:8px 2px 2px;line-height:1.4}
+.fver .dot{flex:none;transform:translateY(-1px)}
+.fprog{border-top:1px solid var(--line);padding-top:4px;margin-top:2px}
+.fprog .prog-linha{min-height:40px}
+.fgrp{font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:8px 4px -4px}
+.fgrp:first-of-type{margin-top:4px}
+.sdl{display:grid;gap:0}
+.sdl .sd-r{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:4px 10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line)}
+.sdl .sd-r:last-child{border-bottom:0}
+.sdl .sd-r .dot{align-self:center}
+.sdl .sd-n{font-size:13px;display:flex;align-items:center;gap:6px;min-width:0}
+.sdl .sd-n .info{width:15px;height:15px;font-size:9px}
+.sdl .sd-v{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.sdl .sd-f{grid-column:2/-1;font-size:11px;color:var(--muted);margin-top:-2px}
+.sdav{display:grid;gap:4px;margin-top:6px}
+.sdav .row{flex-wrap:nowrap}
+.sdav .note{display:flex;gap:7px;align-items:baseline}
+.sdav .note .dot{transform:translateY(-1px)}
+.fcomp{display:grid;gap:6px;margin-bottom:6px}
 .fbusca{background:var(--surface)}
 .fbusca svg{margin-left:10px;flex:none;fill:none;stroke:var(--muted);stroke-width:1.8}
 .fcen{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);gap:8px 10px;align-items:center}
-.flink{color:var(--accent);padding-left:0}
-.fusar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}`; document.head.appendChild(st) }
+.flink{color:var(--ink-2);padding-left:0}
+.flink:hover{color:var(--ink);background:none;text-decoration:underline;text-underline-offset:2px}
+.fusar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fchart text{font-family:var(--f-sans);font-variant-numeric:tabular-nums}
+@media (max-width:420px){.fr .met.big .v{font-size:26px}.frk .v{font-size:16.5px}}`; document.head.appendChild(st) }
 
 /* select ligado ao estado (data-p) */
 function finSEL(p, opts, label, o={}){
@@ -35,25 +77,75 @@ function finIN(p, unit, o={}){ const v=getP(S,p); return `<div class="inp"><inpu
 const finQ = (q, html) => `<div data-q="${esc(q.toLowerCase())}">${html}</div>`;
 const finCampoSeg = (label, q, seg, help) => finQ(label+" "+q, `<div class="fld wide"><span class="fl">${label}${help?INFO(help):""}</span>${seg}</div>`);
 
-/* ================= sub-abas ================= */
-function finViabHTML(k){ return k==="prem"? finPremHTML() : k==="risco"? finRiscoHTML() : k==="vendas"? "" : finResHTML() }
+/* ================= checklist (P7): editar preço ou custo confirma o item ================= */
+function finConf(k){ if(!S.guia) S.guia={conf:{regras:false,preco:false,custo:false}}; if(!S.guia.conf) S.guia.conf={}; if(!S.guia.conf[k]) S.guia.conf[k]=true }
+Object.assign(FX, {
+  confPreco: live=>{ if(!live) finConf("preco"); FX.upd(live) },
+  confCusto: live=>{ if(!live) finConf("custo"); FX.upd(live) },
+  confCub:   live=>{ if(!live) finConf("custo"); (FX.cubMan||FX.upd)(live) },
+});
+
+/* ================= etapa e sub-abas ================= */
+const FIN_SUBS = [["res","Resultado"],["prem","Premissas"],["risco","Riscos"]];
+STEP_R.viab = ()=>{
+  if(typeof SUBX!=="undefined" && SUBX.viab==="vendas"){ SUBX.viab="prem"; LS.set("gabarito.subx",SUBX) }   // sub-aba antiga
+  const sub=SUBTABS("viab", FIN_SUBS), k=subAtual("viab");
+  return { sub, subKey:k, body: finViabHTML(k), after: finViabAfter };
+};
+STEP_LIVE.viab = (m,f,fast)=> finViabLive(m, f, fast);
+function finViabHTML(k){ return k==="prem"? finPremHTML() : k==="risco"? finRiscoHTML() : finResHTML() }
 
 /* ---------------- Resultado ---------------- */
 function finResHTML(){
-  return RES("Saúde do negócio", `<div id="finSaude"></div>`, {cls:"fres", aside:"", asideId:"sdStat"}) +
-    RES("Resultado", `<div id="finTop"></div>`, {cls:"fres", aside:"", asideId:"vStat"}) +
-    SEC("Fluxo de caixa acumulado", `<div id="cash"></div>`, {key:"cash", open:true, info:"Entradas menos saídas, mês a mês. O ponto mais baixo é a exposição máxima; o payback é quando a curva volta a zero."}) +
-    SEC("DRE", `<table class="tbl" id="dre"></table>`, {key:"dre", info:"DRE"});
+  return RES("Resultado", `<div id="finTop"></div><div class="fprog" id="finProg">${typeof progressoLinhaHTML==="function"? progressoLinhaHTML() : ""}</div>`, {cls:"fres", aside:"", asideId:"vStat"}) +
+    finEssHTML() +
+    SEC("Saúde do negócio", `<div id="finSaude"></div>`, {key:"saude", info:"Indicadores da colinha de viabilidade, cada um com a sua faixa de referência (semáforo). A margem e o retorno ficam no resultado, logo acima. As faixas são suas: Premissas › Metas e referências.", sum:""}) +
+    SEC("Fluxo de caixa", `<div id="cash"></div>`, {key:"cash", info:"Entradas menos saídas, acumuladas mês a mês. O ponto mais baixo é o caixa necessário (exposição máxima); o payback é quando a curva volta a zero.", sum:""}) +
+    SEC(`Resultado detalhado`, `<div class="fcomp" id="dreStack"></div><table class="tbl" id="dre"></table>`, {key:"dre", info:"DRE", sum:""});
+}
+/* Premissas principais: os campos que todo estudo muda. Preços = espelho do mix (Produto), permitido em UX v3 §4.6 */
+function finEssHTML(){
+  const F=S.fin, P=S.produto, par=S.orc.modo==="param";
+  const precos = P.mix.map((u,i)=>NUM(`produto.mix.${i}.preco`, esc(u.nome), "R$/m²", {step:50, min:0, fx:"confPreco", q:"preço venda mix tipologia"})).join("") +
+    (P.cob && P.cob.on? NUM("produto.cob.preco","Cobertura","R$/m²",{step:50, min:0, fx:"confPreco", q:"preço venda cobertura"}) : "");
+  return SEC("Premissas principais",
+    KV(NUM("fin.terreno","Terreno (à vista)","R$",{step:10000,wide:true,fx:"confCusto",q:"compra lote preço"}) +
+       NUM("fin.cub","Custo de referência","R$/m²",{step:1,help:"CUB",fx:"confCub",q:"cub"}) +
+       (par? "" : NUM("fin.fator","Custo ÷ CUB","×",{step:0.01,help:"Custo ÷ CUB",fx:"confCusto"}))) +
+    GRP("Preço de venda por m²") + KV(precos) +
+    GRP("Prazos") + KV(NUM("fin.venda","Vender tudo em","meses",{step:1,int:true,min:1,q:"velocidade prazo de vendas"}) + NUM("fin.obra","Prazo de obra","meses",{step:1,int:true,min:1,q:"cronograma"})) +
+    `<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="prem" data-open="terAlt">Comparar compra, permuta e SPE →</button></div>`,
+    {key:"essencial", open:true, info:"O que todo estudo precisa conferir: o preço do terreno, o custo da obra (CUB × fator) e o preço de venda de cada tipologia — o mesmo do mix, na etapa Produto. Preço × área das unidades = VGV. O resto das premissas fica na sub-aba Premissas.", sum:""});
+}
+function finStatus(f){
+  const F=S.fin, M=S.metas, g=f.margemVGV;
+  if(g<0) return {cls:"bad", pal:"inviável", txt:`Prejuízo de ${mi(-f.lucro)}`};
+  if(g<M.margem.min) return {cls:"bad", pal:"inviável", txt:`Margem abaixo do mínimo de ${pct(M.margem.min,0)}`};
+  if(g<F.margemAlvo) return {cls:"warn", pal:"atenção", txt:`Margem abaixo da meta de ${pct(F.margemAlvo,0)}`};
+  return {cls:"ok", pal:"viável", txt:`Margem acima da meta de ${pct(F.margemAlvo,0)}`};
+}
+function finStatusHTML(f){ const s=finStatus(f); return `<span class="pill ${s.cls}">${s.pal}</span>` }
+/* o pior ponto da saúde do negócio, fora a margem (que já é o veredito) */
+const FIN_SD_ROT = { tir:"retorno abaixo do alvo", efic:"aproveitamento baixo", vc:"preço baixo para o custo", terreno:"terreno caro para o VGV", soft:"indiretos altos" };
+const FIN_SD_AV = { permutaDupla:"terreno contado duas vezes", semFinanc:"sem custo financeiro", imprev:"contingência baixa" };
+function finPiorSaude(f){
+  const s=f.saude; if(!s) return "";
+  const ks=Object.keys(FIN_SD_ROT).filter(k=>s.nivel[k]==="ruim"||s.nivel[k]==="atencao").sort((a,b)=>(s.nivel[a]==="ruim"?0:1)-(s.nivel[b]==="ruim"?0:1));
+  if(ks.length) return FIN_SD_ROT[ks[0]];
+  const a=(s.avisos||[])[0]; return a? (FIN_SD_AV[a.k]||"") : "";
 }
 function finTopHTML(m, f){
-  const F=S.fin, parts=[["Terreno e outorga",f.terreno+f.outorga,"var(--m-sub)"],["Obra e indiretos",f.obraTot+f.projetos+f.terra,"var(--m-ter)"],["Vendas, impostos, juros",f.corret+f.mkt+f.imp+f.permFin+f.juros,"var(--mark)"],["Lucro",Math.max(0,f.lucro),"var(--ok)"]];
+  const F=S.fin, nm=finNivMargem(f.margemVGV), nt=finNivTir(f.tirA), st=finStatus(f), pior=finPiorSaude(f);
+  const k=(l, info, v, s, niv)=>`<div class="frk"><div class="l">${niv?`<span class="dot ${niv}" title="${({ok:"dentro da meta",warn:"atenção",bad:"ajustar"})[niv]}"></span>`:`<span class="nd"></span>`}<span>${l}</span>${INFO(info)}</div><div class="s">${s}</div><div class="v${niv==="bad"?" bad-v":""}">${v}</div></div>`;
+  return `<div class="fr"><div class="mets"><div class="met big"><div class="l">Lucro</div><div class="v${f.lucro<0?" bad-v":""}">${mi(f.lucro)}</div><div class="s">${TERMO("VGV")} ${mi(f.vgv)} · custo ${mi(f.custo)}</div></div></div>
+    ${k("Margem","Margem s/ VGV",pct(f.margemVGV),`sobre o VGV · meta ${pct(F.margemAlvo,0)}`,nm)}${k("Retorno ao ano","Retorno ao ano",finTir(f.tirA),`${TERMO("VPL")} ${mi(f.vpl)} · alvo ${pct(S.metas.tir.alvo,0)}`,nt)}${k("Caixa necessário","Caixa necessário",mi(-f.exp),`exposição máxima · payback ${f.pay==null?"—":"mês "+f.pay}`)}
+    <div class="fver"><span class="dot ${st.cls}"></span><span>${st.txt}${pior?` · ${pior}`:""}</span></div></div>`;
+}
+/* composição da receita (barra no Resultado detalhado) — tons neutros da Rixel; o lucro em verde */
+function finCompHTML(f){
+  const parts=[["Terreno e outorga",f.terreno+f.outorga,"var(--ink-2)"],["Obra e indiretos",f.obraTot+f.projetos+f.terra+(f.soft||0),"var(--muted)"],["Vendas, impostos, juros",f.corret+f.mkt+f.imp+f.permFin+f.juros,"var(--faint)"],["Lucro",Math.max(0,f.lucro),"var(--ok)"]];
   const tot=parts.reduce((s,p)=>s+p[1],0)||1;
-  return `<div class="mets"><div class="met big"><div class="l">Lucro</div><div class="v" style="color:${f.lucro<0?"var(--bad)":"var(--ink)"}">${mi(f.lucro)}</div><div class="s">${TERMO("VGV")} ${mi(f.vgv)} · custo ${mi(f.custo)}</div>${finImprevHTML(f)}</div>
-    <div class="met"><div class="l">Margem s/ VGV${INFO("Margem s/ VGV")}</div><div class="v" style="color:${finSCol(f.margemVGV)}">${pct(f.margemVGV)}</div><div class="s">meta ${pct(F.margemAlvo,0)} · s/ receita ${pct(f.margem)}</div></div>
-    <div class="met"><div class="l">TIR a.a.${INFO("TIR")}</div><div class="v" style="color:${f.tirA==null||f.tirA<F.tma?"var(--bad)":f.tirA<S.metas.tir.alvo?"var(--warn)":"var(--ink)"}">${finTir(f.tirA)}</div><div class="s">${TERMO("TIR alvo","alvo")} ${pct(S.metas.tir.alvo,0)} · ${TERMO("TMA")} ${pct(F.tma,0)}</div></div>
-    <div class="met"><div class="l">VPL${INFO("VPL")}</div><div class="v" style="color:${f.vpl<0?"var(--bad)":"var(--ink)"}">${mi(f.vpl)}</div><div class="s">à ${TERMO("TMA")} de ${pct(F.tma,0)}</div></div>
-    <div class="met"><div class="l">Exposição máx.${INFO("Exposição")}</div><div class="v">${mi(-f.exp)}</div><div class="s">payback ${f.pay==null?"—":"mês "+f.pay}</div></div></div>
-    <div class="stack" role="img" aria-label="Composição da receita">${parts.map(p=>`<span style="width:${p[1]/tot*100}%;background:${p[2]}"></span>`).join("")}</div>
+  return `<div class="stack" role="img" aria-label="Composição da receita">${parts.map(p=>`<span style="width:${p[1]/tot*100}%;background:${p[2]}"></span>`).join("")}</div>
     <div class="stackleg">${parts.map(p=>`<span><i style="background:${p[2]}"></i>${p[0]} ${pct(p[1]/tot,0)}</span>`).join("")}</div>`;
 }
 function finDREHTML(m, f){
@@ -61,56 +153,90 @@ function finDREHTML(m, f){
   return `<tr><td>VGV de tabela</td><td>${brl(f.vgvB)}</td></tr>${f.permV?`<tr class="neg"><td>(−) Permuta física</td><td>−${brl(f.permV)}</td></tr>`:""}<tr><td>Receita nominal</td><td>${brl(f.receita)}</td></tr>${f.distratoV?sub("já descontados os distratos","−"+brl(f.distratoV)):""}
     ${ln("Terreno + ITBI",f.terreno)}${ln("Outorga onerosa",f.outorga)}${ln(f.orc? "Obra + administração + contingência, com INCC (orçamento por sistema)" : `Obra + administração + contingência, com INCC (${m2(f.eqA)} equiv.)`,f.obraTot)}${f.lazerC?sub("inclui lazer: equipamentos e áreas descobertas",brl(f.lazerC)):""}${ln("Movimento de terra",f.terra)}${ln("Projetos e aprovações",f.projetos)}${finSoftDRE(f)}
     ${ln("Corretagem + marketing",f.corret+f.mkt)}${ln("Impostos (RET)",f.imp)}${ln("Permuta financeira",f.permFin)}${ln("Juros do financiamento",f.juros)}
-    <tr class="tot ${f.lucro<0?"neg":"pos"}"><td>Lucro</td><td>${brl(f.lucro)}</td></tr><tr><td>Margem s/ VGV</td><td>${pct(f.margemVGV)}</td></tr>${sub("margem s/ receita nominal",pct(f.margem))}<tr><td>Custo total / m² privativo</td><td>${brl(f.custo/Math.max(1,m.priv))}</td></tr><tr><td>Obra / m² construído</td><td>${brl(f.obraTot/Math.max(1,m.constr))}</td></tr><tr><td>Lucro ÷ custo</td><td>${pct(f.lucro/Math.max(1,f.custo))}</td></tr>${finImprevDRE(f)}<tr><td>Terreno máximo p/ margem alvo (${pct(S.fin.margemAlvo,0)} s/ VGV)</td><td>${brl(f.maxTerreno)}</td></tr>`;
+    <tr class="tot ${f.lucro<0?"neg":"pos"}"><td>Lucro</td><td>${brl(f.lucro)}</td></tr><tr><td>Lucro ÷ receita nominal</td><td>${pct(f.margem)}</td></tr><tr><td>Custo total / m² privativo</td><td>${brl(f.custo/Math.max(1,m.priv))}</td></tr><tr><td>Obra / m² construído</td><td>${brl(f.obraTot/Math.max(1,m.constr))}</td></tr><tr><td>Lucro ÷ custo</td><td>${pct(f.lucro/Math.max(1,f.custo))}</td></tr>${finImprevDRE(f)}<tr><td>Terreno máximo p/ margem alvo (${pct(S.fin.margemAlvo,0)} s/ VGV)</td><td>${brl(f.maxTerreno)}</td></tr>`;
+}
+/* fluxo de caixa acumulado: linha grafite, área neutra, marcos discretos; vermelho só no ponto do caixa necessário */
+function finCaixaSVG(f){
+  const W=360,H=180,pl=40,pr=10,pt=20,pb=34, cum=f.cumA||[], n=cum.length; if(n<2) return "";
+  const mn=Math.min(0,...cum), mx=Math.max(0,...cum), sx=i=>pl+(W-pl-pr)*i/Math.max(1,n-1), sy=v=>pt+(H-pt-pb)*(mx-v)/((mx-mn)||1);
+  const path=cum.map((v,i)=>(i?"L":"M")+sx(i).toFixed(1)+","+sy(v).toFixed(1)).join("");
+  const ar=`M${sx(0).toFixed(1)},${sy(0).toFixed(1)} `+cum.map((v,i)=>"L"+sx(i).toFixed(1)+","+sy(v).toFixed(1)).join("")+` L${sx(n-1).toFixed(1)},${sy(0).toFixed(1)} Z`;
+  const iMin=cum.indexOf(Math.min(...cum)), ticks=[mn,0,mx].filter((v,i,a)=>a.indexOf(v)===i);
+  const xL=sx(f.launch), xC=sx(f.chaves), perto=Math.abs(xC-xL)<70, xE=Math.min(W-pr-56, Math.max(pl+56, sx(iMin))), yE=sy(cum[iMin])+14;
+  const t=(x,y,s,o="")=>`<text x="${x}" y="${y}" font-size="9" ${o}>${s}</text>`;
+  const fim=cum[n-1], xF=sx(n-1), yF=sy(fim);
+  return `<svg class="fchart" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Fluxo de caixa acumulado: caixa necessário ${mi(-cum[iMin])} no mês ${iMin}, resultado final ${mi(fim)}">
+    ${ticks.map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${sy(v).toFixed(1)}" y2="${sy(v).toFixed(1)}" stroke="${v===0?"var(--line-2)":"var(--line)"}" ${v===0?"":'stroke-dasharray="2 3"'}/>${t(pl-6, (sy(v)+3).toFixed(1), v===0?"0":nf(v/1e6,0)+" mi", 'text-anchor="end" fill="var(--faint)"')}`).join("")}
+    <line x1="${xL.toFixed(1)}" x2="${xL.toFixed(1)}" y1="${pt-4}" y2="${H-pb}" stroke="var(--line-2)" stroke-dasharray="2 3"/>${t((xL+4).toFixed(1), pt-8, "lançamento", 'fill="var(--muted)"')}
+    <line x1="${xC.toFixed(1)}" x2="${xC.toFixed(1)}" y1="${pt-4}" y2="${H-pb}" stroke="var(--line-2)" stroke-dasharray="2 3"/>${t((perto? xC+4 : xC-4).toFixed(1), perto? pt+4 : pt-8, "chaves", `fill="var(--muted)" ${perto?"":'text-anchor="end"'}`)}
+    <path d="${ar}" fill="var(--ink)" fill-opacity=".06"/><path d="${path}" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linejoin="round"/>
+    <circle cx="${sx(iMin).toFixed(1)}" cy="${sy(cum[iMin]).toFixed(1)}" r="3.2" fill="var(--bad)"/>${t(xE.toFixed(1), yE.toFixed(1), `caixa necessário ${mi(-cum[iMin])}`, 'text-anchor="middle" fill="var(--ink-2)"')}
+    <circle cx="${xF.toFixed(1)}" cy="${yF.toFixed(1)}" r="3.2" fill="${fim<0?"var(--bad)":"var(--ok)"}"/>
+    ${t(pl, H-6, "mês 0", 'fill="var(--faint)"')}${t(W-pr, H-6, `mês ${n-1}`, 'text-anchor="end" fill="var(--faint)"')}
+    ${f.distrato && f.distrato.M!=null && f.distrato.refund ? `<line x1="${sx(f.distrato.M).toFixed(1)}" x2="${sx(f.distrato.M).toFixed(1)}" y1="${pt}" y2="${H-pb}" stroke="var(--warn)" stroke-dasharray="2 2"/>${t((sx(f.distrato.M)+3).toFixed(1), pt+16, "distratos", 'fill="var(--warn)"')}` : ""}
+  </svg>`;
 }
 
 /* ---------------- Premissas ---------------- */
 function finPremHTML(){
-  const F=S.fin, P=S.produto, par=S.orc.modo==="param", rd=S.flx.receb, cv=S.flx.curva;
-  const precos = P.mix.map((u,i)=>NUM(`produto.mix.${i}.preco`, `Preço ${esc(u.nome)}`, "R$/m²", {step:50, min:0, q:"preço venda mix tipologia"})).join("") +
-    (P.cob && P.cob.on? NUM("produto.cob.preco","Preço cobertura","R$/m²",{step:50, min:0, q:"preço venda cobertura"}) : "");
   const busca = `<div class="inp fbusca"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg><input class="t" id="vqFind" placeholder="Buscar premissa — CUB, INCC, corretagem…" aria-label="Buscar premissa" autocomplete="off"></div><p class="note" id="vqNada" hidden>Nenhuma premissa encontrada.</p>`;
-  return RES("Resultado", `<div class="fmini" id="finMini"></div>`, {aside:"", asideId:"vStat"}) + busca +
-    SEC("Terreno e obra", KV(NUM("fin.terreno","Terreno (à vista)","R$",{step:10000,wide:true,q:"compra lote"}) + NUM("fin.cub","CUB referência","R$/m²",{step:1,help:"CUB",fx:"cubMan"}) +
-        (par? "" : NUM("fin.fator","Custo ÷ CUB","×",{step:0.01,help:"Custo ÷ CUB"}))) +
-        `<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="vendas" data-open="terAlt">Comparar compra, permuta e SPE →</button></div>`,
-      {key:"essObra", open:true, sum:""}) +
-    SEC("Preço e prazos", KV(precos + NUM("fin.venda","Vender 100% em","meses",{step:1,int:true,min:1,q:"velocidade prazo de vendas"}) + NUM("fin.vendaLanc","Vendido no lançamento","%",{pct:true,step:5,min:0,max:1}) + NUM("fin.obra","Prazo de obra","meses",{step:1,int:true,min:1,q:"cronograma"})),
-      {key:"essVenda", open:true, info:"Preço de venda por m² de cada tipologia (o mesmo do mix, na etapa Produto), ritmo de vendas e prazo de obra. Preço × área das unidades = VGV.", sum:""}) +
-    finOrcHTML() +
-    SEC("Custos indiretos", KV(NUM("fin.itbi","ITBI + escritura","%",{pct:true,step:0.5,help:"ITBI"}) + NUM("fin.projetos","Projetos e taxas","% obra",{pct:true,step:0.5,q:"aprovação"}) +
-        NUM("fin.adm","Administração","% obra",{pct:true,step:0.5}) + NUM("fin.conting","Contingência","% obra",{pct:true,step:0.5,q:"reserva"})) +
-        ADV(KV(NUM("fin.decorLazer","Lazer: equipamentos","R$/m²",{step:50,q:"mobiliário decoração lazer"}) + NUM("fin.custoDesc","Lazer descoberto","R$/m²",{step:50,q:"piscina deck paisagismo"})) + softCamposHTML(), {key:"ind"}),
-      {key:"ind", cls:"fq", sum:""}) +
-    SEC("Receita e comissões", KV(NUM("fin.corret","Corretagem","%",{pct:true,step:0.5,q:"comissão"}) + NUM("fin.mkt","Marketing","%",{pct:true,step:0.5,q:"publicidade stand"}) +
-        NUM("fin.imp","Impostos (RET)","%",{pct:true,step:0.25,help:"RET",q:"tributos"}) + NUM("fin.reaj","Reajuste da tabela","% a.a.",{pct:true,step:0.5})) +
-        finQ("incc correção parcelas", SW("fin.correcao","Parcelas corrigidas pelo INCC até as chaves")) +
-        ADV(KV(NUM("fin.precoLoja","Preço das lojas","R$/m²",{step:50}) + NUM("fin.permuta","Permuta física","% un.",{pct:true,step:1,help:"Permuta física",fx:"permuta"}) +
-          NUM("fin.permutaFin","Permuta financeira","% receita",{pct:true,step:0.5,help:"Permuta financeira"})), {key:"rec"}),
-      {key:"rec", cls:"fq", sum:""}) +
-    SEC("Recebimento", finCampoSeg("Modo", "recebimento parcelas ato repasse distrato", SEG("flx.receb.modo",[["simples","Simples"],["det","Detalhado"]],{full:true,label:"Modo de recebimento"})) +
-      (rd.modo!=="det"? KV(NUM("fin.entrada","Pago até as chaves","%",{pct:true,step:5,min:0,max:1,q:"entrada",sub:"o restante entra nas chaves"})) :
-        KV(NUM("flx.receb.ato","Ato","%",{pct:true,step:1,q:"sinal entrada",sub:""}) + NUM("flx.receb.mensais","Mensais até as chaves","%",{pct:true,step:1}) +
-          NUM("flx.receb.interm","Semestrais","%",{pct:true,step:1,q:"intermediárias balão"}) + NUM("flx.receb.chaves","Nas chaves","%",{pct:true,step:1})) +
+  return RES("Resultado", `<div class="fmini" id="finMini"></div>`, {aside:"", asideId:"vStat"}) + busca;
+}
+function finIndHTML(){
+  return SEC("Custos indiretos", KV(NUM("fin.itbi","ITBI + escritura","%",{pct:true,step:0.5,help:"ITBI"}) + NUM("fin.projetos","Projetos e taxas","% obra",{pct:true,step:0.5,q:"aprovação"}) +
+      NUM("fin.adm","Administração","% obra",{pct:true,step:0.5}) + NUM("fin.conting","Contingência","% obra",{pct:true,step:0.5,q:"reserva imprevistos"})) +
+      ADV(KV(NUM("fin.decorLazer","Lazer: equipamentos","R$/m²",{step:50,q:"mobiliário decoração lazer"}) + NUM("fin.custoDesc","Lazer descoberto","R$/m²",{step:50,q:"piscina deck paisagismo"})) + softCamposHTML(), {key:"ind"}),
+    {key:"ind", cls:"fq", sum:""});
+}
+function finRecHTML(){
+  return SEC("Receita e comissões", KV(NUM("fin.vendaLanc","Vendido no lançamento","%",{pct:true,step:5,min:0,max:1,q:"velocidade vendas lançamento"}) + NUM("fin.corret","Corretagem","%",{pct:true,step:0.5,q:"comissão"}) +
+      NUM("fin.mkt","Marketing","%",{pct:true,step:0.5,q:"publicidade stand"}) + NUM("fin.imp","Impostos (RET)","%",{pct:true,step:0.25,help:"RET",q:"tributos"}) + NUM("fin.reaj","Reajuste da tabela","% a.a.",{pct:true,step:0.5})) +
+      finQ("incc correção parcelas", SW("fin.correcao","Parcelas corrigidas pelo INCC até as chaves")) +
+      ADV(KV(NUM("fin.precoLoja","Preço das lojas","R$/m²",{step:50,fx:"confPreco"}) + NUM("fin.permuta","Permuta física","% un.",{pct:true,step:1,help:"Permuta física",fx:"permuta"}) +
+        NUM("fin.permutaFin","Permuta financeira","% receita",{pct:true,step:0.5,help:"Permuta financeira"})), {key:"rec"}),
+    {key:"rec", cls:"fq", sum:""});
+}
+function finRecebHTML(){
+  const rd=S.flx.receb;
+  return SEC("Como o cliente paga", finCampoSeg("Modo", "recebimento parcelas ato repasse distrato", SEG("flx.receb.modo",[["simples","Simples"],["det","Detalhado"]],{full:true,label:"Modo de recebimento"})) +
+      (rd.modo!=="det"? KV(NUM("fin.entrada","Pago até as chaves","%",{pct:true,step:5,min:0,max:1,q:"entrada recebimento",sub:"o restante entra nas chaves"})) :
+        KV(NUM("flx.receb.ato","Ato","%",{pct:true,step:1,q:"sinal entrada recebimento",sub:""}) + NUM("flx.receb.mensais","Mensais até as chaves","%",{pct:true,step:1,q:"recebimento"}) +
+          NUM("flx.receb.interm","Semestrais","%",{pct:true,step:1,q:"intermediárias balão recebimento"}) + NUM("flx.receb.chaves","Nas chaves","%",{pct:true,step:1,q:"recebimento"})) +
         ADV(KV(NUM("flx.receb.pos","Pós-chaves (direto)","%",{pct:true,step:1}) + (rd.pos>0? NUM("flx.receb.posN","Pós-chaves em","meses",{step:1,int:true,min:1}) : "") +
             NUM("flx.receb.repasseMes","Repasse do banco","meses após",{step:1,int:true,min:0,help:"Repasse",q:"financiamento bancário"}) + NUM("flx.receb.ipca","IPCA pós-chaves","% a.a.",{pct:true,step:0.25,help:"IPCA"})) +
           GRP(`Distratos ${INFO("Distrato")}`) + KV(NUM("flx.receb.distrato","Contratos distratados","%",{pct:true,step:1}) +
             (rd.distrato>0? NUM("flx.receb.distratoMes","Meses após o lançamento","meses",{step:1,int:true,min:0}) + NUM("flx.receb.retencao","Retenção do valor pago","%",{pct:true,step:5}) : "")), {key:"receb"})),
-      {key:"receb", cls:"fq", info:"Como o cliente paga. O saldo que falta para 100% vem pelo repasse bancário nas chaves. Parcelas corrigidas pelo INCC até as chaves e pelo IPCA depois; unidades distratadas não são revendidas no estudo.", sum:""}) +
-    SEC("Cronograma", KV(NUM("fin.prelanc","Até o lançamento","meses",{step:1,int:true,min:0,q:"aprovação incorporação"})) +
+    {key:"receb", cls:"fq", info:"Como o cliente paga. O saldo que falta para 100% vem pelo repasse bancário nas chaves. Parcelas corrigidas pelo INCC até as chaves e pelo IPCA depois; unidades distratadas não são revendidas no estudo.", sum:""});
+}
+function finCronoHTML(){
+  const cv=S.flx.curva;
+  return SEC("Cronograma", KV(NUM("fin.prelanc","Até o lançamento","meses",{step:1,int:true,min:0,q:"aprovação incorporação"})) +
       finCampoSeg("Curva de obra", "curva de obra desembolso s sistema", SEG("flx.curva.modo",[["sen","Senoidal"],["s","Curva S"],["sis","Por sistema"]],{full:true,label:"Curva de obra"}), "Curva S") +
       (cv.modo==="sen"? "" : KV(NUM("flx.curva.ini","Início","% prazo",{pct:true,step:5,min:0,max:0.9,q:"curva"}) + (cv.modo==="s"? NUM("flx.curva.pico","Pico","% prazo",{pct:true,step:5,min:0.05,max:0.95,q:"curva"}) : "") +
           NUM("flx.curva.fim","Fim","% prazo",{pct:true,step:5,min:0.1,max:1,q:"curva"}), 3) + `<div id="obraCurve"></div>`),
-      {key:"crono", cls:"fq", info:"Senoidal: desembolso suave. Curva S: começa devagar, acelera até o pico e desacelera (frações do prazo de obra). Por sistema: cada sistema do orçamento segue a sua janela (fundação no início, acabamentos no fim).", sum:""}) +
-    SEC("Financiamento à produção", finQ("financiamento plano empresário banco", SW("fin.finOn","Usar plano empresário",{rr:true})) +
+    {key:"crono", cls:"fq", info:"Senoidal: desembolso suave. Curva S: começa devagar, acelera até o pico e desacelera (frações do prazo de obra). Por sistema: cada sistema do orçamento segue a sua janela (fundação no início, acabamentos no fim).", sum:""});
+}
+function finFinanHTML(){
+  const F=S.fin;
+  return SEC("Financiamento da obra", finQ("financiamento plano empresário banco produção", SW("fin.finOn","Usar plano empresário",{rr:true})) +
       (F.finOn? KV(NUM("fin.finPct","Financiado","% obra",{pct:true,step:5,min:0,max:1}) + NUM("fin.finTaxa","Juros","% a.a.",{pct:true,step:0.25}) + NUM("fin.finVendaMin","Vendas p/ liberar","%",{pct:true,step:5,min:0,max:1}), 3) : ""),
-      {key:"finan", cls:"fq", info:"Plano empresário", sum:""}) +
-    finMetasHTML();
+    {key:"finan", cls:"fq", info:"Plano empresário", sum:""});
 }
 function finMiniHTML(f){
-  const c=(l,v,col)=>`<div class="met"><div class="l">${l}</div><div class="v"${col?` style="color:${col}"`:""}>${v}</div></div>`;
-  return c("Lucro", mi(f.lucro), f.lucro<0?"var(--bad)":null) + c("Margem s/ VGV", pct(f.margemVGV), finSCol(f.margemVGV)) + c("TIR a.a.", finTir(f.tirA)) + c("Exposição", mi(-f.exp));
+  const nm=finNivMargem(f.margemVGV), nt=finNivTir(f.tirA);
+  const c=(l,v,niv)=>`<div class="met"><div class="l">${niv?`<span class="dot ${niv}"></span>`:""}${l}</div><div class="v${niv==="bad"?" bad-v":""}">${v}</div></div>`;
+  return c("Lucro", mi(f.lucro), f.lucro<0?"bad":null) + c("Margem", pct(f.margemVGV), nm) + c("Retorno ao ano", finTir(f.tirA), nt) + c("Caixa necessário", mi(-f.exp));
 }
+/* Premissas: grupos e seções fechadas (order = posição; ccal 8, vendas 23 e vCal 24 ficam nos próprios módulos) */
+[["gCustos",5,"Custos"],["gReceitas",20,"Receitas"],["gTerreno",30,"Terreno"],["gPrazos",40,"Prazos e financiamento"],["gMetas",50,"Metas"]]
+  .forEach(([key,order,t])=>addCard("viab", { key, sub:"prem", order, html:()=>finGrp(t) }));
+addCard("viab", { key:"orc",   sub:"prem", order:6,  html:()=>finOrcHTML() });
+addCard("viab", { key:"ind",   sub:"prem", order:7,  html:()=>finIndHTML() });
+addCard("viab", { key:"rec",   sub:"prem", order:21, html:()=>finRecHTML() });
+addCard("viab", { key:"receb", sub:"prem", order:22, html:()=>finRecebHTML() });
+addCard("viab", { key:"crono", sub:"prem", order:41, html:()=>finCronoHTML() });
+addCard("viab", { key:"finan", sub:"prem", order:42, html:()=>finFinanHTML() });
+addCard("viab", { key:"metas", sub:"prem", order:51, html:()=>finMetasHTML() });
 
 /* ---------------- 3.1 Orçamento ---------------- */
 function finOrcHTML(){
@@ -174,21 +300,27 @@ function finOrcLive(m, f){
 }
 
 /* ---------------- Riscos ---------------- */
-function finRiscoHTML(){ return finCenHTML() + finSensHTML() + finMCHTML() }
+function finRiscoHTML(){ return finCenHTML() }
+/* Riscos: depois do RES vêm as alavancas (order 10, src/ui/alavancas.js); cmpPlan (70) fecha a lista */
+addCard("viab", { key:"sens",   sub:"risco", order:20, html:()=>finSensHTML() });
+addCard("viab", { key:"cenVar", sub:"risco", order:30, html:()=>finCenVarHTML() });
+addCard("viab", { key:"mc",     sub:"risco", order:40, html:()=>finMCHTML() });
 
 /* ---------------- 3.2 Cenários ---------------- */
 function finCenHTML(){
+  return RES(`Pessimista × otimista`, `<table class="tbl multi" id="cenTab" style="table-layout:fixed"></table>`, {aside:INFO("Cenários")});
+}
+function finCenVarHTML(){
   const lin=(k,l,u,step,lab)=>`<span class="fl">${l}</span>${finIN(`flx.cen.pess.${k}`,u,{pct:true,step,label:"Pessimista: "+lab})}${finIN(`flx.cen.otim.${k}`,u,{pct:true,step,label:"Otimista: "+lab})}`;
-  return RES(`Cenários`, `<table class="tbl multi" id="cenTab" style="table-layout:fixed"></table>`, {aside:INFO("Cenários")}) +
-    SEC("Variações dos cenários", `<div class="fcen"><span></span><span class="fl">Pessimista</span><span class="fl">Otimista</span>
+  return SEC("O que muda em cada cenário", `<div class="fcen"><span></span><span class="fl">Pessimista</span><span class="fl">Otimista</span>
       ${lin("preco","Preço de venda","%",1,"preço")}${lin("vel","Prazo de vendas","%",5,"prazo de vendas")}${lin("custo","Custo de obra","%",1,"custo")}${lin("juros","Juros e TMA","p.p.",0.25,"juros")}</div>`,
-      {key:"cenVar", info:"Variações sobre o estudo base. Prazo de vendas positivo = vende mais devagar.", sum:""});
+      {key:"cenVar", info:"Variações sobre o estudo base, todas ao mesmo tempo em cada cenário. Prazo de vendas positivo = vende mais devagar.", sum:""});
 }
 function finCenLive(m, f){
   const cs=flxCenarios(S, m, f), row=(l,fn)=>`<tr><td>${l}</td>${cs.map(c=>`<td${c.k==="base"?' style="font-weight:600"':""}>${fn(c.f)}</td>`).join("")}</tr>`;
   setHTML("cenTab", `<tr><th style="min-width:0;width:25%"></th>${cs.map(c=>`<th style="min-width:0">${c.nome}</th>`).join("")}</tr>` +
-    row("Lucro", x=>`<span style="color:${x.lucro<0?"var(--bad)":"inherit"}">${mi(x.lucro)}</span>`) + row("Margem s/ VGV", x=>pct(x.margemVGV)) + row("TIR a.a.", x=>finTir(x.tirA)) +
-    row("VPL", x=>mi(x.vpl)) + row("Exposição", x=>mi(-x.exp)) + row("VGV", x=>mi(x.vgv)));
+    row("Lucro", x=>`<span style="color:${x.lucro<0?"var(--bad)":"inherit"}">${mi(x.lucro)}</span>`) + row("Margem", x=>pct(x.margemVGV)) + row("Retorno ao ano", x=>finTir(x.tirA)) +
+    row("VPL", x=>mi(x.vpl)) + row("Caixa necessário", x=>mi(-x.exp)) + row("VGV", x=>mi(x.vgv)));
   FIN_UI.cen = cs;
 }
 
@@ -207,9 +339,9 @@ function finTornSVG(t, met){
   </svg>`;
 }
 function finSensHTML(){
-  return SEC("Sensibilidade", SEG("flx.sens",[["margem","Margem s/ VGV"],["tir","TIR"]],{label:"Métrica"}) + `<div id="torn"></div>
+  return SEC("O que mais pesa", SEG("flx.sens",[["margem","Margem"],["tir","Retorno ao ano"]],{label:"Métrica"}) + `<div id="torn"></div>
     <div class="stackleg"><span><i style="background:var(--bad);opacity:.72"></i>desfavorável</span><span><i style="background:var(--ok);opacity:.72"></i>favorável</span></div>
-    <div class="grp">Margem s/ VGV: preço × custo de obra</div><div class="sens" id="sens"></div>`, {key:"sens", open:true, info:"Sensibilidade", sum:""});
+    <div class="grp">Margem: preço × custo de obra</div><div class="sens" id="sens"></div>`, {key:"sens", info:"Sensibilidade", sum:""});
 }
 function finSensLive(m, f){
   if(!finVis("torn")) return;
@@ -223,9 +355,9 @@ function finSensLive(m, f){
 const finMCSig = () => JSON.stringify([S.fin, S.produto.mix, S.produto.cob, S.flx.curva, S.flx.receb, S.orc.modo, S.orc.coef, window._last? Math.round(window._last.f.lucro) : 0]);
 function finMCHTML(){
   const on=S.flx.mc.on, M=FIN_UI.mc;
-  return SEC("Monte Carlo", finQ("monte carlo simulação incerteza", SW("flx.mc.on","Simular incertezas",{rr:true, fx:"save"})) + (on? `
-    <div class="row"><button type="button" class="btn pri sm" data-act="mcRun">${M.run?"Simulando…":M.res?"Rodar de novo":"Rodar 1.000 simulações"}</button><span class="note" id="mcProg"></span></div><div id="mcRes"></div>` : ""),
-    {key:"mc", open:on, info:"Roda o estudo 1.000 vezes sorteando (triangular): preço −10% a +6%, custo −5% a +12%, prazo de vendas −20% a +50%, INCC −1 a +3 p.p. e prazo de obra −5% a +20%. P10 / P50 / P90 = faixa provável do resultado.", sum:""});
+  return SEC("Simulação de incertezas", finQ("monte carlo simulação incerteza", SW("flx.mc.on","Simular incertezas",{rr:true, fx:"save"})) + (on? `
+    <div class="row"><button type="button" class="btn sm" data-act="mcRun">${M.run?"Simulando…":M.res?"Rodar de novo":"Rodar 1.000 simulações"}</button><span class="note" id="mcProg"></span></div><div id="mcRes"></div>` : ""),
+    {key:"mc", open:on, info:"Monte Carlo: roda o estudo 1.000 vezes sorteando (triangular): preço −10% a +6%, custo −5% a +12%, prazo de vendas −20% a +50%, INCC −1 a +3 p.p. e prazo de obra −5% a +20%. P10 / P50 / P90 = faixa provável do resultado.", sum:""});
 }
 function finMCHist(r){
   const L=r.lucros.slice().sort((a,b)=>a-b), mn=L[0], mx=L[L.length-1], nb=24, W=360, H=110, pl=6, pb=18, bw=(W-2*pl)/nb, h=new Array(nb).fill(0);
@@ -236,12 +368,12 @@ function finMCHist(r){
 }
 function finMCSum(){
   const M=FIN_UI.mc, r=M.res; if(!S.flx.mc.on) return "desligado"; if(M.run) return `simulando… ${nf(M.prog*100,0)}%`;
-  if(!r) return "pronto para rodar"; return `TIR P50 <b>${finTir(r.tir[1])}</b> · prejuízo ${pct(r.pPrej,0)}${M.sig!==finMCSig()?" · desatualizado":""}`;
+  if(!r) return "pronto para rodar"; return `retorno P50 <b>${finTir(r.tir[1])}</b> · prejuízo ${pct(r.pPrej,0)}${M.sig!==finMCSig()?" · desatualizado":""}`;
 }
 function finMCLive(){
   const M=FIN_UI.mc, r=M.res; setSum("mc", finMCSum()); if(!S.flx.mc.on) return;
   const pr=document.getElementById("mcProg"); if(pr) pr.textContent = M.run? `${nf(M.prog*100,0)}%` : (r && M.sig!==finMCSig()? "premissas mudaram — rode de novo" : r? `${r.n} rodadas` : "");
-  setHTML("mcRes", r? `<div class="mets" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:6px">${["P10","P50","P90"].map((l,i)=>`<div class="met"><div class="l">TIR ${l}</div><div class="v" style="font-size:16px">${finTir(r.tir[i])}</div><div class="s">${mi(r.lucro[i])}</div></div>`).join("")}</div>
+  setHTML("mcRes", r? `<div class="mets" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:6px">${["P10","P50","P90"].map((l,i)=>`<div class="met"><div class="l">Retorno ${l}</div><div class="v" style="font-size:16px">${finTir(r.tir[i])}</div><div class="s">${mi(r.lucro[i])}</div></div>`).join("")}</div>
     ${finMCHist(r)}<p class="note">Probabilidade de prejuízo: <b style="color:${r.pPrej>0.1?"var(--bad)":r.pPrej>0?"var(--warn)":"var(--ok)"}">${pct(r.pPrej,1)}</b></p>` : "");
 }
 function finMCRun(){
@@ -253,7 +385,7 @@ function finMCRun(){
   setTimeout(step,0);
 }
 
-/* ---------------- 3.3 Terreno (sub-aba Vendas) ---------------- */
+/* ---------------- 3.3 Terreno (Premissas › grupo Terreno) ---------------- */
 function finTerHTML(){
   const A=S.terAlt, on=A.on, mf=finMCompleto(window._last && window._last.m), us=mf? terAltUnidades(mf) : null;
   const body = finQ("terreno permuta spe compra parcelada", SW("terAlt.on","Comparar formas de pagar o terreno",{rr:true})) + (on? KV(
@@ -268,7 +400,7 @@ function finTerHTML(){
   return SEC("Pagamento do terreno", body, {key:"terAlt", info:"Compra à vista ou parcelada, permuta física, permuta financeira e SPE, lado a lado, com o fluxo e o VPL dos dois lados. ITBI sobre o preço pedido em todas. Na física o terreneiro recebe as unidades nas chaves; na SPE o incorporador recupera o investimento e depois divide o caixa.", sum:""});
 }
 function finTerSVG(r){
-  const ks=Object.keys(r.alts), cols={vista:"var(--accent)",parc:"var(--m-sub)",fis:"var(--mark)",fin:"var(--ok)",spe:"var(--m-env)"};
+  const ks=Object.keys(r.alts), cols={vista:"var(--ink)",parc:"var(--faint)",fis:"var(--info)",fin:"var(--ok)",spe:"var(--m-ter)"};
   const n=Math.max(...ks.map(k=>r.alts[k].terr.length)), cum={}; ks.forEach(k=>{ let s=0; cum[k]=r.alts[k].terr.map(v=>s+=v) });
   const mx=Math.max(1,...ks.map(k=>cum[k][cum[k].length-1])), W=360, H=130, pl=40, pr=6, pt=8, pb=18, sx=i=>pl+(W-pl-pr)*i/Math.max(1,n-1), sy=v=>pt+(H-pt-pb)*(1-v/mx);
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Recebimentos acumulados do terreneiro">
@@ -305,7 +437,7 @@ function finTerLive(m, fast){
   if(us) setHTML("terUn", us.map(u=>`<label class="sw"><input type="checkbox" data-act="terUn" data-id="${esc(u.id)}" ${sel.includes(String(u.id))?"checked":""}><span class="tg"></span><span>${esc(u.nome)} · ${esc(u.tip)} · ${nf(u.area,0)} m² · ${mi(u.valor)}</span></label>`).join(""));
   const sm=document.querySelector('#tabbody details.sub > summary.note'); if(sm && document.getElementById("terUn")) sm.textContent=`Unidades da permuta física (${sel.length} escolhidas)`;
 }
-addCard("viab", { key:"terAlt", sub:"vendas", order:60, html: finTerHTML, live: (m,f,fast)=>finTerLive(m,fast) });
+addCard("viab", { key:"terAlt", sub:"prem", order:31, html: finTerHTML, live: (m,f,fast)=>finTerLive(m,fast) });
 
 /* ---------------- curva de obra (desembolso mensal) ---------------- */
 function finObraSVG(f){
@@ -322,16 +454,15 @@ function finObraSVG(f){
 }
 
 /* ================= ligação com a etapa ================= */
-function finStatusHTML(f){ const F=S.fin, M=S.metas.margem.min, g=f.margemVGV; return `<span class="pill ${g<0||g<M?"bad":g<F.margemAlvo?"warn":"ok"}">${g<0?"prejuízo":g<M?"abaixo do mínimo":g<F.margemAlvo?"abaixo da meta":"acima da meta"}</span>` }
 function finSums(m, f){
   const F=S.fin, rd=S.flx.receb, cv=S.flx.curva, cen=S.flx.cen, P=S.produto;
-  setSum("cash", `exposição <b>${mi(-f.exp)}</b> · payback ${f.pay==null?"—":"mês "+f.pay}`);
-  setSum("dre", `receita ${mi(f.receita)} · lucro <b>${mi(f.lucro)}</b>`);
+  setSum("cash", `payback <b>${f.pay==null?"—":"mês "+f.pay}</b> · chaves mês ${f.chaves}`);
+  setSum("dre", `receita <b>${mi(f.receita)}</b>`);
   const pm = P.mix.length? P.mix.reduce((s,u)=>s+u.preco*u.area*u.qtd,0)/Math.max(1,P.mix.reduce((s,u)=>s+u.area*u.qtd,0)) : 0;
-  setSum("essObra", `terreno <b>${mi(F.terreno)}</b> · CUB ${brl(F.cub)}`);
-  setSum("essVenda", `<b>${brl(pm)}</b>/m² · vendas ${nf(F.venda,0)} m · obra ${nf(F.obra,0)} m`);
+  setSum("essencial", `terreno <b>${mi(F.terreno)}</b> · <b>${brl(pm)}</b>/m² · obra ${nf(F.obra,0)} m`);
+  if(f.saude) setSum("saude", saudeSumHTML(f.saude));
   setSum("ind", `<b>${pct(F.projetos+F.adm+F.conting,0)}</b> da obra · ITBI ${pct(F.itbi,1)}`);
-  setSum("rec", `corretagem ${pct(F.corret,1)} · RET ${pct(F.imp,1)}${F.permuta?` · permuta ${pct(F.permuta,0)}`:""}${F.permutaFin?` · perm. fin. ${pct(F.permutaFin,1)}`:""}`);
+  setSum("rec", `lançamento ${pct(F.vendaLanc,0)} · corretagem ${pct(F.corret,1)} · RET ${pct(F.imp,1)}${F.permuta?` · permuta ${pct(F.permuta,0)}`:""}${F.permutaFin?` · perm. fin. ${pct(F.permutaFin,1)}`:""}`);
   setSum("receb", rd.modo==="det"? `detalhado · repasse <b>${pct(flxRepasse(rd),0)}</b>${rd.distrato?` · distratos ${pct(rd.distrato,0)}`:""}` : `simples · <b>${pct(F.entrada,0)}</b> até as chaves`);
   setSum("crono", `lançamento no mês <b>${nf(F.prelanc,0)}</b> · ${({sen:"senoidal",s:"curva S",sis:"por sistema"})[cv.modo]||"senoidal"}`);
   setSum("finan", F.finOn? `<b>${pct(F.finPct,0)}</b> da obra · ${pct(F.finTaxa,1)} a.a.` : "desligado");
@@ -342,34 +473,37 @@ function finSums(m, f){
 function finViabLive(m, f, fast){
   const F=S.fin;
   const vs=document.getElementById("vStat"); if(vs){ const h=finStatusHTML(f); if(vs.innerHTML!==h) vs.innerHTML=h }
-  if(document.getElementById("finSaude")){ setHTML("finSaude", saudeResHTML(m, f)); const st=document.getElementById("sdStat"), h=saudeStatusHTML(f); if(st && st.innerHTML!==h) st.innerHTML=h }
   if(document.getElementById("finTop")) setHTML("finTop", finTopHTML(m, f));
   if(document.getElementById("finMini")) setHTML("finMini", finMiniHTML(f));
-  if(finVis("cash")) setHTML("cash", cashSVG(f));
-  if(finVis("dre")) setHTML("dre", finDREHTML(m, f));
+  if(finVis("finSaude")) setHTML("finSaude", saudeResHTML(m, f));
+  if(finVis("cash")) setHTML("cash", finCaixaSVG(f));
+  if(finVis("dre")){ setHTML("dreStack", finCompHTML(f)); setHTML("dre", finDREHTML(m, f)) }
   finSums(m, f);
   saudePermutaSub();
+  // Premissas principais (Resultado)
   if(document.getElementById("f-fin-terreno")){
     setSub("fin.terreno",`${brl(F.terreno/Math.max(1,m.A))}/m² · ${pct(F.terreno/Math.max(1,f.vgvB))} do VGV · máx. ${mi(f.maxTerreno)}`);
     setSub("fin.fator",`${brl(F.cub*F.fator)}/m² equiv.`);
     if(S.orc.modo!=="param"){ const r=cubLinha(S,S.orc.uf), v=r&&r.v[S.orc.padrao]; setSub("fin.cub", v? `${S.orc.padrao} ${r.uf}${r.ref?" · "+cubRefTxt(r.ref):""}: ${nf(v,0)}${r.ilustrativo?" · ilustrativo":(r.est||[]).includes(S.orc.padrao)?" · estimado":""}` : "") }
-    setSub("fin.incc",`efeito ${mi(f.obraTot-(f.obra+f.adm+f.conting))}`);
+    else if(!fast){ try{ setSub("fin.cub", `obra pelo orçamento paramétrico: ${mi(orcCalc(S,m).total)}`) }catch(e){} }
     S.produto.mix.forEach((u,i)=>setSub(`produto.mix.${i}.preco`, `${(m.unitRows[i]||{}).n||0} un. · ${mi(((m.unitRows[i]||{}).area||0)*u.preco)}`));
-    if(F.finOn) setSub("fin.finPct",`limite ${mi(f.lim)} · juros ${mi(f.juros)}`);
-    const rd=S.flx.receb; if(rd.modo==="det") setSub("flx.receb.ato", `repasse/saldo ${pct(flxRepasse(rd),0)}${f.distratoV?` · distratos −${mi(f.distratoV)}`:""}`);
-    finOrcLive(m, f);
-    if(S.flx.curva.modo!=="sen" && finVis("obraCurve")) setHTML("obraCurve", finObraSVG(f));
   }
+  // Premissas (seções fechadas: os resumos sempre; o conteúdo quando aberto)
+  if(document.getElementById("sum-orc")) finOrcLive(m, f);
+  if(document.getElementById("f-fin-incc")) setSub("fin.incc",`efeito ${mi(f.obraTot-(f.obra+f.adm+f.conting))}`);
+  if(F.finOn && document.getElementById("f-fin-finPct")) setSub("fin.finPct",`limite ${mi(f.lim)} · juros ${mi(f.juros)}`);
+  { const rd=S.flx.receb; if(rd.modo==="det" && document.getElementById("f-flx-receb-ato")) setSub("flx.receb.ato", `repasse/saldo ${pct(flxRepasse(rd),0)}${f.distratoV?` · distratos −${mi(f.distratoV)}`:""}`) }
+  if(S.flx.curva.modo!=="sen" && finVis("obraCurve")) setHTML("obraCurve", finObraSVG(f));
   if(fast) return;
-  if(finVis("cenTab")) finCenLive(m, f);
+  if(document.getElementById("cenTab")) finCenLive(m, f);
   finSensLive(m, f); finMCLive();
   if(document.getElementById("sum-sens")) finSums(m, f);
 }
 /* busca de premissas: filtra os campos, abre as seções (e "Mais opções") que têm resultado e devolve tudo como estava ao limpar */
-const finNorm = s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+const finNorm = s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 function finBusca(q){
   q=finNorm(q.trim()); let achou=0;
-  TB.querySelectorAll("details.sec.fq, details.sec[data-key=essObra], details.sec[data-key=essVenda]").forEach(d=>{
+  TB.querySelectorAll("details.sec").forEach(d=>{
     if(q && d.dataset.bOpen==null) d.dataset.bOpen=d.open?"1":"";
     const tit=finNorm(d.querySelector("summary .st")?.textContent), todos=!!q && tit.includes(q);
     let n=0; d.querySelectorAll("[data-q]").forEach(f=>{ const ok=!q || todos || finNorm(f.dataset.q).includes(q); f.hidden=!ok; if(ok) n++ });
@@ -377,6 +511,7 @@ function finBusca(q){
     if(q){ const vis=todos || n>0; d.hidden=!vis; if(vis){ d.open=true; achou++ } }
     else { d.hidden=false; if(d.dataset.bOpen!=null){ d.open=d.dataset.bOpen==="1"; delete d.dataset.bOpen } }
   });
+  TB.querySelectorAll(".fgrp, .secgrp").forEach(g=>{ g.hidden=!!q });
   const nd=document.getElementById("vqNada"); if(nd) nd.hidden=!q || achou>0;
 }
 function finViabAfter(){
@@ -388,9 +523,18 @@ function finViabAfter(){
   // partes vivas que dependem de uma seção aberta: recalcula quando o usuário expande
   TB.querySelectorAll("details.sec").forEach(d=>d.addEventListener("toggle",()=>{ if(d.open && window._last && !d.dataset.bOpen) renderLive(window._last.m, window._last.f, false) }));
 }
+/* vai para outra sub-aba da Viabilidade e abre uma seção (a antiga sub-aba "vendas" agora é "prem") */
+function finIrPara(sub, k){
+  if(sub==="vendas") sub="prem";
+  if(k){ const st=LS.get("gabarito.det")||{}; st["viab:"+k]=1; LS.set("gabarito.det",st) }
+  SUBX.viab=sub; LS.set("gabarito.subx",SUBX);
+  if(TAB!=="viab") goStep("viab"); else renderTab();
+  TB.scrollTop=0;
+  const d=k && TB.querySelector(`details[data-key="${k}"]`); if(d){ d.open=true; d.scrollIntoView({block:"start"}) }
+}
 Object.assign(ACT, {
   orcReset: ()=>{ S.orc.coef=clone(DEF.orc.coef); renderTab(); toast("Coeficientes padrão restaurados") },
-  cubUsar: ()=>{ const v=cubValor(S,S.orc.uf,S.orc.padrao); if(!v){ toast("Esse padrão não tem valor na tabela"); return } S.fin.cub=Math.round(v*100)/100; renderTab(); toast(`CUB ${S.orc.padrao} ${S.orc.uf}: ${brl(v)}/m²`) },
+  cubUsar: ()=>{ const v=cubValor(S,S.orc.uf,S.orc.padrao); if(!v){ toast("Esse padrão não tem valor na tabela"); return } S.fin.cub=Math.round(v*100)/100; finConf("custo"); renderTab(); toast(`CUB ${S.orc.padrao} ${S.orc.uf}: ${brl(v)}/m²`) },
   cubLimpa: ()=>{ S.orc.cubTab=[]; renderTab(); toast("Tabela embutida (ilustrativa) restaurada") },
   mcRun: ()=> finMCRun(),
   terUn: el=>{ const id=String(el.dataset.id), l=(S.terAlt.unidades||[]).map(String); S.terAlt.unidades = el.checked? [...new Set([...l,id])] : l.filter(x=>x!==id); update() },
@@ -399,10 +543,7 @@ Object.assign(ACT, {
     else if(k==="fis"){ F.terreno=0; F.permuta=Math.round(r.alts.fis.p*10000)/10000; F.permutaFin=0 }
     else if(k==="fin"){ if(S.terAlt.permBase==="vgv"){ toast("A permuta financeira sobre o VGV fica só na comparação; use a base Receita para aplicar"); return } F.terreno=0; F.permuta=0; F.permutaFin=+S.terAlt.permFin||0 }
     renderTab(); toast("Premissas do terreno atualizadas: "+TERALT_NOMES[k]) },
-  /* vai para outra sub-aba da Viabilidade e abre uma seção */
-  finIr: b=>{ const k=b.dataset.open; if(k){ const st=LS.get("gabarito.det")||{}; st["viab:"+k]=1; LS.set("gabarito.det",st) }
-    SUBX.viab=b.dataset.v; LS.set("gabarito.subx",SUBX); renderTab(); TB.scrollTop=0;
-    const d=k && TB.querySelector(`details[data-key="${k}"]`); if(d){ d.open=true; d.scrollIntoView({block:"start"}) } },
+  finIr: b=> finIrPara(b.dataset.v||"res", b.dataset.open),
 });
 
 /* ---------------- PDF ---------------- */

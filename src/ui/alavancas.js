@@ -1,7 +1,7 @@
 /* ================= Fase D: interface das Alavancas e do Potencial do terreno =================
    Cálculo em src/calc/alavancas.js (alavancasCalc) e src/optim.js (potencial). Aqui só marcação.
-   - Card "Alavancas" (Viabilidade › Riscos): fechado por padrão, calculado SÓ quando a seção está aberta (finVis); mesmo padrão dos
-     Cenários e da Sensibilidade. Cada linha muda uma coisa e mostra Δ lucro, Δ margem s/ VGV e Δ TIR. Os passos ficam em "Mais opções".
+   - Seção "O que melhora o resultado" (key "alavancas", Viabilidade › Riscos, logo depois do RES; UX v3 §4.3): aberta por padrão,
+     calculada SÓ quando a seção está aberta (finVis) e fora do arraste; mesmo padrão dos Cenários e da Sensibilidade. Cada linha muda uma coisa e mostra Δ lucro, Δ margem s/ VGV e Δ TIR. Os passos ficam em "Mais opções".
    - potInfoHTML(po) / potNotaHTML(po): ⓘ e a linha "só pelo andar" do card "Potencial do terreno" (Produto) — chamados de src/ui/produto.js. */
 
 const ALAV_UI = { sig: null };
@@ -20,10 +20,10 @@ const ALAV_INFO = {
 
 function alavHTML() {
   const sub = (k, l, o = {}) => NUM(`alavancas.${k}`, l, o.u || "%", Object.assign({ pct: !o.int, int: !!o.int, step: o.int ? 1 : 1, min: o.int ? 1 : 0, max: o.int ? 5 : 0.5, fx: "alav" }, o));
-  return SEC("Alavancas",
+  return SEC("O que melhora o resultado",
     `<div id="alavBox"><p class="note">Calculando…</p></div>` +
     ADV(KV(sub("efic", "Eficiência") + sub("preco", "Preço") + sub("terreno", "Terreno") + sub("obra", "Obra") + sub("pav", "Pavimentos", { u: "por torre", int: true }), 3), { key: "alav" }),
-    { key: "alavancas", info: "Alavancas", sum: "toque para calcular" });
+    { key: "alavancas", open: true, info: "Alavancas", sum: "toque para calcular" });
 }
 
 function alavLinhasHTML(r) {
@@ -33,8 +33,7 @@ function alavLinhasHTML(r) {
     if (!l.ok) return `<tr class="alav-no">${nome}<td colspan="3">não se aplica</td></tr>`;
     return `<tr>${nome}<td${i === 0 ? ' style="font-weight:600"' : ""}>${alavSinal(l.d.lucro, alavMi)}</td><td>${alavSinal(l.d.margem, alavPP)}</td><td>${alavSinal(l.d.tir, alavPP)}</td></tr>`;
   };
-  return `<table class="tbl multi alav" style="table-layout:fixed"><tr>${th("", "36%")}${th("Lucro")}${th("Margem")}${th("TIR")}</tr>${r.linhas.map(lin).join("")}</table>
-    <p class="note">Hoje: lucro ${mi(r.base.lucro)} · margem ${pct(r.base.margem)} · TIR ${r.base.tir == null ? "—" : pct(r.base.tir)}</p>`;
+  return `<table class="tbl multi alav" style="table-layout:fixed"><tr>${th("", "36%")}${th("Lucro")}${th("Margem")}${th("Retorno")}</tr>${r.linhas.map(lin).join("")}</table>`;
 }
 
 function alavLive(m, f, fast) {
@@ -49,7 +48,7 @@ function alavLive(m, f, fast) {
   setSum("alavancas", b ? `maior efeito: <b>${esc(b.nome)}</b> ${alavMi(b.d.lucro)}` : "nenhuma se aplica");
 }
 FX.alav = () => { save(); ALAV_UI.sig = null; alavLive() };
-addCard("viab", { key: "alavancas", sub: "risco", order: 70, html: alavHTML, live: alavLive });
+addCard("viab", { key: "alavancas", sub: "risco", order: 10, html: alavHTML, live: alavLive });
 
 /* ---------- Potencial do terreno (Produto): eficiência global em vez de só a do andar ---------- */
 function potInfoHTML(po) {

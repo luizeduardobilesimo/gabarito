@@ -1,5 +1,5 @@
 /* ================= Fase E (interface): comparar o fluxo do Gabarito com a planilha da empresa =================
-   Card "Comparar com planilha" na Viabilidade › Riscos (fechado por padrão). Cálculo em src/calc/comparafluxo.js;
+   Card "Comparar com a sua planilha" na Viabilidade › Riscos (último, fechado por padrão). Cálculo em src/calc/comparafluxo.js;
    leitura de arquivos em src/ui/arquivos.js. A planilha importada fica só na memória da página (CMPU); a comparação é
    refeita a cada cálculo (premissas mudam → o gráfico acompanha). Nada muda no estudo até "Aplicar" numa sugestão (Ctrl+Z desfaz). */
 { const st=document.createElement("style"); st.id="cmpCSS"; st.textContent=`
@@ -40,7 +40,7 @@ function cmpChart(c){
 }
 
 function cmpBody(){
-  const imp=`<div class="row"><label class="btn sm ${CMPU.dados.length?"ghost":"pri"}" style="cursor:pointer">${CMPU.dados.length?"Trocar planilha":"Importar planilha"}<input type="file" id="cmpFile" accept="${PLA_ACCEPT}" hidden></label>
+  const imp=`<div class="row"><label class="btn sm${CMPU.dados.length?" ghost":""}" style="cursor:pointer">${CMPU.dados.length?"Trocar planilha":"Importar planilha"}<input type="file" id="cmpFile" accept="${PLA_ACCEPT}" hidden></label>
     <button type="button" class="btn sm ghost" data-act="fluxoModelo">Baixar modelo</button>${CMPU.dados.length?`<button type="button" class="btn sm ghost" data-act="fluxoLimpa">Limpar</button>`:""}</div>`;
   if(!CMPU.dados.length) return imp + `<p class="note">CSV ou XLSX: mês, receitas, custos e saldo.</p>`;
   const p=CMPU.plan, nome=`<p class="note">${esc(CMPU.nome)}${p&&p.ok?` · ${p.nLinhas} linhas · ${p.T} meses`:""}</p>`;
@@ -99,7 +99,7 @@ Object.assign(ACT, {
 });
 
 addCard("viab", { key:"cmpPlan", sub:"risco", order:70,
-  html: ()=>SEC("Comparar com planilha", `<div id="cmpBox">${cmpBody()}</div>`, { key:"cmpPlan", info:"Comparar com planilha", sum:cmpSum() }),
+  html: ()=>SEC("Comparar com a sua planilha", `<div id="cmpBox">${cmpBody()}</div>`, { key:"cmpPlan", info:"Comparar com planilha", sum:cmpSum() }),
   after: ()=>{
     const box=document.getElementById("cmpBox"); if(!box) return;
     box.addEventListener("change", async e=>{ const t=e.target;

@@ -1,5 +1,5 @@
 /* ================= Fase E (interface): calibrar os prêmios com uma tabela de vendas real =================
-   Card "Calibrar com tabela de vendas" na Viabilidade › Vendas (fechado por padrão). Cálculo em src/calc/calibravendas.js;
+   Card "Calibrar com tabela de vendas" na Viabilidade › Premissas › Receitas (fechado por padrão). Cálculo em src/calc/calibravendas.js;
    leitura de arquivos em src/ui/arquivos.js. Os dados importados ficam só na memória da página (VCAL); o estudo guarda apenas
    S.vcal.info (quando/quanto da última calibração aplicada). Nada muda nos números até "Aplicar ao estudo" (Ctrl+Z desfaz). */
 extendDEF("vcal", { info:null });
@@ -37,7 +37,7 @@ function calResSVG(pa){
     <text x="${pl}" y="${H-4}" font-size="9" fill="var(--muted)">${pa[0].andar}º</text><text x="${W-pr}" y="${H-4}" font-size="9" text-anchor="end" fill="var(--muted)">${pa[pa.length-1].andar}º andar</text></svg>`;
 }
 function calBody(){
-  const imp=`<div class="row"><label class="btn sm ${VCAL.dados.length?"ghost":"pri"}" style="cursor:pointer">${VCAL.dados.length?"Trocar tabela":"Importar tabela"}<input type="file" id="calFile" accept="${PLA_ACCEPT}" hidden></label>
+  const imp=`<div class="row"><label class="btn sm${VCAL.dados.length?" ghost":""}" style="cursor:pointer">${VCAL.dados.length?"Trocar tabela":"Importar tabela"}<input type="file" id="calFile" accept="${PLA_ACCEPT}" hidden></label>
     <button type="button" class="btn sm ghost" data-act="calModelo">Baixar modelo</button>${VCAL.dados.length?`<button type="button" class="btn sm ghost" data-act="calLimpa">Limpar</button>`:""}</div>`;
   const info=S.vcal&&S.vcal.info, ult=info? `<p class="note">Última calibração aplicada: ${info.n} unidades · R² ${calPP(info.r2)} · ${esc(info.origem||"")} · ${new Date(info.quando).toLocaleDateString("pt-BR")}</p>` : "";
   if(!VCAL.dados.length) return imp + `<p class="note">CSV ou XLSX: unidade, andar, área privativa e preço.</p>` + ult;
@@ -65,7 +65,7 @@ function calBody(){
   const tipT=`<div class="grp">Preço base (R$/m², 1º andar)</div><table class="tbl multi" style="table-layout:fixed"><tr><th style="width:34%"></th><th>Un.</th><th>Mix atual</th><th>Calibrado</th></tr>${tip}</table>`;
   const sem=calibSemMix(S,r), avs=[...r.avisos, ...ln.avisos, ...(sem.length? [`Sem correspondência no mix do estudo: ${sem.join(", ")}.`] : []), ...(r.usouOrient && r.semOrient? [`${r.semOrient} unidade${r.semOrient>1?"s":""} sem orientação reconhecida.`] : [])];
   const grf=`<div class="grp">Resíduo médio por andar${INFO("Resíduo")}</div>${calResSVG(r.porAndar)}`;
-  const acts=`<div class="row"><button type="button" class="btn pri sm" data-act="calAplicar">Aplicar ao estudo</button><button type="button" class="btn sm" data-act="calPadrao">Salvar como padrão da empresa</button>${vendaPadraoEmpresa()?`<button type="button" class="btn sm ghost" data-act="calPadraoUsa">Usar padrão da empresa</button>`:""}</div>`;
+  const acts=`<div class="row"><button type="button" class="btn sm" data-act="calAplicar">Aplicar ao estudo</button><button type="button" class="btn sm" data-act="calPadrao">Salvar como padrão da empresa</button>${vendaPadraoEmpresa()?`<button type="button" class="btn sm ghost" data-act="calPadraoUsa">Usar padrão da empresa</button>`:""}</div>`;
   return imp + cab + met + tab + or + tipT + grf + avs.map(t=>`<p class="calAv">${esc(t)}</p>`).join("") + acts + ult + mapaAdv;
 }
 function calRender(){ setHTML("calBox", calBody()); setSum("vCal", calSum()) }
@@ -107,7 +107,7 @@ Object.assign(ACT, {
   if(p){ ["andarPct","andarTeto","vistaPct","cobPct"].forEach(k=>{ if(typeof p[k]==="number"){ DEF.venda[k]=p[k]; if(!(sv&&sv.venda&&typeof sv.venda[k]==="number")) S.venda[k]=p[k] } });
     if(p.orient){ DEF.venda.orient={...DEF.venda.orient,...p.orient}; if(!(sv&&sv.venda&&sv.venda.orient)) S.venda.orient={...S.venda.orient,...p.orient} } } }
 
-addCard("viab", { key:"vCal", sub:"vendas", order:46,
+addCard("viab", { key:"vCal", sub:"prem", order:24,
   html: ()=>SEC("Calibrar com tabela de vendas", `<div id="calBox">${calBody()}</div>`, { key:"vCal", info:"Calibrar prêmios", sum:calSum() }),
   after: ()=>{
     const box=document.getElementById("calBox"); if(!box) return;
