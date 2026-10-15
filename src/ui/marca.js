@@ -82,7 +82,7 @@ function marcaRodape(doc, MK, T, PW, M){
   doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(110,110,115); doc.text(T(MK.rodape), M, 292.6, {maxWidth:PW-2*M-16});
 }
 
-/* ---------- card na etapa Cenários ---------- */
+/* ---------- card em Entrega › Entregar (fechado: o resumo diz se está ligada) ---------- */
 function marcaCardHTML(){
   const M=S.marca, l=marcaLogo(), on=!!M.ativa;
   const prev = on? `<div class="mk-prev" style="--mk:${verCorOk(M.cor)?M.cor:"#1d1d1f"};--mkt:${marcaLum(marcaRGB(M.cor))>0.62?"#1d1d1f":"#fff"}"><div class="mk-bar">${l?`<img src="${l.url}" alt="" class="${l.opaca?"op":""}">`:""}<b>${esc((M.nome||"").toUpperCase())}</b><span>Estudo de viabilidade</span></div>

@@ -763,12 +763,15 @@ async function tClima(b) {
 async function tCen(b) {
   const { ctx, p, h } = await abrir(b); const { ev, W, etapa, sub, espera, fim, dl } = h;
   const conta = sel => p.$$eval(sel, e => e.length);
-  await etapa('cen', 'estudos'); await espera(() => EST.pronto, 15000);
+  await etapa('cen'); ok(await ev(() => subAtual('cen')) === 'entregar' && await p.isVisible('#entRes'), 'entrega: abre em Entregar, com o resumo pronto para entregar');
+  await etapa('cen', 'estudos'); await espera(() => EST.pronto, 15000); await h.abre('estudos');
   ok(await p.isVisible('#estBox .lrow.on'), 'estudos: o aberto aparece na lista');
   const n0 = await conta('#estBox .lrow');
   await p.click('#estBox .lrow.on [data-act=estDup]'); await espera(n => document.querySelectorAll('#estBox .lrow').length === n + 1, 15000, n0);
   ok(await conta('#estBox .lrow') === n0 + 1, 'estudos: duplicar');
-  await p.click('[data-act=estNovo]'); await espera(() => S.nome === 'Novo estudo', 15000); await fim();
+  await p.click('[data-act=estNovo]'); await espera(() => !document.getElementById('assWiz').hidden, 5000);
+  ok(await p.isVisible('#assWiz'), 'estudos: "+ Novo estudo" abre o assistente'); await p.keyboard.press('Escape'); await W(400);
+  await ev(() => estNovo(clone(DEF), 'Novo estudo')); await espera(() => S.nome === 'Novo estudo', 15000); await fim();
   ok(await ev(() => S.nome) === 'Novo estudo', 'estudos: novo estudo aberto');
   await espera(n => document.querySelectorAll('#estBox .lrow').length === n, 10000, n0 + 2);
   ok(await conta('#estBox .lrow') === n0 + 2, '  novo estudo na lista');
@@ -784,7 +787,7 @@ async function tCen(b) {
   await p.click('#estUndo [data-act=estDesfaz]'); await espera(n => document.querySelectorAll('#estBox .lrow').length === n, 10000, nA);
   ok(await conta('#estBox .lrow') === nA, '  exclusão desfeita');
   // versões
-  await p.fill('#vsNome', 'Teste A'); await p.click('[data-act=vsSalvar]'); await espera(() => EST.versoes.some(v => v.nome === 'Teste A'), 20000);
+  await h.abre('versoes'); await p.fill('#vsNome', 'Teste A'); await p.click('[data-act=vsSalvar]'); await espera(() => EST.versoes.some(v => v.nome === 'Teste A'), 20000);
   ok(await ev(() => EST.versoes.some(v => v.nome === 'Teste A')) && await conta('#vsBox .lrow') >= 1, 'versões: salvar com nome');
   const sub0 = await ev(() => S.produto.subsolos);
   await ev(() => { S.produto.subsolos = S.produto.subsolos + 1; update() }); await fim();
@@ -795,7 +798,7 @@ async function tCen(b) {
   ok(await ev(() => S.produto.subsolos) === sub0 + 1, '  Ctrl+Z desfaz a restauração');
   await p.click(`#vsBox [data-act=vsCmp][data-id="${vid}"]`); await W(400);
   ok(await p.isVisible('#cmpSec') && await conta('#cmpBox th') === 3, 'versões: comparar com o atual');
-  // cenários
+  // alternativas salvas (antigo "cenários")
   await h.abre('cenarios');
   await p.fill('#cenNome', 'Cenário X'); await p.click('[data-act=cenSave]'); await espera(() => document.querySelectorAll('#cenBox .lrow').length === 1, 15000);
   ok(await conta('#cenBox .lrow') === 1, 'cenários: salvar');
@@ -813,6 +816,15 @@ async function tCen(b) {
   // entregar
   await sub('entregar');
   ok(await p.isVisible('#tabbody [data-act=pdf]') && await p.isVisible('#cardApres'), 'entregar: arquivos e apresentação');
+  ok(await p.$$eval('#tabbody .btn.pri', e => e.length) === 0, 'entregar: nenhum botão primário no corpo');
+  ok(await p.$$eval('#tabbody input:not([type=hidden]):not([type=file])', e => e.filter(x => x.offsetParent).length) <= 3, 'entregar: até 3 campos visíveis');
+  // abrir .json: o seletor vive fora do painel; o arquivo entra como estudo novo
+  const jsonTxt = await ev(() => JSON.stringify({ app: 'gabarito', v: 2, S: Object.assign(clone(S), { nome: 'Estudo do arquivo' }) }));
+  const nj0 = await ev(() => EST.lista.length);
+  const fc = p.waitForEvent('filechooser'); await p.click('#tabbody [data-act=jsonAbrir]'); await (await fc).setFiles({ name: 'estudo.json', mimeType: 'application/json', buffer: Buffer.from(jsonTxt) });
+  await espera(() => S.nome === 'Estudo do arquivo', 15000); await fim();
+  ok(await ev(n => S.nome === 'Estudo do arquivo' && EST.lista.length === n + 1 && !document.querySelector('#tabbody #jsonIn'), nj0), 'abrir .json: entra como estudo novo (o seletor fica fora do painel)');
+  await p.evaluate(() => jsonAbrirTexto('{"x":1}')); await W(300); ok(await ev(() => S.nome === 'Estudo do arquivo'), 'abrir .json: arquivo que não é estudo é recusado');
   await p.click('#tabbody [data-act=json]'); await espera(() => window.__dl.some(d => /\.json$/.test(d.nome)), 15000);
   await p.click('#tabbody [data-act=zip]'); await espera(() => window.__dl.some(d => /\.zip$/.test(d.nome)), 90000);
   await p.click('#tabbody [data-act=pdf]'); await espera(() => window.__dl.some(d => /\.pdf$/.test(d.nome)), 180000);
@@ -833,7 +845,7 @@ async function tCen(b) {
   await h.preenche('#f-marca-nome', 'Construtora Teste'); await fim();
   ok(/Construtora Teste/.test(await p.textContent('#sum-marca')), '  resumo da marca atualiza');
   await p.keyboard.press('Control+z'); await W(500); ok(await ev(() => S.marca.nome !== 'Construtora Teste'), '  Ctrl+Z desfaz o nome');
-  await h.abre('reset'); await p.click('#tabbody [data-act=reset]'); await p.click('#tabbody [data-act=reset]'); await W(1200); await fim();
+  await sub('estudos'); await h.abre('reset'); await p.click('#tabbody [data-act=reset]'); await p.click('#tabbody [data-act=reset]'); await W(1200); await fim();
   ok(await ev(() => S.nome === DEF.nome), 'restaurar o exemplo (com confirmação)');
   semErros(p, 'cenários'); await ctx.close();
 }

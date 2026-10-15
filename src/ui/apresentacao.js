@@ -206,7 +206,7 @@ function apInit(){
 }
 setTimeout(apInit,0);   // depois do main.js (que roda no mesmo carregamento)
 
-/* ---------- link somente leitura (card na etapa Cenários) ---------- */
+/* ---------- link somente leitura (card em Entrega › Entregar) ---------- */
 ACT.apStart = ()=>apEntrar({tela:true});
 ACT.apLink = async ()=>{
   try{
@@ -218,7 +218,7 @@ ACT.apLink = async ()=>{
   }catch(e){ console.error("[link]",e); toast("Não consegui gerar o link") }
 };
 addCard("cen", { key:"apresentacao", order:20, sub:"entregar", html:()=>SEC("Apresentar e compartilhar",
-  `<div class="btngrid"><button type="button" class="btn pri" data-act="apStart">Apresentar</button><button type="button" class="btn" data-act="apLink">Copiar link</button></div>
+  `<div class="btngrid"><button type="button" class="btn" data-act="apStart">Apresentar</button><button type="button" class="btn" data-act="apLink">Copiar link</button></div>
    <div id="apLinkBox" hidden><div class="inp"><input class="t" id="apLinkOut" readonly aria-label="Link somente leitura"></div><p class="note" id="apLinkInfo" style="margin-top:6px"></p></div>`,
   {key:"apresentacao", id:"cardApres", open:true, sum:"tela cheia · link",
    info:"Apresentar: passo a passo em tela cheia (maquete 3D, potencial, produto, vendas e números-chave). Copiar link: quem abre vê o estudo como está agora, sem poder editar; nada é enviado a servidor e o estudo salvo no aparelho dele não muda."}) });
