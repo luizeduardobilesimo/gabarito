@@ -46,6 +46,9 @@ const ok = (c, msg) => { console.log((c ? '  ok   ' : '  FALHA ') + msg); if (!c
     ok(await p.evaluate(() => !!document.querySelector('#inicio .ini-vazio')), 'só o exemplo: estado vazio com chamada');
     ok(await p.evaluate(() => document.querySelectorAll('#inicio .btn.pri').length === 1), 'um único botão primário (vazio)');
     await shot('vazia');
+    await p.click('#inicio [data-ia="novo"]'); await p.waitForTimeout(400);
+    await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+    ok(await p.evaluate(() => document.getElementById('assWiz').hidden) && await aberta(), 'cancelar o assistente volta à tela inicial');
     await p.keyboard.press('Escape'); await p.waitForTimeout(250);
     ok(!(await aberta()), 'Esc volta ao estudo aberto');
 
@@ -156,7 +159,7 @@ const ok = (c, msg) => { console.log((c ? '  ok   ' : '  FALHA ') + msg); if (!c
     await p.waitForFunction(() => /excluído/.test((document.getElementById('iniSnack') || {}).textContent || ''), null, { timeout: 30000 }).catch(() => {});
     ok(await p.evaluate(async id => EST.id && EST.id !== id && !(await Repo.estudos.get(id)) && document.querySelector('#inicio [data-ia="voltar"]') !== null, idPal), 'excluir o aberto abre outro estudo por baixo');
     await p.keyboard.press('Control+z');
-    await p.waitForFunction(async id => !!(await Repo.estudos.get(id)), idPal, { timeout: 15000 }).catch(() => {});
+    for (let i = 0; i < 30 && !(await p.evaluate(async id => !!(await Repo.estudos.get(id)), idPal)); i++) await p.waitForTimeout(500);
     ok(await p.evaluate(async id => !!(await Repo.estudos.get(id)), idPal), 'Ctrl+Z desfaz a exclusão');
     // teclado: a pasta é um botão alcançável e a tela fecha com Esc
     ok(await p.evaluate(() => { const b = document.querySelector('.ini-abre'); b.focus(); return document.activeElement === b }), 'pasta focável pelo teclado');

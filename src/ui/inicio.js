@@ -421,6 +421,10 @@ function inicioAbrir(){
     document.body.appendChild(INI.el);
     INI.el.addEventListener("click", iniClique); INI.el.addEventListener("input", iniDigita); INI.el.addEventListener("change", iniMuda);
     INI.el.addEventListener("keydown", iniTecla); INI.el.addEventListener("focusout", iniSai);
+    // foco fora da tela (ex.: no body depois de abrir outro estudo por baixo): as teclas continuam sendo da tela, não do estudo
+    // (só o que está por baixo: body ou o app; o assistente e outras telas por cima cuidam das suas teclas)
+    document.addEventListener("keydown", e=>{ const t=e.target;
+      if(INI.aberto && INI.el && !INI.el.contains(t) && (t===document.body || t===document.documentElement || (t.closest && t.closest(".app")))) iniTecla(e) }, true);
     INI.el.addEventListener("scroll", ()=>INI.el.classList.toggle("rolou", INI.el.scrollTop>4), {passive:true});
     const o=LS.get("gabarito.inicio.ordem"); if(INI_ORD.some(([k])=>k===o)) INI.ord=o;
   }
