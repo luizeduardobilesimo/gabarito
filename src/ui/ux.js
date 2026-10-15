@@ -6,6 +6,7 @@
    TERMO(sigla, rótulo?)                                 → sigla sublinhada no texto que abre a explicação ao clicar
    SUBTABS(etapa, [[k,rótulo]…])                         → sub-abas de uma etapa (vão em R.sub); subAtual(etapa) → aba ativa
    setSum(key, html)                                     → atualiza o resumo de uma seção sem recriar o painel
+   SECGRP(título)                                        → rótulo de grupo entre seções (classe secgrp; UX v3)
    Glossário completo: botão "Glossário" no topo (abreGlossario()). */
 
 /* ---------- seções ---------- */
@@ -17,6 +18,14 @@ function RES(title, body, o={}){
   return `<section class="card res${o.cls?" "+o.cls:""}" ${o.id?`id="${o.id}"`:""}><div class="ch"><h2>${title}</h2>${o.aside!=null?`<span class="aside" ${o.asideId?`id="${o.asideId}"`:""}>${o.aside}</span>`:""}</div><div class="cb">${body}</div></section>`;
 }
 function setSum(key, html){ const e=document.getElementById("sum-"+key); if(e && e.innerHTML!==html) e.innerHTML=html }
+/* rótulo de grupo entre seções (UX v3): SECGRP("Custos") + SEC(…) + SEC(…) + SECGRP("Receitas") + … — só marcação, sem estado */
+function SECGRP(title){ return `<div class="secgrp" role="heading" aria-level="3">${title}</div>` }
+(function secgrpCss(){ const s=document.createElement("style"); s.textContent=`
+.pbody>.secgrp{font-family:var(--f-display);font-variation-settings:"wdth" 118;font-size:10px;font-weight:650;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;gap:8px;align-items:center;margin:6px 2px -4px}
+.pbody>.secgrp::after{content:"";flex:1;height:1px;background:var(--line)}
+.pbody>.secgrp:first-child{margin-top:0}
+.pbody>.secgrp[hidden]{display:none}
+`; document.head.appendChild(s) })();
 
 /* ---------- mais opções ---------- */
 const UXADV = LS.get("gabarito.adv") || {};
