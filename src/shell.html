@@ -705,13 +705,47 @@ html.auth-on body{overflow:hidden}
 
 <div class="app">
   <header class="top">
-    <div class="brand" aria-label="Gabarito, ferramenta da Rixel"><svg class="rx-ic" viewBox="0 0 32 32" aria-hidden="true"><rect class="t" y="1" width="32" height="30" rx="6"/><path class="g" d="M11.2 8.8L18.6 16.2L11.2 23.6L8.3 20.7L12.8 16.2L8.3 11.7ZM21.2 9.35L23.75 11.9L21.2 14.45L18.65 11.9ZM21.2 17.95L23.75 20.5L21.2 23.05L18.65 20.5Z"/></svg><span class="wm">gabarito<i>.</i></span><span class="by">by Rixel</span></div>
+    <!-- topo (UX v3 §6.1): marca (Meus estudos) · nome do estudo ▾ · checklist · desfazer · salvo | etapas | buscar · apresentar · PDF · mais -->
+    <button type="button" class="brand" id="brandBtn" title="Meus estudos" aria-label="Gabarito, ferramenta da Rixel — Meus estudos"><svg class="rx-ic" viewBox="0 0 32 32" aria-hidden="true"><rect class="t" y="1" width="32" height="30" rx="6"/><path class="g" d="M11.2 8.8L18.6 16.2L11.2 23.6L8.3 20.7L12.8 16.2L8.3 11.7ZM21.2 9.35L23.75 11.9L21.2 14.45L18.65 11.9ZM21.2 17.95L23.75 20.5L21.2 23.05L18.65 20.5Z"/></svg><span class="wm">gabarito<i>.</i></span><span class="by">by Rixel</span></button>
     <div class="sep"></div>
-    <div class="proj"><input id="projName" aria-label="Nome do estudo" placeholder="Nome do estudo"><div class="hist" role="group" aria-label="Histórico de alterações"><button type="button" class="btn ghost icon" id="undoBtn" aria-label="Desfazer" title="Desfazer (Ctrl+Z)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5h10a5 5 0 0 1 0 10H11"/></svg></button><button type="button" class="btn ghost icon" id="redoBtn" aria-label="Refazer" title="Refazer (Ctrl+Shift+Z)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 4.5-4.5L15 5"/><path d="M19.5 9.5h-10a5 5 0 0 0 0 10H13"/></svg></button></div></div>
-    <div class="acts"><button class="btn ghost icon" id="themeBtn" aria-label="Alternar entre claro e escuro" title="Tema claro / escuro"><svg viewBox="0 0 24 24" aria-hidden="true" class="i-moon"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true" class="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><span class="tl"></span></button><button class="btn" id="apTop" title="Apresentar o estudo em tela cheia" aria-label="Apresentar"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:15px;height:15px;fill:currentColor"><path d="M7 4.5v15l12-7.5z"/></svg><span class="lb">Apresentar</span></button><button class="btn" id="pdfTop" title="Baixar o relatório em PDF" aria-label="Relatório PDF"><svg viewBox="0 0 24 24" aria-hidden="true" class="ico"><path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4M12 11v6M9.5 14.5 12 17l2.5-2.5"/></svg><span class="lb">Relatório PDF</span></button></div>
+    <div class="proj">
+      <div class="nv-est"><input id="projName" aria-label="Nome do estudo" placeholder="Nome do estudo" autocomplete="off"><button type="button" class="nv-chev" id="estMenuBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="estMenu" aria-label="Menu do estudo" title="Novo, abrir, duplicar, versões"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
+        <div class="nv-menu" id="estMenu" role="menu" aria-label="Estudo" hidden>
+          <button type="button" role="menuitem" data-nv="novo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Novo estudo…</button>
+          <button type="button" role="menuitem" data-nv="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>Meus estudos</button>
+          <hr>
+          <button type="button" role="menuitem" data-nv="dup"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></svg>Duplicar</button>
+          <button type="button" role="menuitem" data-nv="versao"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Salvar versão</button>
+          <button type="button" role="menuitem" data-nv="alt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12.2 8.5 4.5 8.5-4.5M3.5 16.2l8.5 4.5 8.5-4.5"/></svg>Guardar como alternativa</button>
+          <hr>
+          <button type="button" role="menuitem" data-nv="jsonAbrir"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4M12 17v-6M9.5 13.5 12 11l2.5 2.5"/></svg>Abrir .json…</button>
+          <button type="button" role="menuitem" data-nv="reset"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v3.7h3.7"/></svg><span class="tl">Restaurar exemplo</span></button>
+        </div></div>
+      <span class="nv-anel" id="navAnel"></span>
+      <div class="hist" role="group" aria-label="Histórico de alterações"><button type="button" class="btn ghost icon" id="undoBtn" aria-label="Desfazer" title="Desfazer (Ctrl+Z)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5h10a5 5 0 0 1 0 10H11"/></svg></button><button type="button" class="btn ghost icon" id="redoBtn" aria-label="Refazer" title="Refazer (Ctrl+Shift+Z)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 4.5-4.5L15 5"/><path d="M19.5 9.5h-10a5 5 0 0 0 0 10H13"/></svg></button></div>
+      <span class="nv-salvo" id="saveStat" role="status" title="O estudo é salvo sozinho neste navegador"><i aria-hidden="true"></i><span>Salvo</span></span>
+    </div>
+    <nav class="rail" id="rail" aria-label="Etapas"></nav>
+    <div class="acts">
+      <button type="button" class="btn ghost icon" id="buscaBtn" aria-label="Buscar campo" title="Buscar campo (Ctrl+K)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg></button>
+      <button class="btn" id="apTop" title="Apresentar o estudo em tela cheia" aria-label="Apresentar"><svg viewBox="0 0 24 24" aria-hidden="true" class="ico"><path d="M7.5 5.2v13.6L18.5 12z"/></svg><span class="lb">Apresentar</span></button>
+      <button class="btn" id="pdfTop" title="Baixar o relatório em PDF" aria-label="Relatório PDF"><svg viewBox="0 0 24 24" aria-hidden="true" class="ico"><path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4M12 11v6M9.5 14.5 12 17l2.5-2.5"/></svg><span class="lb">Relatório PDF</span></button>
+      <div class="nv-mais"><button type="button" class="btn ghost icon" id="maisBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="maisMenu" aria-label="Mais opções" title="Mais opções"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/></svg></button>
+        <div class="nv-menu r" id="maisMenu" role="menu" aria-label="Mais opções" hidden>
+          <button type="button" role="menuitem" data-nv="busca"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>Buscar campo<kbd>Ctrl K</kbd></button>
+          <button type="button" role="menuitem" data-nv="gloss" id="glossBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.6v.1"/></svg>Glossário</button>
+          <button type="button" role="menuitem" id="themeBtn"><svg viewBox="0 0 24 24" aria-hidden="true" class="i-moon"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true" class="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><span class="tl">Tema escuro</span></button>
+          <hr>
+          <button type="button" role="menuitem" data-nv="ap" class="nv-cel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5.2v13.6L18.5 12z"/></svg>Apresentar</button>
+          <button type="button" role="menuitem" data-nv="pdf" class="nv-cel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4M12 11v6M9.5 14.5 12 17l2.5-2.5"/></svg>Relatório PDF</button>
+          <button type="button" role="menuitem" data-nv="zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5 12 3.5l8 4v9l-8 4-8-4z"/><path d="M4 7.5l8 4 8-4M12 11.5v9"/></svg>DXF + IFC</button>
+          <button type="button" role="menuitem" data-nv="json"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></svg>Salvar .json</button>
+          <button type="button" role="menuitem" data-nv="copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7.5" y="4.5" width="9" height="15" rx="2"/><path d="M10 9h4M10 12h4M10 15h2.5"/></svg>Copiar resumo</button>
+          <button type="button" role="menuitem" data-nv="link"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Link somente leitura</button>
+          <button type="button" role="menuitem" data-nv="marca"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15.5 11 12l2.5 2.5L15 13l2 2.5"/><circle cx="9" cy="9" r="1.3"/></svg>Marca no PDF</button>
+        </div></div>
+    </div>
   </header>
-
-  <nav class="rail" id="rail" aria-label="Etapas"></nav>
 
   <aside class="panel">
     <div class="phead" id="phead"></div>
@@ -723,7 +757,7 @@ html.auth-on body{overflow:hidden}
     <div class="view" id="view">
       <div class="viewbar">
         <!-- barra da vista: qual vista + onde estou (pavimento, torre, andar, corte, mapa) · à direita: legenda, sol, enquadrar -->
-        <div class="seg" id="viewSeg" role="group" aria-label="Vista"><button data-v="3d">3D</button><button data-v="impl">Implantação</button><button data-v="gar">Garagem</button><button data-v="tipo">Tipo</button><button data-v="andar">Andares</button><button data-v="clima">Mapas</button><button data-v="v3d">Vento 3D</button></div>
+        <div class="seg" id="viewSeg" role="group" aria-label="Vista"><button data-v="3d">3D</button><button data-v="impl">Implantação</button><button data-v="gar">Garagem</button><button data-v="tipo">Tipo</button><button data-v="andar">Andares</button><button data-v="clima">Sol e vento</button><button data-v="v3d">Vento 3D</button></div>
         <span class="vbreak" aria-hidden="true"></span>
         <div class="seg" id="floorSeg" hidden></div>
         <div class="seg" id="towerSeg" hidden></div>

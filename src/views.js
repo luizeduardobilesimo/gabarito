@@ -59,7 +59,7 @@ function finishDraw(){
   else if(DRAWT==="entorno"){ const n={pts, h:12, nome:"Vizinho "+(S.entorno.length+1)}; S.entorno.push(n); if(typeof entSelecionar==="function") entSelecionar(n,"set"); toast("Volume do entorno criado com 12 m. Ajuste a altura na barra abaixo.") }
   else if(DRAWT==="vazio"){ const alvo=entQualContem(S.entorno, G.centroid(pts)); if(alvo && entVazioOk(alvo,pts)){ (alvo.vazios=alvo.vazios||[]).push(pts); if(typeof entSelecionar==="function") entSelecionar(alvo,"set"); toast("Vazio criado") } else toast("O vazio precisa ficar inteiro dentro de uma edificação") }
   else { const k=DRAWT.split(":")[1]; S.custom[k]=pts; toast("Limite personalizado aplicado") }
-  setTool("edit"); update(); fit3d(); if(TAB==="terreno"||TAB==="clima") renderTab();
+  setTool("edit"); update(); fit3d(); if(TAB==="terreno"||emClima()) renderTab();
 }
 c2.addEventListener("pointerdown",e=>{
   if(!HINTSEEN[VIEW+TOOL]){ HINTSEEN[VIEW+TOOL]=1; document.getElementById("hint").hidden=true }
@@ -181,15 +181,15 @@ document.getElementById("fitBtn").addEventListener("click",()=>{ VIEW==="v3d"? c
 document.getElementById("rampMove").addEventListener("click",()=>{ RAMPMOVE=!RAMPMOVE; viewbarSegs(window._last.m); hintFor() });
 document.getElementById("rampRot").addEventListener("click",()=>{ const m=window._last.m; if(!m.ramp) return; const a=S.estudo.rampa? S.estudo.rampa.a : Math.atan2(m.ramp.dir[1],m.ramp.dir[0])*180/Math.PI; S.estudo.rampa={x:m.ramp.c[0],y:m.ramp.c[1],a:(a+90)%360}; update() });
 document.getElementById("rampAuto").addEventListener("click",()=>{ S.estudo.rampa=null; RAMPMOVE=false; update(); toast("Rampa no automático (junto ao acesso de veículos)") });
-document.getElementById("climaSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; S.clima.modo=b.dataset.cm; viewbarSegs(window._last.m); hintFor(); climaRun(); if(TAB==="clima"){ CSUB=S.clima.modo; renderTab() } });
+document.getElementById("climaSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; S.clima.modo=b.dataset.cm; viewbarSegs(window._last.m); hintFor(); climaRun(); if(emClima()) ACT.csub({dataset:{v:S.clima.modo}}) });
 // clima: cálculo sob demanda
 let climaRAF=null;
 function climaRun(){
-  if(VIEW!=="clima" && TAB!=="clima") return; const m=window._last.m;
+  if(VIEW!=="clima" && !emClima()) return; const m=window._last.m;
   if(S.clima.modo==="sol"){ sunHours(S,m); redraw2d(); climaInfo(); rebuild3d(m); return }
   windSetup(S,m);
   if(climaRAF) return;
-  const tick=()=>{ climaRAF=null; if(S.clima.modo!=="vento" || (VIEW!=="clima" && TAB!=="clima")) return;
+  const tick=()=>{ climaRAF=null; if(S.clima.modo!=="vento" || (VIEW!=="clima" && !emClima())) return;
     if(WIND.steps<2400){ windStep(12); redraw2d(); if(WIND.steps%120===0){ climaInfo(); if(VIEW==="3d") rebuild3d(window._last.m) } climaRAF=requestAnimationFrame(tick) } else { climaInfo(); rebuild3d(window._last.m) } };
   climaRAF=requestAnimationFrame(tick);
 }
@@ -198,7 +198,7 @@ function sunUI(){ const sb=document.getElementById("sunBox"); document.getElemen
   document.getElementById("sunMes").value=S.sol.mes; document.getElementById("sunHora").value=S.sol.hora;
   const v=sunVector(), meses=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"], hh=Math.floor(S.sol.hora), mm=Math.round((S.sol.hora-hh)*60);
   document.getElementById("sunInfo").textContent = `${S.sol.dia}/${meses[S.sol.mes-1]} ${hh}h${String(mm).padStart(2,"0")} · alt. ${nf(v.alt*180/Math.PI,0)}°` }
-document.getElementById("sunBtn").addEventListener("click",()=>{ S.sol.on=!S.sol.on; sunUI(); applySun(); save(); if(TAB==="clima") renderTab() });
+document.getElementById("sunBtn").addEventListener("click",()=>{ S.sol.on=!S.sol.on; sunUI(); applySun(); save(); if(emClima()) renderTab() });
 document.getElementById("sunMes").addEventListener("input",e=>{ S.sol.mes=+e.target.value; S.sol.dia=21; sunUI(); applySun(); if(S.clima.modo==="sol") climaRun() });
 document.getElementById("sunHora").addEventListener("input",e=>{ S.sol.hora=+e.target.value; sunUI(); applySun() });
 // animação do dia: o sol percorre a trajetória e as sombras andam junto

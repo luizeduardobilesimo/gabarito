@@ -338,6 +338,12 @@ async function tRegras(b) {
   ok(await ev(() => !!document.getElementById('f-regras-afTorresDiv') && !document.getElementById('f-regras-afTorresDiv').closest('[hidden]')), '  Mais regras mostra afastamentos e áreas');
   await preenche('#f-regras-caMax', 5); await fim();
   ok(await ev(() => S.regras.caMax === 5), 'editar aproveitamento máximo'); await undo(); ok(await J('S.regras') === R0, '  Ctrl+Z desfaz o CA');
+  // busca global (Ctrl+K, src/ui/busca.js), no lugar da busca de parâmetros das regras
+  await p.keyboard.press('Control+k'); await W(300); await p.fill('#buscaQ', 'pé-direito'); await W(500);
+  ok(await ev(() => document.querySelectorAll('#buscaL .bq-r').length >= 1), 'busca global (Ctrl+K) acha o pé-direito');
+  await p.keyboard.press('Enter'); await W(1500);
+  ok(await ev(() => /^produto\.pe/.test(((document.activeElement || {}).dataset || {}).p || '')), '  Enter leva ao campo', await ev(() => ((document.activeElement || {}).dataset || {}).p));
+  await ev(() => goStep('terreno')); await W(500); await h.ocioso();
   await abre('forma');
   await p.click('#tabbody details[data-key="forma"] label.sw'); await fim();
   ok(await ev(() => S.forma.on), 'ligar altura e recuos por faixa');
@@ -709,7 +715,7 @@ async function tProjeto(b) {
    ===================================================================================== */
 async function tClima(b) {
   const { ctx, p, h } = await abrir(b); const { ev, W, undo, fim, sub, etapa, abre } = h;
-  await etapa('clima', 'sol'); await W(800);
+  await etapa('projeto', 'sol'); await W(800);
   ok(/h/.test(await p.locator('#solInfo').textContent()), 'sol: resultado no topo');
   await p.click('#tabbody [data-act=sd][data-v="12,21"]'); await fim(); ok(await ev(() => S.sol.mes === 12), 'sol: botão Verão (21/dez)');
   await p.click('#solAnimBtn'); await W(1200);
@@ -862,8 +868,8 @@ async function tCen(b) {
 async function tGlobal(b) {
   const { ctx, p, h } = await abrir(b); const { ev, W, fim } = h;
   // percorre todas as etapas e sub-abas: painel montado, vista certa, sem erro
-  const ESP = { terreno: 'impl', projeto: null, clima: null };
-  for (const k of ['terreno', 'regras', 'produto', 'viab', 'projeto', 'clima', 'cen']) {
+  const ESP = { terreno: 'impl', projeto: null };
+  for (const k of await p.$$eval('#rail [data-step]', e => e.map(x => x.dataset.step))) {
     await p.click(`#rail [data-step=${k}]`); await W(500);
     const subs = await p.$$eval('#phead .sub [data-v]', e => e.map(x => x.dataset.v));
     for (const s of subs.length ? subs : [null]) {
@@ -896,14 +902,15 @@ async function tGlobal(b) {
   await p.fill('#projName', 'Estudo QA'); await p.press('#projName', 'Tab'); await fim(); ok(await ev(() => S.nome) === 'Estudo QA', 'renomear o estudo no topo');
   await p.keyboard.press('Control+z'); await W(400); ok(await ev(() => S.nome) !== 'Estudo QA', '  Ctrl+Z desfaz o nome');
   // tema
-  const t0 = await ev(() => document.documentElement.dataset.theme); await p.click('#themeBtn'); await W(400);
-  ok(await ev(() => document.documentElement.dataset.theme) !== t0, 'alternar tema'); await p.click('#themeBtn'); await W(300);
+  // tema e glossário ficam no menu "…" do topo
+  const t0 = await ev(() => document.documentElement.dataset.theme); await p.click('#maisBtn'); await W(200); await p.click('#themeBtn'); await W(400);
+  ok(await ev(() => document.documentElement.dataset.theme) !== t0, 'alternar tema'); await p.click('#maisBtn'); await W(200); await p.click('#themeBtn'); await W(300);
   // glossário e ⓘ
-  await p.click('#glossBtn'); await W(300); ok(await p.isVisible('#uxGloss'), 'glossário abre');
+  await p.click('#maisBtn'); await W(200); await p.click('#glossBtn'); await W(300); ok(await p.isVisible('#uxGloss'), 'glossário abre');
   await p.fill('#glossQ', 'VGV'); await W(200); ok(await ev(() => document.querySelectorAll('#glossL .gi').length >= 1), '  busca no glossário');
   await p.keyboard.press('Escape'); await W(200); ok(await p.isHidden('#uxGloss'), '  Esc fecha');
   await p.click('#kpis .termo[data-info=VGV]'); await W(300); ok(await p.isVisible('#uxPop'), 'sigla da régua abre o ⓘ'); await p.keyboard.press('Escape'); await W(200);
-  await p.click('#rail [data-step=regras]'); await W(500);
+  await p.click('#rail [data-step=terreno]'); await W(500);
   await p.click('#tabbody .info >> nth=0'); await W(300); ok(await p.isVisible('#uxPop'), 'ⓘ de uma seção abre a explicação'); await p.keyboard.press('Escape');
   // seções e Mais opções
   const sd = await ev(() => { const d = [...document.querySelectorAll('#tabbody details.sec:not([open])')][0]; if (!d) return null; d.querySelector('summary').click(); return d.dataset.key });
@@ -922,18 +929,18 @@ async function tGlobal(b) {
 async function tCelular(b) {
   for (const tema of ['light', 'dark']) {
     const { ctx, p, h } = await abrir(b, { vp: { width: 400, height: 860 }, dsf: 2, touch: true, tema }); const { ev, W } = h;
-    for (const [s, sb] of [['terreno'], ['produto'], ['viab'], ['projeto', 'gar'], ['projeto', 'tipo'], ['clima', 'sol'], ['cen']]) {
+    for (const [s, sb] of [['terreno'], ['produto'], ['viab'], ['projeto', 'gar'], ['projeto', 'tipo'], ['projeto', 'sol'], ['cen']]) {
       await p.tap(`#rail [data-step=${s}]`); await W(700); if (sb) { await p.tap(`#phead .sub [data-v="${sb}"]`); await W(900) }
       const nome = s + (sb ? '/' + sb : '');
       const r = await ev(() => {
         const vis = e => { const r = e.getBoundingClientRect(); return r.width && r.height && getComputedStyle(e).visibility !== 'hidden' };
-        const small = [...document.querySelectorAll('.top button, .viewbar button, .vtools button, #rail button, #phead button, #tabbody button, #pfoot button, #tabbody .sw')].filter(e => { const r = e.getBoundingClientRect(); return vis(e) && (e.closest('#rail') || (r.top > 30 && r.bottom < innerHeight - 90)) && (r.height < 40 || r.width < 32) && !(() => { const cx = r.left + r.width / 2, cy = r.top + r.height / 2; return [[cx, cy - 18], [cx, cy + 18], [cx - 16, cy], [cx + 16, cy]].every(([x, y]) => { const h = document.elementFromPoint(x, y); return h && (h === e || e.contains(h)) }) })() }).map(e => (e.id || e.className || e.tagName) + ':' + (e.textContent || '').trim().slice(0, 18) + ' ' + Math.round(e.getBoundingClientRect().width) + 'x' + Math.round(e.getBoundingClientRect().height));
+        const small = [...document.querySelectorAll('.top button, .viewbar button, .vtools button, #rail button, #phead button, #tabbody button, #pfoot button, #tabbody .sw')].filter(e => { const r = e.getBoundingClientRect(), tb = document.getElementById('tabbody').getBoundingClientRect(), dentro = !e.closest('#tabbody') || (r.top >= tb.top + 20 && r.bottom <= tb.bottom - 20); return vis(e) && dentro && (e.closest('#rail') || (r.top > 30 && r.bottom < innerHeight - 90)) && (r.height < 40 || r.width < 32) && !(() => { const cx = r.left + r.width / 2, cy = r.top + r.height / 2; return [[cx, cy - 18], [cx, cy + 18], [cx - 16, cy], [cx + 16, cy]].every(([x, y]) => { const h = document.elementFromPoint(x, y); return h && (h === e || e.contains(h)) }) })() }).map(e => (e.id || e.className || e.tagName) + ':' + (e.textContent || '').trim().slice(0, 18) + ' ' + Math.round(e.getBoundingClientRect().width) + 'x' + Math.round(e.getBoundingClientRect().height));
         const over = document.documentElement.scrollWidth > innerWidth + 1;
         const cut = [...document.querySelectorAll('.top *, #kpis *')].filter(e => e.children.length === 0 && e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow === 'hidden').map(e => e.textContent.trim().slice(0, 20));
         // ferramentas do palco: cada botão inteiro dentro da tela e do seu contêiner (a faixa de vistas #viewSeg rola de propósito, com esmaecido)
         const barra = [...document.querySelectorAll('#view .viewbar button:not(#viewSeg button), #vtools button')].filter(vis).filter(e => { const r = e.getBoundingClientRect(); let c = e.parentElement; while (c && c.id !== 'view') { const s = getComputedStyle(c); if (/(hidden|auto|scroll|clip)/.test(s.overflowX)) { const q = c.getBoundingClientRect(); if (r.left < q.left - 1 || r.right > q.right + 1) return true } c = c.parentElement } return r.left < -1 || r.right > innerWidth + 1 }).map(e => e.textContent.trim().slice(0, 14));
         const pn = document.getElementById('projName'); const nomeCorta = pn ? pn.scrollWidth > pn.clientWidth + 1 : false;
-        const rail = document.getElementById('rail').getBoundingClientRect(), pb = parseFloat(getComputedStyle(document.querySelector('.app')).paddingBottom);
+        const rail = document.getElementById('rail').getBoundingClientRect(), pb = Math.round(rail.top - document.querySelector('.panel').getBoundingClientRect().bottom + rail.height);   // a folha termina acima da barra de etapas
         return { small: small.slice(0, 10), over, cut, barra, nomeCorta, nome: pn && pn.value, railH: Math.round(rail.height), pb };
       });
       ok(!r.over, `[${tema}] ${nome}: sem rolagem lateral`);

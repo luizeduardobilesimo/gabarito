@@ -22,8 +22,8 @@ function extendDEF(key, obj){
    when() = mostrar só quando ativo, html() = marcação (use CARD/NUM/SLD…), live(m,f,fast) = atualização sem recriar o painel */
 const CARDS = {};
 /* etapas antigas que viraram parte de outra (UX v3): addCard("regras",…) passa a ir para "terreno" etc.
-   Vazio = inativo. Valor: "etapa" ou {k:"etapa", sub:{subAntiga:"subNova"}} (ex.: clima:{k:"projeto", sub:{v3d:"vento"}}). */
+   Preenchido em ui.js (P1). Valor: "etapa" ou {k:"etapa", sub:{subAntiga:"subNova"}, semSub:[subs]} (semSub = sub-abas de um card antigo sem sub-aba). */
 const ETAPA_ALIAS = {};
-function etapaAlias(step, sub){ const a = ETAPA_ALIAS[step]; if(!a) return [step, sub]; if(typeof a === "string") return [a, sub]; return [a.k, sub != null && a.sub && a.sub[sub] != null ? a.sub[sub] : sub] }
+function etapaAlias(step, sub){ const a = ETAPA_ALIAS[step]; if(!a) return [step, sub]; if(typeof a === "string") return [a, sub]; if(sub == null && a.semSub) return [a.k, a.semSub.slice()]; return [a.k, sub != null && a.sub && a.sub[sub] != null ? a.sub[sub] : sub] }
 function addCard(step, c){ const [st, sb] = etapaAlias(step, c.sub); if(sb !== c.sub) c.sub = sb; step = st; const l = CARDS[step] = CARDS[step] || []; const i = l.findIndex(x=>x.key===c.key); if(i>=0) l.splice(i,1); l.push(c); l.sort((a,b)=>(a.order??60)-(b.order??60)) }
-function cardsFor(step, sub){ return (CARDS[step]||[]).filter(c=> (!c.sub || c.sub===sub) && (!c.when || c.when()!==false)) }
+function cardsFor(step, sub){ return (CARDS[step]||[]).filter(c=> (!c.sub || c.sub===sub || (Array.isArray(c.sub) && c.sub.includes(sub))) && (!c.when || c.when()!==false)) }   // sub pode ser uma lista (alias semSub)

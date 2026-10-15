@@ -144,7 +144,7 @@ function rebuild3d(m, force){
   // andar cortado: planta do pavimento sobre a laje
   if(fl) cutFloor(m, fl);
   // mapa de clima sobre o terreno
-  if(typeof TAB!=="undefined" && TAB==="clima" && CSUB!=="v3d" && S.clima.overlay3d){
+  if(typeof emClima==="function" && emClima() && CSUB!=="v3d" && S.clima.overlay3d){
     const kind=S.clima.modo, cv=fieldCanvas(kind);
     if(cv){ const F=fieldFrame(kind), z = kind==="vento"? S.clima.ventoAlt : 0.12;
       const o=F.o, corner=(i,j)=>[(F.fx[0]*(F.cs*i)+F.fy[0]*(F.cs*j)) + (kind==="vento"? (F.fx[0]*o[0]+F.fy[0]*o[1]) : o[0]), (F.fx[1]*(F.cs*i)+F.fy[1]*(F.cs*j)) + (kind==="vento"? (F.fx[1]*o[0]+F.fy[1]*o[1]) : o[1])];

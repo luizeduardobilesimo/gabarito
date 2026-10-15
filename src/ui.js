@@ -90,7 +90,7 @@ function onClick(e){
   const a=e.target.closest("[data-act]");
   if(a && ACT[a.dataset.act]){ e.preventDefault(); ACT[a.dataset.act](a); return }
 }
-[TB, document.getElementById("phead"), document.getElementById("pfoot")].forEach(r=>{ r.addEventListener("input",onInput); r.addEventListener("change",onChange); r.addEventListener("click",onClick) });
+[TB, document.getElementById("phead"), document.getElementById("pfoot"), document.querySelector(".top")].forEach(r=>{ if(!r) return; r.addEventListener("input",onInput); r.addEventListener("change",onChange); r.addEventListener("click",onClick) });
 /* filtro rápido de parâmetros */
 TB.addEventListener("input",e=>{ if(e.target.id!=="qFind") return; const q=e.target.value.trim().toLowerCase();
   TB.querySelectorAll("[data-q]").forEach(f=>{ f.hidden = !!q && !f.dataset.q.includes(q) });
@@ -99,94 +99,172 @@ TB.addEventListener("input",e=>{ if(e.target.id!=="qFind") return; const q=e.tar
 TB.addEventListener("toggle",e=>{ const d=e.target; if(d.tagName!=="DETAILS"||!d.dataset.key) return; const st=LS.get("gabarito.det")||{}; st[TAB+":"+d.dataset.key]=d.open?1:0; LS.set("gabarito.det",st) },true);
 function restoreDetails(){ const st=LS.get("gabarito.det")||{}; TB.querySelectorAll("details[data-key]").forEach(d=>{ const v=st[TAB+":"+d.dataset.key]; if(v!=null) d.open=!!v }) }
 
-/* ================= etapas ================= */
+/* ================= etapas (UX v3 §2: 5 etapas) =================
+   terreno → produto → viab → projeto (gar|tipo|sol|vento; o túnel 3D é o modo "v3d" dentro de Vento) → cen (Entrega).
+   As chaves antigas viram aliases: regras → terreno, clima → projeto (goStep, LS gabarito.step, addCard via ETAPA_ALIAS).
+   PSUB = sub-aba de Projeto · CSUB = modo de clima (sol|vento|v3d) · VMODO = último modo do Vento (vento|v3d).
+   emClima() = Projeto › Sol ou Vento (substitui o antigo TAB==="clima"). Casca, menus, régua e celular: src/ui/navegacao.js. */
 const IC = {
   terreno:'<path d="M4.5 17.5 7 5.5l10.5-1.8 2.5 13.3z"/><circle cx="4.5" cy="17.5" r="1.4"/><circle cx="7" cy="5.5" r="1.4"/><circle cx="17.5" cy="3.7" r="1.4"/><circle cx="20" cy="17" r="1.4"/>',
-  regras:'<path d="M5 3.5h10l4 4V20.5H5z"/><path d="M15 3.5v4h4M8.5 11h7M8.5 14.5h7M8.5 18h4"/>',
   produto:'<path d="M3 20.5h18M5 20.5V10h5v10.5M10 20.5V4h9v16.5"/><path d="M13 7.5h3M13 11h3M13 14.5h3"/>',
   viab:'<path d="M3.5 20.5h17M6 17V12M10.5 17V8M15 17v-6M19.5 17V5"/><path d="m5 9 5-4 4.5 3 5-4.5" opacity=".55"/>',
   projeto:'<rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path d="M3.5 11h7v9.5M10.5 3.5V8M14 14.5h6.5M14 14.5v6"/>',
-  clima:'<circle cx="8.5" cy="8" r="3.2"/><path d="M8.5 2v1.3M3.3 4.4l.9.9M2.5 8h1.3M13.7 4.4l-.9.9"/><path d="M4 14.5h11.5a2.6 2.6 0 1 0-2.6-2.6M3 18.5h14.5a2.3 2.3 0 1 1-2.3 2.3"/>',
-  cen:'<path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12.2 8.5 4.5 8.5-4.5M3.5 16.2l8.5 4.5 8.5-4.5"/>'
+  cen:'<path d="M12 14.5v-11M8 7.5l4-4 4 4"/><path d="M5 12.5v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>'
 };
 const STEPS = [
-  {k:"terreno", nome:"Terreno", t:"Terreno", d:"Desenhe o lote e marque frentes e acessos."},
-  {k:"regras", nome:"Regras", t:"Regras", d:"Limites da prefeitura e padrões do projeto."},
-  {k:"produto", nome:"Produto", t:"Produto", d:"Potencial do terreno e a melhor combinação."},
-  {k:"viab", nome:"Viabilidade", t:"Viabilidade", d:"Resultado, fluxo de caixa e premissas."},
-  {k:"projeto", nome:"Projeto", t:"Projeto", d:"Garagem, pavimento tipo e andares."},
-  {k:"clima", nome:"Clima", t:"Sol e vento", d:"Insolação, vento no chão e túnel de vento."},
-  {k:"cen", nome:"Cenários", t:"Cenários e entrega", d:"Salve, compare e exporte o estudo."}
+  {k:"terreno", nome:"Terreno", t:"Terreno", q:"Onde é e o que a lei permite"},
+  {k:"produto", nome:"Produto", t:"Produto", q:"O que construir"},
+  {k:"viab", nome:"Viabilidade", t:"Viabilidade", q:"Vale a pena?"},
+  {k:"projeto", nome:"Projeto", t:"Projeto", q:"Funciona no desenho?", opc:true},
+  {k:"cen", nome:"Entrega", t:"Entrega", q:"Mostrar e guardar"}
 ];
-let TAB = LS.get("gabarito.step") || "produto"; if(!STEPS.some(s=>s.k===TAB)) TAB="produto";
-let PSUB = "gar", CSUB = S.clima.modo==="vento"? "vento" : "sol";
+const PROJ_SUBS = [["gar","Garagem"],["tipo","Andares"],["sol","Sol"],["vento","Vento"]];
+/* etapas antigas → novas para addCard (hooks.js): regras → Terreno; clima → Projeto (v3d → Vento; card de clima sem sub-aba aparece em Sol e Vento) */
+Object.assign(ETAPA_ALIAS, { regras:"terreno", clima:{k:"projeto", sub:{v3d:"vento"}, semSub:["sol","vento"]} });
+let PSUB = "gar", CSUB = S.clima.modo==="vento"? "vento" : "sol", VMODO = "vento";
+let TAB = (()=>{ const v=LS.get("gabarito.step"), ps=LS.get("gabarito.psub");
+  if(PROJ_SUBS.some(x=>x[0]===ps)){ PSUB=ps; if(ps==="sol") CSUB="sol"; if(ps==="vento") CSUB="vento" }
+  if(v==="clima"){ PSUB="sol"; CSUB="sol"; return "projeto" }
+  if(v==="regras") return "terreno";
+  return STEPS.some(s=>s.k===v)? v : "terreno" })();
+if(TAB!=="projeto" || (PSUB!=="sol" && PSUB!=="vento")) CSUB = S.clima.modo==="vento"? "vento" : "sol";
+function emClima(){ return TAB==="projeto" && (PSUB==="sol" || PSUB==="vento") }
 function railHTML(){
-  return STEPS.map((s,i)=>`<button type="button" data-step="${s.k}" ${TAB===s.k?'aria-current="page"':""} title="${i+1}. ${s.t}"><span class="st" id="st-${s.k}" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true">${IC[s.k]}</svg>${s.nome}</button>`).join("");
+  const ok='<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3 5 8.6l4.6-5"/></svg>';
+  return STEPS.map((s,i)=>(i?`<span class="ln" id="ln-${s.k}" aria-hidden="true"></span>`:"")+`<button type="button" data-step="${s.k}" ${TAB===s.k?'aria-current="page"':""} title="${i+1}. ${s.t} — ${s.q}${s.opc?" (opcional)":""}"><span class="n"><b>${i+1}</b>${ok}</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${IC[s.k]}</svg><span class="lb">${s.nome}</span><span class="st" id="st-${s.k}" hidden></span></button>`).join("");
 }
 document.getElementById("rail").innerHTML=railHTML();
 document.getElementById("rail").addEventListener("click",e=>{ const b=e.target.closest("[data-step]"); if(b) goStep(b.dataset.step) });
+/* chave antiga ou sub-aba antiga → [etapa, sub] do fluxo novo */
+function navAlias(k, sub){
+  if(k==="regras") return ["terreno", null];
+  if(k==="clima"){ if(sub==="v3d"||sub==="vento"){ VMODO=sub; return ["projeto","vento"] } return ["projeto","sol"] }
+  if(!STEPS.some(s=>s.k===k)) return ["terreno", null];
+  return [k, sub];
+}
+function psubSet(v){
+  if(v==="andar") v="tipo";
+  if(v==="v3d"){ VMODO="v3d"; v="vento" }
+  if(!PROJ_SUBS.some(x=>x[0]===v)) v="gar";
+  PSUB=v; LS.set("gabarito.psub",v);
+  if(v==="sol") CSUB="sol"; else if(v==="vento") CSUB = VMODO==="v3d"? "v3d" : "vento";
+}
+function railCur(){ document.querySelectorAll("#rail [data-step]").forEach(b=>{ if(b.dataset.step===TAB) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current") }) }
 function goStep(k, sub){
+  [k, sub] = navAlias(k, sub);
   const prev=TAB; TAB=k; LS.set("gabarito.step",k);
-  if(k==="projeto" && sub) PSUB=sub; if(k==="clima" && sub) CSUB=sub;
-  document.querySelectorAll("#rail [data-step]").forEach(b=>{ if(b.dataset.step===k) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current") });
+  if(k==="projeto" && sub) psubSet(sub);
+  railCur();
   renderTab();
   const want = stepView();
   if(want && want!==VIEW) setView(want);
-  if(prev!==k && matchMedia("(max-width:900px)").matches) document.querySelector(".panel").scrollIntoView({behavior:"smooth",block:"start"});
+  if(prev!==k && typeof navEtapaMudou==="function") navEtapaMudou();
 }
 /* vista que cada etapa pede (só troca quando a atual não faz sentido) */
 function stepView(){
-  const ok = { terreno:["impl"], regras:["3d","impl"], produto:["3d","impl","andar"], viab:["3d"], projeto:{gar:["gar"],tipo:["tipo"],andar:["andar"]}[PSUB], clima:{sol:["clima","3d"],vento:["clima"],v3d:["v3d"]}[CSUB], cen:null }[TAB];
+  const pj = {gar:["gar"], tipo:["tipo","andar"], sol:["clima","3d"], vento: CSUB==="v3d"? ["v3d"] : ["clima"]}[PSUB];
+  const ok = { terreno:["impl"], produto:["3d","impl","andar"], viab:["3d"], projeto:pj, cen:null }[TAB];
+  if(TAB==="projeto" && (PSUB==="sol" || (PSUB==="vento" && CSUB!=="v3d"))) S.clima.modo = PSUB==="sol"? "sol" : "vento";
+  if(VIEW==="v3d" && !(TAB==="projeto" && PSUB==="vento" && CSUB==="v3d")) return ok? ok[0] : "3d";   // saiu do túnel 3D: a simulação para (setView → cfdLeave)
   if(!ok || ok.includes(VIEW)) return null;
-  if(TAB==="clima" && CSUB!=="v3d"){ S.clima.modo=CSUB }
   return ok[0];
 }
 /* a barra de vistas do palco puxa a etapa correspondente */
 function stepFromView(v){
-  if(v==="gar"||v==="tipo"||v==="andar"){ if(TAB!=="projeto"||PSUB!==v){ PSUB=v; goStepQuiet("projeto") } }
-  else if(v==="v3d"){ if(TAB!=="clima"||CSUB!=="v3d"){ CSUB="v3d"; goStepQuiet("clima") } }
-  else if(v==="clima"){ const want=S.clima.modo==="vento"?"vento":"sol"; if(TAB!=="clima"||CSUB!==want){ CSUB=want; goStepQuiet("clima") } }
+  if(v==="gar"){ if(TAB!=="projeto"||PSUB!=="gar"){ psubSet("gar"); goStepQuiet("projeto") } }
+  else if(v==="tipo"||v==="andar"){ if(TAB!=="projeto"||PSUB!=="tipo"){ psubSet("tipo"); goStepQuiet("projeto") } }
+  else if(v==="v3d"){ if(TAB!=="projeto"||PSUB!=="vento"||CSUB!=="v3d"){ VMODO="v3d"; psubSet("vento"); goStepQuiet("projeto") } }
+  else if(v==="clima"){ const want=S.clima.modo==="vento"?"vento":"sol"; if(TAB!=="projeto"||PSUB!==want||CSUB==="v3d"){ if(want==="vento") VMODO="vento"; psubSet(want); goStepQuiet("projeto") } }
 }
-function goStepQuiet(k){ TAB=k; LS.set("gabarito.step",k); document.querySelectorAll("#rail [data-step]").forEach(b=>{ if(b.dataset.step===k) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current") }); renderTab() }
+function goStepQuiet(k){ const prev=TAB; TAB=k; LS.set("gabarito.step",k); railCur(); renderTab(); if(prev!==k && typeof navEtapaMudou==="function") navEtapaMudou() }
+
+/* ---------- conteúdo da etapa: o STEP_R da etapa (Terreno absorveu Regras no P2; Projeto absorveu Clima no P4) ---------- */
+function etapaR(){ return STEP_R[TAB]() }
+/* cards extras da etapa atual (os registrados com os nomes antigos entram pelo ETAPA_ALIAS; repetidos por chave ficam só uma vez) */
+function cardsEtapa(){
+  let l=cardsFor(TAB, curSub());
+  const vis=new Set(); return l.filter(c=>{ if(vis.has(c.key)) return false; vis.add(c.key); return true });
+}
 
 function renderTab(){
-  const st=STEPS.find(s=>s.k===TAB), i=STEPS.indexOf(st), R=STEP_R[TAB]();
-  document.getElementById("phead").innerHTML = `<div class="eb">Etapa ${i+1} de ${STEPS.length}</div><h1>${R.title||st.t}</h1><p>${R.desc||st.d}</p>${R.sub?`<div class="sub">${R.sub}</div>`:""}`;
+  if(TAB==="projeto"){ if(PSUB==="sol") CSUB="sol"; else if(PSUB==="vento"){ if(CSUB==="sol") CSUB=VMODO==="v3d"? "v3d" : "vento"; VMODO=CSUB } }   // PSUB manda; CSUB = modo do clima
+  const st=STEPS.find(s=>s.k===TAB)||STEPS[0], i=STEPS.indexOf(st), R=etapaR();
+  document.getElementById("phead").innerHTML = `<div class="eb">Etapa ${i+1} de ${STEPS.length}${st.opc?" · opcional":""}</div><h1>${R.title||st.t}</h1><p class="q">${st.q}</p>${R.sub?`<div class="sub">${R.sub}</div>`:""}`;
   const keepScroll = TB.dataset.tab===TAB+(R.subKey||"") ? TB.scrollTop : 0;
-  TB.innerHTML = R.body + cardsFor(TAB, curSub()).map(c=>c.html()).join(""); TB.dataset.tab=TAB+(R.subKey||"");
-  const prev=STEPS[i-1], next=STEPS[i+1];
-  document.getElementById("pfoot").innerHTML = `${prev?`<button class="btn ghost" data-act="go" data-k="${prev.k}">← ${prev.nome}</button>`:"<span></span>"}<span class="pill" id="footStat"></span>${next?`<button class="btn" data-act="go" data-k="${next.k}">${next.nome} →</button>`:"<span></span>"}`;
+  const cards=cardsEtapa();
+  TB.innerHTML = R.body + cards.map(c=>c.html()).join(""); TB.dataset.tab=TAB+(R.subKey||"");
+  document.getElementById("pfoot").innerHTML = rodapeHTML();
   restoreDetails();
   TB.querySelectorAll('input[type=range]').forEach(r=>{ if(typeof paintRange==="function") paintRange(r) });
   TB.scrollTop=keepScroll;
   update();
   if(R.after) R.after();
-  cardsFor(TAB, curSub()).forEach(c=>{ if(c.after) try{ c.after() }catch(e){ console.error("[card "+c.key+"]",e) } });
+  cards.forEach(c=>{ if(c.after) try{ c.after() }catch(e){ console.error("[card "+c.key+"]",e) } });
 }
+/* rodapé (§6.3): orientação · ← anterior · "Próximo passo" (o único botão laranja da tela) */
+let PROXPP = null;
+function proxPassoCalc(){
+  let pp=null; try{ if(typeof proximoPassoAtual==="function" && window._last) pp=proximoPassoAtual() }catch(e){ console.error("[próximo passo]", e) }
+  if(pp && pp.rotulo) return pp;
+  const i=STEPS.findIndex(s=>s.k===TAB), nx=STEPS[i+1];
+  return nx? {rotulo:`${nx.nome} →`, etapa:nx.k, dica:""} : {rotulo:"Baixar relatório PDF", act:"pdf", dica:""};
+}
+function rodapeHTML(){
+  const i=STEPS.findIndex(s=>s.k===TAB), prev=STEPS[i-1], pp=PROXPP=proxPassoCalc();
+  const ant = TAB==="cen" && ACT.apStart? `<button type="button" class="btn nv-ant" data-act="apStart"><span>Apresentar</span></button>`
+    : prev? `<button type="button" class="btn ghost nv-ant" data-act="go" data-k="${prev.k}" title="Voltar para ${prev.nome}"><span>← ${prev.nome}</span></button>` : "";
+  return `<div class="nv-dica" id="nvDica">${dicaHTML(pp)}</div>${ant}<button type="button" class="btn pri nv-prox" id="nvProx" data-act="proxPasso"${ant?"":' style="grid-column:1/-1"'}><span>${esc(pp.rotulo)}</span></button>`;
+}
+const dicaHTML = pp=> pp && pp.dica? `<span class="dot ${pp.k?"warn":"ok"}"></span><span>${esc(pp.dica)}</span>` : "";
+function rodapeLive(){
+  const b=document.getElementById("nvProx"); if(!b) return;
+  const pp=PROXPP=proxPassoCalc(), t=b.querySelector("span"); if(t && t.textContent!==pp.rotulo) t.textContent=pp.rotulo;
+  const d=document.getElementById("nvDica"), h=dicaHTML(pp); if(d && d.innerHTML!==h) d.innerHTML=h;
+}
+/* status das etapas (✓ / pendência) pelo checklist (progressoItens) e pelo estado do produto e da viabilidade */
 function railStatus(m,f){
   const s=status(m,S), worst=(...a)=> a.includes("bad")?"bad": a.includes("warn")?"warn":"ok";
-  const map = {
-    terreno: m.A>10? "ok":"bad",
-    regras: worst(s.ca==="warn"?"ok":s.ca, s.h, s.perm),
+  let itens=[]; try{ if(typeof progressoItens==="function") itens=progressoItens(S,m,f) }catch(e){}
+  const base = {
+    terreno: m.A>10? worst(s.ca==="warn"?"ok":s.ca, s.h, s.perm) : "bad",
     produto: worst(s.tor, s.apto, s.vg),
     viab: f.margemVGV<0||f.margemVGV<S.metas.margem.min?"bad": f.margemVGV<S.fin.margemAlvo?"warn":"ok",   // margem s/ VGV · metas em S.metas
   };
-  Object.entries(map).forEach(([k,v])=>{ const e=document.getElementById("st-"+k); if(e){ e.hidden=false; e.className="st "+v } });
-  const fs=document.getElementById("footStat"); if(fs){ const v=map[TAB]; if(v){ fs.className="pill "+v; fs.textContent={ok:"em conformidade",warn:"atenção",bad:"ajustar"}[v] } else { fs.className="pill"; fs.textContent=TAB==="cen"? `${(LS.get("gabarito.cenarios2")||[]).length} salvos` : "estudo" } }
+  const feitos={};
+  STEPS.forEach((st,i)=>{
+    // Projeto é refino: a garagem ainda estimada não conta como pendência, mas o ✓ só vem com tudo conferido
+    const todos=itens.filter(x=>x.etapa===st.k), it=todos.filter(x=>st.k!=="projeto" || x.k!=="garagem" || S.estudo.usarLayout);
+    const pend=it.some(x=>x.ok===false), b=base[st.k];
+    const feito = todos.length>0 && todos.every(x=>x.ok===true) && b!=="bad";
+    feitos[st.k]=feito;
+    const cls = b==="bad"? "bad" : pend? "warn" : feito? "ok" : (b==="warn"? "warn" : null);
+    const e=document.getElementById("st-"+st.k); if(e){ e.hidden=!cls; e.className="st"+(cls?" "+cls:"") }
+    const btn=e && e.parentElement; if(btn) btn.classList.toggle("feito", feito);
+    const ln=document.getElementById("ln-"+st.k); if(ln && i>0) ln.classList.toggle("ok", !!feitos[STEPS[i-1].k]);
+  });
+  rodapeLive();
 }
 
 /* ================= ações ================= */
+/* depois de trocar a sub-aba de Projeto ou o modo do clima: a vista certa, e o mapa de clima recalculado */
+function subVista(){ const w=stepView(); if(w && w!==VIEW) setView(w); else if(VIEW==="clima" && window._last){ viewbarSegs(window._last.m); climaRun(); hintFor() } }
 const ACT = {
   go: b=>goStep(b.dataset.k),
-  psub: b=>{ PSUB=b.dataset.v; renderTab(); const w=stepView(); if(w) setView(w) },
-  csub: b=>{ CSUB=b.dataset.v; if(CSUB!=="v3d") S.clima.modo=CSUB; renderTab(); const w=stepView(); if(w) setView(w); else if(VIEW==="clima"){ viewbarSegs(window._last.m); climaRun(); hintFor() } },
+  psub: b=>{ const v=b.dataset.v; if(TAB!=="projeto"){ goStep("projeto", v); return } psubSet(v); renderTab(); TB.scrollTop=0; subVista(); if(v==="andar" && VIEW!=="andar") setView("andar") },
+  csub: b=>{ const v=b.dataset.v; if(v==="sol") psubSet("sol"); else { VMODO = v==="v3d"? "v3d" : "vento"; psubSet("vento") }
+    if(TAB!=="projeto"){ goStep("projeto", PSUB); return } renderTab(); subVista() },
+  vmodo: b=>{ const v=b.dataset.v; ACT.csub({dataset:{v: v==="v3d"||v==="3d"||v==="tunel"? "v3d" : "vento"}}) },
+  proxPasso: b=>{ const pp=PROXPP||proxPassoCalc();
+    if(typeof progressoExecuta==="function" && (pp.etapa||pp.act) && !(pp.act && !ACT[pp.act])) return progressoExecuta(pp, b);
+    if(pp.act && ACT[pp.act]) return ACT[pp.act](b);
+    if(pp.etapa) goStep(pp.etapa, pp.sub||undefined) },
   view: b=>setView(b.dataset.v),
 };
 
 /* ================= atualização ================= */
 let saveT, fullT, lastGar=null;
 /* save(): grava a cópia de trabalho e marca uma mudança para o desfazer (histTouch) e para o repositório de estudos */
-function save(){ clearTimeout(saveT); saveT=setTimeout(()=>LS.set("gabarito.v2",S),300); if(typeof histTouch==="function") histTouch() }
+function save(){ clearTimeout(saveT); if(typeof navSalvo==="function") navSalvo(true); saveT=setTimeout(()=>{ LS.set("gabarito.v2",S); if(typeof navSalvo==="function") navSalvo(false) },300); if(typeof histTouch==="function") histTouch() }
 /* cálculo barato (sem layouts de garagem; reaproveita os últimos) — tela principal */
 function calcBarato(){ const m=compute(S,{layouts:false, quick:true}); if(lastGar){ m.gar=lastGar.gar; m.vagasLay=lastGar.n+(m.vf?m.vf.count:0); if(S.estudo.usarLayout) m.vagas=m.vagasLay } return m }
 /* update(): o modo rápido (arraste) roda aqui; o cálculo completo vai para o Web Worker (src/ui/calcworker.js) e
@@ -210,66 +288,87 @@ function showModel(m, fast){
   if(VIEW!=="v3d") rebuild3d(m); redraw2d(); viewbarSegs(m); if(typeof planLegend==="function") planLegend();
 }
 const renderTabLive=(m,f)=>renderLive(m,f,false);
-function renderKPIs(m,f){
-  const s=status(m,S), sd=f.saude||saudeNegocio(S,m,f), sc=n=>({ruim:"bad",atencao:"warn",ok:"ok",otimo:"ok"})[n], mg=sc(sd.nivel.margem);
-  // régua: rótulo (siglas abrem a explicação), valor e uma linha curta; o detalhe completo fica no title
-  const k=(l,v,sub,st,tt)=>`<div class="kpi"${tt?` title="${esc(tt)}"`:""}><div class="l">${st?`<span class="dot ${st}"></span>`:""}${l}</div><div class="v">${v}</div><div class="s">${sub||"&nbsp;"}</div></div>`;
-  const mic=v=>nf(v/1e6,1)+" mi", tor=`${m.T.length} torre${m.T.length>1?"s":""}`;
-  const h =
-    k("Terreno", m2(m.A), `perm. ${pct(m.perm,0)}`, s.perm, `Área do terreno · permeável ${pct(m.perm,0)}`) +
-    k("Unidades", m.units, tor, s.apto==="bad"||s.tor!=="ok"? (s.apto==="bad"?"bad":s.tor) : "ok", `${m.units} unidades · ${tor}${m.lojaA?" + lojas":""}`) +
-    k("Vagas", `${m.vagas}/${m.vagasReq}`, S.estudo.usarLayout?"pelo layout":"estimadas", s.vg, `${m.vagas} vagas ${S.estudo.usarLayout?"no layout":"estimadas"} · ${m.vagasReq} exigidas`) +
-    k(TERMO("CA"), nf(m.CA,2), `máx ${nf(S.regras.caMax,1)}`, s.ca, `Coeficiente de aproveitamento · básico ${nf(S.regras.caBas,1)} · máximo ${nf(S.regras.caMax,1)}`) +
-    k("Altura", nf(m.H,1)+" m", `máx ${nf(S.regras.hMax,0)} m`, s.h) +
-    k(TERMO("VGV"), mi(f.vgv), `${mi(f.vgv/Math.max(1,m.units))}/un`, null, `Valor geral de vendas · ${mi(f.vgv/Math.max(1,m.units))} por unidade`) +
-    k(TERMO("Eficiência global","Eficiência"), pct(sd.eficGlobal,0), `${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)}`, sc(sd.nivel.efic), `Área privativa ÷ construída · referência ${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)} (${sd.tipologiaNome})${m.eficReal!=null? ` · eficiência real da planta ${pct(m.eficReal,0)} (informada ${pct(S.produto.efic,0)})` : ""}`) +
-    k(TERMO("Margem s/ VGV","Margem"), pct(sd.margemVGV), `lucro ${mic(f.lucro)}`, mg, `Lucro ${mi(f.lucro)} · margem s/ VGV · meta ${pct(S.fin.margemAlvo,0)} · s/ receita ${pct(f.margem)}`) +
-    k(TERMO("TIR","TIR a.a."), f.tirA==null?"—":pct(f.tirA), `VPL ${mic(f.vpl)}`, sc(sd.nivel.tir), `TIR ao ano · VPL ${mi(f.vpl)} · alvo ${pct(S.metas.tir.alvo,0)} · TMA ${pct(S.fin.tma,0)}`);
-  const el=document.getElementById("kpis"); if(el.innerHTML!==h) el.innerHTML=h;
+/* régua (UX v3 §5): 6 indicadores, cada um leva para onde o número se resolve (data-ir = [etapa, sub, seção]); "⋯" abre os outros
+   (kpiExtras, popover em src/ui/navegacao.js). Status minimalista: ponto antes do rótulo; o valor só ganha cor quando está ruim.
+   No celular ficam Margem, Retorno e Vagas (data-m) no topo da folha. */
+function kpiRegras(m){
+  if(typeof rgConformidade==="function"){ try{
+    const r=rgConformidade(m), l=Array.isArray(r)? r : r && (r.linhas||r.rows||r.itens);
+    if(Array.isArray(l)) return l.filter(x=>(x.st||x.status||x.nivel||(Array.isArray(x)? x[3] : ""))==="bad")
+      .map(x=>({txt: Array.isArray(x)? `${String(x[0]).toLowerCase()} ${x[2]}` : String(x.txt || [x.nome||x.rotulo||x.k, x.valor||x.v].filter(Boolean).join(" ")).replace(/^./, c=>c.toLowerCase())}));
+  }catch(e){ console.error("[régua] rgConformidade", e) } }
+  if(typeof progForaRegras==="function"){ try{ return progForaRegras(S, m)||[] }catch(e){} }
+  const s=status(m,S); return [["ca","aproveitamento"],["h","altura"],["perm","permeável"],["apto","menor unidade"]].filter(([k])=>s[k]==="bad").map(([,txt])=>({txt}));
 }
-function renderLive(m,f,fast){ const fn=STEP_LIVE[TAB]; if(fn) fn(m,f,fast); cardsFor(TAB, curSub()).forEach(c=>{ if(c.live) try{ c.live(m,f,fast) }catch(e){ console.error("[card "+c.key+"]",e) } }) }
-const curSub=()=> TAB==="projeto"? PSUB : TAB==="clima"? CSUB : (typeof subAtual==="function"? subAtual(TAB) : null);
+const kpiMi=v=>nf(v/1e6,1)+" mi";
+function renderKPIs(m,f){
+  const s=status(m,S), sd=f.saude||saudeNegocio(S,m,f), sc=n=>({ruim:"bad",atencao:"warn",ok:"ok",otimo:"ok"})[n];
+  const k=(id,l,v,sub,st,ir,tt,mob)=>`<div class="kpi" role="button" tabindex="0" data-kpi="${id}" data-ir='${esc(JSON.stringify(ir))}'${mob?" data-m":""}${tt?` title="${esc(tt)}"`:""}><div class="l">${st?`<span class="dot ${st}"></span>`:""}${l}</div><div class="v${st==="bad"?" bad":""}">${v}</div><div class="s">${sub||"&nbsp;"}</div></div>`;
+  const tor=`${m.T.length} torre${m.T.length>1?"s":""}`, fora=kpiRegras(m), un=Math.max(1,m.units);
+  const h =
+    k("units", "Unidades", nf(m.units), `${tor}<span class="lx"> · ${m.T.map(t=>t.pav).join(" e ")} and.</span>`, s.apto==="bad"? "bad" : s.tor, ["produto",null,"pr-mix"], `${m.units} unidades · ${tor}${m.lojaA?" + lojas":""} — ver as unidades por andar`) +
+    k("regras", "Regras", fora.length? `${fora.length} fora` : "dentro", fora.length? fora[0].txt : "CA, altura e ocupação", fora.length? "bad" : "ok", ["produto",null,null], fora.length? "Fora das regras: "+fora.map(x=>x.txt).join(" · ") : "Dentro das regras da prefeitura (aproveitamento, altura, ocupação, permeável e menor unidade)") +
+    k("vagas", "Vagas", `${m.vagas}/${m.vagasReq}`, S.estudo.usarLayout?"pelo layout":"estimadas", s.vg, ["projeto","gar",null], `${m.vagas} vagas ${S.estudo.usarLayout?"no layout":"estimadas"} · ${m.vagasReq} exigidas — ver a garagem`, true) +
+    k("vgv", TERMO("VGV"), mi(f.vgv), `${mi(f.vgv/un)}/un`, null, ["viab","res","essencial"], `Valor geral de vendas · ${mi(f.vgv/un)} por unidade — ver os preços`) +
+    k("margem", TERMO("Margem s/ VGV","Margem"), pct(sd.margemVGV), `meta ${pct(S.fin.margemAlvo,0)}<span class="lx"> · lucro ${kpiMi(f.lucro)}</span>`, sc(sd.nivel.margem), ["viab","res",null], `Lucro ${mi(f.lucro)} · margem s/ VGV · meta ${pct(S.fin.margemAlvo,0)} · s/ receita ${pct(f.margem)}`, true) +
+    k("tir", TERMO("TIR","Retorno"), f.tirA==null?"—":pct(f.tirA), `alvo ${pct(S.metas.tir.alvo,0)}`, sc(sd.nivel.tir), ["viab","risco","alavancas"], `Retorno ao ano (TIR) · VPL ${mi(f.vpl)} · alvo ${pct(S.metas.tir.alvo,0)} · TMA ${pct(S.fin.tma,0)} — o que melhora o resultado`, true) +
+    `<button type="button" class="kpi-mais" id="kpiMais" aria-label="Mais indicadores" aria-haspopup="dialog" aria-expanded="${!!(typeof NAV!=="undefined" && NAV.kpop && !NAV.kpop.hidden)}" title="Mais indicadores"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg></button>`;
+  const el=document.getElementById("kpis"); if(el.innerHTML!==h) el.innerHTML=h;
+  if(typeof navKpiPreenche==="function") navKpiPreenche();
+}
+/* os indicadores do "⋯" (mesmos title de antes) */
+function kpiExtras(m,f){
+  const s=status(m,S), sd=f.saude||saudeNegocio(S,m,f), sc=n=>({ruim:"bad",atencao:"warn",ok:"ok",otimo:"ok"})[n];
+  return [
+    {l:"Terreno", v:m2(m.A), s:`permeável ${pct(m.perm,0)}`, st:s.perm, ir:["terreno",null,"contorno"], tt:`Área do terreno · permeável ${pct(m.perm,0)}`},
+    {l:"Aproveitamento (CA)", v:nf(m.CA,2), s:`básico ${nf(S.regras.caBas,1)} · máximo ${nf(S.regras.caMax,1)}`, st:s.ca, ir:["terreno",null,"regras"], tt:`Coeficiente de aproveitamento · básico ${nf(S.regras.caBas,1)} · máximo ${nf(S.regras.caMax,1)}`},
+    {l:"Altura", v:nf(m.H,1)+" m", s:`máx ${nf(S.regras.hMax,0)} m`, st:s.h, ir:["terreno",null,"regras"]},
+    {l:"Eficiência global", v:pct(sd.eficGlobal,0), s:`privativa ÷ construída · ref. ${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)}`, st:sc(sd.nivel.efic), ir:["produto",null,"pr-mix"], tt:`Área privativa ÷ construída · referência ${nf(sd.faixaEfic[0]*100,0)}–${pct(sd.faixaEfic[1],0)} (${sd.tipologiaNome})${m.eficReal!=null? ` · eficiência real da planta ${pct(m.eficReal,0)} (informada ${pct(S.produto.efic,0)})` : ""}`},
+    {l:"Lucro", v:mi(f.lucro), s:`margem s/ receita ${pct(f.margem)}`, ir:["viab","res",null]},
+    {l:"VPL", v:mi(f.vpl), s:`taxa mínima ${pct(S.fin.tma,0)} ao ano`, ir:["viab","res",null]},
+    {l:"Caixa necessário", v:mi(Math.abs(f.exp||0)), s:"exposição máxima do caixa", ir:["viab","res","cash"]},
+  ];
+}
+function renderLive(m,f,fast){
+  const run=fn=>{ if(fn) fn(m,f,fast) };
+  run(STEP_LIVE[TAB]);
+  cardsEtapa().forEach(c=>{ if(c.live) try{ c.live(m,f,fast) }catch(e){ console.error("[card "+c.key+"]",e) } });
+}
+const curSub=()=> TAB==="projeto"? PSUB : (typeof subAtual==="function"? subAtual(TAB) : null);
 
 /* ================= navegação entre etapas, sub-abas e seções (UX v3) ================= */
-/* sub-abas fixas de Projeto (PSUB) e Clima (CSUB); as outras etapas usam SUBTABS/SUBDEF/SUBX (src/ui/ux.js) */
-const ETAPA_SUBS = {
-  projeto: [["gar","Garagem"],["tipo","Pavimento tipo"],["andar","Andares"]],
-  clima: [["sol","Sol"],["vento","Vento no chão"],["v3d","Vento 3D"]],
-};
-/* a etapa atual mostra sol/vento (hoje: a etapa Clima). Use no lugar de TAB==="clima". */
-function emClima(){ return TAB==="clima" }
-/* chaves das sub-abas da etapa k ([] se não tem). As de SUBTABS só se conhecem depois de a etapa montar o painel uma vez:
-   se ainda não montou, monta o HTML (sem pôr na tela) só para registrar. */
+/* sub-abas fixas de Projeto (PSUB); as outras etapas usam SUBTABS/SUBDEF/SUBX (src/ui/ux.js) */
+const ETAPA_SUBS = { projeto: PROJ_SUBS.map(x=>x.slice()), clima: [["sol","Sol"],["vento","Vento"]] };   // projeto: regravado por etapa-projeto.js (P4); clima: legado (STEP_R.clima), subsDe("clima") → Projeto
+/* chaves das sub-abas da etapa k ([] se não tem; aceita os nomes antigos). As de SUBTABS só se conhecem depois de a etapa
+   montar o painel uma vez: se ainda não montou, monta o HTML (sem pôr na tela) só para registrar. */
 function subsDe(k){
+  [k] = navAlias(k);
   if(ETAPA_SUBS[k]) return ETAPA_SUBS[k].map(x=>x[0]);
   if(typeof SUBDEF==="undefined") return [];
-  if(!SUBDEF[k] && STEP_R[k]) try{ STEP_R[k]() }catch(e){}
+  if(!SUBDEF[k] && STEP_R[k]){ const t=TAB; TAB=k; try{ etapaR() }catch(e){} finally{ TAB=t } }
   return (SUBDEF[k]||[]).map(x=>x[0]);
 }
-/* leva o usuário a um ponto do inspetor: troca a etapa e a sub-aba (PSUB, CSUB ou SUBX, conforme a etapa), abre a seção
-   <details data-key=secKey> (e o "Mais opções" que contém o campo), rola até ela e foca o campo [data-p=campoP] se dado.
-   Tudo opcional menos a etapa; sem etapa = a atual. Devolve o elemento focado/rolado (ou null). */
+/* leva o usuário a um ponto do inspetor: troca a etapa e a sub-aba (PSUB/CSUB ou SUBX), abre a seção <details data-key=secKey>
+   (e o "Mais opções" que contém o campo), rola até ela e foca o campo [data-p=campoP] se dado. Aceita os nomes antigos
+   (regras, clima; sub-abas andar e v3d). Sub-aba que a etapa não tem é ignorada. Sem etapa = a atual.
+   No celular, a folha sobe (cheia quando há seção ou campo). Devolve o elemento focado/rolado (ou null). */
 function irPara(etapa, sub, secKey, campoP){
-  etapa = etapa || TAB;
-  // destinos da UX v3 (Projeto › Sol/Vento) enquanto a etapa Clima existir; sub-aba que a etapa não tem é ignorada
-  if(etapa==="projeto" && (sub==="sol"||sub==="vento") && STEPS.some(s=>s.k==="clima") && !ETAPA_SUBS.projeto.some(x=>x[0]===sub)) etapa="clima";
-  if(!STEPS.some(s=>s.k===etapa)) etapa=TAB;
-  if(sub && !subsDe(etapa).includes(sub)) sub=null;
-  if(sub){
-    if(etapa==="projeto") PSUB=sub;
-    else if(etapa==="clima"){ CSUB=sub; if(sub!=="v3d") S.clima.modo=sub }
-    else if(typeof SUBX!=="undefined"){ SUBX[etapa]=sub; LS.set("gabarito.subx",SUBX) }
-  }
+  let [k, s] = navAlias(etapa || TAB, sub);
+  if(s==="andar") s="tipo";
+  if(s==="v3d" && k==="projeto"){ VMODO="v3d"; s="vento" }
+  if(s && !subsDe(k).includes(s)) s=null;
+  if(s && k!=="projeto" && typeof SUBX!=="undefined"){ SUBX[k]=s; LS.set("gabarito.subx",SUBX) }
   // a seção fica lembrada como aberta (gabarito.det), assim sobrevive ao renderTab
-  if(secKey){ const st=LS.get("gabarito.det")||{}; st[etapa+":"+secKey]=1; LS.set("gabarito.det",st) }
-  if(etapa!==TAB) goStep(etapa);
-  else { renderTab(); const w=stepView(); if(w && w!==VIEW) setView(w); else if(etapa==="clima" && sub && VIEW==="clima" && window._last){ viewbarSegs(window._last.m); climaRun(); hintFor() } }   // como ACT.subx / ACT.csub
+  if(secKey){ const st=LS.get("gabarito.det")||{}; st[k+":"+secKey]=1; LS.set("gabarito.det",st) }
+  if(k!==TAB || (k==="projeto" && s)) goStep(k, k==="projeto"? (s||undefined) : undefined);
+  else { renderTab(); subVista() }
   TB.scrollTop=0;
-  const q=s=>{ try{ return TB.querySelector(s) }catch(e){ return null } };
+  if(typeof navCel==="function" && navCel() && typeof folhaSet==="function") folhaSet(campoP||secKey? "cheia" : "media");
+  const q=x=>{ try{ return TB.querySelector(x) }catch(e){ return null } };
   const sec = secKey ? q(`details[data-key="${CSS.escape(secKey)}"]`) : null;
   if(sec) sec.open=true;
   const cp = campoP && CSS.escape(campoP);
-  const campo = cp ? (q(`[data-p="${cp}"]`) || q(`[data-set="${cp}"][aria-pressed="true"]`) || q(`[data-set="${cp}"]`)) : null;
+  const campo = cp ? ((sec && (sec.querySelector(`[data-p="${cp}"]`) || sec.querySelector(`[data-set="${cp}"]`))) || q(`[data-p="${cp}"]`) || q(`[data-set="${cp}"][aria-pressed="true"]`) || q(`[data-set="${cp}"]`)) : null;
   if(campo){
     for(let d=campo.closest("details"); d; d=d.parentElement && d.parentElement.closest("details")) d.open=true;
     const adv=campo.closest(".adv"), ab=adv && adv.querySelector(":scope > .advb");
@@ -280,7 +379,7 @@ function irPara(etapa, sub, secKey, campoP){
     alvo.scrollIntoView({block: campo? "center" : "start"});
     if(campo && typeof campo.focus==="function") try{ campo.focus({preventScroll:true}) }catch(e){}
   }
-  return alvo;
+  return alvo || null;
 }
 
 /* ================= utilidades compartilhadas ================= */

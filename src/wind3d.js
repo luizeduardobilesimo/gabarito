@@ -444,8 +444,8 @@ function cfdProbeAt(pt){
     <div class="row" style="margin:6px 0 0"><button class="btn sm" id="pbSmoke">Soltar fumaça aqui</button><button class="btn sm" id="pbSeed">Linhas a partir daqui</button></div>`;
   const toW=()=>[x*d.f[0]+y*d.pp[0], x*d.f[1]+y*d.pp[1], z];
   document.getElementById("pbX").onclick=()=>{ el.hidden=true; el.dataset.k=""; CFD.probe=null; disposeObj(CFD.probeMk); CFD.probeMk=null; render3() };
-  document.getElementById("pbSmoke").onclick=()=>{ S.cfd.emissor=toW(); S.cfd.viz.fumaca=true; save(); cfdParticlesInit(); cfdBarUI(); if(TAB==="clima") renderTab(); toast("Fumaça solta neste ponto") };
-  document.getElementById("pbSeed").onclick=()=>{ S.cfd.semente=toW(); S.cfd.viz.linhas=true; save(); cfdLines(); cfdBarUI(); render3(); if(TAB==="clima") renderTab(); toast("Linhas de corrente passando por este ponto") };
+  document.getElementById("pbSmoke").onclick=()=>{ S.cfd.emissor=toW(); S.cfd.viz.fumaca=true; save(); cfdParticlesInit(); cfdBarUI(); if(emClima()) renderTab(); toast("Fumaça solta neste ponto") };
+  document.getElementById("pbSeed").onclick=()=>{ S.cfd.semente=toW(); S.cfd.viz.linhas=true; save(); cfdLines(); cfdBarUI(); render3(); if(emClima()) renderTab(); toast("Linhas de corrente passando por este ponto") };
   disposeObj(CFD.probeMk); const mk=new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.4,d.dx*0.35),12,10), new THREE.MeshBasicMaterial({color:0x111111})); mk.position.copy(LV(x,y,z)); CFD.probeMk=mk; CFD.grp.add(mk); render3();
 }
 /* ---------- barra flutuante ---------- */
@@ -456,8 +456,8 @@ function cfdBarUI(){
     <select id="cfVar" aria-label="Colorir por">${Object.entries(CFD_VARS).map(([k,l])=>`<option value="${k}" ${S.cfd.var===k?"selected":""}>${l}</option>`).join("")}</select>
     <span class="cfchips">${CFD_VIZ.filter(([k])=>S.cfd.viz[k]).map(([k,l])=>`<span class="pill">${l}</span>`).join("")}</span></div>
     <div class="cfstat" id="cfdStat"></div>`;
-  document.getElementById("cfPlay").onclick=()=>{ CFD.running? cfdPause() : (CFD.worker? cfdRun() : cfdStart()); if(TAB==="clima") renderTab() };
+  document.getElementById("cfPlay").onclick=()=>{ CFD.running? cfdPause() : (CFD.worker? cfdRun() : cfdStart()); if(emClima()) renderTab() };
   document.getElementById("cfReset").onclick=()=>{ cfdStart(true) };
-  document.getElementById("cfVar").onchange=e=>{ S.cfd.var=e.target.value; if(S.cfd.var==="lawson"){ S.cfd.viz.plano=true; S.cfd.plano.orient="h"; S.cfd.plano.h=1.5 } save(); cfdRefresh(true); cfdBarUI(); if(TAB==="clima") renderTab() };
+  document.getElementById("cfVar").onchange=e=>{ S.cfd.var=e.target.value; if(S.cfd.var==="lawson"){ S.cfd.viz.plano=true; S.cfd.plano.orient="h"; S.cfd.plano.h=1.5 } save(); cfdRefresh(true); cfdBarUI(); if(emClima()) renderTab() };
   cfdStatus();
 }
