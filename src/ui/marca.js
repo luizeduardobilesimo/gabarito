@@ -1,14 +1,14 @@
 /* ================= marca do usuário no PDF (logo, cor, nome, rodapé, capa) =================
    Estado S.marca (extendDEF). A logo NÃO fica em S: vai para um localStorage separado ("gabarito.marca.logo"),
    já redimensionada, para não pesar no estudo salvo nem nos cenários. Sem marca ativa o PDF sai como sempre. */
-extendDEF("marca", { ativa:false, nome:"", cor:"#1c6878", rodape:"", titulo:"", subtitulo:"", capa3d:true });
+extendDEF("marca", { ativa:false, nome:"", cor:"#1d1d1f", rodape:"", titulo:"", subtitulo:"", capa3d:true });
 
 const MARCA_LS = "gabarito.marca.logo";
-const MARCA_CORES = [["#1c6878","Petróleo"],["#1c2729","Grafite"],["#1f5f8b","Azul"],["#7a2e3b","Vinho"],["#2f6b4f","Verde"],["#a8782a","Dourado"]];
+const MARCA_CORES = [["#1d1d1f","Grafite"],["#e8702a","Laranja"],["#1c6878","Petróleo"],["#1f5f8b","Azul"],["#7a2e3b","Vinho"],["#2f6b4f","Verde"],["#a8782a","Dourado"]];
 let _marcaLogo;   // undefined = ainda não lida · null = sem logo · {url,w,h,opaca}
 function marcaLogo(){ if(_marcaLogo===undefined){ const l=LS.get(MARCA_LS); _marcaLogo = l && verLogoOk(l.url)? l : null } return _marcaLogo }
 function marcaLogoTemp(l){ _marcaLogo = l && verLogoOk(l.url)? { url:l.url, w:+l.w||0, h:+l.h||0, opaca:!!l.opaca || /jpeg/.test(l.url.slice(0,16)) } : null }   // logo vinda de um link (não grava)
-const marcaRGB = hex => { const h=verCorOk(hex)? hex : "#1c6878"; return [1,3,5].map(i=>parseInt(h.slice(i,i+2),16)) };
+const marcaRGB = hex => { const h=verCorOk(hex)? hex : "#1d1d1f"; return [1,3,5].map(i=>parseInt(h.slice(i,i+2),16)) };
 const marcaLum = c => (0.2126*c[0]+0.7152*c[1]+0.0722*c[2])/255;
 const marcaOn = ()=> !!(S.marca && S.marca.ativa);
 
@@ -46,7 +46,7 @@ async function marcaLogoMini(){
 function marcaPdf(){
   if(!marcaOn()) return null;
   const M=S.marca, cor=marcaRGB(M.cor), tint=cor.map(c=>Math.round(c+(255-c)*0.92));
-  return { cor, tint, texto: marcaLum(cor)>0.62? [28,39,41] : [255,255,255], nome:String(M.nome||"").trim(), rodape:String(M.rodape||"").trim(),
+  return { cor, tint, texto: marcaLum(cor)>0.62? [29,29,31] : [255,255,255], nome:String(M.nome||"").trim(), rodape:String(M.rodape||"").trim(),
     titulo:String(M.titulo||"").trim(), subtitulo:String(M.subtitulo||"").trim(), capa3d:M.capa3d!==false, logo:marcaLogo() };
 }
 const marcaFmt = url => /^data:image\/png/.test(url)? "PNG" : /^data:image\/webp/.test(url)? "WEBP" : "JPEG";
@@ -79,13 +79,13 @@ function marcaCapa(doc, MK, o){
 function marcaRodape(doc, MK, T, PW, M){
   if(!MK.rodape) return;
   doc.setDrawColor(...MK.cor); doc.setLineWidth(0.3); doc.line(M,289.4,PW-M,289.4);
-  doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(93,106,106); doc.text(T(MK.rodape), M, 292.6, {maxWidth:PW-2*M-16});
+  doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(110,110,115); doc.text(T(MK.rodape), M, 292.6, {maxWidth:PW-2*M-16});
 }
 
 /* ---------- card na etapa Cenários ---------- */
 function marcaCardHTML(){
   const M=S.marca, l=marcaLogo(), on=!!M.ativa;
-  const prev = on? `<div class="mk-prev" style="--mk:${verCorOk(M.cor)?M.cor:"#1c6878"};--mkt:${marcaLum(marcaRGB(M.cor))>0.62?"#1c2729":"#fff"}"><div class="mk-bar">${l?`<img src="${l.url}" alt="" class="${l.opaca?"op":""}">`:""}<b>${esc((M.nome||"").toUpperCase())}</b><span>Estudo de viabilidade</span></div>
+  const prev = on? `<div class="mk-prev" style="--mk:${verCorOk(M.cor)?M.cor:"#1d1d1f"};--mkt:${marcaLum(marcaRGB(M.cor))>0.62?"#1d1d1f":"#fff"}"><div class="mk-bar">${l?`<img src="${l.url}" alt="" class="${l.opaca?"op":""}">`:""}<b>${esc((M.nome||"").toUpperCase())}</b><span>Estudo de viabilidade</span></div>
     <div class="mk-cap"><i></i><b>${esc(M.titulo||S.nome)}</b><span>${esc(M.subtitulo||S.regras.cidade)}</span></div>${M.rodape?`<div class="mk-rod">${esc(M.rodape)}</div>`:""}</div>` : "";
   const campos = on? prev +
     TXT("marca.nome","Nome da empresa",{ph:"Ex.: Construtora Exemplo",fx:"marcaNome"}) +

@@ -75,7 +75,7 @@ function verAbrir(p){
   const L=p.S.lote;
   if(!L || !Array.isArray(L.pts) || L.pts.length<3 || L.pts.length>400 || !L.pts.every(q=>Array.isArray(q) && q.length>=2 && isFinite(q[0]) && isFinite(q[1]))) throw new Error("estudo sem lote válido");
   const St=merge(clone(DEF), clone(p.S));
-  if(St.marca){ if(!verCorOk(St.marca.cor)) St.marca.cor="#1c6878" }
+  if(St.marca){ if(!verCorOk(St.marca.cor)) St.marca.cor="#1d1d1f" }
   const logo = p.logo && verLogoOk(p.logo.url)? { url:p.logo.url, w:+p.logo.w||0, h:+p.logo.h||0, opaca:!!p.logo.o } : null;
   return { S:St, logo, data:String(p.t||"") };
 }

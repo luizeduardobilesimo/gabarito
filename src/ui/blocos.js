@@ -240,14 +240,14 @@ HOOK.draw2d.push((g, ctx)=>{
   if(!ctx.opt.handles) return;
   // alças: vértices do bloco ativo de cada torre; o da torre selecionada ganha contorno, meios dos lados e o quadrado de redimensionar
   lst.forEach(i=>{ const b=blcB(i), on=BLC.sel===i, f=blcFx(m,i,blcK(i));
-    if(on){ path(b.pts); g.fillStyle=css("--accent"); g.globalAlpha=0.12; g.fill(); g.globalAlpha=1; g.strokeStyle=css("--accent"); g.lineWidth=2.4; g.stroke() }
-    else { path(b.pts); g.strokeStyle=css("--accent"); g.globalAlpha=0.55; g.lineWidth=1.2; g.setLineDash([5,4]); g.stroke(); g.setLineDash([]); g.globalAlpha=1 }
-    (b.vazios||[]).forEach(v=>{ const ok=entVazioOk(b,v); path(v); g.strokeStyle= ok? css("--accent") : css("--bad"); g.setLineDash([5,4]); g.lineWidth=1.6; g.stroke(); g.setLineDash([]) });
-    [b.pts, ...(b.vazios||[])].forEach(arr=>arr.forEach(q=>{ const [x,y]=w2s(q), r=on?4:3; g.fillStyle=on? css("--accent") : css("--muted"); g.fillRect(x-r,y-r,2*r,2*r) }));
-    if(on){ [b.pts, ...(b.vazios||[])].forEach(arr=>arr.forEach((a,k)=>{ const c=arr[(k+1)%arr.length], [x,y]=w2s([(a[0]+c[0])/2,(a[1]+c[1])/2]); g.fillStyle=css("--accent"); g.globalAlpha=0.55; g.beginPath(); g.arc(x,y,3,0,7); g.fill(); g.globalAlpha=1 }));
-      const [x,y]=w2s(blcEscalaPos(b)); g.fillStyle=css("--surface"); g.strokeStyle=css("--accent"); g.lineWidth=2; g.beginPath(); g.rect(x-6,y-6,12,12); g.fill(); g.stroke();
+    if(on){ path(b.pts); g.fillStyle=css("--d-acc"); g.globalAlpha=0.12; g.fill(); g.globalAlpha=1; g.strokeStyle=css("--d-acc"); g.lineWidth=2.4; g.stroke() }
+    else { path(b.pts); g.strokeStyle=css("--d-acc"); g.globalAlpha=0.55; g.lineWidth=1.2; g.setLineDash([5,4]); g.stroke(); g.setLineDash([]); g.globalAlpha=1 }
+    (b.vazios||[]).forEach(v=>{ const ok=entVazioOk(b,v); path(v); g.strokeStyle= ok? css("--d-acc") : css("--bad"); g.setLineDash([5,4]); g.lineWidth=1.6; g.stroke(); g.setLineDash([]) });
+    [b.pts, ...(b.vazios||[])].forEach(arr=>arr.forEach(q=>{ const [x,y]=w2s(q), r=on?4:3; g.fillStyle=on? css("--d-acc") : css("--muted"); g.fillRect(x-r,y-r,2*r,2*r) }));
+    if(on){ [b.pts, ...(b.vazios||[])].forEach(arr=>arr.forEach((a,k)=>{ const c=arr[(k+1)%arr.length], [x,y]=w2s([(a[0]+c[0])/2,(a[1]+c[1])/2]); g.fillStyle=css("--d-acc"); g.globalAlpha=0.55; g.beginPath(); g.arc(x,y,3,0,7); g.fill(); g.globalAlpha=1 }));
+      const [x,y]=w2s(blcEscalaPos(b)); g.fillStyle=css("--surface"); g.strokeStyle=css("--d-acc"); g.lineWidth=2; g.beginPath(); g.rect(x-6,y-6,12,12); g.fill(); g.stroke();
       g.beginPath(); g.moveTo(x-2.5,y+2.5); g.lineTo(x+2.5,y-2.5); g.moveTo(x+0.5,y-2.5); g.lineTo(x+2.5,y-2.5); g.lineTo(x+2.5,y-0.5); g.stroke();
-      if(blcLst(i).length>1 && f && ctx.V.s>2){ const bb=b.pts.map(q=>w2s(q)), bx=Math.min(...bb.map(p=>p[0])), by=Math.min(...bb.map(p=>p[1])); g.font="600 10px "+css("--f-mono"); g.textAlign="left"; g.textBaseline="bottom"; g.fillStyle=css("--accent"); g.fillText(`bloco ${blcRot(f)}`, bx+2, by-3) } }
+      if(blcLst(i).length>1 && f && ctx.V.s>2){ const bb=b.pts.map(q=>w2s(q)), bx=Math.min(...bb.map(p=>p[0])), by=Math.min(...bb.map(p=>p[1])); g.font="600 10px "+css("--f-mono"); g.textAlign="left"; g.textBaseline="bottom"; g.fillStyle=css("--d-acc"); g.fillText(`bloco ${blcRot(f)}`, bx+2, by-3) } }
   });
 });
 /* legenda da vista Andares: terraço sobre o bloco de baixo */
@@ -366,7 +366,7 @@ function blcPlantaImg(m, i, f, W=1100, H=760){
 }
 HOOK.pdf.push(async ctx=>{
   const m=ctx.m; if(!blcAtivo(S) || !m || !m.T || !m.T.some(t=>t.desenhada)) return;
-  const doc=ctx.doc, M=ctx.M, PW=ctx.PW, ink=ctx.ink||[28,39,41], mut=ctx.mut||[93,106,106], warn=[150,100,0];
+  const doc=ctx.doc, M=ctx.M, PW=ctx.PW, ink=ctx.ink||[29,29,31], mut=ctx.mut||[110,110,115], warn=[150,100,0];
   ctx.newPage(); ctx.h2("Forma das torres");
   m.T.forEach((t,i)=>{ if(!t.desenhada) return;
     const I=(m.blc||[]).find(x=>x.i===i)||{}, l=m.tipo && m.tipo[i], fx=(t.faixas||[]).filter(f=>f.blc);

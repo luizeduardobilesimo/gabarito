@@ -31,7 +31,7 @@ function calResSVG(pa){
   const lab=(v)=>`${v>0?"+":v<0?"−":""}${nf(Math.abs(v)*100,0)}%`;
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Resíduo médio por andar: preço real contra o previsto">
     <line x1="${pl}" x2="${W-pr}" y1="${y0}" y2="${y0}" stroke="var(--line)"/>
-    ${[mx,-mx].map(v=>`<text x="${pl-4}" y="${(y0-sy(v)+3).toFixed(1)}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${lab(v)}</text>`).join("")}
+    ${[mx,-mx].map(v=>`<text x="${pl-4}" y="${(y0-sy(v)+3).toFixed(1)}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="DM Sans, system-ui, sans-serif">${lab(v)}</text>`).join("")}
     ${pa.map((a,i)=>{ const h=sy(a.res), x=pl+i*bw+Math.min(1,bw*0.12); const ruim=Math.abs(a.res)>0.03;
       return `<rect x="${x.toFixed(1)}" y="${(h>=0? y0-h : y0).toFixed(1)}" width="${Math.max(1,bw-Math.min(2,bw*0.24)).toFixed(1)}" height="${Math.max(0.6,Math.abs(h)).toFixed(1)}" rx="1" fill="${ruim?"var(--bad)":"var(--accent)"}" fill-opacity="${ruim?.75:.55}"><title>${a.andar}º andar: ${calP(a.res)} (${a.n} un.)</title></rect>` }).join("")}
     <text x="${pl}" y="${H-4}" font-size="9" fill="var(--muted)">${pa[0].andar}º</text><text x="${W-pr}" y="${H-4}" font-size="9" text-anchor="end" fill="var(--muted)">${pa[pa.length-1].andar}º andar</text></svg>`;

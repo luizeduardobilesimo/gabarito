@@ -30,7 +30,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       if(vz.length){ g.save(); g.beginPath(); [e.pts,...vz].forEach(r=>{ r.forEach((q,k)=>{ const [x,y]=w2s(q); k?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath() }); g.globalAlpha=fa; g.fillStyle=fc; g.fill("evenodd"); g.restore(); vz.forEach(v=>strokeP(v,css("--ink"),1)) }
       else fillP(e.pts,fc,fa);
       strokeP(e.pts,css("--ink"),cf? 0.75 : 1);
-      if(on){ fillP(e.pts,css("--accent"),0.22); strokeP(e.pts,css("--accent"),2.4) }
+      if(on){ fillP(e.pts,css("--d-acc"),0.22); strokeP(e.pts,css("--d-acc"),2.4) }
       if(V.s>nLbl) label(e.osm && V.s<9? `${nf(e.h,0)} m` : `${e.nome||"E"+(i+1)} · ${nf(e.h,0)} m`, w2s(G.centroid(e.pts)), {size:10}) }) };   // OSM: só a altura até chegar bem perto
   const rampDraw=(rp,dir)=>{ if(!rp) return; fillP(rp,css("--mark"),0.35); strokeP(rp,css("--mark"),1.4); if(dir){ const c=G.centroid(rp), h=(Math.hypot(rp[1][0]-rp[0][0],rp[1][1]-rp[0][1]))/2-1; arrow([c[0]-dir[0]*h,c[1]-dir[1]*h],[c[0]+dir[0]*h,c[1]+dir[1]*h],css("--ink"),1.5,7) } if(V.s>3) label(`rampa ${pct(S.estudo.rampaInc,0)}`, w2s(G.centroid(rp)), {size:10}) };
   g.clearRect(0,0,W,H); g.fillStyle=css("--surface-2"); g.fillRect(0,0,W,H);
@@ -65,9 +65,9 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       if(S.lote.front.includes(i)){ g.strokeStyle=css("--mark"); g.lineWidth= i===m.acesso.edge? 7 : 4; g.globalAlpha= i===m.acesso.edge? 1 : 0.6; g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); g.globalAlpha=1 }
       const mx=(A[0]+B[0])/2, my=(A[1]+B[1])/2, dx=B[0]-A[0], dy=B[1]-A[1], l=Math.hypot(dx,dy)||1, nx=dy/l, ny=-dx/l;
       label(`L${i+1} ${nf(G.edgeLen(L,i),2)} m`, [mx+nx*14, my+ny*14]);
-      if(opt.handles){ g.fillStyle=css("--accent"); g.globalAlpha=.55; g.beginPath(); g.arc(mx,my,4,0,7); g.fill(); g.globalAlpha=1 }
+      if(opt.handles){ g.fillStyle=css("--d-acc"); g.globalAlpha=.55; g.beginPath(); g.arc(mx,my,4,0,7); g.fill(); g.globalAlpha=1 }
     });
-    { const fd=frontDir(S), ac=m.acesso; const o=12; arrow([ac.ped[0]-fd[0]*o,ac.ped[1]-fd[1]*o],[ac.ped[0]+fd[0]*2,ac.ped[1]+fd[1]*2],css("--accent"),2.5,8); label("pedestres",w2s([ac.ped[0]-fd[0]*(o+3),ac.ped[1]-fd[1]*(o+3)]),{size:10,col:css("--accent")});
+    { const fd=frontDir(S), ac=m.acesso; const o=12; arrow([ac.ped[0]-fd[0]*o,ac.ped[1]-fd[1]*o],[ac.ped[0]+fd[0]*2,ac.ped[1]+fd[1]*2],css("--d-acc"),2.5,8); label("pedestres",w2s([ac.ped[0]-fd[0]*(o+3),ac.ped[1]-fd[1]*(o+3)]),{size:10,col:css("--d-acc")});
       const vv=(m.ter&&m.ter.veiReal)||ac.vei, vd=(m.ter&&m.ter.vfd)||fd; arrow([vv[0]-vd[0]*o,vv[1]-vd[1]*o],[vv[0]+vd[0]*2,vv[1]+vd[1]*2],css("--bad"),2.5,8); label(ac.edgeV!=null&&ac.edgeV!==ac.edge? `veículos · L${ac.edgeV+1}` : "veículos",w2s([vv[0]-vd[0]*(o+3),vv[1]-vd[1]*(o+3)]),{size:10,col:css("--bad")}) }
     if(opt.handles) L.forEach(q=>{ const [x,y]=w2s(q); g.fillStyle=css("--surface"); g.strokeStyle=css("--ink"); g.lineWidth=1.5; g.beginPath(); g.rect(x-4.5,y-4.5,9,9); g.fill(); g.stroke() });
     if(L.length>2 && !m.T.some(t=>t.plate.length && G.pip(G.centroid(L),t.plate))) label(`${nf(m.A,1)} m²`, w2s(G.centroid(L)), {w:"600",font:"--f-display",size:13,bg:false});
@@ -118,12 +118,12 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
   function stallsDraw(lay){
     lay.pillars.forEach(p=>fillP(p,css("--ink"),0.85));
     lay.vagas.forEach((v,i)=>{
-      const col = v.tipo==="pcd"? css("--accent") : v.tipo==="idoso"? css("--ok") : v.tipo==="faixa"? css("--c-circ") : v.tipo==="off"? css("--bad") : v.tipo==="presa"? css("--warn") : v.tipo==="moto"? css("--u3") : v.tipo==="bici"? css("--lz-deck") : css("--m-gar");
+      const col = v.tipo==="pcd"? css("--d-acc") : v.tipo==="idoso"? css("--ok") : v.tipo==="faixa"? css("--c-circ") : v.tipo==="off"? css("--bad") : v.tipo==="presa"? css("--warn") : v.tipo==="moto"? css("--u3") : v.tipo==="bici"? css("--lz-deck") : css("--m-gar");
       fillP(v.poly, col, v.tipo==="off"?0.12: v.tipo==="n"?0.55:0.7); strokeP(v.poly, css("--ink"), 0.8, v.tipo==="off"||v.tipo==="presa"?[2,2]:null);
-      if(v.tipo==="faixa" && V.s>6) hatch(v.poly, css("--accent"), 0.8);
+      if(v.tipo==="faixa" && V.s>6) hatch(v.poly, css("--d-acc"), 0.8);
       if(v.tipo==="bici" && V.s>4) hatch(v.poly, css("--ink"), 0.35);
-      if(v.ev && v.tipo==="n") strokeP(v.poly, css("--accent"), Math.max(1.4,Math.min(2.6,V.s*0.18)));
-      if(V.s>9){ const t= v.tipo==="pcd"?"PCD": v.tipo==="idoso"?"ID": v.tipo==="faixa"?"":v.tipo==="off"?"×": v.tipo==="presa"?"presa": v.tipo==="moto"?"M": v.tipo==="bici"?`${v.bikes||""} bic.` : v.ev?"EV":String(i+1); if(t) label(t, w2s(v.c), {size:9,bg:false, col: v.ev&&v.tipo==="n"? css("--accent") : undefined}) } });
+      if(v.ev && v.tipo==="n") strokeP(v.poly, css("--d-acc"), Math.max(1.4,Math.min(2.6,V.s*0.18)));
+      if(V.s>9){ const t= v.tipo==="pcd"?"PCD": v.tipo==="idoso"?"ID": v.tipo==="faixa"?"":v.tipo==="off"?"×": v.tipo==="presa"?"presa": v.tipo==="moto"?"M": v.tipo==="bici"?`${v.bikes||""} bic.` : v.ev?"EV":String(i+1); if(t) label(t, w2s(v.c), {size:9,bg:false, col: v.ev&&v.tipo==="n"? css("--d-acc") : undefined}) } });
     if(lay.qe){ const [x,y]=w2s(lay.qe), s_=Math.max(6,Math.min(12,V.s*0.7)); g.fillStyle=css("--c-tec"); g.strokeStyle=css("--ink"); g.lineWidth=1; g.fillRect(x-s_/2,y-s_/2,s_,s_); g.strokeRect(x-s_/2,y-s_/2,s_,s_); if(V.s>4) label("QE", [x, y-s_-6], {size:9}) }
   }
   function garBodyInner(lay){
@@ -207,7 +207,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       const hb=(T.hallBand||[]).slice().sort((a,b)=>G.area(b)-G.area(a))[0]; if(hb){ const [l0]=G.extent(hb,T.lat); const c=[T.lat[0]*(l0+1)+T.fd[0]*(T.d1+1.3), T.lat[1]*(l0+1)+T.fd[1]*(T.d1+1.3)]; g.font="500 10px "+css("--f-mono"); const tx=`hall e lazer ${m2(m.hallA)}`, cc=w2s(c); label(tx,[cc[0]+g.measureText(tx).width/2+4,cc[1]],{size:10}) }
       (T.drive||[]).forEach(p=>{ if(V.s>5 && !(m.vert && (m.vert.elev || m.vert.helix))) label("acesso de veículos", w2s(G.centroid(p)), {size:9}) });
     }
-    const fd=frontDir(S), ac=m.acesso; arrow([ac.ped[0]-fd[0]*8,ac.ped[1]-fd[1]*8],[ac.ped[0]+fd[0]*2,ac.ped[1]+fd[1]*2],css("--accent"),2.5,8); { const vv=T.veiReal||ac.vei, vd=T.vfd||fd; arrow([vv[0]-vd[0]*8,vv[1]-vd[1]*8],[vv[0]+vd[0]*2,vv[1]+vd[1]*2],css("--bad"),2.5,8) }
+    const fd=frontDir(S), ac=m.acesso; arrow([ac.ped[0]-fd[0]*8,ac.ped[1]-fd[1]*8],[ac.ped[0]+fd[0]*2,ac.ped[1]+fd[1]*2],css("--d-acc"),2.5,8); { const vv=T.veiReal||ac.vei, vd=T.vfd||fd; arrow([vv[0]-vd[0]*8,vv[1]-vd[1]*8],[vv[0]+vd[0]*2,vv[1]+vd[1]*2],css("--bad"),2.5,8) }
   }
   if(mode==="gar"){ if(opt.floorKey==="ter") terreoBody(); else garBody(opt.lay, opt.floor, opt.floorKey); northArrow() }
   if(mode==="andar"){

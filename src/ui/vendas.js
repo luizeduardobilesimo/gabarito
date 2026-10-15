@@ -183,7 +183,7 @@ HOOK.draw2d.push((g, ctx)=>{
   U.forEach(u=>{ const c=vendaCor(e,u); if(!c) return; g.beginPath(); u.poly.forEach((q,i)=>{ const [x,y]=ctx.w2s(q); i?g.lineTo(x,y):g.moveTo(x,y) }); g.closePath();
     g.fillStyle=`rgb(${c})`; g.fill(); g.strokeStyle=css("--ink"); g.lineWidth=VD.sel===u.id?3:1.4; g.stroke() });
   if(ctx.V.s>3.5) U.forEach(u=>{ const [x,y]=ctx.w2s(G.centroid(u.poly)), c=vendaCor(e,u)||[255,255,255]; g.textAlign="center"; g.textBaseline="middle";
-    g.font="600 12px "+css("--f-display"); g.fillStyle= 0.299*c[0]+0.587*c[1]+0.114*c[2] > 140? "#1b2326" : "#f4f6f7"; g.fillText(u.id.split("-")[1], x, y-15);
+    g.font="600 12px "+css("--f-display"); g.fillStyle= 0.299*c[0]+0.587*c[1]+0.114*c[2] > 140? "#1d1d1f" : "#f5f5f7"; g.fillText(u.id.split("-")[1], x, y-15);
     g.font="500 10.5px "+css("--f-mono"); g.fillText(e.kind==="sol"? `${nf(u.sol?u.sol.media:0,1)} h/dia` : mi(u.preco), x, y);
     g.fillText(vdPct(u.premios.total)+" · "+vdDir(u), x, y+14) });
   // título do andar

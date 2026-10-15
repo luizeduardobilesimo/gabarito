@@ -55,7 +55,7 @@ function mapaCss(){
 .mapafind{display:flex;align-items:center;border-radius:12px;padding:2px 2px 2px 10px;min-width:0}
 .mapafind input{border:0;background:transparent;outline:none;font-size:12.5px;width:190px;max-width:42vw;padding:5px 0;color:var(--ink)}
 .mapahint{position:absolute;left:12px;bottom:28px;z-index:3;border-radius:12px;padding:8px 12px;font-size:12px;max-width:min(70%,480px)}
-.mapahint::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--mark);margin-right:8px;vertical-align:1px}
+.mapahint::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--brand);margin-right:8px;vertical-align:1px}
 .mapaerr{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;border-radius:14px;padding:16px 18px;max-width:min(420px,calc(100% - 32px));display:grid;gap:10px;font-size:12.5px}
 .mapaerr b{font-family:var(--f-display);font-size:14px;font-weight:620}
 .mapabox .maplibregl-ctrl-attrib{font-size:10px}
@@ -130,9 +130,9 @@ function mapaCamada(){
   map.setLayoutProperty("sat","visibility", S.mapa.camada==="sat"?"visible":"none"); map.setLayoutProperty("osm","visibility", S.mapa.camada==="osm"?"visible":"none");
 }
 function mapaCamadas(){
-  const map=MAPA.map, fc={type:"FeatureCollection",features:[]}, acc=css("--accent")||"#1c6878", mark=css("--mark")||"#d49c17";
+  const map=MAPA.map, fc={type:"FeatureCollection",features:[]}, acc=css("--d-acc")||"#2f6fed", mark=css("--mark")||"#e8702a";
   ["mapaAtual","mapaEntorno","mapaDes","mapaVert"].forEach(id=>map.addSource(id,{type:"geojson",data:fc}));
-  map.addLayer({id:"entF",type:"fill",source:"mapaEntorno",paint:{"fill-color":"#9aa4ab","fill-opacity":0.45}});
+  map.addLayer({id:"entF",type:"fill",source:"mapaEntorno",paint:{"fill-color":"#a1a1a6","fill-opacity":0.45}});
   map.addLayer({id:"entL",type:"line",source:"mapaEntorno",paint:{"line-color":"#ffffff","line-width":1,"line-opacity":0.8}});
   map.addLayer({id:"atuL",type:"line",source:"mapaAtual",paint:{"line-color":"#ffffff","line-width":2,"line-dasharray":[2,2],"line-opacity":0.9}});
   map.addLayer({id:"desF",type:"fill",source:"mapaDes",filter:["==","$type","Polygon"],paint:{"fill-color":mark,"fill-opacity":0.22}});

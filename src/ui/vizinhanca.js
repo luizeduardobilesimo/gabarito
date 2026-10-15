@@ -30,7 +30,7 @@ function vzLive(m){
   // perda média por mês (barras)
   const W=320, H=86, pb=16, mx=Math.max(0.5,...r.meses), bw=W/12;
   setHTML("vzMeses", `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Perda média de sol nas fachadas vizinhas, por mês">${r.meses.map((v,k)=>{ const h=(H-pb-12)*v/mx, x=k*bw+3;
-    return `<rect x="${x}" y="${H-pb-h}" width="${bw-6}" height="${Math.max(0.5,h)}" rx="2" fill="${k+1===r.mes?"var(--bad)":"var(--accent)"}" fill-opacity="${k+1===r.mes?0.9:0.55}"/><text x="${x+(bw-6)/2}" y="${H-4}" font-size="8.5" text-anchor="middle" fill="var(--muted)" font-family="IBM Plex Mono">${VZ_MESES[k]}</text>${v>0.05?`<text x="${x+(bw-6)/2}" y="${H-pb-h-3}" font-size="8" text-anchor="middle" fill="var(--muted)" font-family="IBM Plex Mono">${nf(v,1)}</text>`:""}`}).join("")}</svg><p class="note">Perda média de sol por dia nas fachadas vizinhas (dia 21 de cada mês).</p>`);
+    return `<rect x="${x}" y="${H-pb-h}" width="${bw-6}" height="${Math.max(0.5,h)}" rx="2" fill="${k+1===r.mes?"var(--bad)":"var(--accent)"}" fill-opacity="${k+1===r.mes?0.9:0.55}"/><text x="${x+(bw-6)/2}" y="${H-4}" font-size="8.5" text-anchor="middle" fill="var(--muted)" font-family="DM Sans, system-ui, sans-serif">${VZ_MESES[k]}</text>${v>0.05?`<text x="${x+(bw-6)/2}" y="${H-pb-h-3}" font-size="8" text-anchor="middle" fill="var(--muted)" font-family="DM Sans, system-ui, sans-serif">${nf(v,1)}</text>`:""}`}).join("")}</svg><p class="note">Perda média de sol por dia nas fachadas vizinhas (dia 21 de cada mês).</p>`);
 }
 FX.vzMapa = ()=>{ save(); const m=window._last&&window._last.m; if(m){ rebuild3d(m); redraw2d() } };
 

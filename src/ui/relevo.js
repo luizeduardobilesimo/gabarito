@@ -204,7 +204,7 @@ function relevoRedesenha(){ if(!window._last) return; redraw2d(); if(typeof rebu
 HOOK.draw2d.push((g, c)=>{
   if(c.mode!=="impl" || !S.relevo || !S.lote.pts.length) return;
   const R=S.relevo; if(!R.plano && !(R.cantos||[]).some(v=>v!=null)) return;
-  const ef=relevoEf(); if(!ef) return; const pl=ef.plano, nivel=ef.conf&&ef.conf.nivel, L=S.lote.pts, {W,H,w2s}=c, ink=css("--ink"), acc=css("--accent");
+  const ef=relevoEf(); if(!ef) return; const pl=ef.plano, nivel=ef.conf&&ef.conf.nivel, L=S.lote.pts, {W,H,w2s}=c, ink=css("--ink"), acc=css("--d-acc");
   g.save(); g.lineCap="round"; g.lineJoin="round";
   const pill=(txt,x,y,cor)=>{ g.font="600 10.5px "+css("--f-mono"); g.textAlign="center"; g.textBaseline="middle"; const tw=g.measureText(txt).width+10; x=Math.max(tw/2+4, Math.min(W-tw/2-4, x)); y=Math.max(70, Math.min(H-12, y));
     g.globalAlpha=0.94; g.fillStyle=css("--surface"); g.fillRect(x-tw/2,y-8,tw,16); g.globalAlpha=1; g.strokeStyle=css("--line-2"); g.lineWidth=1; g.strokeRect(x-tw/2,y-8,tw,16); g.fillStyle=cor||ink; g.fillText(txt,x,y) };
@@ -233,13 +233,13 @@ function relevoLegenda(txt){
   const lg=document.getElementById("legend"); if(!lg) return; let e=document.getElementById("legRelevo");
   if(!txt){ if(e) e.hidden=true; return }
   if(!e){ e=document.createElement("div"); e.id="legRelevo"; lg.appendChild(e) }
-  e.hidden=false; e.innerHTML=`<i style="background:var(--accent);opacity:.4;border-color:var(--accent)"></i>${esc(txt)}`;
+  e.hidden=false; e.innerHTML=`<i style="background:var(--d-acc);opacity:.4;border-color:var(--accent)"></i>${esc(txt)}`;
 }
 function relevoEtiqueta(txt, tam){
   const cv=document.createElement("canvas"); cv.width=256; cv.height=64; const g=cv.getContext("2d"), mono=css("--f-mono")||"monospace";
   g.font=`600 26px ${mono}`; g.textAlign="center"; g.textBaseline="middle"; const tw=Math.min(240, g.measureText(txt).width+28);
   g.fillStyle=css("--surface")||"#fff"; g.globalAlpha=0.92; if(g.roundRect){ g.beginPath(); g.roundRect(128-tw/2,10,tw,44,22); g.fill() } else g.fillRect(128-tw/2,10,tw,44);
-  g.globalAlpha=1; g.strokeStyle=css("--accent")||"#1c6878"; g.lineWidth=2; g.stroke(); g.fillStyle=css("--ink")||"#222"; g.fillText(txt,128,33);
+  g.globalAlpha=1; g.strokeStyle=css("--d-acc")||"#2f6fed"; g.lineWidth=2; g.stroke(); g.fillStyle=css("--ink")||"#222"; g.fillText(txt,128,33);
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv), transparent:true, depthTest:false, depthWrite:false})); sp.scale.set(tam,tam/4,1); sp.renderOrder=14; return sp;
 }
 HOOK.draw3d.push((grp, m)=>{

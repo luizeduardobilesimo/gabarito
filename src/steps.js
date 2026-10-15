@@ -25,7 +25,7 @@ let LADOAB = new Set();   // lados abertos na lista para editar comprimento e re
 .edge .ed{grid-column:1/-1;padding-top:2px}
 .edge .ed .inp{max-width:none}
 .mets.m3{grid-template-columns:repeat(3,minmax(0,1fr))}
-.card.geoFoco{outline:2px solid var(--mark);outline-offset:2px}
+.card.geoFoco{outline:2px solid var(--brand);outline-offset:2px}
 .geoNote{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .geoNote .note{margin:0}
 .mets.m3 .v{font-size:17px}
@@ -84,7 +84,7 @@ function terrenoLado(i, m){
 /* lado aberto na lista fica destacado na implantação */
 HOOK.draw2d.push((g, c)=>{
   if(c.mode!=="impl" || TAB!=="terreno" || !LADOAB.size) return;
-  const L=S.lote.pts; g.save(); g.strokeStyle=css("--accent"); g.lineWidth=5; g.globalAlpha=0.5; g.lineCap="round";
+  const L=S.lote.pts; g.save(); g.strokeStyle=css("--d-acc"); g.lineWidth=5; g.globalAlpha=0.5; g.lineCap="round";
   LADOAB.forEach(i=>{ if(i>=L.length) return; const a=c.w2s(L[i]), b=c.w2s(L[(i+1)%L.length]); g.beginPath(); g.moveTo(a[0],a[1]); g.lineTo(b[0],b[1]); g.stroke() });
   g.restore();
 });
@@ -395,7 +395,7 @@ function garLegExtra(sw){ const m=window._last&&window._last.m, q=m&&m.quadroVag
   if(q&&q.presa) h+=sw("var(--warn)","vaga presa (tandem)","border:1px dashed var(--ink)");
   if(q&&q.moto) h+=sw("var(--u3)","moto");
   if(q&&q.bici) h+=sw("var(--lz-deck)","bicicletário");
-  if(q&&q.ev) h+=sw("transparent","vaga com recarga (EV)","border:2px solid var(--accent)")+sw("var(--c-tec)","quadro elétrico (QE)","border:1px solid var(--ink)");
+  if(q&&q.ev) h+=sw("transparent","vaga com recarga (EV)","border:2px solid var(--d-acc)")+sw("var(--c-tec)","quadro elétrico (QE)","border:1px solid var(--ink)");
   if(V&&V.elev) h+=sw("var(--c-elev)","elevador de carros")+sw("var(--c-drive)","acomodação e espera");
   if(V&&V.helix) h+=sw("var(--surface)","miolo da helicoidal","border:1px solid var(--mark)");
   return h }

@@ -153,7 +153,7 @@ function ctxTelhado(ring, h){
 function ctxEnv(C){
   const k=C["--stage-a"]+C["--stage-b"]; if(CTX.env && CTX.envK===k) return CTX.env;
   try{ const cv=document.createElement("canvas"); cv.width=64; cv.height=32; const g=cv.getContext("2d"), gr=g.createLinearGradient(0,0,0,32);
-    const dark=/^#[0-3]/.test(C["--stage-b"]); gr.addColorStop(0, dark? "#33485a" : "#bcd6e8"); gr.addColorStop(0.48, C["--stage-a"]); gr.addColorStop(0.52, C["--stage-b"]); gr.addColorStop(1, C["--stage-b"]); g.fillStyle=gr; g.fillRect(0,0,64,32);
+    const dark=/^#[0-3]/.test(C["--stage-b"]); gr.addColorStop(0, dark? "#2a2e35" : "#d3dde6"); gr.addColorStop(0.48, C["--stage-a"]); gr.addColorStop(0.52, C["--stage-b"]); gr.addColorStop(1, C["--stage-b"]); g.fillStyle=gr; g.fillRect(0,0,64,32);
     const tx=new THREE.CanvasTexture(cv); tx.mapping=THREE.EquirectangularReflectionMapping; tx.encoding=THREE.sRGBEncoding;
     const pm=new THREE.PMREMGenerator(V3.R); const rt=pm.fromEquirectangular(tx); pm.dispose(); tx.dispose();
     if(CTX.env && CTX.env.dispose) CTX.env.dispose(); CTX.env=rt.texture; CTX.envK=k }catch(e){ CTX.env=null }

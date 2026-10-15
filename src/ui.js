@@ -1,6 +1,9 @@
 /* ================= interface: etapas, campos e ligação ================= */
 /* Campos declarativos: cada controle aponta para um caminho em S (data-p) e um efeito (data-fx).
    Um único listener delegado no inspetor cuida de todos — nada de bind por id. */
+/* marca Rixel: ícone (mesmo desenho do public/assets/rixel-icon.png da Rixel; cores pelos tokens --logo-tile/--logo-glyph) e palavra "gabarito." */
+const RX_ICONE = '<svg class="rx-ic" viewBox="0 0 32 32" aria-hidden="true"><rect class="t" y="1" width="32" height="30" rx="6"/><path class="g" d="M11.2 8.8L18.6 16.2L11.2 23.6L8.3 20.7L12.8 16.2L8.3 11.7ZM21.2 9.35L23.75 11.9L21.2 14.45L18.65 11.9ZM21.2 17.95L23.75 20.5L21.2 23.05L18.65 20.5Z"/></svg>';
+const RX_MARCA = RX_ICONE+'<span class="wm">gabarito<i>.</i></span>';
 const getP=(o,p)=>p.split(".").reduce((a,k)=>a==null?a:a[k],o);
 function setP(o,p,v){ const ks=p.split("."); const last=ks.pop(); const t=ks.reduce((a,k)=>a[k],o); t[last]=v }
 const fmtIn=(v,pc,dec)=>{ if(v==null||v==="") return ""; const x=pc? v*100 : v; return +(+x).toFixed(dec??(pc?2:3)) };
@@ -279,12 +282,12 @@ function cashSVG(f){
   const ticks=[mn,0,mx].filter((v,i,a)=>a.indexOf(v)===i), iMin=cum.indexOf(Math.min(...cum));
   const xL=sx(f.launch), xC=sx(f.chaves), perto=xC-xL<92, xE=Math.min(W-pr-52, Math.max(pl+52, sx(iMin)));
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Fluxo de caixa acumulado">
-    ${ticks.map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)" ${v===0?'stroke-width="1.2"':'stroke-dasharray="2 3"'}/><text x="${pl-4}" y="${sy(v)+3}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${v===0?"0":nf(v/1e6,1)+"mi"}</text>`).join("")}
+    ${ticks.map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)" ${v===0?'stroke-width="1.2"':'stroke-dasharray="2 3"'}/><text x="${pl-4}" y="${sy(v)+3}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="DM Sans, system-ui, sans-serif">${v===0?"0":nf(v/1e6,1)+"mi"}</text>`).join("")}
     <line x1="${xL}" x2="${xL}" y1="${pt}" y2="${H-pb}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${xL+3}" y="${pt-6}" font-size="9" fill="var(--muted)">lançamento</text>
     <line x1="${xC}" x2="${xC}" y1="${pt}" y2="${H-pb}" stroke="var(--muted)" stroke-dasharray="3 3"/><text x="${perto? xC+3 : xC-3}" y="${perto? pt+6 : pt-6}" font-size="9" ${perto?"":'text-anchor="end"'} fill="var(--muted)">chaves</text>
     <path d="${ar}" fill="var(--accent)" fill-opacity=".12"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
     <circle cx="${sx(iMin)}" cy="${sy(cum[iMin])}" r="3" fill="var(--bad)"/><circle cx="${sx(n-1)}" cy="${sy(cum[n-1])}" r="3" fill="var(--accent)"/>
-    <text x="${xE}" y="${sy(cum[iMin])+14}" text-anchor="middle" font-size="9" fill="var(--bad)" font-family="IBM Plex Mono">exposição ${mi(-cum[iMin])}</text>
+    <text x="${xE}" y="${sy(cum[iMin])+14}" text-anchor="middle" font-size="9" fill="var(--bad)" font-family="DM Sans, system-ui, sans-serif">exposição ${mi(-cum[iMin])}</text>
     ${f.distrato && f.distrato.M!=null && f.distrato.refund ? `<line x1="${sx(f.distrato.M)}" x2="${sx(f.distrato.M)}" y1="${pt}" y2="${H-pb}" stroke="var(--warn)" stroke-dasharray="2 2"/><text x="${sx(f.distrato.M)+3}" y="${pt+16}" font-size="9" fill="var(--warn)">distratos</text>` : ""}
   </svg>`;
 }
@@ -297,7 +300,7 @@ function compassSVG(cur){
     <circle cx="${c}" cy="${c}" r="${R-14}" fill="none" stroke="var(--line)"/><circle cx="${c}" cy="${c}" r="${R-38}" fill="none" stroke="var(--line)" stroke-dasharray="2 3"/>
     <defs><marker id="cmpA" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="var(--accent)"/></marker></defs>
     <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" marker-end="url(#cmpA)"/>
-    <text x="${c}" y="${c+44}" text-anchor="middle" font-size="9.5" fill="var(--muted)" font-family="IBM Plex Mono">vem de ${dirs.find(d=>d[1]===cur)?.[0]||nf(cur,0)+"°"}</text>
+    <text x="${c}" y="${c+44}" text-anchor="middle" font-size="9.5" fill="var(--muted)" font-family="DM Sans, system-ui, sans-serif">vem de ${dirs.find(d=>d[1]===cur)?.[0]||nf(cur,0)+"°"}</text>
     ${dirs.map(([l,a])=>{ const [x,y]=pt(a,R); return `<g class="cd${a===cur?" on":""}" data-act="vdir" data-v="${a}" role="button" aria-label="${l}"><circle cx="${x}" cy="${y}" r="13"/><text x="${x}" y="${y}">${l}</text></g>` }).join("")}
   </svg></div>`;
 }
