@@ -1,5 +1,8 @@
-/* ================= etapa Regras: biblioteca de cidades e checklist de normas (itens 2.5 e "mais cidades") =================
-   Lê src/calc/cidades.js e src/calc/normas.js. As normas são só leitura: nada aqui muda números do estudo. */
+/* ================= biblioteca de cidades (Terreno) e checklist de normas (Projeto) — itens 2.5 e "mais cidades" =================
+   Lê src/calc/cidades.js e src/calc/normas.js. As normas são só leitura: nada aqui muda números do estudo.
+   UX v3 (P2): o seletor de cidade mora em Terreno › Regras da prefeitura; o checklist vira a seção normasSecHTML()
+   ("Saídas e acessibilidade", chave nrmList) que o Projeto › Andares mostra (pacote P4). Enquanto o Projeto não a chama,
+   um card reserva (addCard projeto/tipo) a mostra no mesmo lugar. normasLive(m, fast) atualiza a lista e o resumo. */
 let CID_UNDO = null; // {regras, ref, nome} — desfazer a última aplicação de regras de cidade
 (function(){ const s=document.createElement("style"); s.textContent=`
 .nrm-aviso{border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 9%,var(--surface));color:var(--ink-2);border-radius:9px;padding:7px 10px;font-size:11.5px;line-height:1.45}
@@ -17,20 +20,27 @@ let CID_UNDO = null; // {regras, ref, nome} — desfazer a última aplicação d
 .nrm-st{font-size:10.5px;font-family:var(--f-mono);white-space:nowrap}
 .nrm-st.ok{color:var(--ok)} .nrm-st.warn{color:var(--warn)} .nrm-st.bad{color:var(--bad)} .nrm-st.na{color:var(--muted)}
 .dot.na{background:var(--line-2)}
-.cid-ref{display:grid;gap:4px;border-left:2px solid var(--line-2);padding:2px 0 2px 10px}
+.cid-ref{display:grid;gap:2px;border-left:2px solid var(--line-2);padding:2px 0 2px 10px;margin:8px 0 2px}
+.cid-undo{margin-top:4px}
+.cid-sel+.kv,.cid-ref+.kv,.cid-undo+.kv{margin-top:12px}
+.nrm-top{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
 `; document.head.appendChild(s) })();
 
-/* ---------- cidade e zona ---------- */
-function cidadesCardHTML(){
+/* ---------- cidade e zona (Terreno › Regras da prefeitura) ----------
+   cidSeletorHTML() → seletor "Aplicar regras de…" (#cidLib), a referência da lei (aviso ilustrativo) e "Desfazer"
+   cidSalvarHTML()  → botão "Salvar na biblioteca" (vai em "Mais regras" › Nome e lei)
+   cidadesCardHTML() → os dois juntos (compatibilidade) */
+function cidSeletorHTML(){
   const lista=cidadesLista(), ref=S.regrasRef||{}, grupos={};
   lista.forEach(c=>{ (grupos[c.fonteNome]=grupos[c.fonteNome]||[]).push(c) });
-  const sel=`<select class="sel" id="cidLib" aria-label="Aplicar regras de uma cidade" style="flex:1;min-width:0"><option value="">Aplicar regras de…</option>${Object.entries(grupos).map(([g,l])=>`<optgroup label="${esc(g)}">${l.map(c=>`<option value="${esc(c.id)}">${esc(cidadeRotulo(c))}</option>`).join("")}</optgroup>`).join("")}</select>`;
+  const sel=`<select class="sel" id="cidLib" aria-label="Aplicar regras de uma cidade" style="flex:1;min-width:0"><option value="">${ref.id? "Trocar cidade e zona…" : "Aplicar regras de…"}</option>${Object.entries(grupos).map(([g,l])=>`<optgroup label="${esc(g)}">${l.map(c=>`<option value="${esc(c.id)}">${esc(cidadeRotulo(c))}</option>`).join("")}</optgroup>`).join("")}</select>`;
   const info = ref.id? `<div class="cid-ref"><span class="note"><b style="color:var(--ink)">${esc(S.regras.cidade)}</b>${ref.lei?` · ${esc(ref.lei)}`:""}${ref.data&&ref.data!=="—"?` · ${esc(ref.data)}`:""}</span>
       ${ref.ilustrativo? `<span class="note" style="color:var(--warn)">Valores ilustrativos ${INFO(CIDADES_AVISO)}</span>` : `<span class="note">Da sua biblioteca ${INFO("Regras salvas neste navegador. Confira se continuam vigentes.")}</span>`}</div>` : "";
-  return TXT("regras.cidade","Cidade / zona") +
-    `<div class="row" style="flex-wrap:nowrap">${sel}<button class="btn" data-act="cidSave" title="Guardar as regras atuais na biblioteca deste navegador">Salvar</button></div>` + info +
-    (CID_UNDO? `<div class="row sb" style="flex-wrap:nowrap"><span class="note">Antes: ${esc(CID_UNDO.regras.cidade||"regras anteriores")}</span><button class="btn sm" data-act="cidUndo">Desfazer</button></div>` : "");
+  return `<div class="row cid-sel" data-q="cidade zona lei plano diretor aplicar regras" style="flex-wrap:nowrap">${sel}${INFO("Escolha a cidade e a zona do lote para preencher as regras de uma vez. Os exemplos são ilustrativos: confira no plano diretor (LUOS). Ctrl+Z ou “Desfazer” voltam às regras anteriores.","cidade e zona")}</div>` + info +
+    (CID_UNDO? `<div class="row sb cid-undo" style="flex-wrap:nowrap"><span class="note">Antes: ${esc(CID_UNDO.regras.cidade||"regras anteriores")}</span><button class="btn sm ghost" data-act="cidUndo">Desfazer</button></div>` : "");
 }
+function cidSalvarHTML(){ return `<button class="btn sm" data-act="cidSave" title="Guardar as regras atuais na biblioteca deste navegador">Salvar na biblioteca</button>` }
+function cidadesCardHTML(){ return cidSeletorHTML() + `<div class="row">${cidSalvarHTML()}</div>` }
 TB.addEventListener("change", e=>{
   if(e.target.id!=="cidLib" || !e.target.value) return;
   const c=cidadeAcha(e.target.value); if(!c) return;
@@ -46,20 +56,26 @@ Object.assign(ACT, {
 
 /* ---------- checklist de normas ---------- */
 const NRM_ST = {ok:"atende", warn:"atenção", bad:"não atende", na:"não se aplica"};
-/* sub-aba Normas da etapa Regras: resultado no topo, itens verificados abertos, opções fechadas com resumo */
+let NRM_EXT = false;   // true quando outra etapa (Projeto, P4) já põe a seção no corpo: o card reserva some
 const nrmOpcSum = ()=>{ const N=S.normas||{}; return `${N.chuveiros? "com chuveiros" : "sem chuveiros"} · rota ${N.rotaFuga? "visível" : "oculta"}` };
-function normasCardHTML(){
-  return RES("Normas", `<div class="nrm-res" id="nrmRes"></div><p class="nrm-aviso"><b>Preliminar.</b> Confira com a norma vigente e o projetista ${INFO("Tabelas de saídas de emergência (IN 09 do CBMSC, com referência na NBR 9077) e de acessibilidade (NBR 9050, LBI) em revisão. É um checklist de estudo: não substitui o projeto de prevenção e o de acessibilidade.")}</p>`, {aside:`<span id="nrmPill"></span>`}) +
-    SEC("Itens verificados", `<div id="nrmList"><p class="note">Calculando…</p></div>`, {key:"nrmList", open:true, info:"Saídas de emergência (IN 09) e acessibilidade (NBR 9050) conferidas no estudo atual. Toque num item para ver o exigido, o porquê e a fonte."}) +
-    SEC("Opções", `<div data-q="chuveiros sprinklers automáticos">${SW("normas.chuveiros","Edificação com chuveiros automáticos")}</div><div data-q="rota fuga escada pavimento tipo">${SW("normas.rotaFuga","Rota até a escada no pavimento tipo",{fx:"r3n"})}</div>`, {key:"nrmOpc", sum:nrmOpcSum()});
+function nrmSecHTML_(){
+  return SEC("Saídas e acessibilidade", `<div class="nrm-top"><span class="pill warn">preliminar</span><span id="nrmRes" class="nrm-res"></span>${INFO("Saídas de emergência (IN 09 do CBMSC, com referência na NBR 9077) e acessibilidade (NBR 9050, LBI) conferidas no estudo atual. É um checklist de estudo: confira com a norma vigente e o projetista; não substitui o projeto de prevenção e o de acessibilidade. Toque num item para ver o exigido, o porquê e a fonte.","o checklist de normas")}</div>`
+    + `<div id="nrmList"><p class="note">Calculando…</p></div>`
+    + ADV(`<div data-q="chuveiros sprinklers automáticos">${SW("normas.chuveiros","Edificação com chuveiros automáticos")}</div><div data-q="rota fuga escada pavimento tipo">${SW("normas.rotaFuga","Rota até a escada no pavimento tipo",{fx:"r3n"})}</div><p class="note" id="sum-nrmOpc">${nrmOpcSum()}</p>`, {key:"nrmOpc", label:"Opções"}),
+    {key:"nrmList", sum:"preliminar", info:"Saídas de emergência (IN 09) e acessibilidade (NBR 9050), conferidas no núcleo e na garagem desenhados. Preliminar."});
 }
-FX.r3n = ()=>{ save(); redraw2d(); setSum("nrmOpc", nrmOpcSum()) };
+/* seção "Saídas e acessibilidade" para o Projeto › Andares (P4). Chamada no corpo da etapa, desliga o card reserva. */
+function normasSecHTML(){ NRM_EXT=true; return nrmSecHTML_() }
+function normasCardHTML(){ return nrmSecHTML_() }   // compatibilidade
+addCard("projeto", {key:"normas", sub:"tipo", order:80, when:()=>!NRM_EXT, html:()=>nrmSecHTML_(), live:(m,f,fast)=>{ if(!NRM_EXT && document.getElementById("nrmList")) normasLive(m, fast) }});
+FX.r3n = ()=>{ save(); redraw2d(); setSum("nrmOpc", nrmOpcSum()); const e=document.getElementById("sum-nrmOpc"); if(e) e.textContent=nrmOpcSum() };
 function normasLive(m, fast){
-  setSum("nrmOpc", nrmOpcSum());
+  setSum("nrmOpc", nrmOpcSum()); { const e=document.getElementById("sum-nrmOpc"); if(e) e.textContent=nrmOpcSum() }
   if(fast && document.querySelector("#nrmList .nrm-it")) return; // arrastando: mantém o último (o completo vem logo depois)
   let v; try{ v=normasAvaliar(S, m) }catch(e){ console.error("[normas]", e); setHTML("nrmList", `<p class="note">Não foi possível avaliar as normas neste estudo.</p>`); return }
   const c=normasResumo(v.itens);
   const pill=document.getElementById("nrmPill"); if(pill) pill.innerHTML = c.bad? `<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>` : c.warn? `<span style="color:var(--warn)">${c.warn} em atenção</span>` : `<span style="color:var(--ok)">atende</span>`;
+  setSum("nrmList", [c.ok&&`${c.ok} atende${c.ok>1?"m":""}`, c.warn&&`<span style="color:var(--warn)">${c.warn} em atenção</span>`, c.bad&&`<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>`].filter(Boolean).join(" · ") || "preliminar");
   setHTML("nrmRes", ["ok","warn","bad"].filter(k=>c[k]).map(k=>`<span class="pill ${k}">${c[k]} ${NRM_ST[k]}</span>`).join("") + `<span class="pill">h = ${nf(v.h,1)} m</span>`);
   const open=new Set([...document.querySelectorAll("#nrmList details[open]")].map(d=>d.dataset.id));
   setHTML("nrmList", NORMAS_GRUPOS.map(g=>{ const l=v.itens.filter(x=>x.grupo===g); if(!l.length) return "";

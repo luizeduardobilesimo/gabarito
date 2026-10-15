@@ -4,7 +4,7 @@
      arrastar a edificação = move (toda a seleção) · quadrado no canto = redimensiona · setas = ajuste fino · Delete = apaga · Esc = limpa
      vértice: arraste (clique duplo remove) · ponto no meio do lado da edificação selecionada cria vértice
    Barra flutuante (#entBar) com nome/altura, aumentar/reduzir, girar, pátio, desenhar vazio, duplicar e apagar.
-   Seção "Entorno" nas etapas Terreno e Clima: criar caixa, desenhar, enquadrar, selecionar todas, apagar; busca no OSM (mapaEntornoHTML).
+   Seção "Vizinhos e ruas" (Terreno e Projeto › Sol / Vento): criar caixa, desenhar, enquadrar, selecionar todas, apagar; busca no OSM (mapaEntornoHTML).
    Cálculo puro em src/calc/entorno.js. A seleção guarda ids (sobrevive a desfazer/refazer) e não é salva no estudo. */
 const ENT = { sel:new Set(), marq:null, sig:"" };
 
@@ -103,10 +103,10 @@ document.addEventListener("keydown",e=>{
 const entTecla={ t:0 };
 
 /* ---------- ações ---------- */
-function entApagarSel(){ const n=ENT.sel.size; if(!n) return; S.entorno=S.entorno.filter(e=>!ENT.sel.has(e.id)); ENT.sel=new Set(); entApos(n>1? `${n} edificações apagadas` : "Edificação apagada"); if(TAB==="clima") renderTab() }
+function entApagarSel(){ const n=ENT.sel.size; if(!n) return; S.entorno=S.entorno.filter(e=>!ENT.sel.has(e.id)); ENT.sel=new Set(); entApos(n>1? `${n} edificações apagadas` : "Edificação apagada"); if(entNaClima()) renderTab() }
 function entEscalaSel(k){ entSelList().forEach(e=>entEscala(e,k)); entApos() }
 function entGiraSel(g){ entSelList().forEach(e=>entGira(e,g)); entApos() }
-function entDuplicaSel(){ const novos=entSelList().map(e=>entDuplica(e)); if(!novos.length) return; S.entorno.push(...novos); ENT.sel=new Set(novos.map(entId)); entApos(novos.length>1? "Duplicadas" : "Duplicada"); if(TAB==="clima") renderTab() }
+function entDuplicaSel(){ const novos=entSelList().map(e=>entDuplica(e)); if(!novos.length) return; S.entorno.push(...novos); ENT.sel=new Set(novos.map(entId)); entApos(novos.length>1? "Duplicadas" : "Duplicada"); if(entNaClima()) renderTab() }
 function entPatioSel(){ let n=0; entSelList().forEach(e=>{ if((e.vazios||[]).length) return; const v=entPatio(e,0.25); if(v){ (e.vazios=e.vazios||[]).push(v); n++ } }); n? entApos(n>1? `Pátio criado em ${n} edificações` : "Pátio criado — arraste os vértices para ajustar") : toast("Não coube um pátio nessa edificação (ou ela já tem vazio)") }
 function entVazioDesenha(){ if(entSelList().length!==1){ toast("Selecione uma edificação"); return } if(VIEW!=="impl") setView("impl"); DRAW=[]; setTool("draw","vazio") }
 function entLimpaVazios(){ entSelList().forEach(e=>{ delete e.vazios }); entApos("Vazios removidos") }
@@ -115,7 +115,7 @@ function entNomeSel(n){ const s=entSelList(); if(s.length===1){ s[0].nome=n; sav
 function entNovaCaixa(){
   if(VIEW!=="impl") setView("impl");
   const V=cur(), r=c2.getBoundingClientRect(), c=s2w_(r.width/2, r.height/2), e=entNovo(c,20,20,24,"Edificação "+(S.entorno.length+1));
-  S.entorno.push(e); ENT.sel=new Set([entId(e)]); setTool("edit"); entApos("Caixa criada — arraste para posicionar e use o quadrado do canto para redimensionar"); if(TAB==="clima") renderTab();
+  S.entorno.push(e); ENT.sel=new Set([entId(e)]); setTool("edit"); entApos("Caixa criada — arraste para posicionar e use o quadrado do canto para redimensionar"); if(entNaClima()) renderTab();
 }
 function entEnquadrar(){
   const L=entLista(); if(!L.length) return; if(VIEW!=="impl") setView("impl");
@@ -181,12 +181,12 @@ function entBarRefresh(){
   // digitando num campo da barra: não recria (a barra é refeita quando o foco sai)
 }
 
-/* ---------- card no inspetor (Terreno e Clima) ---------- */
-/* seção "Entorno" (fechada, com resumo): criar, enquadrar, selecionar e apagar; a edição fina é na implantação (ⓘ) */
+/* ---------- card no inspetor (Terreno e Projeto › Sol / Vento) ---------- */
+/* seção "Vizinhos e ruas" (antes "Entorno"; fechada, com resumo): criar, enquadrar, selecionar e apagar; a edição fina é na implantação (ⓘ) */
 function entSum(){ const L=entLista(), n=L.length, osm=L.filter(e=>e.osm).length; return n? `${n} edificaç${n>1?"ões":"ão"}${osm? ` · ${osm} do OSM`:""}` : "nenhuma" }
 function entCardInner(){
   const L=entLista(), n=L.length, osm=L.filter(e=>e.osm).length, sel=ENT.sel.size;
-  return `<div class="row"><button class="btn sm pri" data-act="entNova" title="Caixa de 20 × 20 m e 24 m no centro da vista">Nova caixa</button><button class="btn sm" data-act="entDesenha" title="Clique os cantos do vizinho na implantação">Desenhar</button><button class="btn sm" data-act="entGen" title="Um vizinho genérico em cada divisa (substitui os atuais)">Gerar genéricos</button><button class="btn sm" data-act="entEnq" ${n?"":"disabled"}>Enquadrar</button><button class="btn sm" data-act="entTodas" ${n?"":"disabled"}>Selecionar todas</button></div>
+  return `<div class="row"><button class="btn sm" data-act="entNova" title="Caixa de 20 × 20 m e 24 m no centro da vista">Nova caixa</button><button class="btn sm" data-act="entDesenha" title="Clique os cantos do vizinho na implantação">Desenhar</button><button class="btn sm" data-act="entGen" title="Um vizinho genérico em cada divisa (substitui os atuais)">Gerar genéricos</button><button class="btn sm" data-act="entEnq" ${n?"":"disabled"}>Enquadrar</button><button class="btn sm" data-act="entTodas" ${n?"":"disabled"}>Selecionar todas</button></div>
     ${sel? `<div class="row"><span class="note">${sel} selecionada${sel>1?"s":""}</span><button class="btn sm ghost" data-act="entNenhuma">Soltar</button><button class="btn sm ghost" data-act="entApagaSel">Apagar ${sel>1?"selecionadas":"selecionada"}</button></div>` : ""}
     ${n? `<div class="row">${osm?`<button class="btn sm ghost" data-act="entApagaOsm">Apagar as do OSM</button>`:""}${!osm||n>osm?`<button class="btn sm ghost" data-act="entApagaTodas">Apagar todas</button>`:""}</div>` : ""}
     ${entNomesHTML()}`;
@@ -197,9 +197,13 @@ function entNomesHTML(){
   return ADV(`<div class="list">${L.map(([e,i])=>`<div class="li" style="grid-template-columns:minmax(0,1fr) 92px 28px"><div class="inp"><input class="t" data-p="entorno.${i}.nome" data-t="s" data-fx="save" value="${esc(e.nome||"")}" aria-label="Nome do volume ${i+1}"></div><div class="inp"><input type="number" data-p="entorno.${i}.h" data-min="0" step="0.5" value="${e.h}" aria-label="Altura do volume ${i+1}"><em>m</em></div><button type="button" class="x" data-act="entX" data-i="${i}" aria-label="Remover ${esc(e.nome||"volume")}" title="Remover">×</button></div>`).join("")}</div>`,
     {key:"entNomes", label:"Nomes e alturas", fechar:"Fechar nomes e alturas"});
 }
-const entCardHTML = () => SEC("Entorno", `<div id="entCardBody">${entCardInner()}</div>` + (typeof mapaEntornoHTML==="function"? GRP("OpenStreetMap") + mapaEntornoHTML() : ""),
+const entCardHTML = () => SEC("Vizinhos e ruas", `<div id="entCardBody">${entCardInner()}</div>` + (typeof mapaEntornoHTML==="function"? GRP("OpenStreetMap") + mapaEntornoHTML() : ""),
   {key:"entedit", sum:entSum(), info:"Prédios vizinhos: fazem sombra e mudam o vento. Na implantação, clique numa edificação para selecionar e arraste para mover; Shift soma; Shift + arrastar no vazio seleciona várias; setas ajustam; Delete apaga. O quadrado do canto redimensiona e a barra na base muda altura, giro, pátios e vazios. Ctrl+Z desfaz."});
 function entCardRefresh(){ const b=document.getElementById("entCardBody"); if(b && !typing(b)){ const h=entCardInner(); if(b.innerHTML!==h) b.innerHTML=h } setSum("entedit", entSum()) }
 ACT.entDesenha = ()=>{ if(VIEW!=="impl") setView("impl"); DRAW=[]; setTool("draw","entorno"); toast("Clique nos cantos do vizinho e feche no primeiro ponto") };
+/* espelho (UX v3 §4.6): Terreno, Projeto › Sol e Projeto › Vento. Enquanto a etapa Clima existir (sem o P1), também nela. */
+const entNaClima = () => typeof emClima==="function"? emClima() : TAB==="clima";
 addCard("terreno",{ key:"entedit", order:55, html:entCardHTML });
-addCard("clima",{ key:"entedit", order:55, html:entCardHTML });
+addCard("projeto",{ key:"entedit", sub:"sol", order:55, html:entCardHTML });
+addCard("projeto",{ key:"entedit-vento", sub:"vento", order:55, html:entCardHTML });
+if(typeof STEPS!=="undefined" && STEPS.some(s=>s.k==="clima")) addCard("clima",{ key:"entedit", order:55, html:entCardHTML });

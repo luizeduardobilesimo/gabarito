@@ -1,5 +1,5 @@
 /* ================= relevo: leitura automática da inclinação do terreno (Fase B, item 2) =================
-   relevoBlocoHTML() → bloco "Relevo do local" dentro do card Topografia (src/ui/topografia.js, etapa Terreno)
+   relevoBlocoHTML() → bloco "Relevo do local" dentro da seção Terreno inclinado (src/ui/topografia.js, etapa Terreno)
    Busca os tiles Terrarium da AWS (z14, ~30 m, sem chave, com CORS), ajusta um plano em volta do lote (cálculo em src/calc/relevo.js)
    e mostra o resultado em uma linha. Reserva: Open-Meteo (90 m, só uso não comercial). Cotas dos cantos editáveis corrigem o plano.
    Aplicar: "Usar na topografia" (S.topo.on com pontos sobre o plano) ou "Só como desnível" (S.lote.desnivel).
@@ -33,7 +33,7 @@ function relevoResHTML(){
   const dica = ef.conf&&ef.conf.motivo && nivel!=="alta" && !ef.info ? ` title="${esc(ef.conf.motivo)}"` : "";
   let acoes="";
   if(nivel==="plano") acoes=`<button class="btn sm ghost" data-act="relevoLimpa">Limpar</button>`;
-  else acoes=`<button class="btn sm${R.aplicado==="topo"&&R.sig===relevoSig(ef)?"":" pri"}" data-act="relevoUsa">Usar na topografia</button><button class="btn sm" data-act="relevoDesn" title="Projeta a inclinação entre a frente e os fundos (modo simples)">Só como desnível</button><button class="btn sm ghost" data-act="relevoLimpa">Limpar</button>`;
+  else acoes=`<button class="btn sm" data-act="relevoUsa">Usar na topografia</button><button class="btn sm" data-act="relevoDesn" title="Projeta a inclinação entre a frente e os fundos (modo simples)">Só como desnível</button><button class="btn sm ghost" data-act="relevoLimpa">Limpar</button>`;
   return `<div class="row sb" style="flex-wrap:nowrap;align-items:flex-start"><span style="font-size:13px;color:${cor}"${dica}><b>${esc(relevoLinha(ef))}</b></span>${INFO("Inclinação")}</div>
     <div class="fsub">${esc(origem)} ${aplic}</div><div class="row">${acoes}</div>${nivel!=="plano"?`<div class="row sb" style="flex-wrap:nowrap">${SW("relevo.previa3d","Plano do relevo no 3D",{fx:"relevoPrevia"})}${INFO("Mostra no 3D um plano inclinado discreto, com as curvas de nível e a seta da descida, só como prévia do terreno. Com a topografia ligada, o terreno real aparece no lugar.","o plano no 3D")}</div>`:""}`;
 }
@@ -58,7 +58,7 @@ function relevoBlocoHTML(){
     `<div class="row"><button class="btn sm ghost" data-act="relevoLimpaCantos">Limpar cotas informadas</button></div>`,
     {key:"relevo", label:"Mais opções"});
   return `<div class="relevo" id="relevoBox" style="margin-bottom:14px">
-    <div class="row"><button class="btn sm${tem?"":" pri"}" id="relevoBtn" data-act="relevoBusca" ${geo?"":'disabled aria-disabled="true"'}>Buscar relevo do local</button>${INFO("Relevo")}</div>
+    <div class="row"><button class="btn sm" id="relevoBtn" data-act="relevoBusca" ${geo?"":'disabled aria-disabled="true"'}>Buscar relevo do local</button>${INFO("Relevo")}</div>
     <p class="note" id="relevoMsg" ${msg?"":"hidden"} style="${REL.erro?"color:var(--warn)":""}">${aviso? esc(msg) : msg}</p>
     <div id="relevoRes">${relevoResHTML()}</div>${adv}</div>`;
 }

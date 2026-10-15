@@ -1,10 +1,10 @@
 /* ================= 2.4 regras avançadas de forma — interface =================
-   Campos na seção "Forma do edifício" (etapa Regras › Prefeitura), linhas na conformidade e desenho do envelope
+   Campos na seção "Altura e recuos por faixa" (Terreno › A lei; antes "Forma do edifício"), linhas na conformidade e desenho do envelope
    escalonado na implantação e dos terraços nos andares recuados. Cálculo em src/calc/forma.js + massing. */
 function formaRecuosHTML(){
   const F=S.forma; if(!F) return "";
-  // seção "Forma do edifício" (etapa Regras › Prefeitura): desligada = só o interruptor
-  let h = `<div data-q="forma recuo progressivo escalonada aeródromo soleira embasamento">${SW("forma.on","Regras avançadas de forma",{rr:true})}</div>`;
+  // seção "Altura e recuos por faixa" (Terreno): desligada = só o interruptor
+  let h = `<div data-q="forma recuo progressivo escalonada aeródromo soleira embasamento altura faixa">${SW("forma.on","Usar regras por faixa de altura",{rr:true})}</div>`;
   if(!F.on) return h;
   h += `<div class="row sb" data-q="afastamento faixas altura progressivo" style="flex-wrap:nowrap">${SW("forma.prog","Afastamento por faixas de altura",{rr:true})}${INFO("Recuo progressivo")}</div>`;
   if(F.prog){
@@ -30,7 +30,7 @@ function formaRecuosHTML(){
 ACT.formaFxAdd = ()=>{ const L=S.forma.faixas, last=L[L.length-1], prev=L[L.length-2]; const z=(prev&&+prev.ate||0)+12;
   L.splice(L.length-1, 0, {ate:z, af:last? +last.af||2 : 2, div:0}); update(); renderTab() };
 ACT.formaFxDel = b=>{ const L=S.forma.faixas; if(L.length<2) return; L.splice(+b.dataset.i,1); L[L.length-1].ate=0; update(); renderTab() };
-/* linhas extras na conformidade do estudo (etapa Regras) */
+/* linhas extras na conformidade do estudo (rgConformidade, src/ui/etapa-terreno.js) */
 function formaRows(m){
   const F=S.forma; if(!F || !F.on) return [];
   const out=[];
@@ -51,7 +51,7 @@ function formaLive(m){
   const extra = [F.soleira? `topo na cota ${nf(+F.soleira+m.H,1)} m (soleira ${nf(+F.soleira,2)} m)` : "", F.aero? `limite ${nf(m.hLim,1)} m acima da soleira` : ""].filter(Boolean).join(" · ");
   setHTML("formaRes", `<table class="tbl" style="margin-top:6px">${rows.join("")}${tot}</table>${extra? `<p class="note">${extra}</p>` : ""}`);
 }
-addCard("regras", {key:"formaLive", order:61, html:()=>"", live:m=>formaLive(m)});
+addCard("terreno", {key:"formaLive", order:61, html:()=>"", live:m=>formaLive(m)});
 /* desenho: envelope escalonado na implantação; terraço nos andares recuados */
 HOOK.draw2d.push((g, ctx)=>{
   const {mode, m, opt, w2s, V}=ctx; if(!m || !m.forma) return;
@@ -89,7 +89,7 @@ if(typeof planLegend==="function"){ const _plForma=planLegend; planLegend=functi
 /* ---------- relatório PDF: faixas de andares ---------- */
 HOOK.pdf.push(async ctx=>{ const m=ctx.m, F=S.forma; if(!m || !m.forma || !F) return;
   const L=[]; m.T.forEach((t,i)=>(t.faixas||[]).forEach(f=>L.push([`Torre ${i+1} · ${f.de===f.ate? f.de+"º" : f.de+"º a "+f.ate+"º"} pav.`, `${m2(f.A)} × ${f.n} · ${f.qtd.reduce((s,n)=>s+n,0)} un/andar`])));
-  ctx.h2("Forma do edifício — faixas de andares");
+  ctx.h2("Altura e recuos por faixa — andares");
   ctx.rows([...(F.prog? [["Afastamento às divisas", F.faixas.map((b,k)=>`${k<F.faixas.length-1? "até "+nf(+b.ate,1)+" m" : "acima"}: ${b.div>0? "máx("+nf(+b.af,2)+" m; H÷"+nf(+b.div,1)+")" : nf(+b.af,2)+" m"}`).join(" · ")]] : []),
     ...L, ["Pavimentos das torres", m2(m.tiposA)], ...(+F.hEmbMax>0? [["Embasamento", `${nf(m.hEmb,1)} m (máx. ${nf(+F.hEmbMax,1)} m)`, m.hEmb>+F.hEmbMax+1e-6? "bad" : "ok"]] : []),
     ...(F.aero? [["Plano do aeródromo", `limite ${nf(m.hLim,1)} m acima da soleira`, m.H>m.hLim+1e-6? "bad" : "ok"]] : [])]);

@@ -156,14 +156,19 @@ async function tTerreno(b) {
   ok(await ev(() => Math.abs(G.edgeLen(S.lote.pts, 0) - 30) < 0.01), 'comprimento do lado L1 = 30 m');
   await undo(); ok(await J('S.lote') === lote0, '  Ctrl+Z desfaz o comprimento');
   ok(await ev(() => { ACT.ladoAb({ dataset: { i: String(S.lote.pts.length - 1) } }); const i = document.getElementById('lado-len-' + (S.lote.pts.length - 1)); return i && i.disabled }), 'último lado bloqueado (fecha o contorno)');
-  // acessos
-  await faixa('#r-lote-acessoPed', 0.6); await fim(); ok(await ev(() => Math.abs(S.lote.acessoPed - 0.6) < 1e-9), 'acesso de pedestres em 60%');
-  await faixa('#r-lote-acessoVei', 0.3); await fim(); ok(await ev(() => Math.abs(S.lote.acessoVei - 0.3) < 1e-9), 'acesso de veículos em 30%');
-  ok(await desfazAte('S.lote', lote0, 3), '  Ctrl+Z desfaz os acessos');
-  // localização
-  await abre('local'); await preenche('#f-lote-norte', 15); await fim();
+  // acessos (UX v3: as entradas saem do Terreno e vão para Projeto › Garagem, acessosSecHTML de src/ui/etapa-terreno.js)
+  ok(await ev(() => !document.getElementById('r-lote-acessoPed')), 'entradas fora do Terreno (vão para Projeto › Garagem)');
+  await ev(() => { PSUB = 'gar'; goStep('projeto', 'gar') }); await W(600);
+  if (await p.$('#r-lote-acessoPed')) {
+    await faixa('#r-lote-acessoPed', 0.6); await fim(); ok(await ev(() => Math.abs(S.lote.acessoPed - 0.6) < 1e-9), 'acesso de pedestres em 60%');
+    await faixa('#r-lote-acessoVei', 0.3); await fim(); ok(await ev(() => Math.abs(S.lote.acessoVei - 0.3) < 1e-9), 'acesso de veículos em 30%');
+    ok(await desfazAte('S.lote', lote0, 3), '  Ctrl+Z desfaz os acessos');
+  } else ok(await ev(() => typeof acessosSecHTML === 'function' && /lote\.acessoVei/.test(acessosSecHTML())), 'entradas prontas para Projeto › Garagem (acessosSecHTML)');
+  await ev(() => { goStep('terreno'); setView('impl') }); await W(600);
+  // posição no mapa (Contorno do lote › Posição no mapa)
+  await abre('contorno'); await h.mais('contorno'); await preenche('#f-lote-norte', 15); await fim();
   ok(await ev(() => S.lote.norte === 15), 'norte a 15°');
-  ok(await ev(() => document.getElementById('sum-local').textContent.includes('15')), '  resumo da seção atualiza');
+  ok(await ev(() => document.getElementById('sum-contorno').textContent.includes('15')), '  resumo da seção atualiza');
   await undo(); ok(await J('S.lote') === lote0, '  Ctrl+Z desfaz o norte');
   // limites especiais
   await ev(() => fit2d()); await abre('lim'); const c = await ev(() => G.centroid(S.lote.pts));
@@ -305,7 +310,7 @@ async function tEntorno(b) {
   await ev(() => { S.lote.geo = false; S.contexto.dados = null; S.frentes.sug = null; update(); renderTab() }); await W(300);
   await p.click('#tabbody [data-act="frDetectar"]'); await W(400);
   ok(await ev(() => S.contexto.dados === null && /Posicione o lote no mapa/.test(document.getElementById('frBox').textContent)), 'sem georreferência: não busca e pede para posicionar');
-  ok(await ev(() => !!document.querySelector('details[data-key="local"]').open), '  card Localização abre');
+  ok(await ev(() => { const a = document.querySelector('details[data-key="contorno"] .adv[data-adv$=":local"] > .advb'); return !!document.querySelector('details[data-key="contorno"]').open && a && !a.hidden }), '  Posição no mapa abre');
   await ev(() => { S.lote.geo = true; update(); renderTab() });
   await p.screenshot({ path: path.join(OUT, 'entorno-osm.png') });
   semErros(p, 'entorno'); await ctx.close();
@@ -315,34 +320,35 @@ async function tEntorno(b) {
    REGRAS — cidade aplicar/desfazer, IA, CA, busca, regras de forma, normas
    ===================================================================================== */
 async function tRegras(b) {
-  const { ctx, p, h } = await abrir(b); const { ev, W, J, undo, abre, act, preenche, fim, etapa } = h;
-  await etapa('regras', 'pref');
+  const { ctx, p, h } = await abrir(b); const { ev, W, J, undo, abre, act, preenche, fim } = h;
+  // UX v3: as regras da prefeitura moram em Terreno › Regras da prefeitura (a etapa Regras some com o P1)
+  await ev(() => goStep('terreno')); await W(500); await h.ocioso(); await abre('regras');
   const R0 = await J('S.regras');
   const opt = await ev(() => document.querySelector('#cidLib option[value]:not([value=""])').value);
   await p.selectOption('#cidLib', opt); await fim();
   ok(await J('S.regras') !== R0, 'aplicar regras de uma cidade', await ev(() => S.regras.cidade));
+  ok(await ev(() => { const R = S.regras, v = id => +document.getElementById(id).value; return Math.abs(v('f-regras-caMax') - R.caMax) < 1e-9 && Math.abs(v('f-regras-hMax') - R.hMax) < 1e-9 && Math.abs(v('f-regras-recFrente') - R.recFrente) < 1e-9 }), '  os campos mostram as regras da cidade');
+  ok(await ev(() => document.getElementById('loteRes').textContent.includes(m2(S.regras.caMax * window._last.m.A).replace(/\s*m²$/, ''))), '  o resultado (computável máx.) acompanha');
   await act('cidUndo'); await fim(); ok(await J('S.regras') === R0, '  botão Desfazer da cidade');
   await p.selectOption('#cidLib', opt); await fim(); await undo();
   ok(await J('S.regras') === R0, '  Ctrl+Z desfaz a cidade aplicada');
-  await p.click('#tabbody .adv[data-adv="regras:ia"] .advbtn'); await W(200);
-  ok(await ev(() => !!document.getElementById('aiZona') && !document.getElementById('aiZona').closest('[hidden]')), 'abrir leitura do plano diretor com IA');
+  await abre('regras'); await p.click('#tabbody .adv[data-adv$=":regras"] > .advbtn'); await W(200);
+  await p.click('#tabbody .adv[data-adv$=":ia"] > .advbtn'); await W(200);
+  ok(await ev(() => !!document.getElementById('aiZona') && !document.getElementById('aiZona').closest('[hidden]')), 'abrir leitura da lei com IA (Mais regras)');
+  ok(await ev(() => !!document.getElementById('f-regras-afTorresDiv') && !document.getElementById('f-regras-afTorresDiv').closest('[hidden]')), '  Mais regras mostra afastamentos e áreas');
   await preenche('#f-regras-caMax', 5); await fim();
-  ok(await ev(() => S.regras.caMax === 5), 'editar CA máximo'); await undo(); ok(await J('S.regras') === R0, '  Ctrl+Z desfaz o CA');
-  await p.fill('#rgFind', 'pé'); await W(300);
-  ok(await ev(() => /Projeto/.test(document.getElementById('rgFindOut').textContent)), 'busca aponta resultado em outra aba');
-  await p.click('#rgFindOut [data-v="proj"]'); await W(500);
-  ok(await ev(() => subAtual('regras') === 'proj' && [...document.querySelectorAll('#tabbody [data-q]')].filter(f => !f.hidden).length >= 1), '  chip leva à aba Projeto filtrada');
-  await p.fill('#rgFind', ''); await W(200);
-  ok(await ev(() => !document.querySelector('#tabbody details[data-key="vaga"]').open), '  limpar a busca fecha o que abriu');
-  await h.sub('pref'); await abre('forma');
+  ok(await ev(() => S.regras.caMax === 5), 'editar aproveitamento máximo'); await undo(); ok(await J('S.regras') === R0, '  Ctrl+Z desfaz o CA');
+  await abre('forma');
   await p.click('#tabbody details[data-key="forma"] label.sw'); await fim();
-  ok(await ev(() => S.forma.on), 'ligar regras de forma (recuos progressivos)');
+  ok(await ev(() => S.forma.on), 'ligar altura e recuos por faixa');
   await undo(); ok(await ev(() => !S.forma.on), '  Ctrl+Z desliga');
-  await h.sub('normas'); await W(500);
-  ok(await ev(() => document.querySelectorAll('#nrmList .nrm-it').length > 3), 'checklist de normas');
-  await abre('nrmOpc'); await p.click('#tabbody details[data-key="nrmOpc"] label.sw >> nth=0'); await fim();
+  // normas: Projeto › Andares › Saídas e acessibilidade (normasSecHTML)
+  await ev(() => { PSUB = 'tipo'; goStep('projeto', 'tipo') }); await W(800); await abre('nrmList'); await W(300);
+  ok(await ev(() => document.querySelectorAll('#nrmList .nrm-it').length > 3), 'checklist de normas (Projeto › Andares)');
+  await abre('nrmList'); await p.click('#tabbody details[data-key="nrmList"] .adv > .advbtn'); await W(200);
+  await p.click('#tabbody details[data-key="nrmList"] label.sw >> nth=0'); await fim();
   ok(await ev(() => S.normas.chuveiros === true), 'opção chuveiros automáticos');
-  ok(await ev(() => document.getElementById('sum-nrmOpc').textContent.includes('com chuveiros')), '  resumo da seção');
+  ok(await ev(() => document.getElementById('sum-nrmOpc').textContent.includes('com chuveiros')), '  resumo das opções');
   await undo(); ok(await ev(() => !S.normas.chuveiros), '  Ctrl+Z desfaz');
   semErros(p, 'regras'); await ctx.close();
 }

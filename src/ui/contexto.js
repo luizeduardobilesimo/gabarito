@@ -4,7 +4,7 @@
    - 3D (HOOK.draw3d): chão em camadas mescladas (água levemente reflexiva, asfalto, calçadas com meio-fio, areia, gramado) que
      somem suavemente na borda, e as edificações de S.entorno mescladas por tipo (casas com telhado de duas águas)
    - ctx3dAssume(k,m): o núcleo (view3d.js) deixa de desenhar a rua genérica ("ruas") e os prismas cinzas ("predios")
-   - camadas ligáveis (chips) na seção Entorno: ctxCamadasHTML() entra em mapaEntornoHTML (src/ui/mapa.js)
+   - camadas ligáveis (chips) na seção Vizinhos e ruas: ctxCamadasHTML() entra em mapaEntornoHTML (src/ui/mapa.js)
    As camadas só mudam o desenho: as edificações continuam valendo para sol e vento; água, vias e verde não fazem sombra. */
 const CTX = { cores:null, coresK:"", bb:new WeakMap(), lbl:new WeakMap(), g3:null, g3k:"", e3:null, e3k:"", env:null, envK:"" };
 const ctxDados = () => { const d=S.contexto && S.contexto.dados; return d && Array.isArray(d.vias) ? d : null };
@@ -193,7 +193,7 @@ HOOK.draw3d.push((grp, m)=>{
   CTX.t3=performance.now()-t0;
 });
 
-/* ---------- camadas ligáveis (seção Entorno → OpenStreetMap) ---------- */
+/* ---------- camadas ligáveis (seção Vizinhos e ruas → OpenStreetMap) ---------- */
 function ctxConta(){
   const d=ctxDados(), ent=(S.entorno||[]).filter(e=>e.pts && e.pts.length>2), n=d? d.n||{} : {};
   return { ruas:(n.vias||0)+(n.estac||0)+(n.ciclovias||0), calcadas:(n.calcadas||0)+(n.pracas||0), agua:(n.agua||0)+(n.rios||0)+(n.mar||0)+(n.areia||0), verde:n.verde||0,
