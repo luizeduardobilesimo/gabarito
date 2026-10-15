@@ -1,5 +1,5 @@
 /* ================= ruas → frentes (interface; cálculo em src/calc/frente.js) =================
-   Card "Lados e frentes" (etapa Terreno): botão "Detectar frentes pelas ruas" → mostra, por lado, a rua e a largura estimada (editável)
+   Seção "Ruas e frentes" (antes "Lados e frentes", etapa Terreno): botão "Detectar frentes pelas ruas" → mostra, por lado, a rua e a largura estimada (editável)
    e a sugestão (frentes, principal, acesso de veículos). NADA muda no lote até o usuário clicar em "Aplicar sugestão" (Ctrl+Z desfaz).
    Sem contexto do OSM carregado, busca primeiro (mapaEntorno, com a busca resiliente). Sem georreferência, pede para posicionar o lote. */
 const FR = { msg:"", busy:false, princ:null };
@@ -31,15 +31,14 @@ function frRegraHTML(){
 }
 function frHTML(){
   const s=frSug(), geo=!!S.lote.geo;
-  const btn=`<button class="btn sm${s?"":" pri"}" data-act="frDetectar" ${FR.busy?"disabled":""}>${FR.busy? "Buscando…" : s? "Detectar de novo" : "Detectar frentes pelas ruas"}</button>${INFO("Lê as ruas do OpenStreetMap junto ao lote e propõe quais lados são frente, qual é a principal (via de maior hierarquia), se o lote é de esquina ou passante e por qual rua deve entrar o carro (a de menor hierarquia). Ao aplicar, a frente principal fica com lojas, hall e pedestres e o carro entra pela rua de menor hierarquia (selo “veículos” no lado), sem trocar a principal. Nada muda até você aplicar. A largura da via é estimada pela classe e pode ser corrigida em cada lado.")}`;
+  const btn=`<button class="btn sm${s?" ghost":""}" data-act="frDetectar" ${FR.busy?"disabled":""}>${FR.busy? "Buscando…" : s? "Detectar de novo" : "Detectar frentes pelas ruas"}</button>${INFO("Lê as ruas do OpenStreetMap junto ao lote e propõe quais lados são frente, qual é a principal (via de maior hierarquia), se o lote é de esquina ou passante e por qual rua deve entrar o carro (a de menor hierarquia). Ao aplicar, a frente principal fica com lojas, hall e pedestres e o carro entra pela rua de menor hierarquia (selo “veículos” no lado), sem trocar a principal. Nada muda até você aplicar. A largura da via é estimada pela classe e pode ser corrigida em cada lado.")}`;
   let h=`<div class="row" style="flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px">${btn}${s? `<button class="btn sm ghost" data-act="frDescartar" title="Descartar a proposta">Descartar</button>` : ""}</div>`;
   if(FR.msg) h+=`<p class="note" id="frMsg">${esc(FR.msg)}</p>`;
-  else if(!geo && !s) h+=`<p class="note" id="frMsg">Posicione o lote no mapa para detectar.</p>`;
   if(s){
     const igual=frIgual(s), cand=s.front.length>1? s.front.map(i=>s.lados.find(l=>l.i===i)).filter(Boolean) : [];
     h+=`<p class="note" id="frSum">${frResumo(s)}</p>`;
     if(cand.length>1) h+=`<div class="seg full" role="group" aria-label="Frente principal">${cand.map(l=>`<button type="button" data-act="frPrinc" data-i="${l.i}" aria-pressed="${(FR.princ ?? s.principal)===l.i}" title="Frente principal: lojas, hall e acessos" style="padding:5px 4px">L${l.i+1} · ${esc(frCurto(frNome(l),16))}</button>`).join("")}</div>`;
-    h+=`<div class="row" style="margin-top:8px">${igual? `<span class="note" style="margin:0">As frentes já seguem a sugestão.</span>` : `<button class="btn pri" data-act="frAplicar">Aplicar sugestão</button>`}</div>`;
+    h+=`<div class="row" style="margin-top:8px">${igual? `<span class="note" style="margin:0">As frentes já seguem a sugestão.</span>` : `<button class="btn" data-act="frAplicar">Aplicar sugestão</button>`}</div>`;
     h+=frRegraHTML();
   }
   return h;

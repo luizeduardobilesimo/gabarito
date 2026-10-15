@@ -8,11 +8,11 @@ const MAPA_CDN = { js:"https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js",
 const MAPA_OVERPASS = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
 const MAPA = { lib:null, map:null, pts:[], fechado:false, tilesOk:0, tilesErr:0, t0:0 };
 
-/* método "Mapa" do contorno do lote (etapa Terreno) — só o lote; os prédios vizinhos ficam na seção Entorno (mapaEntornoHTML) */
+/* método "Mapa" do contorno do lote (etapa Terreno) — só o lote; os prédios vizinhos ficam na seção Vizinhos e ruas (mapaEntornoHTML) */
 function mapaFormHTML(){
-  return `<div class="row"><button class="btn pri" data-act="mapaAbrir">Abrir mapa</button><label class="btn" for="geoFile" tabindex="0">GeoJSON da prefeitura</label><input type="file" id="geoFile" accept=".geojson,.json,application/geo+json,application/json" hidden>${INFO("Satélite (Esri) ou OpenStreetMap: ache o terreno e clique nos cantos do lote; latitude, longitude e norte vêm sozinhos. O GeoJSON da prefeitura (WGS84 ou UTM) também vira o contorno. Os prédios vizinhos ficam na seção Entorno.")}</div>`;
+  return `<div class="row"><button class="btn" data-act="mapaAbrir">Abrir mapa</button><label class="btn" for="geoFile" tabindex="0">GeoJSON da prefeitura</label><input type="file" id="geoFile" accept=".geojson,.json,application/geo+json,application/json" hidden>${INFO("Satélite (Esri) ou OpenStreetMap: ache o terreno e clique nos cantos do lote; latitude, longitude e norte vêm sozinhos. O GeoJSON da prefeitura (WGS84 ou UTM) também vira o contorno. Os prédios vizinhos ficam na seção Vizinhos e ruas.")}</div>`;
 }
-/* bloco "OpenStreetMap" da seção Entorno (src/ui/entorno.js, etapas Terreno e Clima) */
+/* bloco "OpenStreetMap" da seção Vizinhos e ruas (src/ui/entorno.js: Terreno e Projeto › Sol / Vento) */
 function mapaEntornoHTML(){
   const ent=(S.entorno||[]).filter(e=>e.osm).length;
   return `<div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-act="mapaEntorno" title="Prédios, ruas, calçadas, água e verde ao redor do lote">Buscar entorno do OSM</button><div class="inp" style="width:92px;flex:none"><input type="number" step="10" min="30" max="400" data-p="mapa.raio" data-min="30" data-max="400" data-fx="save" value="${S.mapa.raio}" aria-label="Raio da busca em metros" title="Raio da busca"><em>m</em></div>${INFO("Prédios do OpenStreetMap num raio ao redor do lote (precisa de latitude e longitude e de internet), com ruas, calçadas, água e verde. Altura pela tag height ou pelo nº de pavimentos × 3 m; sem informação, 6 m (estimada). Os desenhados à mão ficam.")}</div>
@@ -212,17 +212,21 @@ async function mapaTile(z, x, y){
 }
 /* sem georreferência o lote está na origem padrão (Criciúma): a busca rodaria no lugar errado */
 function mapaSemGeo(){
-  const t=`Posicione o lote no mapa para buscar o entorno. <button class="btn sm" data-act="geoMapa">Abrir mapa</button> <button class="btn sm ghost" data-act="geoIr">Localização</button>`;
+  const t=`Posicione o lote no mapa para buscar o entorno. <button class="btn sm" data-act="geoMapa">Abrir mapa</button> <button class="btn sm ghost" data-act="geoIr">Posição no mapa</button>`;
   MAPA.aviso=t; MAPA.avisoGeo=true; mapaMsg(t); mapaHint("Posicione o lote no mapa para buscar o entorno");
-  if(typeof geoFoco==="function" && TAB==="terreno") geoFoco();
+  if(typeof geoFoco==="function" && (TAB==="terreno"||TAB==="regras")) geoFoco();
   toast("Posicione o lote no mapa para buscar o entorno");
 }
-/* abre e destaca o card Localização da etapa Terreno */
+/* abre e destaca a posição no mapa (Terreno › Contorno do lote › "Posição no mapa") */
 function geoFoco(){
-  const d=TB.querySelector('details[data-key="local"]'); if(!d) return;
-  d.open=true; d.classList.add("geoFoco"); try{ d.scrollIntoView({block:"nearest",behavior:"smooth"}) }catch(e){}
+  const d=TB.querySelector('details[data-key="contorno"]') || TB.querySelector('details[data-key="local"]'); if(!d) return;
+  d.open=true;
+  const a=d.querySelector('.adv[data-adv$=":local"]'), ab=a && a.querySelector(":scope > .advb");
+  if(ab && ab.hidden){ const bt=a.querySelector(":scope > .advbtn"); if(bt && ACT.advTog) ACT.advTog(bt); else ab.hidden=false }
+  const alvo=a||d; d.classList.add("geoFoco"); try{ alvo.scrollIntoView({block:"nearest",behavior:"smooth"}) }catch(e){}
   clearTimeout(geoFoco.t); geoFoco.t=setTimeout(()=>d.classList.remove("geoFoco"), 3000);
 }
+const mapaNaTela = () => TAB==="terreno" || TAB==="regras" || (typeof emClima==="function"? emClima() : TAB==="clima");
 const mapaForaDoLocal = () => !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname||"") || location.protocol==="file:";
 /* entorno do OSM (prédios + ruas, água e verde). Devolve true se há contexto utilizável ao final (novo ou o da busca anterior). */
 async function mapaEntorno(){
@@ -242,7 +246,7 @@ async function mapaEntorno(){
   if(r.erro){
     const quando=antOk? ctxQuandoBR(ant.quando) : "", fora=mapaForaDoLocal();
     const t=`OpenStreetMap indisponível agora (${esc(r.erro)}).${quando? ` Usando a última busca de ${quando}.`:""} <button class="btn sm" data-act="mapaEntorno">Tentar de novo</button>${fora? `<br>No artifact do claude.ai as buscas externas são bloqueadas: abra em http://localhost:5173.` : ""}`;
-    MAPA.aviso=t; msg(t); toast("Entorno do OSM indisponível"); if(TAB==="terreno"||TAB==="clima") renderTab(); return antOk;
+    MAPA.aviso=t; msg(t); toast("Entorno do OSM indisponível"); if(mapaNaTela()) renderTab(); return antOk;
   }
   const ref=geoRef(lat,lon), hoje=new Date().toISOString().slice(0,10);
   let novo, ent=null, s=(performance.now()-t0)/1000, aviso="";
@@ -265,7 +269,7 @@ async function mapaEntorno(){
   if(aviso){ t=aviso+" "+t; MAPA.aviso=aviso+` <button class="btn sm ghost" data-act="mapaEntorno">Tentar a busca completa</button>` }
   msg(t); toast(aviso? "Busca reduzida do OSM" : toastT);
   if(ent && ent.length && !aberto && typeof entEnquadrar==="function"){ setView("impl"); entEnquadrar() }
-  if(TAB==="terreno"||TAB==="clima") renderTab();
+  if(mapaNaTela()) renderTab();
   return true;
 }
 /* atalhos da mensagem "posicione o lote no mapa" */

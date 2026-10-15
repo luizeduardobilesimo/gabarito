@@ -1,20 +1,20 @@
-/* ================= topografia: card da etapa Terreno, curvas na implantação e relevo no 3D (item 2.3) =================
-   topoCardHTML()  → card "Topografia" (chamado por STEP_R.terreno) · topoLive(m) → números vivos · topoAfter() → liga o arquivo
+/* ================= topografia: seção "Terreno inclinado" da etapa Terreno, curvas na implantação e relevo no 3D (item 2.3) =================
+   topoCardHTML()  → seção "Terreno inclinado" (chamada por STEP_R.terreno) · topoLive(m) → números vivos · topoAfter() → liga o arquivo
    Desenho: HOOK.draw2d (curvas de nível e pontos na implantação) e HOOK.draw3d (terreno em relevo, ruas e entorno na cota certa). */
 const topoN=(v,d=2)=>nf(v,d);
-/* seção "Topografia" da etapa Terreno: fechada, com resumo; custos e desenho atrás de "Mais opções" */
+/* seção "Terreno inclinado" (antes "Topografia") da etapa Terreno: fechada, com resumo; custos e desenho atrás de "Mais opções" */
 function topoSum(m){
   const T=S.topo; if(!T.on) return `desnível ${nf(+S.lote.desnivel||0,1)} m`;
   if(!T.pts.length) return "sem pontos importados";
   const t=m&&m.topo; return `${T.pts.length} pontos${t? ` · térreo ${topoN(t.c)} m` : ""}`;
 }
 function topoCardHTML(){
-  const T=S.topo, sec=b=>SEC("Topografia", (typeof relevoBlocoHTML==="function"?relevoBlocoHTML():"")+b, {key:"topografia", sum:topoSum(window._last&&window._last.m)});
+  const T=S.topo, sec=b=>SEC("Terreno inclinado", (typeof relevoBlocoHTML==="function"?relevoBlocoHTML():"")+b, {key:"topografia", sum:topoSum(window._last&&window._last.m), info:"Desnível entre a frente e os fundos, levantamento topográfico (pontos ou curvas) ou o relevo lido do mapa. Entra no corte, no aterro, na contenção e na cota do térreo."});
   const sw=`<div class="row sb" style="flex-wrap:nowrap">${SW("topo.on","Usar levantamento topográfico",{rr:true})}${INFO("Desligado: vale o desnível simples entre a frente e os fundos. Ligado: pontos cotados ou curvas de nível (CSV, KML, DXF) dão o corte, o aterro e a contenção reais.")}</div>`;
   if(!T.on) return sec(sw +
     KV(NUM("lote.desnivel","Desnível","m",{step:0.1,q:"frente fundos",help:"Diferença de nível entre a frente e os fundos do lote. Entra no movimento de terra."})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1,help:"Corte e aterro"})) + `<div class="fsub" id="sub-terra"></div>`);
   const tipo=TOPO_CONT[T.contTipo]? T.contTipo : "cortina";
-  const imp = `<div class="row"><label class="btn sm${T.pts.length?"":" pri"}" for="topoFile" tabindex="0">Importar arquivo</label><input type="file" id="topoFile" accept=".csv,.txt,.xyz,.kml,.dxf" hidden><button class="btn sm" data-act="topoEx">Exemplo inclinado</button>${T.pts.length?`<button class="btn sm ghost" data-act="topoLimpa">Limpar</button>`:""}${INFO("CSV com x, y, z (metros ou UTM) ou latitude, longitude, cota · KML com altitude · DXF com pontos (POINT) ou curvas de nível (polilinhas com elevação). Coordenadas geográficas usam a origem do lote (Localização).")}</div>`;
+  const imp = `<div class="row"><label class="btn sm" for="topoFile" tabindex="0">Importar arquivo</label><input type="file" id="topoFile" accept=".csv,.txt,.xyz,.kml,.dxf" hidden><button class="btn sm" data-act="topoEx">Exemplo inclinado</button>${T.pts.length?`<button class="btn sm ghost" data-act="topoLimpa">Limpar</button>`:""}${INFO("CSV com x, y, z (metros ou UTM) ou latitude, longitude, cota · KML com altitude · DXF com pontos (POINT) ou curvas de nível (polilinhas com elevação). Coordenadas geográficas usam a origem do lote (Contorno do lote › Posição no mapa).")}</div>`;
   if(!T.pts.length) return sec(sw + imp);
   return sec(sw + imp + `<div class="fsub" id="topoInfo"></div>` +
     GRP("Cota do térreo") +

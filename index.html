@@ -21103,7 +21103,7 @@ addCard("viab", { key:"cmpPlan", sub:"risco", order:70,
    - 3D (HOOK.draw3d): chão em camadas mescladas (água levemente reflexiva, asfalto, calçadas com meio-fio, areia, gramado) que
      somem suavemente na borda, e as edificações de S.entorno mescladas por tipo (casas com telhado de duas águas)
    - ctx3dAssume(k,m): o núcleo (view3d.js) deixa de desenhar a rua genérica ("ruas") e os prismas cinzas ("predios")
-   - camadas ligáveis (chips) na seção Entorno: ctxCamadasHTML() entra em mapaEntornoHTML (src/ui/mapa.js)
+   - camadas ligáveis (chips) na seção Vizinhos e ruas: ctxCamadasHTML() entra em mapaEntornoHTML (src/ui/mapa.js)
    As camadas só mudam o desenho: as edificações continuam valendo para sol e vento; água, vias e verde não fazem sombra. */
 const CTX = { cores:null, coresK:"", bb:new WeakMap(), lbl:new WeakMap(), g3:null, g3k:"", e3:null, e3k:"", env:null, envK:"" };
 const ctxDados = () => { const d=S.contexto && S.contexto.dados; return d && Array.isArray(d.vias) ? d : null };
@@ -21292,7 +21292,7 @@ HOOK.draw3d.push((grp, m)=>{
   CTX.t3=performance.now()-t0;
 });
 
-/* ---------- camadas ligáveis (seção Entorno → OpenStreetMap) ---------- */
+/* ---------- camadas ligáveis (seção Vizinhos e ruas → OpenStreetMap) ---------- */
 function ctxConta(){
   const d=ctxDados(), ent=(S.entorno||[]).filter(e=>e.pts && e.pts.length>2), n=d? d.n||{} : {};
   return { ruas:(n.vias||0)+(n.estac||0)+(n.ciclovias||0), calcadas:(n.calcadas||0)+(n.pracas||0), agua:(n.agua||0)+(n.rios||0)+(n.mar||0)+(n.areia||0), verde:n.verde||0,
@@ -21322,7 +21322,7 @@ Object.assign(ACT,{
      arrastar a edificação = move (toda a seleção) · quadrado no canto = redimensiona · setas = ajuste fino · Delete = apaga · Esc = limpa
      vértice: arraste (clique duplo remove) · ponto no meio do lado da edificação selecionada cria vértice
    Barra flutuante (#entBar) com nome/altura, aumentar/reduzir, girar, pátio, desenhar vazio, duplicar e apagar.
-   Seção "Entorno" nas etapas Terreno e Clima: criar caixa, desenhar, enquadrar, selecionar todas, apagar; busca no OSM (mapaEntornoHTML).
+   Seção "Vizinhos e ruas" (Terreno e Projeto › Sol / Vento): criar caixa, desenhar, enquadrar, selecionar todas, apagar; busca no OSM (mapaEntornoHTML).
    Cálculo puro em src/calc/entorno.js. A seleção guarda ids (sobrevive a desfazer/refazer) e não é salva no estudo. */
 const ENT = { sel:new Set(), marq:null, sig:"" };
 
@@ -21421,10 +21421,10 @@ document.addEventListener("keydown",e=>{
 const entTecla={ t:0 };
 
 /* ---------- ações ---------- */
-function entApagarSel(){ const n=ENT.sel.size; if(!n) return; S.entorno=S.entorno.filter(e=>!ENT.sel.has(e.id)); ENT.sel=new Set(); entApos(n>1? `${n} edificações apagadas` : "Edificação apagada"); if(TAB==="clima") renderTab() }
+function entApagarSel(){ const n=ENT.sel.size; if(!n) return; S.entorno=S.entorno.filter(e=>!ENT.sel.has(e.id)); ENT.sel=new Set(); entApos(n>1? `${n} edificações apagadas` : "Edificação apagada"); if(entNaClima()) renderTab() }
 function entEscalaSel(k){ entSelList().forEach(e=>entEscala(e,k)); entApos() }
 function entGiraSel(g){ entSelList().forEach(e=>entGira(e,g)); entApos() }
-function entDuplicaSel(){ const novos=entSelList().map(e=>entDuplica(e)); if(!novos.length) return; S.entorno.push(...novos); ENT.sel=new Set(novos.map(entId)); entApos(novos.length>1? "Duplicadas" : "Duplicada"); if(TAB==="clima") renderTab() }
+function entDuplicaSel(){ const novos=entSelList().map(e=>entDuplica(e)); if(!novos.length) return; S.entorno.push(...novos); ENT.sel=new Set(novos.map(entId)); entApos(novos.length>1? "Duplicadas" : "Duplicada"); if(entNaClima()) renderTab() }
 function entPatioSel(){ let n=0; entSelList().forEach(e=>{ if((e.vazios||[]).length) return; const v=entPatio(e,0.25); if(v){ (e.vazios=e.vazios||[]).push(v); n++ } }); n? entApos(n>1? `Pátio criado em ${n} edificações` : "Pátio criado — arraste os vértices para ajustar") : toast("Não coube um pátio nessa edificação (ou ela já tem vazio)") }
 function entVazioDesenha(){ if(entSelList().length!==1){ toast("Selecione uma edificação"); return } if(VIEW!=="impl") setView("impl"); DRAW=[]; setTool("draw","vazio") }
 function entLimpaVazios(){ entSelList().forEach(e=>{ delete e.vazios }); entApos("Vazios removidos") }
@@ -21433,7 +21433,7 @@ function entNomeSel(n){ const s=entSelList(); if(s.length===1){ s[0].nome=n; sav
 function entNovaCaixa(){
   if(VIEW!=="impl") setView("impl");
   const V=cur(), r=c2.getBoundingClientRect(), c=s2w_(r.width/2, r.height/2), e=entNovo(c,20,20,24,"Edificação "+(S.entorno.length+1));
-  S.entorno.push(e); ENT.sel=new Set([entId(e)]); setTool("edit"); entApos("Caixa criada — arraste para posicionar e use o quadrado do canto para redimensionar"); if(TAB==="clima") renderTab();
+  S.entorno.push(e); ENT.sel=new Set([entId(e)]); setTool("edit"); entApos("Caixa criada — arraste para posicionar e use o quadrado do canto para redimensionar"); if(entNaClima()) renderTab();
 }
 function entEnquadrar(){
   const L=entLista(); if(!L.length) return; if(VIEW!=="impl") setView("impl");
@@ -21499,12 +21499,12 @@ function entBarRefresh(){
   // digitando num campo da barra: não recria (a barra é refeita quando o foco sai)
 }
 
-/* ---------- card no inspetor (Terreno e Clima) ---------- */
-/* seção "Entorno" (fechada, com resumo): criar, enquadrar, selecionar e apagar; a edição fina é na implantação (ⓘ) */
+/* ---------- card no inspetor (Terreno e Projeto › Sol / Vento) ---------- */
+/* seção "Vizinhos e ruas" (antes "Entorno"; fechada, com resumo): criar, enquadrar, selecionar e apagar; a edição fina é na implantação (ⓘ) */
 function entSum(){ const L=entLista(), n=L.length, osm=L.filter(e=>e.osm).length; return n? `${n} edificaç${n>1?"ões":"ão"}${osm? ` · ${osm} do OSM`:""}` : "nenhuma" }
 function entCardInner(){
   const L=entLista(), n=L.length, osm=L.filter(e=>e.osm).length, sel=ENT.sel.size;
-  return `<div class="row"><button class="btn sm pri" data-act="entNova" title="Caixa de 20 × 20 m e 24 m no centro da vista">Nova caixa</button><button class="btn sm" data-act="entDesenha" title="Clique os cantos do vizinho na implantação">Desenhar</button><button class="btn sm" data-act="entGen" title="Um vizinho genérico em cada divisa (substitui os atuais)">Gerar genéricos</button><button class="btn sm" data-act="entEnq" ${n?"":"disabled"}>Enquadrar</button><button class="btn sm" data-act="entTodas" ${n?"":"disabled"}>Selecionar todas</button></div>
+  return `<div class="row"><button class="btn sm" data-act="entNova" title="Caixa de 20 × 20 m e 24 m no centro da vista">Nova caixa</button><button class="btn sm" data-act="entDesenha" title="Clique os cantos do vizinho na implantação">Desenhar</button><button class="btn sm" data-act="entGen" title="Um vizinho genérico em cada divisa (substitui os atuais)">Gerar genéricos</button><button class="btn sm" data-act="entEnq" ${n?"":"disabled"}>Enquadrar</button><button class="btn sm" data-act="entTodas" ${n?"":"disabled"}>Selecionar todas</button></div>
     ${sel? `<div class="row"><span class="note">${sel} selecionada${sel>1?"s":""}</span><button class="btn sm ghost" data-act="entNenhuma">Soltar</button><button class="btn sm ghost" data-act="entApagaSel">Apagar ${sel>1?"selecionadas":"selecionada"}</button></div>` : ""}
     ${n? `<div class="row">${osm?`<button class="btn sm ghost" data-act="entApagaOsm">Apagar as do OSM</button>`:""}${!osm||n>osm?`<button class="btn sm ghost" data-act="entApagaTodas">Apagar todas</button>`:""}</div>` : ""}
     ${entNomesHTML()}`;
@@ -21515,12 +21515,16 @@ function entNomesHTML(){
   return ADV(`<div class="list">${L.map(([e,i])=>`<div class="li" style="grid-template-columns:minmax(0,1fr) 92px 28px"><div class="inp"><input class="t" data-p="entorno.${i}.nome" data-t="s" data-fx="save" value="${esc(e.nome||"")}" aria-label="Nome do volume ${i+1}"></div><div class="inp"><input type="number" data-p="entorno.${i}.h" data-min="0" step="0.5" value="${e.h}" aria-label="Altura do volume ${i+1}"><em>m</em></div><button type="button" class="x" data-act="entX" data-i="${i}" aria-label="Remover ${esc(e.nome||"volume")}" title="Remover">×</button></div>`).join("")}</div>`,
     {key:"entNomes", label:"Nomes e alturas", fechar:"Fechar nomes e alturas"});
 }
-const entCardHTML = () => SEC("Entorno", `<div id="entCardBody">${entCardInner()}</div>` + (typeof mapaEntornoHTML==="function"? GRP("OpenStreetMap") + mapaEntornoHTML() : ""),
+const entCardHTML = () => SEC("Vizinhos e ruas", `<div id="entCardBody">${entCardInner()}</div>` + (typeof mapaEntornoHTML==="function"? GRP("OpenStreetMap") + mapaEntornoHTML() : ""),
   {key:"entedit", sum:entSum(), info:"Prédios vizinhos: fazem sombra e mudam o vento. Na implantação, clique numa edificação para selecionar e arraste para mover; Shift soma; Shift + arrastar no vazio seleciona várias; setas ajustam; Delete apaga. O quadrado do canto redimensiona e a barra na base muda altura, giro, pátios e vazios. Ctrl+Z desfaz."});
 function entCardRefresh(){ const b=document.getElementById("entCardBody"); if(b && !typing(b)){ const h=entCardInner(); if(b.innerHTML!==h) b.innerHTML=h } setSum("entedit", entSum()) }
 ACT.entDesenha = ()=>{ if(VIEW!=="impl") setView("impl"); DRAW=[]; setTool("draw","entorno"); toast("Clique nos cantos do vizinho e feche no primeiro ponto") };
+/* espelho (UX v3 §4.6): Terreno, Projeto › Sol e Projeto › Vento. Enquanto a etapa Clima existir (sem o P1), também nela. */
+const entNaClima = () => typeof emClima==="function"? emClima() : TAB==="clima";
 addCard("terreno",{ key:"entedit", order:55, html:entCardHTML });
-addCard("clima",{ key:"entedit", order:55, html:entCardHTML });
+addCard("projeto",{ key:"entedit", sub:"sol", order:55, html:entCardHTML });
+addCard("projeto",{ key:"entedit-vento", sub:"vento", order:55, html:entCardHTML });
+if(typeof STEPS!=="undefined" && STEPS.some(s=>s.k==="clima")) addCard("clima",{ key:"entedit", order:55, html:entCardHTML });
 
 /* ================= 2.2 malha estrutural — interface =================
    Card na etapa Projeto (todas as sub-abas), comparação de malhas (num Worker próprio, para não travar a página),
@@ -22267,15 +22271,21 @@ Object.assign(ACT,{
   corte3d: ()=>{ S.corte=ANDAR; save(); setView("3d") },
 });
 
-/* ================= etapa Terreno (e Regras) =================
-   Separado de src/steps.js (UX v3, P0), sem mudar comportamento. Aqui: STEP_R/STEP_LIVE.terreno e .regras, terrenoLado,
-   terrenoSum, rg* (Regras: Prefeitura · Projeto · Normas, busca de parâmetros) e as ações (ACT) das duas etapas.
-   O destaque dos lados abertos na implantação é registrado em src/steps.js (terrenoLadosDestaque), para manter a ordem do desenho. */
+/* ================= etapa Terreno: "Onde é e o que a lei permite" (UX v3 §4.1, pacote P2) =================
+   Terreno absorve a antiga etapa Regras. De cima para baixo:
+     RES "Lote e potencial" (#loteRes: área, frente principal, computável máximo, até N andares; selo #loteSelo = rgConformidade)
+     O lote   · Contorno do lote (métodos + formulário; aviso #geoNote; [+] Posição no mapa = lat/lon/norte, ADV "local")
+              · Ruas e frentes (#edges, "Detectar frentes pelas ruas" em #frBox — src/ui/frente.js)
+     A lei    · Regras da prefeitura (Cidade e zona #cidLib — src/ui/normas.js; 8 campos principais; [+] nome e lei, IA, ocupação e
+                outorga, afastamentos, áreas) · Altura e recuos por faixa (src/ui/forma.js)
+     Entorno  · Terreno inclinado (src/ui/topografia.js + relevo.js) · Áreas restritas (limites desenhados) · Vizinhos e ruas (addCard
+                entedit, src/ui/entorno.js)
+   Exporta para outros pacotes:
+     rgConformidade(m, st?) → linhas [rótulo, fração, texto, "ok"|"warn"|"bad"] da conformidade com as regras (sem DOM; Produto e KPIs)
+     acessosSecHTML() / acessosLive(m) → sliders "Entradas" (lote.acessoPed / lote.acessoVei) que vão para Projeto › Garagem (P4)
+     ACT.torAjMix (o "Torre ocupa" em si mora em Produto › Forma das torres)
+   Sem o P1 (etapa Regras ainda no trilho), STEP_R.regras mostra o mesmo conteúdo do Terreno. */
 let TMETH = "desenhar", RECLADO = false;
-
-/* ---------------- 1. Terreno ----------------
-   Resultado (área, perímetro, frente) no topo; essenciais abertos: contorno do lote e lados/frentes/acessos;
-   localização, topografia, limites especiais e entorno em seções fechadas com resumo (docs/UX.md). */
 let LADOAB = new Set();   // lados abertos na lista para editar comprimento e recuos (só nesta sessão)
 (function terrenoCss(){ const s=document.createElement("style"); s.textContent=`
 .edge .lv{font-family:var(--f-mono);font-size:12px;color:var(--ink);cursor:pointer;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -22290,48 +22300,122 @@ let LADOAB = new Set();   // lados abertos na lista para editar comprimento e re
 .edge .ed{grid-column:1/-1;padding-top:2px}
 .edge .ed .inp{max-width:none}
 .mets.m3{grid-template-columns:repeat(3,minmax(0,1fr))}
-.card.geoFoco{outline:2px solid var(--brand);outline-offset:2px}
-.geoNote{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.geoNote .note{margin:0}
 .mets.m3 .v{font-size:17px}
+.card.geoFoco{outline:2px solid var(--sel);outline-offset:2px}
+.tr-geo{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:8px;margin-top:-4px}
+.tr-geo>.adv{display:contents}
+.tr-geo>.adv>.advbtn{grid-row:1;grid-column:1;white-space:nowrap}
+.tr-geo>.adv>.advb{grid-row:2;grid-column:1/-1;margin-top:8px}
+.geoNote{grid-row:1;grid-column:2;justify-self:end;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--warn);white-space:nowrap;min-width:0;max-width:100%}
+.geoNote>span{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.geoNote>.btn{flex:none}
+.geoNote::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none}
+.geoNote[hidden]{display:none}
 .slh label{display:inline-flex;align-items:center;gap:6px}
-#compl .ur{grid-template-columns:100px 1fr 94px}
-#compl .ur span:last-child{white-space:nowrap}
+.tr-res{gap:6px}
+.tr-res .met{padding:7px 11px 8px}
+.tr-res .met .l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr-res .met .l i{font-style:normal;color:var(--faint);font-weight:400}
+.tr-res .met .v{font-size:17px;margin-top:1px}
+.tr-res .met .v small{font-size:11.5px;font-weight:500;color:var(--muted);letter-spacing:0;margin-left:3px}
+.seg.tr-meth{margin-bottom:0}
+.seg.tr-meth button{padding:5px 6px;font-size:12px;flex:1 1 auto}
+#edges{gap:4px}
+#edges .edge{padding:4px 6px 4px 10px}
+#edges .edge .xp{width:24px;height:22px}
+#frBox>.row:first-child{margin-top:6px!important}
+.tr-rg>.kv{gap:9px 12px}
+.tr-rg>.kv .inp input{padding-top:6px;padding-bottom:6px}
+.tr-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.tr-rg .grp:first-child{margin-top:0}
+.tr-lei{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.tr-lei .adv{flex-basis:100%}
 `; document.head.appendChild(s) })();
 const TERRENO_LIM=[["emb","Embasamento"],["tor","Torres"],["sub","Subsolo"]];
+const nfx=v=>(isFinite(+v)?+v:0).toLocaleString("pt-BR",{maximumFractionDigits:2});
 const terrenoSum = {
-  contorno: ()=>`${S.lote.pts.length} vértices · ${m2(G.area(S.lote.pts))}`,
-  lados: ()=>{ const n=S.lote.front.length; return `frente L${S.lote.principal+1}${n>1? ` · ${n} lados na rua`:""}` },
-  local: ()=>S.lote.geo? `${nf(+S.lote.lat||0,4)}, ${nf(+S.lote.lon||0,4)} · norte ${nf(+S.lote.norte||0,0)}°` : `sem posição no mapa · norte ${nf(+S.lote.norte||0,0)}°`,
-  lim: ()=>{ const l=TERRENO_LIM.filter(([k])=>S.custom[k]&&S.custom[k].length).map(([,n])=>n.toLowerCase()==="torres" && S.custom.torOcupa? "torres (planta)" : n.toLowerCase()); return l.length? l.join(" · ") : "nenhum" },
+  contorno: ()=>`${S.lote.pts.length} vértices · ${m2(G.area(S.lote.pts))}${S.lote.geo? " · no mapa" : ""}${+S.lote.norte? ` · norte ${nf(+S.lote.norte,0)}°` : ""}`,
+  lados: ()=>{ const n=S.lote.front.length; return `frente L${S.lote.principal+1}${n>1? ` · ${n} lados na rua`:""}${n>1 && ladoVeiIdx(S)!==acPrincipal(S)? ` · carros pela L${ladoVeiIdx(S)+1}` : ""}` },
+  lim: ()=>{ const l=TERRENO_LIM.filter(([k])=>S.custom[k]&&S.custom[k].length).map(([,n])=>n.toLowerCase()); return l.length? l.join(" · ") : "nenhuma" },
 };
-STEP_R.terreno = ()=>{
+/* resumos das seções da lei */
+const rgSum = {
+  regras: ()=>{ const R=S.regras; return `${esc(S.regras.cidade||"sem cidade")} · CA ${nfx(R.caBas)}–${nfx(R.caMax)} · ${nfx(R.hMax)} m` },
+  forma: ()=>{ const F=S.forma||{}; if(!F.on) return "desligada"; const l=[F.prog&&"faixas de altura", F.escalonar&&"escalonada", +F.hEmbMax>0&&"embasamento", F.aero&&"aeródromo"].filter(Boolean); return l.length? l.join(" · ") : "ligada" },
+};
+
+/* ---------------- conteúdo ---------------- */
+function terrenoContornoHTML(){
   const forms = {
-    desenhar: `<div class="row"><button class="btn pri" data-act="newDraw">Desenhar do zero</button><button class="btn" data-act="rmVert" ${S.lote.pts.length>3?"":"disabled"}>Remover último vértice</button></div>
-      <p class="note">Arraste os vértices; o ponto no meio de um lado cria outro.</p>`,
-    ret: `<div class="kv three"><div class="fld"><label class="fl" for="rf">Frente</label><div class="inp"><input id="rf" type="number" min="1" value="20"><em>m</em></div></div><div class="fld"><label class="fl" for="rp">Fundo</label><div class="inp"><input id="rp" type="number" min="1" value="40"><em>m</em></div></div><div class="fld"><span class="fl">&nbsp;</span><button class="btn pri" data-act="rect">Criar</button></div></div>`,
-    coord: `<textarea id="coords" aria-label="Pontos do lote" placeholder="-28.6775, -49.3697&#10;-28.6777, -49.3694&#10;…"></textarea><div class="row"><button class="btn pri" data-act="coords">Importar pontos</button>${INFO("Cole um KML do Google Earth, um GeoJSON ou pontos “latitude, longitude”, um por linha. A latitude, a longitude e o norte do estudo são ajustados sozinhos.")}</div>`,
-    img: `<div class="row"><label class="btn${BG?"":" pri"}" for="bgFile" tabindex="0">${BG?"Trocar imagem":"Enviar imagem"}</label><input type="file" id="bgFile" accept="image/*" hidden>${BG?`<button class="btn" data-act="bgCal">Calibrar</button><button class="btn" data-act="newDraw">Desenhar o lote</button>`:""}${INFO("Use um print do Google Maps com a régua de escala visível. Depois de enviar, clique em dois pontos de distância conhecida (Calibrar), informe a distância real e desenhe o lote por cima. A imagem fica só nesta sessão.")}</div>`
+    desenhar: `<div class="tr-acts"><button class="btn" data-act="newDraw">Desenhar do zero</button><button class="btn ghost" data-act="rmVert" ${S.lote.pts.length>3?"":"disabled"}>Remover último vértice</button>${INFO("Clique os cantos na implantação e feche no primeiro ponto. Depois, arraste os vértices; o ponto no meio de um lado cria outro.","desenhar o lote")}</div>`,
+    ret: `<div class="kv three"><div class="fld"><label class="fl" for="rf">Frente</label><div class="inp"><input id="rf" type="number" min="1" value="20"><em>m</em></div></div><div class="fld"><label class="fl" for="rp">Fundo</label><div class="inp"><input id="rp" type="number" min="1" value="40"><em>m</em></div></div><div class="fld"><span class="fl">&nbsp;</span><button class="btn" data-act="rect">Criar</button></div></div>`,
+    coord: `<textarea id="coords" aria-label="Pontos do lote" placeholder="-28.6775, -49.3697&#10;-28.6777, -49.3694&#10;…"></textarea><div class="tr-acts" style="margin-top:6px"><button class="btn" data-act="coords">Importar pontos</button>${INFO("Cole um KML do Google Earth, um GeoJSON ou pontos “latitude, longitude”, um por linha. A latitude, a longitude e o norte do estudo são ajustados sozinhos.")}</div>`,
+    img: `<div class="tr-acts"><label class="btn" for="bgFile" tabindex="0">${BG?"Trocar imagem":"Enviar imagem"}</label><input type="file" id="bgFile" accept="image/*" hidden>${BG?`<button class="btn" data-act="bgCal">Calibrar</button><button class="btn" data-act="newDraw">Desenhar o lote</button>`:""}${INFO("Use um print do Google Maps com a régua de escala visível. Depois de enviar, clique em dois pontos de distância conhecida (Calibrar), informe a distância real e desenhe o lote por cima. A imagem fica só nesta sessão.")}</div>`
       + (BG? `<div class="sl"><div class="slh"><label for="bgOp">Opacidade da imagem</label></div><input id="bgOp" type="range" min="0.1" max="1" step="0.05" value="${BG.op}"></div><div class="row"><button class="btn sm ghost" data-act="bgX">Remover imagem</button></div>` : ""),
     mapa: typeof mapaFormHTML==="function" ? mapaFormHTML() : ""
   };
   const metodos=[["desenhar","Desenhar","Clicar os cantos na implantação"],["ret","Retângulo","Frente × fundo"],["coord","Coordenadas","KML, GeoJSON ou latitude/longitude"],["img","Imagem","Print com escala e calibração"],["mapa","Mapa","Satélite ou OpenStreetMap"]];
-  return { after: terrenoAfter, body:
-    RES("Lote", `<div class="mets m3" id="loteRes"></div>`) +
-    SEC("Contorno do lote", `<div class="seg full" role="group" aria-label="Como informar o lote">${metodos.map(([k,l,t])=>`<button type="button" data-act="tmeth" data-v="${k}" aria-pressed="${TMETH===k}" title="${t}" style="padding:5px 4px">${l}</button>`).join("")}</div>${forms[TMETH]}`,
-      {key:"contorno", open:true, sum:terrenoSum.contorno(), info:"Escolha como informar o lote: desenhando os cantos na implantação, por frente × fundo, colando coordenadas, sobre uma imagem calibrada ou no mapa de satélite. Depois, ajuste arrastando os vértices."}) +
-    SEC("Lados e frentes", `<div class="list" id="edges"></div>` + (typeof frHTML==="function" ? `<div id="frBox">${frHTML()}</div>` : "") + GRP("Acessos") +
-      SLD("lote.acessoPed",`Pedestres · L${acPrincipal(S)+1}`,0.05,0.95,0.01,"%",{pct:true,help:"Posição da entrada de pedestres ao longo da frente principal: 0% é o início do lado e 100% o fim."}) +
-      SLD("lote.acessoVei",`Veículos · L${ladoVeiIdx(S)+1}`,0.05,0.95,0.01,"%",{pct:true,sub:"",help:"Posição da entrada de veículos (rampas e faixa da garagem) ao longo do lado marcado com “veículos” (padrão: a frente principal). Se cair sobre um núcleo, o hall ou as lojas, o acesso é deslocado."}),
-      {key:"lados", open:true, sum:terrenoSum.lados(), info:"Marque os lados que dão para a rua e a frente principal (amarela): ela recebe lojas, hall e pedestres. Com mais de um lado na rua (esquina, lote passante), o selo “veículos” escolhe por qual deles o carro entra — as rampas começam 5 m depois do alinhamento daquele lado e nunca cruzam o hall. A seta de cada lado abre o comprimento e os recuos próprios daquele lado."}) +
-    SEC("Localização", `<div class="geoNote" id="geoNote" ${S.lote.geo?"hidden":""}><span class="note">Lote sem posição no mapa.</span><button class="btn sm pri" data-act="geoMapa">Posicionar no mapa</button></div>` + KV(NUM("lote.lat","Latitude","°",{step:0.0001,fx:"geo",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas e serve ao sol, ao entorno do OpenStreetMap e aos levantamentos em lat/lon ou UTM."})+NUM("lote.lon","Longitude","°",{step:0.0001,fx:"geo",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas."})+NUM("lote.norte","Norte","°",{step:1,help:"Rotação do norte em relação ao topo da planta."})),
-      {key:"local", sum:terrenoSum.local()}) +
-    (typeof topoCardHTML==="function" ? topoCardHTML() : SEC("Topografia", KV(NUM("lote.desnivel","Desnível frente→fundos","m",{step:0.1})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1}))+`<div class="fsub" id="sub-terra"></div>`, {key:"topografia"})) +
-    SEC("Limites especiais", `<div class="list">${TERRENO_LIM.map(([k,l])=>{ const has=S.custom[k]&&S.custom[k].length; return `<div class="li"><span class="dot ${has?"ok":""}"></span><span class="tt">${l}</span><span class="row" style="gap:4px"><button class="btn sm" data-act="lim" data-k="${k}">${has?"Redesenhar":"Desenhar"}</button>${has?`<button class="btn sm ghost" data-act="limx" data-k="${k}">Limpar</button>`:""}</span></div>` }).join("")}</div>`
-      + (S.custom.tor && S.custom.tor.length ? `<div class="row" style="gap:6px;margin-top:8px">${SW("custom.torOcupa","Torre ocupa o contorno desenhado",{rr:true})}${INFO("Desligado, o limite das torres é só um teto: a torre fica do tamanho do mix dentro dele. Ligado, o contorno (recortado pelos recuos) vira a planta do andar tipo e as unidades do mix crescem ou encolhem até preenchê-lo. “Ajustar mix” muda a quantidade de unidades por andar para elas voltarem ao tamanho do mix.")}</div>${S.custom.torOcupa? `<div class="fsub" id="torOcupa"></div>` : ""}` : ""),
-      {key:"lim", sum:terrenoSum.lim(), info:"Para APP, servidão ou recuo escalonado: desenhe na implantação o limite onde se pode construir. Ele substitui o recuo calculado daquela parte (embasamento, torres ou subsolo)."})
-  };
-};
+  return `<div class="seg full tr-meth" role="group" aria-label="Como informar o lote">${metodos.map(([k,l,t])=>`<button type="button" data-act="tmeth" data-v="${k}" aria-pressed="${TMETH===k}" title="${t}">${l}</button>`).join("")}</div>${forms[TMETH]}`
+    + `<div class="tr-geo"><span class="geoNote" id="geoNote" ${S.lote.geo?"hidden":""}><span>sem posição no mapa</span><button class="btn sm" data-act="geoMapa">Posicionar</button></span>`
+    + ADV(KV(NUM("lote.lat","Latitude","°",{step:0.0001,fx:"geo",q:"localização coordenadas",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas e serve ao sol, ao entorno do OpenStreetMap e aos levantamentos em lat/lon ou UTM."})+NUM("lote.lon","Longitude","°",{step:0.0001,fx:"geo",q:"localização coordenadas",help:"Origem do lote (0,0). Vem sozinha pelo Mapa ou por Coordenadas."})+NUM("lote.norte","Norte","°",{step:1,q:"orientação rotação",help:"Rotação do norte em relação ao topo da planta."}),3),
+      {key:"local", label:"Posição no mapa", fechar:"Fechar posição no mapa"}) + `</div>`;
+}
+/* Regras da prefeitura: cidade e zona, os 8 parâmetros que mais pesam e o resto em "Mais regras" */
+function terrenoRegrasHTML(){
+  const F=S.forma||{}, prog=F.on&&F.prog;
+  const cidade = typeof cidSeletorHTML==="function"? cidSeletorHTML() : "";
+  const salvar = typeof cidSalvarHTML==="function"? cidSalvarHTML() : "";
+  const principais = KV(
+    NUM("regras.caBas","Aproveitamento básico","×",{step:0.05,q:"ca coeficiente aproveitamento",help:"CA básico"})+NUM("regras.caMax","Aproveitamento máximo","×",{step:0.05,q:"ca coeficiente outorga",help:"CA máximo"})+
+    NUM("regras.toTorre","Ocupação da torre","%",{pct:true,step:1,q:"to taxa ocupação torres",help:"TO"})+NUM("regras.permeab","Área permeável","%",{pct:true,step:1,q:"permeabilidade taxa",help:"Permeabilidade"})+
+    NUM("regras.hMax","Altura máxima","m",{step:0.5,q:"gabarito",help:"Gabarito"})+NUM("regras.vagasApto","Vagas por unidade","vg",{step:0.25,q:"garagem exigidas"})+
+    NUM("regras.recFrente","Recuo frontal","m",{step:0.25,help:"Recuo"})+NUM("regras.recEmb","Recuo lateral e fundos","m",{step:0.25,q:"recuo embasamento divisas laterais",help:"Recuo do embasamento nas divisas laterais e de fundos."}));
+  const mais =
+    GRP("Nome e lei") + `<div data-q="cidade zona lei nome biblioteca salvar">${TXT("regras.cidade","Cidade e zona")}</div>` +
+      `<div class="tr-lei">${salvar}${ADV(rgIaForm(), {key:"ia", label:"Ler a lei com IA", fechar:"Fechar leitura com IA"})}</div>` +
+    GRP("Ocupação e outorga") + KV(
+      NUM("regras.toEmb","Ocupação do embasamento","%",{pct:true,step:1,q:"to taxa ocupação",help:"TO"})+NUM("regras.outorgaRS","Outorga onerosa","R$/m²",{step:10,q:"outorga",help:"Outorga"})) +
+    GRP("Afastamentos") +
+      (prog? `<p class="note" data-q="afastamento faixas">Afastamento da torre pelas faixas de altura (seção abaixo).</p>` : "") +
+      KV((prog? "" : NUM("regras.afMin","Afastamento da torre","m",{step:0.25,q:"afastamento mínimo divisas",help:"Afastamento"})+NUM("regras.afDiv","Afastamento: altura ÷","",{step:0.5,q:"afastamento altura h/n",help:"H/n"}))+
+        NUM("regras.afTorresDiv","Entre torres: altura ÷","",{step:0.5,q:"afastamento torres",help:"Distância mínima entre duas torres do mesmo lote: a altura dividida por este número."})+NUM("regras.recSub","Recuo do subsolo","m",{step:0.25,q:"subsolo"})) +
+    GRP("Áreas") + KV(
+      NUM("regras.aptoMin","Unidade mínima","m²",{step:1,q:"apartamento área"})+NUM("regras.m2LojaVaga","Loja: 1 vaga a cada","m²",{step:5,q:"loja"})+
+      NUM("regras.ncTipo","Não computável no andar","%",{pct:true,step:1,q:"não computável sacada circulação",help:"Não computável"})+NUM("regras.m2Vaga","Área bruta por vaga","m²",{step:0.5,q:"estimativa garagem",help:"Área de garagem por vaga (vaga + circulação) usada na estimativa, antes do layout real."})) +
+      `<div data-q="garagem não computável">${SW("regras.ncGaragem","Garagem não computável")}</div><div data-q="hall lazer áreas comuns não computável">${SW("regras.ncTerreo","Hall, lazer e áreas comuns não computáveis")}</div>`;
+  return `<div class="tr-rg">${cidade}${principais}${ADV(mais, {key:"regras", label:"Mais regras", fechar:"Menos regras"})}</div>`;
+}
+/* leitura da lei com IA (src/ai.js: aiRun / aiReadPdf usam estes ids) */
+function rgIaForm(){
+  return `<div class="fld wide"><label class="fl" for="aiZona">Cidade e zona da lei${INFO("Envie o PDF da lei de uso do solo (ou cole o trecho) e diga a zona. O Claude propõe os parâmetros para você revisar antes de aplicar.")}</label><div class="inp"><input class="t" id="aiZona" placeholder="Ex.: Criciúma, ZR-4" autocomplete="off"></div></div>
+    <div class="row"><label class="btn sm" for="aiPdf" tabindex="0">Enviar PDF da lei</label><input type="file" id="aiPdf" accept="application/pdf" hidden><span class="note" id="aiPdfInfo"></span></div>
+    <textarea id="aiTxt" aria-label="Trecho da lei" placeholder="…ou cole aqui a tabela de parâmetros da zona"></textarea>
+    <div class="row"><button class="btn" data-act="aiGo" id="aiGo">Ler regras</button><span class="note" id="aiStatus"></span></div><div id="aiResult"></div>`;
+}
+function terrenoLimHTML(){
+  return `<div class="list">${TERRENO_LIM.map(([k,l])=>{ const has=S.custom[k]&&S.custom[k].length; return `<div class="li"><span class="dot ${has?"ok":""}"></span><span class="tt">${l}</span><span class="row" style="gap:4px"><button class="btn sm" data-act="lim" data-k="${k}">${has?"Redesenhar":"Desenhar"}</button>${has?`<button class="btn sm ghost" data-act="limx" data-k="${k}">Limpar</button>`:""}</span></div>` }).join("")}</div>`;
+}
+function terrenoTopoHTML(){
+  if(typeof topoCardHTML==="function") return topoCardHTML();
+  return SEC("Terreno inclinado", KV(NUM("lote.desnivel","Desnível frente→fundos","m",{step:0.1})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1}))+`<div class="fsub" id="sub-terra"></div>`, {key:"topografia"});
+}
+STEP_R.terreno = ()=>({ desc:"Onde é e o que a lei permite.", after: terrenoAfter, body:
+  RES("Lote e potencial", `<div class="mets tr-res" id="loteRes"></div>`, {aside:`<span id="loteSelo"></span>`}) +
+  SECGRP("O lote") +
+  SEC("Contorno do lote", terrenoContornoHTML(),
+    {key:"contorno", open:true, sum:terrenoSum.contorno(), info:"Escolha como informar o lote: desenhando os cantos na implantação, por frente × fundo, colando coordenadas, sobre uma imagem calibrada ou no mapa de satélite. Depois, ajuste arrastando os vértices. Em “Posição no mapa”: latitude, longitude e norte, que servem ao sol, ao entorno e às ruas."}) +
+  SEC("Ruas e frentes", `<div class="list" id="edges"></div>` + (typeof frHTML==="function" ? `<div id="frBox">${frHTML()}</div>` : ""),
+    {key:"lados", open:true, sum:terrenoSum.lados(), info:"Marque os lados que dão para a rua e a frente principal: ela recebe lojas, hall e pedestres. Com mais de um lado na rua (esquina, lote passante), o selo “veículos” escolhe por qual deles o carro entra — as rampas começam 5 m depois do alinhamento daquele lado. A seta de cada lado abre o comprimento e os recuos próprios daquele lado. A posição das entradas fica em Projeto › Garagem."}) +
+  SECGRP("A lei") +
+  SEC("Regras da prefeitura", terrenoRegrasHTML(),
+    {key:"regras", open:true, sum:rgSum.regras(), info:"Escolha a cidade e a zona para preencher as regras de uma vez, ou digite os valores da lei. Os exemplos são ilustrativos: confira no plano diretor (LUOS). Em “Mais regras”: nome e lei, leitura da lei com IA, ocupação do embasamento, outorga, afastamentos e áreas."}) +
+  SEC("Altura e recuos por faixa", typeof formaRecuosHTML==="function"? formaRecuosHTML() : "",
+    {key:"forma", sum:rgSum.forma(), info:"Recuos progressivos por faixa de altura, torres escalonadas, altura do embasamento, cota de soleira e plano de proteção de aeródromo. Desligado, valem só os recuos e afastamentos das regras."}) +
+  SECGRP("Entorno") +
+  terrenoTopoHTML() +
+  SEC("Áreas restritas", terrenoLimHTML(),
+    {key:"lim", sum:terrenoSum.lim(), info:"Para APP, servidão ou recuo escalonado: desenhe na implantação o limite onde se pode construir. Ele substitui o recuo calculado daquela parte (embasamento, torres ou subsolo)."})
+});
 function terrenoAfter(){
   if(typeof topoAfter==="function") topoAfter(); if(typeof mapaAfter==="function") mapaAfter();
   TB.querySelectorAll("label.btn[for]").forEach(lb=>{ if(!lb.onkeydown) lb.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); const f=document.getElementById(lb.htmlFor); if(f) f.click() } } });
@@ -22348,29 +22432,83 @@ function terrenoLado(i, m){
 }
 /* lado aberto na lista fica destacado na implantação (registrado em HOOK.draw2d por src/steps.js) */
 function terrenoLadosDestaque(g, c){
-  if(c.mode!=="impl" || TAB!=="terreno" || !LADOAB.size) return;
+  if(c.mode!=="impl" || (TAB!=="terreno" && TAB!=="regras") || !LADOAB.size) return;
   const L=S.lote.pts; g.save(); g.strokeStyle=css("--d-acc"); g.lineWidth=5; g.globalAlpha=0.5; g.lineCap="round";
   LADOAB.forEach(i=>{ if(i>=L.length) return; const a=c.w2s(L[i]), b=c.w2s(L[(i+1)%L.length]); g.beginPath(); g.moveTo(a[0],a[1]); g.lineTo(b[0],b[1]); g.stroke() });
   g.restore();
 }
-STEP_LIVE.terreno = (m)=>{
-  ensureRec(); const L=S.lote.pts, n=L.length, nfr=S.lote.front.length, pr=S.lote.principal;
+
+/* ---------------- conformidade com as regras (sem DOM) ----------------
+   Linhas [rótulo, fração (0–1+, para a barra), texto "usado / limite", estado ok|warn|bad]. Produto (#compl), KPI "Regras" e o selo do Terreno. */
+function rgConformidade(m, st=S){
+  if(!m) return [];
+  const R=st.regras, s=status(m, st), tor=(m.T||[]).reduce((a,t)=>a+(+(t.Aproj||t.A)||0),0), hL=m.hLim ?? R.hMax;
+  return [
+    ["Aproveitamento", m.CA/Math.max(1e-9,R.caMax), `${nf(m.CA,2)} / ${nf(R.caMax,2)}`, s.ca],
+    ["Altura", m.H/Math.max(1e-9,hL), `${nf(m.H,1)} / ${nf(hL,0)} m`, s.h],
+    ["Ocupação torres", tor/Math.max(1,R.toTorre*m.A), `${pct(tor/Math.max(1,m.A),0)} / ${pct(R.toTorre,0)}`, tor>R.toTorre*m.A+1?"bad":"ok"],
+    ["Ocupação emb.", m.TO/Math.max(1e-9,R.toEmb), `${pct(m.TO,0)} / ${pct(R.toEmb,0)}`, m.TO>R.toEmb+1e-6?"bad":"ok"],
+    ["Permeável", Math.min(1,m.perm/Math.max(1e-9,R.permeab||1e-9)), `${pct(m.perm,0)} / ${pct(R.permeab,0)}`, s.perm],
+    ["Vagas", m.vagas/Math.max(1,m.vagasReq), `${m.vagas} / ${m.vagasReq}`, s.vg],
+    ["Menor unidade", Math.min(1,m.minApto/Math.max(1,R.aptoMin)), `${nf(m.minApto,0)} / ${nf(R.aptoMin,0)} m²`, s.apto],
+    ...(typeof formaRows==="function"? formaRows(m) : [])];
+}
+
+/* ---------------- entradas (vão para Projeto › Garagem, pacote P4) ---------------- */
+function acessosSecHTML(){
+  return GRP("Entradas") +
+    SLD("lote.acessoPed",`Pedestres · L${acPrincipal(S)+1}`,0.05,0.95,0.01,"%",{pct:true,help:"Posição da entrada de pedestres ao longo da frente principal: 0% é o início do lado e 100% o fim."}) +
+    SLD("lote.acessoVei",`Veículos · L${ladoVeiIdx(S)+1}`,0.05,0.95,0.01,"%",{pct:true,sub:"",help:"Posição da entrada de veículos (rampas e faixa da garagem) ao longo do lado marcado com “veículos” em Terreno › Ruas e frentes (padrão: a frente principal). Se cair sobre um núcleo, o hall ou as lojas, o acesso é deslocado."});
+}
+function acessosLive(m){
+  const T=m.ter||{}, ac=m.acesso||{}, lv=ac.edgeV!=null && ac.edgeV!==ac.edge;
+  setSub("lote.acessoVei", T.drive0? `${T.drive0.dv? nf(T.drive0.dv[1]-T.drive0.dv[0],1)+" m de largura (rampas"+(T.lanes?" + faixa da garagem":"")+")" : ""}${T.veiShift? " · ajustado "+nf(Math.abs(T.veiShift),1)+(lv? " m para não passar pelo hall nem pelos núcleos" : " m para não passar pelos núcleos"):""}` : "");
+}
+
+/* ---------------- partes vivas ---------------- */
+function terrenoResLive(m){
+  const L=S.lote.pts, n=L.length, pr=S.lote.principal, nfr=S.lote.front.length, R=S.regras;
+  const po=typeof potencial==="function"? potencial(S, m) : {compMax:R.caMax*m.A, pavH:0, hLim:R.hMax};
+  const met=(l,v,t)=>`<div class="met"${t?` title="${esc(t)}"`:""}><div class="l">${l}</div><div class="v">${v}</div></div>`;
+  setHTML("loteRes",
+    met(`Área <i>· ${n} lados</i>`, m2(m.A), `Perímetro ${nf(G.perimeter(L),1)} m`) +
+    met(`Frente principal <i>· L${pr+1}</i>`, `${nf(G.edgeLen(L,pr),1)}<small>m</small>`, `${nfr} lado${nfr>1?"s":""} na rua`) +
+    met(`Computável máx.${INFO("Área computável máxima: aproveitamento máximo (CA) × área do lote. Até o básico é gratuito; acima dele, paga-se outorga.","computável máximo")}`, m2(po.compMax), `CA ${nfx(R.caMax)} × ${m2(m.A)} · básico ${m2(po.compBas??R.caBas*m.A)}`) +
+    met(`Altura <i>· até ${nf(po.hLim??R.hMax,0)} m</i>`, `${nf(po.pavH,0)}<small>andares</small>`, `Andares tipo que cabem na altura máxima${m.hLim!=null && m.hLim<R.hMax-1e-6? " (limitada pelo aeródromo)" : ""}`));
+  const rows=rgConformidade(m), fora=rows.filter(r=>r[3]==="bad");
+  const sel=document.getElementById("loteSelo");
+  if(sel){ const h = fora.length? `<span class="pill bad" title="${esc(fora.map(r=>r[0]+" "+r[2]).join(" · "))}">${fora.length} fora das regras</span>` : `<span class="pill ok">dentro das regras</span>`; if(sel.innerHTML!==h) sel.innerHTML=h }
+}
+STEP_LIVE.terreno = (m, f, fast)=>{
+  ensureRec(); const L=S.lote.pts, n=L.length, R=S.regras;
   [...LADOAB].forEach(i=>{ if(i>=n) LADOAB.delete(i) });
   setHTML("edges", L.map((_,i)=>terrenoLado(i, m)).join(""));
   if(typeof frHTML==="function") setHTML("frBox", frHTML());
-  const met=(l,v,s)=>`<div class="met"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
-  setHTML("loteRes", met("Área", m2(m.A), `${n} lados`) + met("Perímetro", nf(G.perimeter(L),1)+" m", `${nfr} lado${nfr>1?"s":""} na rua`) + met("Frente principal", `L${pr+1}`, `${nf(G.edgeLen(L,pr),1)} m`));
-  Object.entries(terrenoSum).forEach(([k,f])=>setSum(k, f()));
+  terrenoResLive(m);
+  Object.entries(terrenoSum).forEach(([k,fn])=>setSum(k, fn()));
+  Object.entries(rgSum).forEach(([k,fn])=>setSum(k, fn()));
   { const gn=document.getElementById("geoNote"); if(gn) gn.hidden=!!S.lote.geo }
-  { const T=m.ter||{}, ac=m.acesso||{}, lv=ac.edgeV!=null && ac.edgeV!==ac.edge; setSub("lote.acessoVei", T.drive0? `${T.drive0.dv? nf(T.drive0.dv[1]-T.drive0.dv[0],1)+" m de largura (rampas"+(T.lanes?" + faixa da garagem":"")+")" : ""}${T.veiShift? " · ajustado "+nf(Math.abs(T.veiShift),1)+(lv? " m para não passar pelo hall nem pelos núcleos" : " m para não passar pelos núcleos"):""}` : "") }
   if(typeof topoLive==="function") topoLive(m); else setSub("terra", `Movimento de terra ≈ ${nf(m.terra,0)} m³ (inclui escavação dos subsolos)`);
-  { const R=torOcupaResumo(S, m), ajuste=R && R.A>0 && R.muda && Math.abs(R.r-1)>0.03;
-    setHTML("torOcupa", !R ? "" : !R.A ? "O contorno ficou vazio depois dos recuos." :
-      `<span>${R.desiguais? R.As.map(a=>m2(a)).join(" e ") : m2(R.A)}/andar${R.real? ` · eficiência real ${pct(R.efic,0)} (informada ${pct(R.eficInf,0)})${INFO("Eficiência real da planta")}` : ""} · unidades com ${nf(R.media,0)} m² em média (mix: ${nf(R.mixMedia,0)} m²)</span>${ajuste? ` <button type="button" class="btn sm" data-act="torAjMix" style="margin-left:6px">Ajustar mix</button>` : ""}`) }
+  // o que era STEP_LIVE.regras: números ao lado dos campos da lei
+  setSub("regras.outorgaRS", m.outA>0? `excedente ${m2(m.outA)} → ${brl(m.outA*R.outorgaRS)}` : "sem outorga neste estudo");
+  setSub("regras.toEmb",`${m2(m.embA)}`);
+  setSub("regras.afDiv",`H ${nf(m.H,1)} m → ${nf(m.afast,2)} m`); setSub("regras.afTorresDiv", m.T.length>1? `entre torres ${nf(m.gap,1)} m` : "só com 2+ torres");
+  setSub("regras.m2Vaga",`estim. ${m.vagasEst} · layout ${m.vagasLay??"—"}`);
+  if(typeof acessosLive==="function" && document.getElementById("sub-lote-acessoVei")) acessosLive(m);
+  if(typeof normasLive==="function" && document.getElementById("nrmList")) normasLive(m, fast);
 };
+/* sem o P1, a etapa Regras ainda existe no trilho: mostra o mesmo conteúdo do Terreno (com os cards do Terreno) */
+const terrenoCardsExtra = ()=>{ const tem=new Set(cardsFor("regras", null).map(c=>c.key)); return cardsFor("terreno", null).filter(c=>!tem.has(c.key)) };
+STEP_R.regras = ()=>{
+  const R=STEP_R.terreno(), ex=terrenoCardsExtra();
+  return { ...R, title:"Terreno", body: R.body + ex.map(c=>c.html()).join(""), after: ()=>{ R.after && R.after(); ex.forEach(c=>{ if(c.after) try{ c.after() }catch(e){ console.error("[card "+c.key+"]",e) } }) } };
+};
+STEP_LIVE.regras = (m, f, fast)=>{ STEP_LIVE.terreno(m, f, fast); terrenoCardsExtra().forEach(c=>{ if(c.live) try{ c.live(m,f,fast) }catch(e){ console.error("[card "+c.key+"]",e) } }) };
+
+/* ---------------- ações ---------------- */
 Object.assign(ACT,{
   tmeth: b=>{ TMETH=b.dataset.v; renderTab(); if(TMETH!=="desenhar" && VIEW!=="impl") setView("impl") },
-  ladoAb: b=>{ const i=+b.dataset.i; if(LADOAB.has(i)) LADOAB.delete(i); else LADOAB.add(i); if(window._last) STEP_LIVE.terreno(window._last.m); redraw2d() },
+  ladoAb: b=>{ const i=+b.dataset.i; if(LADOAB.has(i)) LADOAB.delete(i); else LADOAB.add(i); if(window._last && STEP_LIVE[TAB]) STEP_LIVE[TAB](window._last.m, window._last.f); redraw2d() },
   newDraw: ()=>{ setView("impl"); DRAW=[]; setTool("draw","lote"); redraw2d(); toast("Clique nos cantos do lote e feche no primeiro ponto") },
   rmVert: ()=>{ if(S.lote.pts.length>3){ const n=S.lote.pts.length; S.lote.pts.pop(); S.lote.front=S.lote.front.filter(i=>i<n-1); S.lote.rec.length=n-1; if(!S.lote.front.length) S.lote.front=[0]; LADOAB.clear(); update(); if(S.lote.pts.length<=3) renderTab(); toast("Vértice removido") } else toast("O lote precisa de pelo menos 3 vértices") },
   rect: ()=>{ const f=Math.max(1,+document.getElementById("rf").value||20), p=Math.max(1,+document.getElementById("rp").value||40); S.lote.pts=[[0,0],[f,0],[f,p],[0,p]]; S.lote.front=[0]; S.lote.principal=0; S.lote.rec=[{},{},{},{}]; LADOAB.clear(); update(); fit2d(); fit3d(); toast(`Lote ${nf(f,1)} × ${nf(p,1)} m criado`) },
@@ -22385,137 +22523,19 @@ Object.assign(ACT,{
     S.estudo.rampa=null; renderTab() },
   lim: b=>{ setView("impl"); DRAW=[]; setTool("draw","lim:"+b.dataset.k); toast("Clique nos cantos do limite e feche no primeiro ponto") },
   limx: b=>{ if(!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on"); return } S.custom[b.dataset.k]=[]; renderTab(); update(); toast("Limite removido") },
+  // "Torre ocupa o contorno desenhado" (C0): o interruptor fica em Produto › Forma das torres; a ação continua global
   torAjMix: ()=>{ const m=window._last&&window._last.m, R=m&&torOcupaResumo(S, m); if(!R||!R.A) return;
     const q=R.q; S.produto.mix.forEach((u,j)=>u.qtd=q[j]);
     update(); toast(`Mix ajustado: ${q.reduce((s,n)=>s+n,0)} unidades por andar`) },
+  aiGo: ()=>aiRun(),
 });
 TB.addEventListener("change",e=>{
   const t=e.target, d=t.dataset||{};
   if(d.len!=null){ const i=+d.len, p=S.lote.pts, a=p[i], b=p[(i+1)%p.length], L=G.edgeLen(p,i), nl=+t.value, j=(i+1)%p.length; if(j===0){ toast("O último lado fecha o polígono: ajuste os outros"); update(); return } if(L>0&&nl>0){ const dx=(b[0]-a[0])/L, dy=(b[1]-a[1])/L, ox=a[0]+dx*nl-b[0], oy=a[1]+dy*nl-b[1]; for(let q=j;q<p.length;q++) p[q]=[p[q][0]+ox,p[q][1]+oy]; update() } }
   else if(d.rec!=null){ ensureRec(); S.lote.rec[+d.rec][d.rk] = t.value===""? null : Math.max(0,+t.value); update() }
   else if(t.id==="bgFile"){ const f=t.files[0]; if(!f) return; const url=URL.createObjectURL(f), img=new Image(); img.onload=()=>{ const c=G.centroid(S.lote.pts), mpp=120/img.width; BG={img,mpp,op:0.8,x:c[0]-img.width*mpp/2,y:c[1]+img.height*mpp/2}; setView("impl"); fitBG(); setTool("calib"); renderTab() }; img.src=url }
-  else if(t.id==="cidSel"){ if(t.value==="") return; const c=(LS.get("gabarito.cidades")||[])[+t.value]; if(c){ S.regras=merge(clone(DEF.regras), c.regras); renderTab(); toast("Regras carregadas: "+c.nome) } }
   else if(t.id==="aiPdf") aiReadPdf(e); });
 TB.addEventListener("input",e=>{ if(e.target.id==="bgOp" && BG){ BG.op=+e.target.value; redraw2d() } });
-
-/* ---------------- 2. Regras e padrões ---------------- */
-/* Sub-abas: Prefeitura (o que a lei limita) · Projeto (padrões do produto) · Normas (checklist preliminar).
-   A busca no cabeçalho filtra a aba atual e aponta as outras abas que também têm o termo. */
-const RG_TABS=[["pref","Prefeitura"],["proj","Projeto"],["normas","Normas"]];
-let RGQ="", RGABERTOS=[];   // busca e as seções/“mais opções” que a busca abriu
-const nfx=v=>(isFinite(+v)?+v:0).toLocaleString("pt-BR",{maximumFractionDigits:2});
-const rgSum = {
-  cidade: ()=>esc(S.regras.cidade||"sem cidade"),
-  potencial: ()=>{ const R=S.regras; return `CA ${nfx(R.caBas)}–${nfx(R.caMax)} · TO ${pct(R.toTorre,0)} · ${nfx(R.hMax)} m` },
-  recuos: ()=>{ const R=S.regras, F=S.forma||{}; return `frontal ${nfx(R.recFrente)} m · divisas ${nfx(R.recEmb)} m${F.on&&F.prog? " · torre por faixas" : ` · torre H÷${nfx(R.afDiv)}`}` },
-  forma: ()=>{ const F=S.forma||{}; if(!F.on) return "desligada"; const l=[F.prog&&"faixas de altura", F.escalonar&&"escalonada", +F.hEmbMax>0&&"embasamento", F.aero&&"aeródromo"].filter(Boolean); return l.length? l.join(" · ") : "ligada" },
-  vagas: ()=>{ const R=S.regras; return `${nfx(R.vagasApto)} vaga/unidade · mín. ${nfx(R.aptoMin)} m²` },
-  pes: ()=>{ const P=S.produto; return `térreo ${nfx(P.peTerreo)} · garagem ${nfx(P.peGar)} · tipo ${nfx(P.pe)} m` },
-  ptipo: ()=>`eficiência do andar ${pct(S.produto.efic,0)} · corredor ${nfx(S.estudo.corrTipo)} m`,
-  vaga: ()=>{ const E=S.estudo; return `${nfx(E.vagaL)} × ${nfx(E.vagaC)} m · corredor ${nfx(E.corredor)} m` },
-  rampa: ()=>{ const E=S.estudo; return `${pct(E.rampaInc,0)} · PCD ${pct(E.pcd,0)} · idoso ${pct(E.idoso,0)}` },
-};
-function rgIaHTML(){
-  return ADV(`<div class="fld wide"><label class="fl" for="aiZona">Cidade e zona da lei${INFO("Envie o PDF da lei de uso do solo (ou cole o trecho) e diga a zona. O Claude propõe os parâmetros para você revisar antes de aplicar.")}</label><div class="inp"><input class="t" id="aiZona" placeholder="Ex.: Criciúma, ZR-4" autocomplete="off"></div></div>
-      <div class="row"><label class="btn sm" for="aiPdf" tabindex="0">Enviar PDF da lei</label><input type="file" id="aiPdf" accept="application/pdf" hidden><span class="note" id="aiPdfInfo"></span></div>
-      <textarea id="aiTxt" aria-label="Trecho da lei" placeholder="…ou cole aqui a tabela de parâmetros da zona"></textarea>
-      <div class="row"><button class="btn pri" data-act="aiGo" id="aiGo">Ler regras</button><span class="note" id="aiStatus"></span></div><div id="aiResult"></div>`, {key:"ia", label:"Ler o plano diretor com IA"});
-}
-function rgPref(){
-  const R=S.regras, F=S.forma||{}, prog=F.on&&F.prog, cid=LS.get("gabarito.cidades")||[];
-  const cidade = typeof cidadesCardHTML==="function"? cidadesCardHTML() : TXT("regras.cidade","Cidade / zona")+`<div class="row" style="flex-wrap:nowrap"><select class="sel" id="cidSel" aria-label="Regras salvas"><option value="">Carregar regras salvas…</option>${cid.map((c,i)=>`<option value="${i}">${esc(c.nome)}</option>`).join("")}</select><button class="btn" data-act="cidSave">Salvar</button></div>`;
-  return RES("Conformidade", `<div class="use" id="compl"></div>`, {aside:`<span id="complTxt"></span>`}) +
-    SEC("Cidade e zona", `<div data-q="cidade zona lei plano diretor biblioteca salvar">${cidade}</div>` + `<div data-q="ia plano diretor pdf lei ler">${rgIaHTML()}</div>`,
-      {key:"cidade", open:true, sum:rgSum.cidade(), info:"Escolha a cidade e a zona para preencher as regras de uma vez, ou digite os valores da lei. Os exemplos são ilustrativos: confira no plano diretor (LUOS) e salve para reaproveitar."}) +
-    SEC("Potencial construtivo", KV(
-      NUM("regras.caBas","CA básico","×",{step:0.05,q:"coeficiente aproveitamento",help:"CA básico"})+NUM("regras.caMax","CA máximo","×",{step:0.05,q:"coeficiente outorga",help:"CA máximo"})+
-      NUM("regras.toEmb","TO embasamento","%",{pct:true,step:1,q:"taxa ocupação",help:"TO"})+NUM("regras.toTorre","TO torres","%",{pct:true,step:1,q:"taxa ocupação",help:"TO"})+
-      NUM("regras.hMax","Altura máxima","m",{step:0.5,q:"gabarito",help:"Gabarito"})+NUM("regras.permeab","Permeabilidade","%",{pct:true,step:1,help:"Permeabilidade"})) +
-      ADV(KV(NUM("regras.outorgaRS","Outorga onerosa","R$/m²",{step:10,wide:true,q:"outorga",help:"Outorga"})), {key:"outorga"}),
-      {key:"potencial", open:true, sum:rgSum.potencial()}) +
-    SEC("Recuos e afastamentos", KV(
-      NUM("regras.recFrente","Recuo frontal","m",{step:0.25,help:"Recuo"})+NUM("regras.recEmb","Laterais e fundos","m",{step:0.25,q:"recuo embasamento divisas",help:"Recuo do embasamento nas divisas laterais e de fundos."})+
-      (prog? "" : NUM("regras.afMin","Afastamento da torre","m",{step:0.25,q:"afastamento mínimo",help:"Afastamento"})+NUM("regras.afDiv","Torre às divisas: H ÷","",{step:0.5,q:"afastamento altura",help:"H/n"}))) +
-      (prog? `<p class="note">Afastamento da torre por faixas de altura, em Forma do edifício.</p>` : "") +
-      ADV(KV(NUM("regras.afTorresDiv","Entre torres: H ÷","",{step:0.5,q:"afastamento torres",help:"Distância mínima entre duas torres do mesmo lote: a altura dividida por este número."})+NUM("regras.recSub","Recuo do subsolo","m",{step:0.25,q:"subsolo"})), {key:"recuos"}),
-      {key:"recuos", sum:rgSum.recuos()}) +
-    SEC("Forma do edifício", typeof formaRecuosHTML==="function"? formaRecuosHTML() : "", {key:"forma", sum:rgSum.forma(), info:"Recuos progressivos por faixa de altura, torres escalonadas, altura do embasamento, cota de soleira e plano de proteção de aeródromo. Desligado, valem só os recuos e afastamentos acima."}) +
-    SEC("Vagas e áreas", KV(
-      NUM("regras.vagasApto","Vagas por unidade","vg",{step:0.25,q:"garagem"})+NUM("regras.m2LojaVaga","Loja: 1 vaga a cada","m²",{step:5,q:"loja"})+
-      NUM("regras.aptoMin","Unidade mínima","m²",{step:1,q:"apartamento área"})+NUM("regras.ncTipo","Não comput. no tipo","%",{pct:true,step:1,q:"não computável sacada circulação",help:"Não computável"})) +
-      `<div data-q="garagem não computável">${SW("regras.ncGaragem","Garagem não computável")}</div><div data-q="hall lazer áreas comuns não computável">${SW("regras.ncTerreo","Hall, lazer e áreas comuns não computáveis")}</div>` +
-      ADV(KV(NUM("regras.m2Vaga","Área bruta por vaga","m²",{step:0.5,q:"estimativa garagem",help:"Área de garagem por vaga (vaga + circulação) usada na estimativa, antes do layout real."})), {key:"vagas"}),
-      {key:"vagas", sum:rgSum.vagas()});
-}
-function rgProj(){
-  return RES("No estudo", `<div class="mets m3" id="rgpRes"></div>`) +
-    SEC("Pés-direitos", KV(NUM("produto.peTerreo","Térreo","m",{step:0.1,q:"pé-direito"})+NUM("produto.peGar","Garagem","m",{step:0.05,q:"pé-direito"})+NUM("produto.pe","Tipo","m",{step:0.05,q:"pé-direito"}),3),
-      {key:"pes", open:true, sum:rgSum.pes(), info:"Pé-direito"}) +
-    SEC("Pavimento tipo", KV(NUM("produto.efic","Eficiência do andar","%",{pct:true,step:1,q:"privativa eficiência",help:"Eficiência"})+NUM("estudo.corrTipo","Corredor / hall","m",{step:0.05})+NUM("estudo.profMin","Prof. mín. unidade","m",{step:0.25,q:"profundidade"})+NUM("produto.sacProf","Prof. da sacada","m",{step:0.1,help:"Sacada"})),
-      {key:"ptipo", open:true, sum:rgSum.ptipo()}) +
-    SEC("Vaga e circulação", KV(NUM("estudo.vagaL","Largura vaga","m",{step:0.05})+NUM("estudo.vagaC","Compr. vaga","m",{step:0.05,q:"comprimento"})+NUM("estudo.corredor","Corredor 90°","m",{step:0.1,q:"manobra"}),3) +
-      ADV(KV(NUM("estudo.porModulo","Vagas entre pilares","vg",{step:1,int:true,q:"módulo"})+NUM("estudo.pilar","Pilar","m",{step:0.05})+NUM("estudo.rampaL","Largura rampa","m",{step:0.05}),3), {key:"vaga"}),
-      {key:"vaga", sum:rgSum.vaga()}) +
-    SEC("Rampa e acessibilidade", KV(NUM("estudo.rampaInc","Inclinação rampa","%",{pct:true,step:1})+NUM("estudo.pcd","Vagas PCD","%",{pct:true,step:1,help:"Vaga PCD"})+NUM("estudo.idoso","Vagas idosos","%",{pct:true,step:1,help:"Vaga idoso"}),3),
-      {key:"rampa", sum:rgSum.rampa()});
-}
-const RG_BODY={ pref:rgPref, proj:rgProj, normas:()=> typeof normasCardHTML==="function"? normasCardHTML() : "" };
-function rgBuscaHTML(){
-  return `<div class="inp" style="margin-top:8px;background:var(--surface)"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" style="margin-left:10px;flex:none;fill:none;stroke:var(--muted);stroke-width:1.8"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg><input class="t" id="rgFind" value="${esc(RGQ)}" placeholder="Buscar parâmetro — recuo, CA, vaga, pé-direito…" aria-label="Buscar parâmetro" autocomplete="off"></div><div class="row" id="rgFindOut" style="margin-top:6px;gap:6px" hidden></div>`;
-}
-STEP_R.regras = ()=>{
-  const tabs=SUBTABS("regras", RG_TABS), k=subAtual("regras");
-  return { sub: tabs + rgBuscaHTML(), subKey:k, body: RG_BODY[k](), after: ()=>{ terrenoAfter(); RGABERTOS=[]; rgFiltra() } };
-};
-/* busca: esconde o que não bate, abre seções e "mais opções" que batem (e fecha de novo ao limpar) e aponta as outras abas */
-function rgFiltra(){
-  const q=RGQ.trim().toLowerCase(), out=document.getElementById("rgFindOut");
-  RGABERTOS.forEach(e=>{ if(e.tagName==="DETAILS") e.open=false; else e.hidden=true }); RGABERTOS=[];
-  TB.querySelectorAll("[data-q]").forEach(f=>{ f.hidden=!!q && !f.dataset.q.includes(q) });
-  TB.querySelectorAll(":scope > .card").forEach(c=>{
-    if(!q){ c.hidden=false; return }
-    const tem=[...c.querySelectorAll("[data-q]")].some(f=>!f.hidden); c.hidden=!tem;
-    if(tem && c.tagName==="DETAILS" && !c.open){ c.open=true; RGABERTOS.push(c) }
-    if(tem) c.querySelectorAll(".advb[hidden]").forEach(a=>{ if([...a.querySelectorAll("[data-q]")].some(f=>!f.hidden)){ a.hidden=false; RGABERTOS.push(a) } });
-  });
-  if(!out) return;
-  if(!q){ out.hidden=true; out.innerHTML=""; return }
-  const cur=subAtual("regras"), conta=k=>{ let n=0; RG_BODY[k]().replace(/data-q="([^"]*)"/g,(_,s)=>{ if(s.includes(esc(q))) n++; return "" }); return n };
-  const aqui=[...TB.querySelectorAll("[data-q]")].filter(f=>!f.hidden && !f.querySelector("[data-q]")).length;
-  const outras=RG_TABS.filter(([k])=>k!==cur).map(([k,l])=>[k,l,conta(k)]).filter(x=>x[2]);
-  out.hidden=false;
-  out.innerHTML=`<span class="note">${aqui? `${aqui} aqui` : "Nada nesta aba"}${outras.length?" · também em":""}</span>` + outras.map(([k,l,n])=>`<button type="button" class="tag" data-act="subx" data-s="regras" data-v="${k}">${l} (${n})</button>`).join("");
-}
-document.getElementById("phead").addEventListener("input", e=>{ if(e.target.id==="rgFind"){ RGQ=e.target.value; rgFiltra() } });
-document.getElementById("phead").addEventListener("keydown", e=>{ if(e.target.id==="rgFind" && e.key==="Escape" && RGQ){ e.stopPropagation(); RGQ=""; e.target.value=""; rgFiltra() } });
-STEP_LIVE.regras = (m,f,fast)=>{
-  const R=S.regras, s=status(m,S), tor=m.T.reduce((a,t)=>a+t.A,0);
-  if(typeof normasLive==="function" && document.getElementById("nrmList")) normasLive(m, fast);
-  Object.entries(rgSum).forEach(([k,fn])=>setSum(k, fn()));
-  { const met=(l,v,sb)=>`<div class="met"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${sb}</div></div>`;
-    setHTML("rgpRes", met("Altura", nf(m.H,1)+" m", `máx. ${nfx(R.hMax)} m`) + met("Privativa", m2(m.priv), `${m.units} unidades`) + met("Vagas", `${m.vagas}`, `exigidas ${m.vagasReq}`)) }
-  const rows=[
-    ["CA", m.CA/Math.max(1e-9,R.caMax), `${nf(m.CA,2)} / ${nf(R.caMax,2)}`, s.ca],
-    ["Ocupação emb.", m.TO/Math.max(1e-9,R.toEmb), `${pct(m.TO,0)} / ${pct(R.toEmb,0)}`, m.TO>R.toEmb+1e-6?"bad":"ok"],
-    ["Ocupação torres", tor/Math.max(1,R.toTorre*m.A), `${pct(tor/Math.max(1,m.A),0)} / ${pct(R.toTorre,0)}`, tor>R.toTorre*m.A+1?"bad":"ok"],
-    ["Altura", m.H/Math.max(1e-9,R.hMax), `${nf(m.H,1)} / ${nf(R.hMax,0)} m`, s.h],
-    ["Permeável", Math.min(1,m.perm/Math.max(1e-9,R.permeab||1e-9)), `${pct(m.perm,0)} / ${pct(R.permeab,0)}`, s.perm],
-    ["Vagas", m.vagas/Math.max(1,m.vagasReq), `${m.vagas} / ${m.vagasReq}`, s.vg],
-    ["Menor unidade", Math.min(1,m.minApto/Math.max(1,R.aptoMin)), `${nf(m.minApto,0)} / ${nf(R.aptoMin,0)} m²`, s.apto],
-    ...(typeof formaRows==="function"? formaRows(m) : [])];
-  setHTML("compl", rows.map(r=>useRow(r[0],r[1],r[2],r[3]==="ok"?"ok":r[3])).join(""));
-  const bad=Object.values(s).filter(x=>x==="bad").length; const ct=document.getElementById("complTxt"); if(ct) ct.innerHTML = bad? `<span style="color:var(--bad)">${bad} fora do limite</span>` : `<span style="color:var(--ok)">tudo dentro</span>`;
-  setSub("regras.caMax",`máx. ${m2(R.caMax*m.A)} · usado ${m2(m.comp)}`);
-  setSub("regras.caBas",`sem outorga ${m2(R.caBas*m.A)}`);
-  setSub("regras.outorgaRS", m.outA>0? `excedente ${m2(m.outA)} → ${brl(m.outA*R.outorgaRS)}` : "sem outorga neste estudo");
-  setSub("regras.toEmb",`${m2(m.embA)}`); setSub("regras.toTorre",`${m2(tor)} de ${m2(R.toTorre*m.A)}`);
-  setSub("regras.afDiv",`H ${nf(m.H,1)} m → ${nf(m.afast,2)} m`); setSub("regras.afTorresDiv", m.T.length>1? `entre torres ${nf(m.gap,1)} m` : "só com 2+ torres");
-  setSub("regras.hMax",`estudo ${nf(m.H,1)} m`); setSub("regras.m2Vaga",`estim. ${m.vagasEst} · layout ${m.vagasLay??"—"}`);
-};
-Object.assign(ACT,{
-  // cidSave / cidUndo e o seletor "Aplicar regras de…" ficam em src/ui/normas.js (biblioteca em src/calc/cidades.js)
-  aiGo: ()=>aiRun(),
-});
 
 /* ================= Viabilidade — "Vale a pena?" (UX v3 §4.3): resultado, premissas e riscos (itens 3.1–3.3) =================
    A etapa inteira mora aqui: STEP_R.viab / STEP_LIVE.viab (substituem os de steps.js, que é carregado antes). Sub-abas res|prem|risco
@@ -23094,12 +23114,12 @@ HOOK.pdf.push(async ctx=>{
 });
 
 /* ================= 2.4 regras avançadas de forma — interface =================
-   Campos na seção "Forma do edifício" (etapa Regras › Prefeitura), linhas na conformidade e desenho do envelope
+   Campos na seção "Altura e recuos por faixa" (Terreno › A lei; antes "Forma do edifício"), linhas na conformidade e desenho do envelope
    escalonado na implantação e dos terraços nos andares recuados. Cálculo em src/calc/forma.js + massing. */
 function formaRecuosHTML(){
   const F=S.forma; if(!F) return "";
-  // seção "Forma do edifício" (etapa Regras › Prefeitura): desligada = só o interruptor
-  let h = `<div data-q="forma recuo progressivo escalonada aeródromo soleira embasamento">${SW("forma.on","Regras avançadas de forma",{rr:true})}</div>`;
+  // seção "Altura e recuos por faixa" (Terreno): desligada = só o interruptor
+  let h = `<div data-q="forma recuo progressivo escalonada aeródromo soleira embasamento altura faixa">${SW("forma.on","Usar regras por faixa de altura",{rr:true})}</div>`;
   if(!F.on) return h;
   h += `<div class="row sb" data-q="afastamento faixas altura progressivo" style="flex-wrap:nowrap">${SW("forma.prog","Afastamento por faixas de altura",{rr:true})}${INFO("Recuo progressivo")}</div>`;
   if(F.prog){
@@ -23125,7 +23145,7 @@ function formaRecuosHTML(){
 ACT.formaFxAdd = ()=>{ const L=S.forma.faixas, last=L[L.length-1], prev=L[L.length-2]; const z=(prev&&+prev.ate||0)+12;
   L.splice(L.length-1, 0, {ate:z, af:last? +last.af||2 : 2, div:0}); update(); renderTab() };
 ACT.formaFxDel = b=>{ const L=S.forma.faixas; if(L.length<2) return; L.splice(+b.dataset.i,1); L[L.length-1].ate=0; update(); renderTab() };
-/* linhas extras na conformidade do estudo (etapa Regras) */
+/* linhas extras na conformidade do estudo (rgConformidade, src/ui/etapa-terreno.js) */
 function formaRows(m){
   const F=S.forma; if(!F || !F.on) return [];
   const out=[];
@@ -23146,7 +23166,7 @@ function formaLive(m){
   const extra = [F.soleira? `topo na cota ${nf(+F.soleira+m.H,1)} m (soleira ${nf(+F.soleira,2)} m)` : "", F.aero? `limite ${nf(m.hLim,1)} m acima da soleira` : ""].filter(Boolean).join(" · ");
   setHTML("formaRes", `<table class="tbl" style="margin-top:6px">${rows.join("")}${tot}</table>${extra? `<p class="note">${extra}</p>` : ""}`);
 }
-addCard("regras", {key:"formaLive", order:61, html:()=>"", live:m=>formaLive(m)});
+addCard("terreno", {key:"formaLive", order:61, html:()=>"", live:m=>formaLive(m)});
 /* desenho: envelope escalonado na implantação; terraço nos andares recuados */
 HOOK.draw2d.push((g, ctx)=>{
   const {mode, m, opt, w2s, V}=ctx; if(!m || !m.forma) return;
@@ -23184,14 +23204,14 @@ if(typeof planLegend==="function"){ const _plForma=planLegend; planLegend=functi
 /* ---------- relatório PDF: faixas de andares ---------- */
 HOOK.pdf.push(async ctx=>{ const m=ctx.m, F=S.forma; if(!m || !m.forma || !F) return;
   const L=[]; m.T.forEach((t,i)=>(t.faixas||[]).forEach(f=>L.push([`Torre ${i+1} · ${f.de===f.ate? f.de+"º" : f.de+"º a "+f.ate+"º"} pav.`, `${m2(f.A)} × ${f.n} · ${f.qtd.reduce((s,n)=>s+n,0)} un/andar`])));
-  ctx.h2("Forma do edifício — faixas de andares");
+  ctx.h2("Altura e recuos por faixa — andares");
   ctx.rows([...(F.prog? [["Afastamento às divisas", F.faixas.map((b,k)=>`${k<F.faixas.length-1? "até "+nf(+b.ate,1)+" m" : "acima"}: ${b.div>0? "máx("+nf(+b.af,2)+" m; H÷"+nf(+b.div,1)+")" : nf(+b.af,2)+" m"}`).join(" · ")]] : []),
     ...L, ["Pavimentos das torres", m2(m.tiposA)], ...(+F.hEmbMax>0? [["Embasamento", `${nf(m.hEmb,1)} m (máx. ${nf(+F.hEmbMax,1)} m)`, m.hEmb>+F.hEmbMax+1e-6? "bad" : "ok"]] : []),
     ...(F.aero? [["Plano do aeródromo", `limite ${nf(m.hLim,1)} m acima da soleira`, m.H>m.hLim+1e-6? "bad" : "ok"]] : [])]);
 });
 
 /* ================= ruas → frentes (interface; cálculo em src/calc/frente.js) =================
-   Card "Lados e frentes" (etapa Terreno): botão "Detectar frentes pelas ruas" → mostra, por lado, a rua e a largura estimada (editável)
+   Seção "Ruas e frentes" (antes "Lados e frentes", etapa Terreno): botão "Detectar frentes pelas ruas" → mostra, por lado, a rua e a largura estimada (editável)
    e a sugestão (frentes, principal, acesso de veículos). NADA muda no lote até o usuário clicar em "Aplicar sugestão" (Ctrl+Z desfaz).
    Sem contexto do OSM carregado, busca primeiro (mapaEntorno, com a busca resiliente). Sem georreferência, pede para posicionar o lote. */
 const FR = { msg:"", busy:false, princ:null };
@@ -23223,15 +23243,14 @@ function frRegraHTML(){
 }
 function frHTML(){
   const s=frSug(), geo=!!S.lote.geo;
-  const btn=`<button class="btn sm${s?"":" pri"}" data-act="frDetectar" ${FR.busy?"disabled":""}>${FR.busy? "Buscando…" : s? "Detectar de novo" : "Detectar frentes pelas ruas"}</button>${INFO("Lê as ruas do OpenStreetMap junto ao lote e propõe quais lados são frente, qual é a principal (via de maior hierarquia), se o lote é de esquina ou passante e por qual rua deve entrar o carro (a de menor hierarquia). Ao aplicar, a frente principal fica com lojas, hall e pedestres e o carro entra pela rua de menor hierarquia (selo “veículos” no lado), sem trocar a principal. Nada muda até você aplicar. A largura da via é estimada pela classe e pode ser corrigida em cada lado.")}`;
+  const btn=`<button class="btn sm${s?" ghost":""}" data-act="frDetectar" ${FR.busy?"disabled":""}>${FR.busy? "Buscando…" : s? "Detectar de novo" : "Detectar frentes pelas ruas"}</button>${INFO("Lê as ruas do OpenStreetMap junto ao lote e propõe quais lados são frente, qual é a principal (via de maior hierarquia), se o lote é de esquina ou passante e por qual rua deve entrar o carro (a de menor hierarquia). Ao aplicar, a frente principal fica com lojas, hall e pedestres e o carro entra pela rua de menor hierarquia (selo “veículos” no lado), sem trocar a principal. Nada muda até você aplicar. A largura da via é estimada pela classe e pode ser corrigida em cada lado.")}`;
   let h=`<div class="row" style="flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px">${btn}${s? `<button class="btn sm ghost" data-act="frDescartar" title="Descartar a proposta">Descartar</button>` : ""}</div>`;
   if(FR.msg) h+=`<p class="note" id="frMsg">${esc(FR.msg)}</p>`;
-  else if(!geo && !s) h+=`<p class="note" id="frMsg">Posicione o lote no mapa para detectar.</p>`;
   if(s){
     const igual=frIgual(s), cand=s.front.length>1? s.front.map(i=>s.lados.find(l=>l.i===i)).filter(Boolean) : [];
     h+=`<p class="note" id="frSum">${frResumo(s)}</p>`;
     if(cand.length>1) h+=`<div class="seg full" role="group" aria-label="Frente principal">${cand.map(l=>`<button type="button" data-act="frPrinc" data-i="${l.i}" aria-pressed="${(FR.princ ?? s.principal)===l.i}" title="Frente principal: lojas, hall e acessos" style="padding:5px 4px">L${l.i+1} · ${esc(frCurto(frNome(l),16))}</button>`).join("")}</div>`;
-    h+=`<div class="row" style="margin-top:8px">${igual? `<span class="note" style="margin:0">As frentes já seguem a sugestão.</span>` : `<button class="btn pri" data-act="frAplicar">Aplicar sugestão</button>`}</div>`;
+    h+=`<div class="row" style="margin-top:8px">${igual? `<span class="note" style="margin:0">As frentes já seguem a sugestão.</span>` : `<button class="btn" data-act="frAplicar">Aplicar sugestão</button>`}</div>`;
     h+=frRegraHTML();
   }
   return h;
@@ -23936,11 +23955,11 @@ const MAPA_CDN = { js:"https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js",
 const MAPA_OVERPASS = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
 const MAPA = { lib:null, map:null, pts:[], fechado:false, tilesOk:0, tilesErr:0, t0:0 };
 
-/* método "Mapa" do contorno do lote (etapa Terreno) — só o lote; os prédios vizinhos ficam na seção Entorno (mapaEntornoHTML) */
+/* método "Mapa" do contorno do lote (etapa Terreno) — só o lote; os prédios vizinhos ficam na seção Vizinhos e ruas (mapaEntornoHTML) */
 function mapaFormHTML(){
-  return `<div class="row"><button class="btn pri" data-act="mapaAbrir">Abrir mapa</button><label class="btn" for="geoFile" tabindex="0">GeoJSON da prefeitura</label><input type="file" id="geoFile" accept=".geojson,.json,application/geo+json,application/json" hidden>${INFO("Satélite (Esri) ou OpenStreetMap: ache o terreno e clique nos cantos do lote; latitude, longitude e norte vêm sozinhos. O GeoJSON da prefeitura (WGS84 ou UTM) também vira o contorno. Os prédios vizinhos ficam na seção Entorno.")}</div>`;
+  return `<div class="row"><button class="btn" data-act="mapaAbrir">Abrir mapa</button><label class="btn" for="geoFile" tabindex="0">GeoJSON da prefeitura</label><input type="file" id="geoFile" accept=".geojson,.json,application/geo+json,application/json" hidden>${INFO("Satélite (Esri) ou OpenStreetMap: ache o terreno e clique nos cantos do lote; latitude, longitude e norte vêm sozinhos. O GeoJSON da prefeitura (WGS84 ou UTM) também vira o contorno. Os prédios vizinhos ficam na seção Vizinhos e ruas.")}</div>`;
 }
-/* bloco "OpenStreetMap" da seção Entorno (src/ui/entorno.js, etapas Terreno e Clima) */
+/* bloco "OpenStreetMap" da seção Vizinhos e ruas (src/ui/entorno.js: Terreno e Projeto › Sol / Vento) */
 function mapaEntornoHTML(){
   const ent=(S.entorno||[]).filter(e=>e.osm).length;
   return `<div class="row" style="flex-wrap:nowrap"><button class="btn sm" data-act="mapaEntorno" title="Prédios, ruas, calçadas, água e verde ao redor do lote">Buscar entorno do OSM</button><div class="inp" style="width:92px;flex:none"><input type="number" step="10" min="30" max="400" data-p="mapa.raio" data-min="30" data-max="400" data-fx="save" value="${S.mapa.raio}" aria-label="Raio da busca em metros" title="Raio da busca"><em>m</em></div>${INFO("Prédios do OpenStreetMap num raio ao redor do lote (precisa de latitude e longitude e de internet), com ruas, calçadas, água e verde. Altura pela tag height ou pelo nº de pavimentos × 3 m; sem informação, 6 m (estimada). Os desenhados à mão ficam.")}</div>
@@ -24140,17 +24159,21 @@ async function mapaTile(z, x, y){
 }
 /* sem georreferência o lote está na origem padrão (Criciúma): a busca rodaria no lugar errado */
 function mapaSemGeo(){
-  const t=`Posicione o lote no mapa para buscar o entorno. <button class="btn sm" data-act="geoMapa">Abrir mapa</button> <button class="btn sm ghost" data-act="geoIr">Localização</button>`;
+  const t=`Posicione o lote no mapa para buscar o entorno. <button class="btn sm" data-act="geoMapa">Abrir mapa</button> <button class="btn sm ghost" data-act="geoIr">Posição no mapa</button>`;
   MAPA.aviso=t; MAPA.avisoGeo=true; mapaMsg(t); mapaHint("Posicione o lote no mapa para buscar o entorno");
-  if(typeof geoFoco==="function" && TAB==="terreno") geoFoco();
+  if(typeof geoFoco==="function" && (TAB==="terreno"||TAB==="regras")) geoFoco();
   toast("Posicione o lote no mapa para buscar o entorno");
 }
-/* abre e destaca o card Localização da etapa Terreno */
+/* abre e destaca a posição no mapa (Terreno › Contorno do lote › "Posição no mapa") */
 function geoFoco(){
-  const d=TB.querySelector('details[data-key="local"]'); if(!d) return;
-  d.open=true; d.classList.add("geoFoco"); try{ d.scrollIntoView({block:"nearest",behavior:"smooth"}) }catch(e){}
+  const d=TB.querySelector('details[data-key="contorno"]') || TB.querySelector('details[data-key="local"]'); if(!d) return;
+  d.open=true;
+  const a=d.querySelector('.adv[data-adv$=":local"]'), ab=a && a.querySelector(":scope > .advb");
+  if(ab && ab.hidden){ const bt=a.querySelector(":scope > .advbtn"); if(bt && ACT.advTog) ACT.advTog(bt); else ab.hidden=false }
+  const alvo=a||d; d.classList.add("geoFoco"); try{ alvo.scrollIntoView({block:"nearest",behavior:"smooth"}) }catch(e){}
   clearTimeout(geoFoco.t); geoFoco.t=setTimeout(()=>d.classList.remove("geoFoco"), 3000);
 }
+const mapaNaTela = () => TAB==="terreno" || TAB==="regras" || (typeof emClima==="function"? emClima() : TAB==="clima");
 const mapaForaDoLocal = () => !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname||"") || location.protocol==="file:";
 /* entorno do OSM (prédios + ruas, água e verde). Devolve true se há contexto utilizável ao final (novo ou o da busca anterior). */
 async function mapaEntorno(){
@@ -24170,7 +24193,7 @@ async function mapaEntorno(){
   if(r.erro){
     const quando=antOk? ctxQuandoBR(ant.quando) : "", fora=mapaForaDoLocal();
     const t=`OpenStreetMap indisponível agora (${esc(r.erro)}).${quando? ` Usando a última busca de ${quando}.`:""} <button class="btn sm" data-act="mapaEntorno">Tentar de novo</button>${fora? `<br>No artifact do claude.ai as buscas externas são bloqueadas: abra em http://localhost:5173.` : ""}`;
-    MAPA.aviso=t; msg(t); toast("Entorno do OSM indisponível"); if(TAB==="terreno"||TAB==="clima") renderTab(); return antOk;
+    MAPA.aviso=t; msg(t); toast("Entorno do OSM indisponível"); if(mapaNaTela()) renderTab(); return antOk;
   }
   const ref=geoRef(lat,lon), hoje=new Date().toISOString().slice(0,10);
   let novo, ent=null, s=(performance.now()-t0)/1000, aviso="";
@@ -24193,7 +24216,7 @@ async function mapaEntorno(){
   if(aviso){ t=aviso+" "+t; MAPA.aviso=aviso+` <button class="btn sm ghost" data-act="mapaEntorno">Tentar a busca completa</button>` }
   msg(t); toast(aviso? "Busca reduzida do OSM" : toastT);
   if(ent && ent.length && !aberto && typeof entEnquadrar==="function"){ setView("impl"); entEnquadrar() }
-  if(TAB==="terreno"||TAB==="clima") renderTab();
+  if(mapaNaTela()) renderTab();
   return true;
 }
 /* atalhos da mensagem "posicione o lote no mapa" */
@@ -24313,8 +24336,11 @@ addCard("cen", { key:"marca", order:21, sub:"entregar", html:marcaCardHTML, afte
 FX.marcaNome = ()=>{ save(); const n=String(S.marca.nome||"").trim(); setSum("marca", n? "ligada · "+esc(n) : "ligada") };
 ACT.mkLogoDel =()=>{ _marcaLogo=null; _logoMini=null; LS.set(MARCA_LS,null); renderTab(); toast("Logo removida") };
 
-/* ================= etapa Regras: biblioteca de cidades e checklist de normas (itens 2.5 e "mais cidades") =================
-   Lê src/calc/cidades.js e src/calc/normas.js. As normas são só leitura: nada aqui muda números do estudo. */
+/* ================= biblioteca de cidades (Terreno) e checklist de normas (Projeto) — itens 2.5 e "mais cidades" =================
+   Lê src/calc/cidades.js e src/calc/normas.js. As normas são só leitura: nada aqui muda números do estudo.
+   UX v3 (P2): o seletor de cidade mora em Terreno › Regras da prefeitura; o checklist vira a seção normasSecHTML()
+   ("Saídas e acessibilidade", chave nrmList) que o Projeto › Andares mostra (pacote P4). Enquanto o Projeto não a chama,
+   um card reserva (addCard projeto/tipo) a mostra no mesmo lugar. normasLive(m, fast) atualiza a lista e o resumo. */
 let CID_UNDO = null; // {regras, ref, nome} — desfazer a última aplicação de regras de cidade
 (function(){ const s=document.createElement("style"); s.textContent=`
 .nrm-aviso{border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 9%,var(--surface));color:var(--ink-2);border-radius:9px;padding:7px 10px;font-size:11.5px;line-height:1.45}
@@ -24332,20 +24358,27 @@ let CID_UNDO = null; // {regras, ref, nome} — desfazer a última aplicação d
 .nrm-st{font-size:10.5px;font-family:var(--f-mono);white-space:nowrap}
 .nrm-st.ok{color:var(--ok)} .nrm-st.warn{color:var(--warn)} .nrm-st.bad{color:var(--bad)} .nrm-st.na{color:var(--muted)}
 .dot.na{background:var(--line-2)}
-.cid-ref{display:grid;gap:4px;border-left:2px solid var(--line-2);padding:2px 0 2px 10px}
+.cid-ref{display:grid;gap:2px;border-left:2px solid var(--line-2);padding:2px 0 2px 10px;margin:8px 0 2px}
+.cid-undo{margin-top:4px}
+.cid-sel+.kv,.cid-ref+.kv,.cid-undo+.kv{margin-top:12px}
+.nrm-top{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
 `; document.head.appendChild(s) })();
 
-/* ---------- cidade e zona ---------- */
-function cidadesCardHTML(){
+/* ---------- cidade e zona (Terreno › Regras da prefeitura) ----------
+   cidSeletorHTML() → seletor "Aplicar regras de…" (#cidLib), a referência da lei (aviso ilustrativo) e "Desfazer"
+   cidSalvarHTML()  → botão "Salvar na biblioteca" (vai em "Mais regras" › Nome e lei)
+   cidadesCardHTML() → os dois juntos (compatibilidade) */
+function cidSeletorHTML(){
   const lista=cidadesLista(), ref=S.regrasRef||{}, grupos={};
   lista.forEach(c=>{ (grupos[c.fonteNome]=grupos[c.fonteNome]||[]).push(c) });
-  const sel=`<select class="sel" id="cidLib" aria-label="Aplicar regras de uma cidade" style="flex:1;min-width:0"><option value="">Aplicar regras de…</option>${Object.entries(grupos).map(([g,l])=>`<optgroup label="${esc(g)}">${l.map(c=>`<option value="${esc(c.id)}">${esc(cidadeRotulo(c))}</option>`).join("")}</optgroup>`).join("")}</select>`;
+  const sel=`<select class="sel" id="cidLib" aria-label="Aplicar regras de uma cidade" style="flex:1;min-width:0"><option value="">${ref.id? "Trocar cidade e zona…" : "Aplicar regras de…"}</option>${Object.entries(grupos).map(([g,l])=>`<optgroup label="${esc(g)}">${l.map(c=>`<option value="${esc(c.id)}">${esc(cidadeRotulo(c))}</option>`).join("")}</optgroup>`).join("")}</select>`;
   const info = ref.id? `<div class="cid-ref"><span class="note"><b style="color:var(--ink)">${esc(S.regras.cidade)}</b>${ref.lei?` · ${esc(ref.lei)}`:""}${ref.data&&ref.data!=="—"?` · ${esc(ref.data)}`:""}</span>
       ${ref.ilustrativo? `<span class="note" style="color:var(--warn)">Valores ilustrativos ${INFO(CIDADES_AVISO)}</span>` : `<span class="note">Da sua biblioteca ${INFO("Regras salvas neste navegador. Confira se continuam vigentes.")}</span>`}</div>` : "";
-  return TXT("regras.cidade","Cidade / zona") +
-    `<div class="row" style="flex-wrap:nowrap">${sel}<button class="btn" data-act="cidSave" title="Guardar as regras atuais na biblioteca deste navegador">Salvar</button></div>` + info +
-    (CID_UNDO? `<div class="row sb" style="flex-wrap:nowrap"><span class="note">Antes: ${esc(CID_UNDO.regras.cidade||"regras anteriores")}</span><button class="btn sm" data-act="cidUndo">Desfazer</button></div>` : "");
+  return `<div class="row cid-sel" data-q="cidade zona lei plano diretor aplicar regras" style="flex-wrap:nowrap">${sel}${INFO("Escolha a cidade e a zona do lote para preencher as regras de uma vez. Os exemplos são ilustrativos: confira no plano diretor (LUOS). Ctrl+Z ou “Desfazer” voltam às regras anteriores.","cidade e zona")}</div>` + info +
+    (CID_UNDO? `<div class="row sb cid-undo" style="flex-wrap:nowrap"><span class="note">Antes: ${esc(CID_UNDO.regras.cidade||"regras anteriores")}</span><button class="btn sm ghost" data-act="cidUndo">Desfazer</button></div>` : "");
 }
+function cidSalvarHTML(){ return `<button class="btn sm" data-act="cidSave" title="Guardar as regras atuais na biblioteca deste navegador">Salvar na biblioteca</button>` }
+function cidadesCardHTML(){ return cidSeletorHTML() + `<div class="row">${cidSalvarHTML()}</div>` }
 TB.addEventListener("change", e=>{
   if(e.target.id!=="cidLib" || !e.target.value) return;
   const c=cidadeAcha(e.target.value); if(!c) return;
@@ -24361,20 +24394,26 @@ Object.assign(ACT, {
 
 /* ---------- checklist de normas ---------- */
 const NRM_ST = {ok:"atende", warn:"atenção", bad:"não atende", na:"não se aplica"};
-/* sub-aba Normas da etapa Regras: resultado no topo, itens verificados abertos, opções fechadas com resumo */
+let NRM_EXT = false;   // true quando outra etapa (Projeto, P4) já põe a seção no corpo: o card reserva some
 const nrmOpcSum = ()=>{ const N=S.normas||{}; return `${N.chuveiros? "com chuveiros" : "sem chuveiros"} · rota ${N.rotaFuga? "visível" : "oculta"}` };
-function normasCardHTML(){
-  return RES("Normas", `<div class="nrm-res" id="nrmRes"></div><p class="nrm-aviso"><b>Preliminar.</b> Confira com a norma vigente e o projetista ${INFO("Tabelas de saídas de emergência (IN 09 do CBMSC, com referência na NBR 9077) e de acessibilidade (NBR 9050, LBI) em revisão. É um checklist de estudo: não substitui o projeto de prevenção e o de acessibilidade.")}</p>`, {aside:`<span id="nrmPill"></span>`}) +
-    SEC("Itens verificados", `<div id="nrmList"><p class="note">Calculando…</p></div>`, {key:"nrmList", open:true, info:"Saídas de emergência (IN 09) e acessibilidade (NBR 9050) conferidas no estudo atual. Toque num item para ver o exigido, o porquê e a fonte."}) +
-    SEC("Opções", `<div data-q="chuveiros sprinklers automáticos">${SW("normas.chuveiros","Edificação com chuveiros automáticos")}</div><div data-q="rota fuga escada pavimento tipo">${SW("normas.rotaFuga","Rota até a escada no pavimento tipo",{fx:"r3n"})}</div>`, {key:"nrmOpc", sum:nrmOpcSum()});
+function nrmSecHTML_(){
+  return SEC("Saídas e acessibilidade", `<div class="nrm-top"><span class="pill warn">preliminar</span><span id="nrmRes" class="nrm-res"></span>${INFO("Saídas de emergência (IN 09 do CBMSC, com referência na NBR 9077) e acessibilidade (NBR 9050, LBI) conferidas no estudo atual. É um checklist de estudo: confira com a norma vigente e o projetista; não substitui o projeto de prevenção e o de acessibilidade. Toque num item para ver o exigido, o porquê e a fonte.","o checklist de normas")}</div>`
+    + `<div id="nrmList"><p class="note">Calculando…</p></div>`
+    + ADV(`<div data-q="chuveiros sprinklers automáticos">${SW("normas.chuveiros","Edificação com chuveiros automáticos")}</div><div data-q="rota fuga escada pavimento tipo">${SW("normas.rotaFuga","Rota até a escada no pavimento tipo",{fx:"r3n"})}</div><p class="note" id="sum-nrmOpc">${nrmOpcSum()}</p>`, {key:"nrmOpc", label:"Opções"}),
+    {key:"nrmList", sum:"preliminar", info:"Saídas de emergência (IN 09) e acessibilidade (NBR 9050), conferidas no núcleo e na garagem desenhados. Preliminar."});
 }
-FX.r3n = ()=>{ save(); redraw2d(); setSum("nrmOpc", nrmOpcSum()) };
+/* seção "Saídas e acessibilidade" para o Projeto › Andares (P4). Chamada no corpo da etapa, desliga o card reserva. */
+function normasSecHTML(){ NRM_EXT=true; return nrmSecHTML_() }
+function normasCardHTML(){ return nrmSecHTML_() }   // compatibilidade
+addCard("projeto", {key:"normas", sub:"tipo", order:80, when:()=>!NRM_EXT, html:()=>nrmSecHTML_(), live:(m,f,fast)=>{ if(!NRM_EXT && document.getElementById("nrmList")) normasLive(m, fast) }});
+FX.r3n = ()=>{ save(); redraw2d(); setSum("nrmOpc", nrmOpcSum()); const e=document.getElementById("sum-nrmOpc"); if(e) e.textContent=nrmOpcSum() };
 function normasLive(m, fast){
-  setSum("nrmOpc", nrmOpcSum());
+  setSum("nrmOpc", nrmOpcSum()); { const e=document.getElementById("sum-nrmOpc"); if(e) e.textContent=nrmOpcSum() }
   if(fast && document.querySelector("#nrmList .nrm-it")) return; // arrastando: mantém o último (o completo vem logo depois)
   let v; try{ v=normasAvaliar(S, m) }catch(e){ console.error("[normas]", e); setHTML("nrmList", `<p class="note">Não foi possível avaliar as normas neste estudo.</p>`); return }
   const c=normasResumo(v.itens);
   const pill=document.getElementById("nrmPill"); if(pill) pill.innerHTML = c.bad? `<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>` : c.warn? `<span style="color:var(--warn)">${c.warn} em atenção</span>` : `<span style="color:var(--ok)">atende</span>`;
+  setSum("nrmList", [c.ok&&`${c.ok} atende${c.ok>1?"m":""}`, c.warn&&`<span style="color:var(--warn)">${c.warn} em atenção</span>`, c.bad&&`<span style="color:var(--bad)">${c.bad} não atende${c.bad>1?"m":""}</span>`].filter(Boolean).join(" · ") || "preliminar");
   setHTML("nrmRes", ["ok","warn","bad"].filter(k=>c[k]).map(k=>`<span class="pill ${k}">${c[k]} ${NRM_ST[k]}</span>`).join("") + `<span class="pill">h = ${nf(v.h,1)} m</span>`);
   const open=new Set([...document.querySelectorAll("#nrmList details[open]")].map(d=>d.dataset.id));
   setHTML("nrmList", NORMAS_GRUPOS.map(g=>{ const l=v.itens.filter(x=>x.grupo===g); if(!l.length) return "";
@@ -25004,7 +25043,7 @@ addEventListener("resize", ()=>progPosiciona());
 ["terreno","regras","produto","viab","projeto","clima","cen"].forEach(k=>addCard(k, {key:"progresso", order:998, html:()=>"", live:()=>{ try{ progressoAtualiza() }catch(e){ console.error("[progresso]", e) } }}));
 
 /* ================= relevo: leitura automática da inclinação do terreno (Fase B, item 2) =================
-   relevoBlocoHTML() → bloco "Relevo do local" dentro do card Topografia (src/ui/topografia.js, etapa Terreno)
+   relevoBlocoHTML() → bloco "Relevo do local" dentro da seção Terreno inclinado (src/ui/topografia.js, etapa Terreno)
    Busca os tiles Terrarium da AWS (z14, ~30 m, sem chave, com CORS), ajusta um plano em volta do lote (cálculo em src/calc/relevo.js)
    e mostra o resultado em uma linha. Reserva: Open-Meteo (90 m, só uso não comercial). Cotas dos cantos editáveis corrigem o plano.
    Aplicar: "Usar na topografia" (S.topo.on com pontos sobre o plano) ou "Só como desnível" (S.lote.desnivel).
@@ -25038,7 +25077,7 @@ function relevoResHTML(){
   const dica = ef.conf&&ef.conf.motivo && nivel!=="alta" && !ef.info ? ` title="${esc(ef.conf.motivo)}"` : "";
   let acoes="";
   if(nivel==="plano") acoes=`<button class="btn sm ghost" data-act="relevoLimpa">Limpar</button>`;
-  else acoes=`<button class="btn sm${R.aplicado==="topo"&&R.sig===relevoSig(ef)?"":" pri"}" data-act="relevoUsa">Usar na topografia</button><button class="btn sm" data-act="relevoDesn" title="Projeta a inclinação entre a frente e os fundos (modo simples)">Só como desnível</button><button class="btn sm ghost" data-act="relevoLimpa">Limpar</button>`;
+  else acoes=`<button class="btn sm" data-act="relevoUsa">Usar na topografia</button><button class="btn sm" data-act="relevoDesn" title="Projeta a inclinação entre a frente e os fundos (modo simples)">Só como desnível</button><button class="btn sm ghost" data-act="relevoLimpa">Limpar</button>`;
   return `<div class="row sb" style="flex-wrap:nowrap;align-items:flex-start"><span style="font-size:13px;color:${cor}"${dica}><b>${esc(relevoLinha(ef))}</b></span>${INFO("Inclinação")}</div>
     <div class="fsub">${esc(origem)} ${aplic}</div><div class="row">${acoes}</div>${nivel!=="plano"?`<div class="row sb" style="flex-wrap:nowrap">${SW("relevo.previa3d","Plano do relevo no 3D",{fx:"relevoPrevia"})}${INFO("Mostra no 3D um plano inclinado discreto, com as curvas de nível e a seta da descida, só como prévia do terreno. Com a topografia ligada, o terreno real aparece no lugar.","o plano no 3D")}</div>`:""}`;
 }
@@ -25063,7 +25102,7 @@ function relevoBlocoHTML(){
     `<div class="row"><button class="btn sm ghost" data-act="relevoLimpaCantos">Limpar cotas informadas</button></div>`,
     {key:"relevo", label:"Mais opções"});
   return `<div class="relevo" id="relevoBox" style="margin-bottom:14px">
-    <div class="row"><button class="btn sm${tem?"":" pri"}" id="relevoBtn" data-act="relevoBusca" ${geo?"":'disabled aria-disabled="true"'}>Buscar relevo do local</button>${INFO("Relevo")}</div>
+    <div class="row"><button class="btn sm" id="relevoBtn" data-act="relevoBusca" ${geo?"":'disabled aria-disabled="true"'}>Buscar relevo do local</button>${INFO("Relevo")}</div>
     <p class="note" id="relevoMsg" ${msg?"":"hidden"} style="${REL.erro?"color:var(--warn)":""}">${aviso? esc(msg) : msg}</p>
     <div id="relevoRes">${relevoResHTML()}</div>${adv}</div>`;
 }
@@ -25624,23 +25663,23 @@ function saudePermutaSub(){
     ? `<span class="note" style="color:var(--warn)">Terreno também lançado (${mi(F.terreno)}).</span> <button type="button" class="btn sm ghost" data-act="zerarTerreno">Zerar terreno</button>` : "");
 }
 
-/* ================= topografia: card da etapa Terreno, curvas na implantação e relevo no 3D (item 2.3) =================
-   topoCardHTML()  → card "Topografia" (chamado por STEP_R.terreno) · topoLive(m) → números vivos · topoAfter() → liga o arquivo
+/* ================= topografia: seção "Terreno inclinado" da etapa Terreno, curvas na implantação e relevo no 3D (item 2.3) =================
+   topoCardHTML()  → seção "Terreno inclinado" (chamada por STEP_R.terreno) · topoLive(m) → números vivos · topoAfter() → liga o arquivo
    Desenho: HOOK.draw2d (curvas de nível e pontos na implantação) e HOOK.draw3d (terreno em relevo, ruas e entorno na cota certa). */
 const topoN=(v,d=2)=>nf(v,d);
-/* seção "Topografia" da etapa Terreno: fechada, com resumo; custos e desenho atrás de "Mais opções" */
+/* seção "Terreno inclinado" (antes "Topografia") da etapa Terreno: fechada, com resumo; custos e desenho atrás de "Mais opções" */
 function topoSum(m){
   const T=S.topo; if(!T.on) return `desnível ${nf(+S.lote.desnivel||0,1)} m`;
   if(!T.pts.length) return "sem pontos importados";
   const t=m&&m.topo; return `${T.pts.length} pontos${t? ` · térreo ${topoN(t.c)} m` : ""}`;
 }
 function topoCardHTML(){
-  const T=S.topo, sec=b=>SEC("Topografia", (typeof relevoBlocoHTML==="function"?relevoBlocoHTML():"")+b, {key:"topografia", sum:topoSum(window._last&&window._last.m)});
+  const T=S.topo, sec=b=>SEC("Terreno inclinado", (typeof relevoBlocoHTML==="function"?relevoBlocoHTML():"")+b, {key:"topografia", sum:topoSum(window._last&&window._last.m), info:"Desnível entre a frente e os fundos, levantamento topográfico (pontos ou curvas) ou o relevo lido do mapa. Entra no corte, no aterro, na contenção e na cota do térreo."});
   const sw=`<div class="row sb" style="flex-wrap:nowrap">${SW("topo.on","Usar levantamento topográfico",{rr:true})}${INFO("Desligado: vale o desnível simples entre a frente e os fundos. Ligado: pontos cotados ou curvas de nível (CSV, KML, DXF) dão o corte, o aterro e a contenção reais.")}</div>`;
   if(!T.on) return sec(sw +
     KV(NUM("lote.desnivel","Desnível","m",{step:0.1,q:"frente fundos",help:"Diferença de nível entre a frente e os fundos do lote. Entra no movimento de terra."})+NUM("lote.custoTerra","Movimento de terra","R$/m³",{step:1,help:"Corte e aterro"})) + `<div class="fsub" id="sub-terra"></div>`);
   const tipo=TOPO_CONT[T.contTipo]? T.contTipo : "cortina";
-  const imp = `<div class="row"><label class="btn sm${T.pts.length?"":" pri"}" for="topoFile" tabindex="0">Importar arquivo</label><input type="file" id="topoFile" accept=".csv,.txt,.xyz,.kml,.dxf" hidden><button class="btn sm" data-act="topoEx">Exemplo inclinado</button>${T.pts.length?`<button class="btn sm ghost" data-act="topoLimpa">Limpar</button>`:""}${INFO("CSV com x, y, z (metros ou UTM) ou latitude, longitude, cota · KML com altitude · DXF com pontos (POINT) ou curvas de nível (polilinhas com elevação). Coordenadas geográficas usam a origem do lote (Localização).")}</div>`;
+  const imp = `<div class="row"><label class="btn sm" for="topoFile" tabindex="0">Importar arquivo</label><input type="file" id="topoFile" accept=".csv,.txt,.xyz,.kml,.dxf" hidden><button class="btn sm" data-act="topoEx">Exemplo inclinado</button>${T.pts.length?`<button class="btn sm ghost" data-act="topoLimpa">Limpar</button>`:""}${INFO("CSV com x, y, z (metros ou UTM) ou latitude, longitude, cota · KML com altitude · DXF com pontos (POINT) ou curvas de nível (polilinhas com elevação). Coordenadas geográficas usam a origem do lote (Contorno do lote › Posição no mapa).")}</div>`;
   if(!T.pts.length) return sec(sw + imp);
   return sec(sw + imp + `<div class="fsub" id="topoInfo"></div>` +
     GRP("Cota do térreo") +
