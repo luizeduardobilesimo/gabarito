@@ -1,56 +1,42 @@
-/* ================= 1.2 unidades por dentro: cômodos =================
-   Biblioteca de modelos paramétricos por tipologia (studio, 1 dorm., 1 suíte, 2 dorm., 2 dorm. c/ suíte, 2 suítes, 3 dorm. c/ suíte,
-   4 dorm. c/ suíte; lavabo fixo na de 2 suítes e opcional nas de 3 dormitórios ou mais).
-   Algoritmo (por unidade do pavimento tipo, no referencial "a" ao longo da fachada × "d" da fachada para dentro):
-     1. faixas: fachada (sala, dormitórios, suíte — precisam de janela) · miolo (circulação íntima, 1 m) · molhada (cozinha,
-        serviço, banheiros — junto do corredor, onde descem os shafts da unidade);
-     2. cortes perpendiculares à fachada com as áreas-alvo (G.cutAt, como no tipoLayout) e larguras mínimas;
-     3. variações: fachada principal ou lateral (unidades de ponta) × zona social numa ponta ou na outra × 3 profundidades
-        da faixa molhada; escolhe pela pontuação (alertas do código de obras + adjacências + desvio das áreas-alvo).
-   Validação: área e dimensão mínimas por cômodo (tabela S.comodos.min, referência genérica), iluminação ≥ 1/n da área
-   do piso nos cômodos de permanência prolongada, acesso de todos os cômodos a partir da entrada.
-   Edição manual: S.comodos.tipos[{nome, modelo, cortes:{f1…, w1…, ws, dF, dW}}] (frações a partir da ponta social; vale
-   para todas as unidades da tipologia). Variações salvas: S.comodos.variantes[{tipo, nome, modelo, cortes}].
-   Saída: u.com em cada unidade de m.tipo[i].units e o resumo m.comodos. Não muda áreas vendáveis (é desenho). */
+/* ================= 1.2 unidades por dentro: plantas de apartamento (cômodos) =================
+   Motor por PARTIDOS (docs/APTOS.md): cada unidade do pavimento tipo testa os partidos permitidos da tipologia
+   (S.comodos.tipos[i].partidos; vazio = todos os do catálogo daquela tipologia + os modelos do usuário copiados em
+   S.comodos.modelos), aplica (aptoAplica: estica por faixas, encaixa em unidade não retangular, recorta a sacada), valida
+   (aptoValida: círculo inscrito, áreas, proporção, acessos, iluminação, mobiliário) e fica com a melhor nota. Referenciais
+   testados: fachada principal (os dois sentidos = espelhado) e, se nada passar, a fachada lateral das unidades de ponta.
+   A janela lateral é aproveitada sempre (as bordas da unidade dizem o que é fachada). Planta com problema grave só sai se
+   nenhum partido cabe — então a unidade fica com a menos ruim e o aviso "nenhum partido cabe" com o motivo.
+   Edição manual: arrastar as linhas da grade do partido (S.comodos.tipos[{nome, partido, cortes:{x1…, y1…}}], frações; vale
+   para todas as unidades da tipologia, com o partido fixado). Variações salvas: S.comodos.variantes[{tipo, nome, modelo,
+   partido, cortes}]. Saída: u.com em cada unidade de m.tipo[i].units e o resumo m.comodos. Não muda áreas vendáveis. */
 extendDEF("comodos", {
-  on: true,          // cômodos visíveis na planta tipo e nos andares
+  on: true,          // plantas visíveis na planta tipo e nos andares
   movel: true,       // camada de mobiliário
   // mínimos de referência (área m², menor dimensão m) — conferir no código de obras do município
-  min: { sala:{a:10,l:2.6}, suite:{a:9,l:2.5}, dorm:{a:7,l:2.3}, cozinha:{a:4,l:1.5}, serv:{a:1.8,l:1.0}, banho:{a:2.2,l:1.1}, lavabo:{a:1.2,l:0.9}, circ:{a:0,l:0.9} },
+  min: { sala:{a:10,l:2.6}, suite:{a:9,l:2.5}, dorm:{a:7,l:2.3}, office:{a:4,l:1.8}, cozinha:{a:4,l:1.5}, serv:{a:1.8,l:1.0}, banho:{a:2.2,l:1.1}, lavabo:{a:1.2,l:0.9}, circ:{a:0,l:0.9} },
   jan: { frac: 6, h: 1.2, hSala: 2.1 },   // iluminação/ventilação ≥ 1/frac da área do piso; altura útil da janela (sala: porta-janela)
-  tipos: [],         // ajustes por tipologia: {nome, modelo:"auto", cortes:{}, sel:-1}
-  variantes: []      // variações salvas: {tipo, nome, modelo, cortes}
+  regras: { circ:{...APTO_REGRAS.circ}, prop:{...APTO_REGRAS.prop}, porta:{...APTO_REGRAS.porta} },   // círculo inscrito, proporção, portas (docs/APTOS.md §1)
+  tipos: [],         // por tipologia: {nome, modelo:"auto"|programa, partidos:[ids] (vazio = automático), partido:id|null (fixado ao arrastar), cortes:{}, sel:-1, lavabo}
+  variantes: [],     // variações salvas: {tipo, nome, modelo, partido, cortes}
+  modelos: []        // modelos do usuário escolhidos neste estudo (cópias, formato §2 — o estudo fica completo no link e no Worker)
 });
 
-const COM_K = {
-  sala:    {nome:"Sala", longo:"Estar / jantar", zona:"social", janela:true},
-  suite:   {nome:"Suíte", longo:"Suíte", zona:"intima", janela:true},
-  dorm:    {nome:"Dorm.", longo:"Dormitório", zona:"intima", janela:true},
-  cozinha: {nome:"Cozinha", longo:"Cozinha", zona:"servico", duto:true},
-  serv:    {nome:"Serviço", longo:"Área de serviço", zona:"servico", duto:true},
-  banho:   {nome:"Banho", longo:"Banheiro", zona:"molhada", duto:true},
-  lavabo:  {nome:"Lavabo", longo:"Lavabo", zona:"molhada", duto:true},
-  bsuite:  {nome:"Banho", longo:"Banheiro da suíte", zona:"molhada", duto:true, min:"banho"},
-  circ:    {nome:"Circ.", longo:"Circulação", zona:"circ"},
-  closet:  {nome:"Closet", longo:"Closet", zona:"intima"},
-  desp:    {nome:"Depósito", longo:"Depósito", zona:"servico"},
-  sacada:  {nome:"Sacada", longo:"Sacada", zona:"externa"}
-};
+const COM_K = APTO_AMB;
 const COM_MODELOS = {
   studio: {nome:"Studio", dorms:0, suite:false, serv:false},
   "1d":   {nome:"1 dormitório", dorms:1, suite:false, serv:true},
   "1s":   {nome:"1 suíte", dorms:0, suite:true, serv:true},
   "2d":   {nome:"2 dormitórios", dorms:2, suite:false, serv:true},
   "2d1s": {nome:"2 dorm. (1 suíte)", dorms:1, suite:true, serv:true},
-  "2s":   {nome:"2 suítes", dorms:0, suite:true, nSuites:2, serv:true, lavabo:"fixo"},       // 2 suítes + lavabo (sem banheiro social)
+  "2s":   {nome:"2 suítes", dorms:0, suite:true, nSuites:2, serv:true, lavabo:"fixo"},
   "3d1s": {nome:"3 dorm. (1 suíte)", dorms:2, suite:true, serv:true, lavabo:"opc"},
-  "4d1s": {nome:"4 dorm. (1 suíte)", dorms:3, suite:true, serv:true, lavabo:"opc", banhos:2}  // dois banheiros sociais
+  "3s":   {nome:"3 suítes", dorms:0, suite:true, nSuites:3, serv:true, lavabo:"fixo"},
+  "4d1s": {nome:"4 dorm. (1 suíte)", dorms:3, suite:true, serv:true, lavabo:"opc", banhos:2}
 };
-/* lavabo no modelo: fixo (parte do programa) ou opcional (S.comodos.tipos[].lavabo) */
 const comTemLavabo = (M, cfg)=> M.lavabo==="fixo" || (M.lavabo==="opc" && !!(cfg && cfg.lavabo));
-const COM_DOOR = 0.8, COM_WALL = {fachada:0.20, divisa:0.075, corredor:0.075, nucleo:0.075, interna:0.06, guarda:0.04};
+const COM_DOOR = 0.8, COM_WALL = APTO_PAREDE;
 
-/* modelo automático pelo nome e pela área da tipologia */
+/* modelo (programa) automático pelo nome e pela área da tipologia */
 function comModeloAuto(nome, area){
   const s=String(nome||"").toLowerCase();
   if(/studio|st[uú]dio|kit|loft/.test(s)) return "studio";
@@ -62,33 +48,25 @@ function comModeloAuto(nome, area){
   if(n===1) return suite? "1s" : "1d";
   if(n===2) return ms && +ms[1]>=2? "2s" : suite? "2d1s" : "2d";
   if(n>=4) return "4d1s";
-  return "3d1s";
+  return ms && +ms[1]>=3? "3s" : "3d1s";
 }
 const comTipoCfg = (st, nome)=> (st.comodos && (st.comodos.tipos||[]).find(t=>t.nome===nome)) || null;
 function comModeloDe(st, nome, area){ const c=comTipoCfg(st,nome); return c && c.modelo && c.modelo!=="auto" && COM_MODELOS[c.modelo] ? c.modelo : comModeloAuto(nome, area) }
-/* modelos testados: o escolhido à mão, ou o automático e a alternativa sem/com suíte do mesmo número de dormitórios */
-function comModelosTeste(st, nome, area){ const c=comTipoCfg(st,nome); if(c && c.modelo && c.modelo!=="auto" && COM_MODELOS[c.modelo]) return [c.modelo];
-  const a=comModeloAuto(nome, area), alt={"2d1s":"2d","2d":"2d1s","1d":"1s","1s":"1d"}[a]; return alt? [a,alt] : [a] }
-
-/* ---------- geometria auxiliar ---------- */
-function comLimpa(p){ // tira pontos repetidos e colineares
-  if(!p || p.length<3) return [];
-  let q=p.filter((v,i)=>{ const w=p[(i+1)%p.length]; return Math.hypot(v[0]-w[0],v[1]-w[1])>1e-4 });
-  for(let k=0;k<3 && q.length>3;k++) q=q.filter((v,i)=>{ const a=q[(i-1+q.length)%q.length], b=q[(i+1)%q.length]; return Math.abs((v[0]-a[0])*(b[1]-v[1])-(v[1]-a[1])*(b[0]-v[0]))>1e-6 });
-  return q.length>2? q : [];
-}
-/* recuo por aresta (paredes): ts[i] = recuo da aresta p[i]→p[i+1]; esquinas em meia-esquadria */
-function comInset(p, ts){
-  const n=p.length; if(n<3) return [];
-  const s=G.sArea(p)>0?1:-1, L=[];
-  for(let i=0;i<n;i++){ const a=p[i], b=p[(i+1)%n], dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1, d=[dx/l,dy/l], nr= s>0? [-d[1],d[0]] : [d[1],-d[0]], t=typeof ts==="function"? ts(i) : ts;
-    L.push({o:[a[0]+nr[0]*t, a[1]+nr[1]*t], d}) }
-  const out=[];
-  for(let i=0;i<n;i++){ const A=L[(i-1+n)%n], B=L[i], den=A.d[0]*B.d[1]-A.d[1]*B.d[0];
-    if(Math.abs(den)<1e-6){ out.push(B.o); continue }
-    const t=((B.o[0]-A.o[0])*B.d[1]-(B.o[1]-A.o[1])*B.d[0])/den; out.push([A.o[0]+A.d[0]*t, A.o[1]+A.d[1]*t]) }
+const COM_ALT = {"2d1s":"2d","2d":"2d1s","1d":"1s","1s":"1d"};
+const comCortesDe = cfg=> Object.fromEntries(Object.entries((cfg && cfg.cortes)||{}).filter(([k,v])=>/^[xy]\d+$/.test(k) && isFinite(v)));
+/* partidos a testar numa tipologia: [{mod, pen}] (pen = penalidade na escolha: a alternativa sem/com suíte do automático) */
+function comPartidosDe(st, nome, area){
+  const cfg=comTipoCfg(st,nome)||{}, us=(st.comodos && st.comodos.modelos)||[];
+  if(Array.isArray(cfg.partidos) && cfg.partidos.length){ const l=cfg.partidos.map(id=>aptoModelo(id, st)).filter(Boolean).map(mod=>({mod, pen:0})); if(l.length) return l }
+  const tip=comModeloDe(st, nome, area), auto=!(cfg.modelo && cfg.modelo!=="auto" && COM_MODELOS[cfg.modelo]), out=[];
+  APTO_CAT.filter(m=>m.tipologia===tip).forEach(mod=>out.push({mod, pen:0})); us.filter(m=>m && m.tipologia===tip).forEach(mod=>out.push({mod, pen:0}));
+  const alt=auto && COM_ALT[tip]; if(alt){ APTO_CAT.filter(m=>m.tipologia===alt).forEach(mod=>out.push({mod, pen:4})); us.filter(m=>m && m.tipologia===alt).forEach(mod=>out.push({mod, pen:4})) }
   return out;
 }
+
+/* ---------- geometria auxiliar ---------- */
+const comLimpa = aptoLimpa;
+const comInset = aptoInset;
 /* classe do que está do outro lado de um ponto de borda (sonda para fora) */
 function comLado(pt, nOut, unitPoly, ctx){
   const pr=[pt[0]+nOut[0]*0.08, pt[1]+nOut[1]*0.08];
@@ -115,321 +93,163 @@ function comBordas(poly, unitPoly, ctx){
 /* ---------- referencial da unidade ---------- */
 function comFrame(P, ax, dn, lado){
   const as=P.map(q=>G.dot(q,ax)), ds=P.map(q=>G.dot(q,dn)), a0=Math.min(...as), a1=Math.max(...as), d0=Math.min(...ds), D=Math.max(...ds)-d0, W=a1-a0;
-  const A = x=> lado==="b"? a1-x : a0+x;                    // x = distância desde a ponta social
+  const A = x=> lado==="b"? a1-x : a0+x;                    // x = distância desde a ponta (lado "b" = espelhado)
   const w = (x,d)=>{ const a=A(x); return [ax[0]*a+dn[0]*(d+d0), ax[1]*a+dn[1]*(d+d0)] };
   const loc = q=>{ const a=G.dot(q,ax); return [lado==="b"? a1-a : a-a0, G.dot(q,dn)-d0] };
   const clip = (x0,x1,y0,y1)=>{ const aa=A(x0), bb=A(x1); let r=G.band(P, ax, Math.min(aa,bb), Math.max(aa,bb)); if(!r.length) return []; r=G.band(r, dn, d0+y0, d0+y1); return comLimpa(r) };
   return {ax, dn, lado, a0, a1, d0, D, W, A, w, loc, clip};
 }
+const comVet=(F,p,v)=>{ const a=F.w(p[0],p[1]), b=F.w(p[0]+v[0],p[1]+v[1]); return [b[0]-a[0], b[1]-a[1]] };
+const comNf=(v,d=1)=>(+v).toFixed(d).replace(".",",");
 
-/* ---------- gerador de uma variação ---------- */
-const comClamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const comNf=(v,d=1)=>(+v).toFixed(d).replace(".",",");   // rápido (nf usa toLocaleString: lento dentro do laço de variações)
-function comGera(P, U, mk, prm, ctx, st){
-  const M=COM_MODELOS[mk], C=st.comodos||DEF.comodos, mins=C.min||{}, ov=prm.cortes||{};
-  const nS=M.suite? (M.nSuites||1) : 0, nB=M.banhos||1, lavOn=comTemLavabo(M, comTipoCfg(st, U.nome));
-  const F=comFrame(P, prm.ax, prm.dn, prm.lado), W=F.W, D=F.D;
-  if(W<2 || D<2) return null;
-  const hasCirc = M.dorms>0 || nS>1, dM = hasCirc? 1.0 : 0;   // com 2 suítes e sem dormitório a circulação íntima liga a sala à segunda suíte
-  // profundidades: faixa molhada (junto do corredor) e faixa de fachada
-  let dW = comClamp(D*0.4, 2.2, 3.4) + (prm.dWd||0); dW=comClamp(dW, 1.8, D-dM-2.4);
-  if(ov.dW!=null) dW=comClamp(ov.dW*D, 1.6, D-dM-2.2);
-  let dF = D-dM-dW; if(ov.dF!=null && hasCirc){ dF=comClamp(ov.dF*D, 2.2, D-dM-1.6); dW=D-dM-dF }
-  const yW = dF+dM;
-  // faixa de fachada: sala | dormitórios | suíte (| banho da suíte, na unidade em L) — cortes pelas áreas-alvo
-  const sac = U.sac && U.sac.area>0.5 ? U.sac : null, sacEmb = sac && sac.tipo!=="balanco" ? sac.area : 0;
-  const mA=k=>((mins[k]||{}).a||0), mL=k=>((mins[k]||{}).l||0);
-  // até onde a faixa molhada existe (unidade em L: a sobra da escada só tem a faixa de fachada)
-  const PW=F.clip(0,W,yW,D), xsW=PW.map(q=>F.loc(q)[0]), xa=PW.length? Math.max(0,Math.min(...xsW)) : W, xb=PW.length? Math.min(W,Math.max(...xsW)) : 0;
-  const bsF = !!prm.bsF && nS===1;
-  const fr=[{k:"sala", t:Math.max(14, 0.28*U.alvo)+sacEmb, mn:Math.max(mL("sala")+0.1, (mA("sala")+mA("cozinha")+sacEmb)/Math.max(1,D)+0.05)}];
-  for(let i=0;i<M.dorms;i++) fr.push({k:"dorm", t:Math.max(8.5,0.11*U.alvo), mn:Math.max(mL("dorm")+0.05, mA("dorm")/Math.max(1,dF)+0.05)});
-  // suítes: a última ocupa a profundidade toda (junto da circulação, com banho e closet na faixa molhada); as anteriores
-  // (2 suítes) ficam só na faixa de fachada, com o banho ao lado dela, também na fachada
-  for(let s=0;s<nS;s++){ const ult=s===nS-1;
-    fr.push({k:"suite", full:ult, t:Math.max(11.5,0.15*U.alvo), mn:Math.max(mL("suite")+0.05, mA("suite")/Math.max(1,dF)+0.05)});
-    if(!ult || bsF) fr.push({k:"bsuite", t:4.2, mn:Math.max(1.5, mL("banho")+0.3)}) }
-  const PF = F.clip(0, W, 0, yW), tot=fr.reduce((s,r)=>s+r.t,0);
-  const dirX = F.lado==="b"? [-F.ax[0],-F.ax[1]] : F.ax, x0w = F.lado==="b"? -F.a1 : F.a0;
-  let acc=0; const cutsF=[];
-  for(let i=0;i<fr.length-1;i++){ acc+=fr[i].t; cutsF.push(PF.length? G.cutAt(PF, dirX, acc/tot)-x0w : W*acc/tot) }
-  // larguras mínimas (se couber; senão, proporcionais aos mínimos) e ajustes manuais
-  const fixCuts=(cuts, mn, ovKey, X0, X1)=>{ let xs=[X0,...cuts,X1];
-    const need=mn.reduce((s,v)=>s+v,0), span=X1-X0;
-    if(span>=need) for(let it=0;it<4;it++){ for(let i=0;i<mn.length;i++){ const w=xs[i+1]-xs[i]; if(w<mn[i]-1e-6){ const def=mn[i]-w; let j=-1,best=0; for(let q=0;q<mn.length;q++){ const sl=(xs[q+1]-xs[q])-mn[q]; if(q!==i && sl>best){ best=sl; j=q } } if(j<0) break; const mv=Math.min(def,best);
-        if(j>i) for(let q=i+1;q<=j;q++) xs[q]+=mv; else for(let q=j+1;q<=i;q++) xs[q]-=mv } } }
-    else if(need>0){ let x=X0; xs=[X0,...mn.map(v=>x+=v*span/need)] }
-    cuts=xs.slice(1,-1);
-    cuts=cuts.map((c,i)=>{ const o=ov[ovKey+(i+1)]; return o!=null && isFinite(o)? o*W : c });
-    const gap= ovKey==="f"? 1.5 : 0.9;   // ajuste manual não espreme um cômodo abaixo disso
-    for(let i=0;i<cuts.length;i++){ if(ov[ovKey+(i+1)]==null) continue; const lo=(i? cuts[i-1] : X0)+gap, hi=(i<cuts.length-1? cuts[i+1] : X1)-gap; cuts[i]=comClamp(cuts[i], lo, Math.max(lo,hi)) }
-    return cuts };
-  let cF = fixCuts(cutsF, fr.map(r=>r.mn), "f", 0, W);
-  { // 2ª passada: fachada inclinada/recortada tira profundidade — alarga o que ficou abaixo da área mínima
-    const xs=[0,...cF,W]; let mudou=false;
-    fr.forEach((r,i)=>{ const dep = r.k==="dorm"||r.k==="bsuite"||(r.k==="suite"&&!r.full)? dF : r.k==="sala"? D : yW, a=G.area(F.clip(xs[i],xs[i+1],0,dep)) - (r.k==="sala"? sacEmb : 0), need=r.k==="bsuite"? 0 : r.k==="sala"? mA("sala")+mA("cozinha") : mA(r.k);
-      if(need>0 && a<need){ r.mn=Math.max(r.mn, (xs[i+1]-xs[i]) + (need-a)/Math.max(1,dep) + 0.03); mudou=true } });
-    if(mudou) cF = fixCuts(cutsF, fr.map(r=>r.mn), "f", 0, W) }
-  const xF=[0,...cF,W];
-  let si=-1; fr.forEach((r,i)=>{ if(r.k==="suite") si=i }); const salaX1=xF[1], suiteX0 = si>=0? xF[si] : W, suiteX1 = si>=0? xF[si+1] : W;
-  // faixa molhada: [cozinha, serviço, (depósito), banho social] até a suíte; [banho da suíte, closet] embaixo da suíte
-  let X1w = M.suite? suiteX0 : xb, bsX0=null, bsX1=null, cloX0=null, cloX1=null;
-  const z0=suiteX0, z1=Math.min(suiteX1, xb), zw=z1-z0;
-  if(M.suite && !bsF){ const wb=comClamp(3.6/dW,1.6,2.4); let c = zw-wb>=1.1? z0+wb : z1; if(ov.ws!=null && zw>1.6) c=comClamp(ov.ws*W, z0+1.2, z1); if(z1-c<0.9) c=z1; bsX0=z0; bsX1=c; if(c<z1-0.05){ cloX0=c; cloX1=z1 } }
-  else if(M.suite && bsF){ if(zw>=1.0){ cloX0=z0; cloX1=z1 } else if(zw>0) X1w=z1 }
-  X1w=Math.min(X1w, xb); const X0w=Math.min(xa, X1w), Wm=X1w-X0w;
-  const wr=[{k:"cozinha", mn:1.8}]; if(M.serv) wr.push({k:"serv", mn:1.15});
-  const temBanhoSocial = !M.suite || M.dorms>0; if(temBanhoSocial) for(let b=0;b<nB;b++) wr.push({k:"banho", mn:1.3});
-  let ws=wr.map(r=>r.k==="banho"? comClamp(3.4/dW,1.5,2.3) : r.k==="serv"? comClamp(0.045*U.alvo/dW,1.3,1.9) : 0);
-  // lavabo: primeira célula da faixa molhada, embaixo da sala (porta para a sala, perto da entrada e da cozinha); só se a cozinha ainda couber
-  let lavW=0; if(lavOn){ const w=comClamp(2.7/dW,1.1,1.5); if(Wm-w-ws.slice(1).reduce((s,v)=>s+v,0)>=2.2){ lavW=w; wr.unshift({k:"lavabo", mn:0.95}); ws.unshift(w) } }
-  const ci=lavW? 1 : 0;   // posição da cozinha na faixa molhada
-  ws[ci]=Wm-ws.reduce((s,v,i)=>i===ci? s : s+v, 0);
-  if(ws[ci]>4.4){ let ex=ws[ci]-4.4; ws[ci]=4.4;   // sobra na faixa molhada: serviço e banho crescem; o resto vira depósito
-    const grow=(k,cap)=>wr.forEach((r,i)=>{ if(r.k!==k) return; const g=Math.min(ex, Math.max(0,cap-ws[i])); ws[i]+=g; ex-=g });
-    grow("serv",2.0); grow("banho",nB>1? 2.0 : 2.4);
-    if(ex>=1.0 && M.serv){ const i=wr.findIndex(r=>r.k==="serv")+1; wr.splice(i,0,{k:"desp", mn:0.9}); ws.splice(i,0,ex) } else ws[ci]+=ex }
-  let acc2=X0w; const cutsW0=ws.slice(0,-1).map(w=>acc2+=w);
-  const cW = wr.length>1? fixCuts(cutsW0, wr.map(r=>r.mn), "w", X0w, X1w) : [];
-  const xW=[X0w,...cW,X1w];
-  // sacada embutida: no canto externo da sala (ou em toda a frente dela)
-  let sacW=0, sacD=0; if(sacEmb>0){ sacW=comClamp(sacEmb/1.6, 1.8, salaX1); if(salaX1-sacW<1.2) sacW=salaX1; sacD=comClamp(sacEmb/sacW, 1.2, Math.min(2.4, yW-2.6)) }
-  // cômodos (retângulos no referencial; recortados pelo polígono)
-  const R=[]; const add=(k,x0,x1,y0,y1,extra={})=>{ if(x1-x0<0.05||y1-y0<0.05) return null; const poly=F.clip(x0,x1,y0,y1); const r={k, nome:COM_K[k].nome, x0,x1,y0,y1, poly, area:G.area(poly), ...extra}; R.push(r); return r };
-  // recorta o canto (cx, fachada) até (ix, iy): o ponto na fachada segue a inclinação dela
-  const notchLoc=(poly, cx, cy, ix, iy)=>{ const Lc=poly.map(q=>F.loc(q)); let k=-1, by=Infinity; Lc.forEach((q,i)=>{ if(Math.abs(q[0]-cx)<0.05 && q[1]<by){ by=q[1]; k=i } }); if(k<0 || by>cy+0.6) return null;
-    const n=Lc.length, K=Lc[k], pv=Lc[(k-1+n)%n], nx=Lc[(k+1)%n], fn = Math.abs(pv[0]-K[0])>Math.abs(nx[0]-K[0])? pv : nx, t=(ix-K[0])/((fn[0]-K[0])||1e-9);
-    if(!(t>0 && t<=1+1e-9) || iy<=K[1]+0.3) return null;
-    const sn = fn===pv? nx : pv, t2=(iy-K[1])/((sn[1]-K[1])||1e-9), cxx = t2>0 && t2<=1+1e-9? K[0]+(sn[0]-K[0])*t2 : cx;   // parede lateral também pode ser inclinada
-    const a=F.w(ix, K[1]+(fn[1]-K[1])*t), b=F.w(ix,iy), c=F.w(cxx,iy); return [...poly.slice(0,k), ...(fn===pv? [a,b,c] : [c,b,a]), ...poly.slice(k+1)] };
-  let sala=null, sacR=null;
-  if(sacD>0 && sacW<salaX1-1e-6){ sala=add("sala",0,salaX1,0,yW); const np=sala && notchLoc(sala.poly,0,0,sacW,sacD), lp=np && comLimpa(np);   // recorte degenerado (área ~0) → sacada na largura toda
-    if(lp && lp.length>=3 && G.area(lp)>0.15){ sala.poly=lp; sala.area=G.area(lp); sacR=add("sacada",0,sacW,0,sacD) } else { sacW=salaX1; if(sala) R.pop(); sala=null } }
-  if(!sala){ sala=add("sala",0,salaX1,sacD,yW); if(sacD>0) sacR=add("sacada",0,salaX1,0,sacD) }
-  let di=0, lastS=null; for(let i=1;i<fr.length;i++){ const k=fr[i].k; if(k==="dorm"){ di++; add("dorm",xF[i],xF[i+1],0,dF,{n:di}) } else if(k==="suite") lastS=add("suite",xF[i],xF[i+1],0,fr[i].full? yW : dF); else add("bsuite",xF[i],xF[i+1],0,dF,{of:lastS}) }
-  if(hasCirc && suiteX0-salaX1>0.05) add("circ",salaX1,suiteX0,dF,yW);
-  let bi=0; wr.forEach((r,i)=>add(r.k,xW[i],xW[i+1],yW,D, r.k==="banho"&&nB>1? {n:++bi} : {}));
-  if(bsX0!=null) add("bsuite",bsX0,bsX1,yW,D,{of:lastS}); if(cloX0!=null) add("closet",cloX0,cloX1,yW,D);
-  // sem área (recorte vazio, ex.: unidade em L) → some
-  const rooms=R.filter(r=>r.area>0.15);
-  const by=k=>rooms.filter(r=>r.k===k);
-  // portas (no referencial): aresta compartilhada entre dois retângulos
-  const doors=[];
-  const shared=(A,B)=>{ const e=1e-6;
-    if(Math.abs(A.x1-B.x0)<e||Math.abs(B.x1-A.x0)<e){ const x=Math.abs(A.x1-B.x0)<e? A.x1 : A.x0, lo=Math.max(A.y0,B.y0), hi=Math.min(A.y1,B.y1); return hi-lo>0.05? {ax:"x", at:x, lo, hi} : null }
-    if(Math.abs(A.y1-B.y0)<e||Math.abs(B.y1-A.y0)<e){ const y=Math.abs(A.y1-B.y0)<e? A.y1 : A.y0, lo=Math.max(A.x0,B.x0), hi=Math.min(A.x1,B.x1); return hi-lo>0.05? {ax:"y", at:y, lo, hi} : null }
-    return null };
-  const ptOf=(s,t)=> s.ax==="x"? [s.at,t] : [t,s.at];
-  const inside=(r,x,y)=> r.poly.length && G.pip(F.w(x,y), r.poly);
-  const span=(r,s)=>{ // trecho do contorno recortado de r sobre a reta da aresta compartilhada
-    const Lc=r.loc||(r.loc=r.poly.map(q=>F.loc(q))), ci=s.ax==="x"?0:1, cj=1-ci; let lo=Infinity, hi=-Infinity;
-    for(let i=0;i<Lc.length;i++){ const p=Lc[i], q=Lc[(i+1)%Lc.length], dp=p[ci]-s.at, dq=q[ci]-s.at;
-      if(Math.abs(dp)<1e-4){ lo=Math.min(lo,p[cj]); hi=Math.max(hi,p[cj]) }
-      else if(dp*dq<0 && Math.abs(dq)>=1e-4){ const v=p[cj]+(q[cj]-p[cj])*dp/(dp-dq); lo=Math.min(lo,v); hi=Math.max(hi,v) } }
-    return [lo,hi] };
-  const run=(s,A,B)=>{ // trecho real (dentro dos dois cômodos recortados)
-    const a=span(A,s), b=span(B,s), lo=Math.max(s.lo,a[0],b[0]), hi=Math.min(s.hi,a[1],b[1]);
-    return hi-lo>0.3 ? {...s, lo, hi} : null };
-  const door=(A,B,o={})=>{ if(!A||!B) return false; let s=shared(A,B); if(!s) return false; s=run(s,A,B); if(!s) return false;
-    const len=s.hi-s.lo, w=Math.min(o.w||COM_DOOR, len-0.2);
-    let t0; if(o.vao){ if(len<0.6) return false; const ww=Math.min(len-0.1, o.vaoMax||len); t0=s.lo+(len-ww)/2; doors.push({k:"vao", ax:s.ax, at:s.at, lo:t0, hi:t0+ww, from:A, into:B}); return true }
-    if(w<0.6) return false;
-    if(o.pos==="hi") t0=s.hi-0.12-w; else if(o.pos==="lo") t0=s.lo+0.12; else t0=s.lo+(len-w)/2;
-    doors.push({k:"porta", ax:s.ax, at:s.at, lo:t0, hi:t0+w, from:A, into:B, hinge:o.pos==="hi"? "hi" : "lo"}); return true };
-  const circ=by("circ")[0], coz=by("cozinha")[0], serv=by("serv")[0], suites=by("suite"), suite=suites[suites.length-1], lav=by("lavabo")[0], clo=by("closet")[0], desp=by("desp")[0];
-  const acesso=new Map(); const liga=(a,b)=>{ if(!a||!b) return; (acesso.get(a)||acesso.set(a,[]).get(a)).push(b); (acesso.get(b)||acesso.set(b,[]).get(b)).push(a) };
-  if(sala&&coz && door(sala,coz,{vao:true, vaoMax:3.2})) liga(sala,coz);
-  { const v=doors.find(d=>d.k==="vao" && d.from===sala && d.into===coz); if(v && v.hi-v.lo>=1.5){ sala.integ=true; coz.integ=true; v.k="integ" } }   // cozinha integrada à sala
-  if(coz&&serv && door(coz,serv,{w:0.7})) liga(coz,serv);
-  if(serv&&desp && door(serv,desp,{w:0.7})) liga(serv,desp);
-  if(sala&&circ && door(sala,circ,{vao:true, vaoMax:1.0})) liga(sala,circ);
-  const hub = circ || sala;
-  by("dorm").forEach(d=>{ if(door(circ||sala,d,{pos:"hi"})) liga(circ||sala,d) });
-  suites.forEach(su=>{ if(door(circ||sala,su,{})) liga(circ||sala,su) });
-  by("banho").forEach(bh=>{ if(door(hub,bh,{w:0.7, pos:"hi"})) liga(hub,bh); else if(sala && door(sala,bh,{w:0.7})) liga(sala,bh) });
-  if(lav){ if(door(sala,lav,{w:0.7})) liga(sala,lav); else if(circ && door(circ,lav,{w:0.7})) liga(circ,lav); else if(coz && door(coz,lav,{w:0.7})) liga(coz,lav) }   // lavabo: da sala, a primeira escolha
-  by("bsuite").forEach(b=>{ if(b.of && door(b.of,b,{w:0.7})) liga(b.of,b) });   // banheiro da suíte: sempre pelo quarto dela
-  if(suite&&clo && door(suite,clo,{vao:true, vaoMax:0.9})) liga(suite,clo);
-  if(sala&&sacR){ doors.push({k:"pj", ax:"y", at:sacD, lo:0.25, hi:Math.max(0.6,sacW-0.25), from:sala, into:sacR}); liga(sala,sacR) }
-  // bordas de cada cômodo (classe do vizinho) e porta de entrada no corredor
-  rooms.forEach(r=>{ r.bordas = r.poly.length? comBordas(r.poly, P, ctx) : [] });
-  let entrada=null;
-  { const cands=(prm.fr==="l"? [sala, coz, circ] : [coz, sala, circ]).filter(r=>r && r.bordas);
-    for(const r of cands){ const segs=r.bordas.filter(b=>b.c==="corredor" && b.len>=1.1).sort((a,b)=>b.len-a.len); if(!segs.length) continue;
-      const s=segs[0], w=0.9, L=s.len, tA=(L-w)/L; // perto da ponta mais distante da parede externa da zona social
-      const la=F.loc(s.a)[0], lb=F.loc(s.b)[0], far = la>lb? 0 : 1, t0 = far===0? 0.12/L : tA-0.12/L;
-      const p0=[s.a[0]+(s.b[0]-s.a[0])*t0, s.a[1]+(s.b[1]-s.a[1])*t0], p1=[s.a[0]+(s.b[0]-s.a[0])*(t0+w/L), s.a[1]+(s.b[1]-s.a[1])*(t0+w/L)];
-      entrada={room:r, p0, p1, n:[-s.n[0],-s.n[1]]}; break } }
-  // acesso: todos os cômodos alcançáveis a partir da entrada
-  const alc=new Set(); if(entrada){ const q=[entrada.room]; alc.add(entrada.room); while(q.length){ const r=q.shift(); (acesso.get(r)||[]).forEach(o=>{ if(!alc.has(o)){ alc.add(o); q.push(o) } }) } }
-  // janelas
-  const J=C.jan||{frac:6,h:1.2,hSala:2.1}, windows=[];
-  rooms.forEach(r=>{ const K=COM_K[r.k]; r.jan=0; r.janReq=0; if(r.k==="sacada"||r.k==="circ") return;
-    const fac=r.bordas.filter(b=>b.c==="fachada"); r.facLen=fac.reduce((s,b)=>s+b.len,0);
-    r.viaSacada = !!(sacR && r===sala);
-    const h = r.k==="sala"? (J.hSala||2.1) : (J.h||1.2); r.janReq = (r.k==="sala" && r.integ && coz? r.area+coz.area : r.area)/(J.frac||6)/h;   // sala com cozinha integrada: janela para o conjunto
-    const best=fac.sort((a,b)=>b.len-a.len)[0];
-    if(best && best.len>=0.8){ const w=Math.min(best.len-0.4, Math.max(r.janReq*1.15, K.janela? 1.2 : 0.6, Math.min(best.len*0.55, r.k==="sala"? 3.2 : 2.0)));
-      const t0=(best.len-w)/2/best.len, t1=1-t0, p0=[best.a[0]+(best.b[0]-best.a[0])*t0, best.a[1]+(best.b[1]-best.a[1])*t0], p1=[best.a[0]+(best.b[0]-best.a[0])*t1, best.a[1]+(best.b[1]-best.a[1])*t1];
-      windows.push({room:r, p0, p1, n:best.n, w}); r.jan=w*h }
-    if(r.viaSacada){ const pj=doors.find(d=>d.k==="pj"); if(pj) r.jan += (pj.hi-pj.lo)*h }
-  });
-  // validação
-  const alertas=[], nomeR=r=> (r.k==="dorm"||r.k==="banho") && r.n? `${COM_K[r.k].longo} ${r.n}` : COM_K[r.k].longo;
-  rooms.forEach(r=>{ const K=COM_K[r.k], mn=mins[K.min||r.k]; const ext=r.poly.length? [r.poly.map(q=>F.loc(q)[0]), r.poly.map(q=>F.loc(q)[1])] : [[0],[0]];
-    r.larg=Math.min(Math.max(...ext[0])-Math.min(...ext[0]), Math.max(...ext[1])-Math.min(...ext[1]));
-    r.alertas=[];
-    const al=(nivel,msg)=>{ r.alertas.push({nivel,msg}); alertas.push({nivel, msg:`${nomeR(r)}: ${msg}`, k:r.k}) };
-    // sala com cozinha integrada: um compartimento só (soma das áreas e dos mínimos)
-    const aR = r.k==="sala" && r.integ && coz? r.area+coz.area : r.area, aM = mn? (r.k==="sala" && r.integ? mn.a+((mins.cozinha||{}).a||0) : mn.a) : 0;
-    if(mn && aM>0 && !(r.k==="cozinha" && r.integ) && aR<aM-0.05) al(aR<aM*0.85?"erro":"aviso", `${comNf(aR,1)} m²${r.integ?" com a cozinha":""} (mín. ${comNf(aM,1)} m²)`);
-    if(mn && mn.l>0 && r.larg<mn.l-0.05) al(r.larg<mn.l*0.85?"erro":"aviso", `largura ${comNf(r.larg,2)} m (mín. ${comNf(mn.l,2)} m)`);
-    if(K.janela){ if(!r.jan) al("erro","sem janela"); else if(r.jan < aR/(J.frac||6)-0.01) al("erro",`janela insuficiente (${comNf(r.jan,2)} m² < 1/${J.frac||6} do piso)`) }
-    else if(K.duto && !r.facLen && !r.integ) r.duto=true;
-    if(entrada && !alc.has(r) && r.k!=="sacada") al("erro","sem acesso");
-  });
-  if(!entrada) alertas.push({nivel:"erro", msg:"sem porta para o corredor", k:"entrada"});
-  const falta=(k,n,nome)=>{ if(by(k).length<n) alertas.push({nivel:"erro", msg:`falta ${nome}`, k}) };
-  falta("sala",1,"a sala"); falta("cozinha",1,"a cozinha"); falta("dorm",M.dorms,M.dorms>1? "dormitório" : "o dormitório");
-  if(M.suite){ falta("suite",nS,nS>1? "as suítes" : "a suíte"); falta("bsuite",nS,nS>1? "os banheiros das suítes" : "o banheiro da suíte") } if(temBanhoSocial) falta("banho",nB,nB>1? "os banheiros" : "o banheiro"); if(M.serv) falta("serv",1,"a área de serviço");
-  if(lavOn && !lav) alertas.push({nivel: M.lavabo==="fixo"? "erro" : "aviso", msg:"o lavabo não coube na faixa molhada", k:"lavabo"});
-  if(rooms.some(r=>r.duto)) alertas.push({nivel:"nota", msg:"cozinha, serviço e banheiros sem fachada: ventilação por duto ou shaft (conferir)", k:"duto"});
-  // pontuação: alertas, adjacências e desvio das áreas-alvo
-  let score=0; alertas.forEach(a=>score-= a.nivel==="erro"? 100 : a.nivel==="aviso"? 15 : 0);
-  const toca=(A,B)=>!!(A&&B&&shared(A,B)); if(toca(coz,serv)) score+=6; if(toca(coz,sala)) score+=6; by("banho").forEach(bh=>{ if(toca(bh,circ||sala)) score+=4 }); by("bsuite").forEach(b=>{ if(b.of && toca(b,b.of)) score+=4 }); if(lav && toca(lav,sala)) score+=4; if(entrada && (entrada.room===coz||entrada.room===sala)) score+=5;
-  fr.forEach((f,i)=>{ const r=rooms.find(x=>x.k===f.k && Math.abs(x.x0-xF[i])<1e-6); if(r) score-=3*Math.abs((r.area+(f.k==="sala"&&sacR?sacR.area:0))/f.t-1) });
-  if(rooms.some(r=>(r.k==="dorm"||r.k==="suite") && r.facLen>0 && r.bordas.filter(b=>b.c==="fachada").length>1)) score+=1;
-  // sala bem proporcionada (a faixa rasa atrás da escada não serve de sala)
-  if(sala && sala.poly.length){ const pts=[...sala.poly, ...(sacR? sacR.poly : [])].map(q=>F.loc(q)), xs=pts.map(q=>q[0]), ys=pts.map(q=>q[1]), bb=(Math.max(...xs)-Math.min(...xs))*(Math.max(...ys)-Math.min(...ys));
-    const ratio=(sala.area+(sacR? sacR.area : 0))/Math.max(1,bb); if(ratio<0.85) score-=25*(0.85-ratio) }
-  // divisões arrastáveis (frações a partir da ponta social)
-  const divs=[];
-  cF.forEach((c,i)=>divs.push({id:"f"+(i+1), ax:"x", x:c, y0:0, y1: (fr[i+1]&&fr[i+1].k==="suite")||i===0? yW : dF, lo:(i? cF[i-1]:0)+1.5, hi:(i<cF.length-1? cF[i+1]:W)-1.5}));
-  cW.forEach((c,i)=>divs.push({id:"w"+(i+1), ax:"x", x:c, y0:yW, y1:D, lo:(i? cW[i-1]:X0w)+0.9, hi:(i<cW.length-1? cW[i+1]:X1w)-0.9}));
-  if(cloX0!=null && bsX1!=null) divs.push({id:"ws", ax:"x", x:bsX1, y0:yW, y1:D, lo:suiteX0+1.2, hi:z1-0.9});
-  if(hasCirc) divs.push({id:"dF", ax:"y", y:dF, x0:salaX1, x1:suiteX0, lo:2.2, hi:D-dM-1.6});
-  divs.push({id:"dW", ax:"y", y:yW, x0:0, x1:W, lo:(hasCirc? dF+dM : 2.4), hi:D-1.6});
-  divs.forEach(d=>{ if(d.ax==="x"){ d.p0=F.w(d.x,d.y0); d.p1=F.w(d.x,d.y1) } else { d.p0=F.w(d.x0,d.y); d.p1=F.w(d.x1,d.y) } });
-  const cortes={}; cF.forEach((c,i)=>cortes["f"+(i+1)]=c/W); cW.forEach((c,i)=>cortes["w"+(i+1)]=c/W); if(cloX0!=null && bsX1!=null) cortes.ws=bsX1/W; cortes.dF=dF/D; cortes.dW=dW/D;
-  return {F, mk, rooms, doors, windows, entrada, alertas, score, divs, cortes, dF, dM, dW, salaX1, suiteX0, sacR};
+/* ---------- uma unidade: testa os partidos e escolhe ---------- */
+const _comCache = new Map();
+function comUnidade(u, lay, st, ctx){
+  const P=comLimpa(u.poly); if(P.length<3 || G.area(P)<12) return null;
+  const C=st.comodos||DEF.comodos, cfg=comTipoCfg(st, u.nome)||{}, ov=comCortesDe(cfg), cands=comPartidosDe(st, u.nome, u.alvo);
+  const fixo = cfg.partido && Object.keys(ov).length ? aptoModelo(cfg.partido, st) : null;
+  const sacEmb = u.sac && u.sac.area>0.5 && u.sac.tipo!=="balanco" ? {area:u.sac.area, prof:(st.produto&&st.produto.sacProf)||1.6} : null;
+  const ba=[P.map(q=>[+q[0].toFixed(3),+q[1].toFixed(3)]), u.fac, u.ux||0, u.vy||0, u.alvo, sacEmb && +sacEmb.area.toFixed(2), sacEmb && sacEmb.prof, cands.map(c=>[c.mod.id, c.mod.atualizado||0, c.pen]), fixo&&fixo.id, C.min, C.jan, C.regras, ctx.sig, !!cfg.lavabo];
+  const sig=JSON.stringify([...ba, ov]), sigA=JSON.stringify([...ba, "auto"]);
+  const hit=_comCache.get(sig); if(hit) return hit;
+  const ux=u.ux||lay.ux, vy=u.vy||lay.vy;   // C3: unidade de uma ala traz o referencial da ala
+  const bordW=comBordas(P, null, ctx), locais=new Map();
+  const local=(fm, lado)=>{ const key=fm.fr+fm.ax.join()+lado; let r=locais.get(key); if(r) return r; const F=comFrame(P, fm.ax, fm.dn, lado);
+    r={F, PL:P.map(F.loc), bl:bordW.map(b=>({a:F.loc(b.a), b:F.loc(b.b), c:b.c}))}; r.ret = P.length===4 && Math.abs(G.area(P)-F.W*F.D)<0.05; locais.set(key, r); return r };
+  const aplica=(mod, fm, lado, enc, cortes)=>{ const Lc=local(fm, lado), F=Lc.F; if(F.W<2 || F.D<2) return null;
+    const planta=aptoAplica(mod, F.W, F.D, {contorno:Lc.PL, bordas:Lc.bl, encaixe:enc, sacada:sacEmb, lavabo:!!cfg.lavabo, cortes, st}); return planta? {planta, F} : null };
+  const frames=[{fr:"f", ax:ux, dn: u.fac==="max"? [-vy[0],-vy[1]] : [vy[0],vy[1]]}];
+  const lat=bordW.filter(b=>b.c==="fachada" && b.len>=3 && Math.abs(G.dot([(b.b[0]-b.a[0])/b.len,(b.b[1]-b.a[1])/b.len],ux))<0.35);
+  lat.forEach(b=>{ const d=[(b.b[0]-b.a[0])/b.len,(b.b[1]-b.a[1])/b.len]; frames.push({fr:"l", ax:d, dn:[-b.n[0],-b.n[1]]}) });
+  const finaliza=b=>{ if(_comCache.size>600) _comCache.clear(); return b };
+  // escolha automática (sem os ajustes manuais): barata para todos; mobiliário só nos melhores (a nota completa nunca passa da barata)
+  // faixa do partido: frente × profundidade da região em que ele é aplicado (retângulo envolvente ou o maior inscrito)
+  const dims=(Lc,enc)=>{ if(enc!=="inscrito") return [Lc.F.W, Lc.F.D]; if(Lc.mr===undefined) Lc.mr=aptoMaiorRet(Lc.PL); return Lc.mr? [Lc.mr[2]-Lc.mr[0], Lc.mr[3]-Lc.mr[1]] : null };
+  const foraDe=(mod,dm)=>{ if(!dm) return 99; const fw=mod.faixaW||{}, fd=mod.faixaD||{}, o=(v,a,b)=>Math.max(0,(a!=null? a-v : 0), (b!=null? v-b : 0)); return o(dm[0],fw.min,fw.max!=null? fw.max*APTO_FAIXA_FOLGA.W : null)+o(dm[1],fd.min,fd.max!=null? fd.max*APTO_FAIXA_FOLGA.D : null) };
+  // escolha automática (sem os ajustes manuais): barata para todos; mobiliário só nos melhores (a nota completa nunca passa da barata)
+  const escolhe=(lista)=>{ const cs=[]; let n=0;
+    const testa=(fms, aceita)=>fms.forEach(fm=>["a","b"].forEach(lado=>{ const Lc=local(fm,lado); const encs=Lc.ret? ["caixa"] : ["caixa","inscrito"];
+      lista.forEach(({mod,pen})=>encs.forEach(enc=>{ if(!aceita(mod, dims(Lc,enc))) return; const r=aplica(mod, fm, lado, enc, null); n++; if(!r) return; const v=aptoValida(r.planta, st, {rapido:true});
+        cs.push({...r, mod, pen, fr:fm.fr, fm, lado, enc, s0:v.nota-pen-(fm.fr==="l"?3:0)-(enc==="inscrito"?0.5:0)-(lado==="b"?0.01:0), v0:v}) })) }));
+    const naFaixa=(mod,dm)=>foraDe(mod,dm)<0.025;
+    testa(frames.slice(0,1), naFaixa);
+    if(!cs.some(c=>c.v0.ok) && frames.length>1) testa(frames.slice(1), naFaixa);
+    if(!cs.length){ // nada na faixa: a menos ruim entre os partidos mais próximos da faixa (só para mostrar, com o aviso)
+      const Lc=local(frames[0],"a"), dm=dims(Lc,"caixa"), mins=lista.map(x=>foraDe(x.mod,dm)), m0=Math.min(...mins);
+      testa(frames.slice(0,1), (mod,d)=>foraDe(mod,dm)<=m0+0.5) }
+    cs.sort((a,b)=>b.s0-a.s0);
+    const lim = cs.length && cs[0].v0.ok? 4 : 2;
+    let best=null; for(let i=0;i<cs.length && i<lim;i++){ const c=cs[i]; if(best && c.s0<=best.s) break; const v=aptoValida(c.planta, st); const s=v.nota-(c.s0-c.v0.nota); if(!best || s>best.s) best={...c, val:v, s} }
+    if(best){ best.nVar=n; best.notas={}; cs.forEach(c=>{ const id=c.mod.id; if(best.notas[id]==null || c.v0.nota>best.notas[id]) best.notas[id]=c.v0.nota }); best.notas[best.mod.id]=best.val.nota;
+      const Lm=local(frames[0],"a"); best.Wf=Lm.F.W; best.Df=Lm.F.D; const mr=dims(Lm,"inscrito"); best.Wi=mr? mr[0] : Lm.F.W; best.Di=mr? mr[1] : Lm.F.D }
+    return best };
+  let best=_comCache.get(sigA);
+  if(!best){ best=escolhe(fixo? [{mod:fixo, pen:0}] : cands); if(!best) return null; best=comMonta(best, u, st, cands); _comCache.set(sigA, best) }
+  // ajuste manual: o partido e o referencial escolhidos ficam (não pula de arranjo ao arrastar); só a grade muda
+  if(Object.keys(ov).length){ const r=aplica(best.mod, best.fm, best.lado, best.enc, ov); if(r){ const v=aptoValida(r.planta, st); best=comMonta({...best, ...r, val:v, s:v.nota}, u, st, cands) } }
+  _comCache.set(sig, best);
+  return finaliza(best);
+}
+/* resultado interno de uma unidade (L): planta + validação + alertas no formato antigo (erro/aviso/nota) */
+function comMonta(c, u, st, cands){
+  const pl=c.planta, v=c.val, F=c.F;
+  const fr=c.fr||c.frame;
+  const L={F, planta:pl, val:v, mk:c.mod.tipologia, mod:c.mod, frame:fr, fm:c.fm, lado:c.lado, enc:c.enc, prm:{fr, ax:c.fm.ax, dn:c.fm.dn, lado:c.lado}, nVar:c.nVar, notas:c.notas||{}, score:v.nota, nota:v.nota};
+  L.alertas=v.problemas.map(p=>({nivel:p.nivel==="bad"? "erro" : "aviso", msg:p.msg, k:p.k, amb:p.amb}));
+  if(!v.ok){ // nenhum partido passa: o motivo e o que faria caber
+    const mods=[...new Map(cands.map(x=>[x.mod.id,x.mod])).values()], W=c.Wi||F.W, D=c.Di||F.D;
+    const wMin=Math.min(...mods.map(m=>(m.faixaW||{}).min||0)), wMax=Math.max(...mods.map(m=>((m.faixaW||{}).max||99)*APTO_FAIXA_FOLGA.W)), dMin=Math.min(...mods.map(m=>(m.faixaD||{}).min||0)), dMax=Math.max(...mods.map(m=>((m.faixaD||{}).max||99)*APTO_FAIXA_FOLGA.D));
+    const nm=(COM_MODELOS[L.mk]||{}).nome||L.mk;
+    const fu = Math.abs(W-F.W)>0.05? "frente útil" : "frente";   // unidade em L: a parte com a profundidade inteira
+    const n2=(a,b)=>{ const d=Math.abs(a-b)<0.1? 2 : 1; return [comNf(a,d), comNf(b,d)] };   // casas para que os dois números não pareçam iguais
+    let msg = W<wMin-0.02? (([a,b])=>`${fu} de ${a} m; os partidos de ${nm.toLowerCase()} pedem ${b} m ou mais`)(n2(W,wMin)) : D<dMin-0.02? (([a,b])=>`profundidade de ${a} m; os partidos de ${nm.toLowerCase()} pedem ${b} m ou mais`)(n2(D,dMin)) :
+      W>wMax+0.02? (([a,b])=>`${fu} de ${a} m; os partidos de ${nm.toLowerCase()} vão até ${b} m`)(n2(W,wMax)) : D>dMax+0.02? (([a,b])=>`profundidade de ${a} m; os partidos vão até ${b} m`)(n2(D,dMax)) : ((v.problemas.find(p=>p.nivel==="bad" && p.k!=="faixa")||{}).msg||"conferir");
+    L.semPartido=true; L.aviso=`nenhum partido cabe nesta unidade: ${msg}`; L.alertas.unshift({nivel:"erro", msg:L.aviso, k:"partido"}) }
+  if(v.dutos && v.dutos.length) L.alertas.push({nivel:"nota", msg:"cozinha, serviço e banheiros sem fachada: ventilação por duto ou shaft (conferir)", k:"duto"});
+  L.erros=L.alertas.filter(a=>a.nivel==="erro").length; L.avisos=L.alertas.filter(a=>a.nivel==="aviso").length; L.ok=v.ok;
+  L.soma=pl.ambientes.reduce((s,r)=>s+r.area,0);
+  return L;
 }
 
 /* sacada em balanço: na frente da sala, mesma área */
 function comSacBalanco(L, u){
-  const s=u.sac; if(!s || s.tipo!=="balanco" || !L.rooms.length) return;
-  const sala=L.rooms.find(r=>r.k==="sala"); if(!sala) return;
+  const s=u.sac; if(!s || s.tipo!=="balanco" || !L.planta) return;
+  const sala=L.planta.ambientes.find(r=>r.k==="sala"); if(!sala) return;
   const ext=s.poly.map(q=>G.dot(q,L.F.ax)), w=Math.max(...ext)-Math.min(...ext), pr=s.area/Math.max(0.1,w);
-  const xc=Math.min(Math.max(sala.x1/2, w/2), L.F.W-w/2);
+  const fr=sala.poly.filter(q=>q[1]<0.05).map(q=>q[0]), x0=fr.length? Math.min(...fr) : 0, x1=fr.length? Math.max(...fr) : L.F.W;
+  const xc=Math.min(Math.max((x0+x1)/2, w/2), L.F.W-w/2);
   const a=[L.F.w(xc-w/2,0),L.F.w(xc+w/2,0),L.F.w(xc+w/2,-pr),L.F.w(xc-w/2,-pr)];
   s.poly=a; s.area=G.area(a);
 }
 
-/* ---------- mobiliário simples (no referencial do cômodo) ---------- */
+/* ---------- mobiliário (posições achadas na validação) → desenho no mundo ---------- */
 function comMoveis(L){
-  const F=L.F, out=[], R=(x0,y0,x1,y1,k)=>out.push({t:"r", k, pts:[F.w(x0,y0),F.w(x1,y0),F.w(x1,y1),F.w(x0,y1)]}), Cc=(x,y,r,k)=>out.push({t:"c", k, c:F.w(x,y), r}), Ln=(x0,y0,x1,y1,k)=>out.push({t:"l", k, pts:[F.w(x0,y0),F.w(x1,y1)]});
-  const doorsOf=r=>L.doors.filter(d=>d.from===r||d.into===r);
-  const ok=(r,x0,y0,x1,y1)=>{ const P=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]]; return r.poly.length && P.every(([x,y])=>G.pip(F.w(x,y), r.poly)) };
-  L.rooms.forEach(r=>{ const w=r.x1-r.x0, h=r.y1-r.y0, ds=doorsOf(r);
-    // lado da porta (para não pôr nada na frente)
-    const dX = ds.filter(d=>d.ax==="y" && d.k!=="pj").map(d=>(d.lo+d.hi)/2);
-    if(r.k==="dorm"||r.k==="suite"){ const casal = r.k==="suite" || (L.mk==="1d"), bw=casal?1.4:0.9, bl=1.95, yb1 = r.k==="suite"? r.y1 : r.y1;
-      const yc=(r.y0+Math.min(yb1, L.dF+ (r.k==="suite"? L.dM:0)))/2, dmid=dX.length? dX[0] : r.x1, atLo = dmid > (r.x0+r.x1)/2;
-      const bx0 = atLo? r.x0+0.05 : r.x1-0.05-bl, bx1=bx0+bl, by0=yc-bw/2, by1=yc+bw/2;
-      if(w>=bl+0.55 && ok(r,bx0,by0,bx1,by1)){ R(bx0,by0,bx1,by1,"cama"); const px= atLo? bx0+0.45 : bx1-0.45; R(Math.min(px,atLo?bx0:bx1),by0+0.1,Math.max(px,atLo?bx0:bx1),by1-0.1,"trav");
-        if(by0-0.45>r.y0+0.05 && ok(r,atLo?bx0:bx1-0.45,by0-0.45,atLo?bx0+0.45:bx1,by0-0.05)) R(atLo?bx0:bx1-0.45,by0-0.45,atLo?bx0+0.45:bx1,by0-0.05,"criado");
-        // guarda-roupa na parede oposta à cabeceira
-        const gx0 = atLo? r.x1-0.62 : r.x0+0.02, gx1=gx0+0.6, gy0=r.y0+0.15, gy1=Math.min(r.y0+2.6, (r.k==="suite"? L.dF : r.y1)-0.15);
-        if(w>=bl+0.6+0.75 && gy1-gy0>=1.0 && ok(r,gx0,gy0,gx1,gy1)){ R(gx0,gy0,gx1,gy1,"armario"); Ln(gx0+0.3,gy0,gx0+0.3,gy1,"armario") } } }
-    else if(r.k==="sala"){ const y0=r.y0+0.1, deep=h; const sy0=y0+0.3, sy1=Math.min(sy0+2.1, r.y1-0.3);
-      if(w>=2.6 && sy1-sy0>=1.6 && ok(r,r.x0+0.08,sy0,r.x0+0.95,sy1)){ R(r.x0+0.08,sy0,r.x0+0.95,sy1,"sofa"); R(r.x0+0.08,sy0+0.2,r.x0+0.3,sy1-0.2,"sofa"); R(r.x0+0.08,sy0,r.x0+0.95,sy0+0.2,"sofa"); R(r.x0+0.08,sy1-0.2,r.x0+0.95,sy1,"sofa"); R(r.x0+0.3,(sy0+sy1)/2-0.01,r.x0+0.95,(sy0+sy1)/2+0.01,"sofa");
-        const cx0=r.x0+1.35, cx1=Math.min(cx0+0.55, r.x1-0.9); if(cx1-cx0>0.35) R(cx0,(sy0+sy1)/2-0.45,cx1,(sy0+sy1)/2+0.45,"mesa");
-        if(ok(r,r.x1-0.42,sy0+0.2,r.x1-0.05,sy1-0.2)) R(r.x1-0.42,sy0+0.2,r.x1-0.05,sy1-0.2,"rack") }
-      if(deep>=4.7 && w>=2.4){ const ty1=r.y1-0.75, ty0=ty1-0.8, tx0=r.x0+(w-1.2)/2, tx1=tx0+1.2; if(ok(r,tx0-0.4,ty0-0.4,tx1+0.4,ty1+0.4)){ R(tx0,ty0,tx1,ty1,"mesa"); [[tx0+0.3,ty0-0.22],[tx1-0.3,ty0-0.22],[tx0+0.3,ty1+0.22],[tx1-0.3,ty1+0.22]].forEach(([x,y])=>R(x-0.2,y-0.18,x+0.2,y+0.18,"cadeira")) } } }
-    else if(r.k==="cozinha"){ const x0=r.x0+0.03, x1=x0+0.6, y0=r.y0+0.05, y1=r.y1-0.05;
-      if(h>=1.8 && ok(r,x0,y0,x1,y1)){ const fy1=y1, fy0=fy1-0.72; R(x0,fy0,x1+0.08,fy1,"geladeira"); R(x0,y0,x1,fy0-0.05,"bancada");
-        const cl=fy0-0.05-y0; if(cl>1.2){ Cc(x0+0.3,y0+0.45,0.11,"fogao"); Cc(x0+0.3,y0+0.75,0.11,"fogao"); R(x0+0.08,y0+cl*0.62,x1-0.08,y0+cl*0.62+0.45,"pia") } } }
-    else if(r.k==="serv"){ const x0=r.x0+0.05; if(ok(r,x0,r.y1-0.6,x0+0.55,r.y1-0.05)){ R(x0,r.y1-0.6,x0+0.55,r.y1-0.05,"tanque"); if(ok(r,x0,r.y1-1.28,x0+0.6,r.y1-0.68)){ R(x0,r.y1-1.28,x0+0.6,r.y1-0.68,"maquina"); Cc(x0+0.3,r.y1-0.98,0.2,"maquina") } } }
-    else if(r.k==="banho"||r.k==="bsuite"||r.k==="lavabo"){ const sx=w>=1.3? 0.9 : w-0.1, by1=r.y1-0.03;
-      if(r.k!=="lavabo" && h>=1.8 && ok(r,r.x0+0.05,by1-0.9,r.x0+0.05+sx,by1)){ R(r.x0+0.05,by1-0.9,r.x0+0.05+sx,by1,"box"); Ln(r.x0+0.05,by1-0.9,r.x0+0.05+sx,by1,"box") }
-      const vy=r.y0+Math.min(1.0,(h-0.9)/2+0.2); if(ok(r,r.x1-0.68,vy-0.2,r.x1-0.03,vy+0.2)){ R(r.x1-0.2,vy-0.2,r.x1-0.03,vy+0.2,"vaso"); Cc(r.x1-0.42,vy,0.19,"vaso") }
-      if(ok(r,r.x0+0.03,r.y0+0.15,r.x0+0.45,r.y0+0.65)){ R(r.x0+0.03,r.y0+0.15,r.x0+0.45,r.y0+0.65,"lav"); Cc(r.x0+0.24,r.y0+0.4,0.13,"lav") } }
-    else if(r.k==="closet"||r.k==="desp"){ if(w>=1.0 && ok(r,r.x0+0.03,r.y0+0.1,r.x0+0.5,r.y1-0.1)) R(r.x0+0.03,r.y0+0.1,r.x0+0.5,r.y1-0.1,"armario") }
-  });
+  const F=L.F, out=[], its=(L.val && L.val.moveis)||[];
+  its.forEach(it=>{ const [x0,y0,x1,y1]=it.ret, r=it.rot, Wd= r%2? y1-y0 : x1-x0, Hd= r%2? x1-x0 : y1-y0;
+    const P=(u,v)=>{ const q= r===0? [x0+u, y0+v] : r===2? [x1-u, y1-v] : r===1? [x1-v, y0+u] : [x0+v, y1-u]; return F.w(q[0], q[1]) };
+    const R=(u0,v0,u1,v1,k)=>out.push({t:"r", k, pts:[P(u0,v0),P(u1,v0),P(u1,v1),P(u0,v1)]}), Cc=(u,v,rr,k)=>out.push({t:"c", k, c:P(u,v), r:rr}), Ln=(u0,v0,u1,v1,k)=>out.push({t:"l", k, pts:[P(u0,v0),P(u1,v1)]});
+    const k=it.k; R(0,0,Wd,Hd,k);
+    if(k==="cama"){ if(Wd>1.2){ R(0.1,0.08,Wd/2-0.05,0.45,"trav"); R(Wd/2+0.05,0.08,Wd-0.1,0.45,"trav") } else R(0.12,0.08,Wd-0.12,0.45,"trav"); Ln(0,0.6,Wd,0.6,"cama") }
+    else if(k==="armario"){ Ln(0,Hd/2,Wd,Hd/2,"armario") }
+    else if(k==="sofa"){ R(0,0,Wd,0.2,"sofa"); R(0,0.2,0.18,Hd,"sofa"); R(Wd-0.18,0.2,Wd,Hd,"sofa") }
+    else if(k==="mesa"){ [[Wd/2,-0.28],[Wd/2,Hd+0.28],[-0.28,Hd/2],[Wd+0.28,Hd/2]].forEach(([u,v])=>R(u-0.2,v-0.2,u+0.2,v+0.2,"cadeira")) }
+    else if(k==="bancada"){ R(Wd*0.42,0.1,Wd*0.42+0.5,0.5,"pia"); Cc(Wd-0.32,0.18,0.1,"fogao"); Cc(Wd-0.32,0.43,0.1,"fogao"); Cc(Wd-0.62,0.18,0.1,"fogao"); Cc(Wd-0.62,0.43,0.1,"fogao") }
+    else if(k==="maquina"){ Cc(Wd/2,Hd/2,Math.min(Wd,Hd)*0.33,"maquina") }
+    else if(k==="tanque"){ R(0.08,0.08,Wd-0.08,Hd-0.12,"tanque") }
+    else if(k==="box"){ Ln(0,0,Wd,Hd,"box") }
+    else if(k==="vaso"){ Cc(Wd/2, Hd*0.62, Math.min(0.18,Wd*0.42), "vaso"); R(0.04,0,Wd-0.04,0.18,"vaso") }
+    else if(k==="lav"){ Cc(Wd/2, Hd/2, Math.min(Wd,Hd)*0.3, "lav") }
+    else if(k==="trab"){ R(Wd/2-0.22,Hd+0.12,Wd/2+0.22,Hd+0.55,"cadeira") } });
   return out;
-}
-
-/* ---------- uma unidade: testa variações e escolhe ---------- */
-const _comCache = new Map();
-function comUnidade(u, lay, st, ctx){
-  const P=comLimpa(u.poly); if(P.length<3 || G.area(P)<12) return null;
-  const mks=comModelosTeste(st, u.nome, u.alvo), cfg=comTipoCfg(st, u.nome)||{}, ov=cfg.cortes||{};
-  const C=st.comodos||DEF.comodos;
-  const sig=JSON.stringify([P.map(q=>[+q[0].toFixed(3),+q[1].toFixed(3)]), u.fac, u.ux||0, u.alvo, u.sac&&[u.sac.tipo,+u.sac.area.toFixed(2)], mks, ov, C.min, C.jan, ctx.sig, !!cfg.lavabo]);
-  const hit=_comCache.get(sig); if(hit) return hit;
-  const sigA=sig.replace(JSON.stringify(ov), "{}")+"|auto";   // a escolha da variação não depende dos ajustes manuais
-  const finaliza=b=>{ b.movel=comMoveis(b); b.erros=b.alertas.filter(a=>a.nivel==="erro").length; b.avisos=b.alertas.filter(a=>a.nivel==="aviso").length;
-    b.soma=b.rooms.reduce((s,r)=>s+r.area,0); b.ok=b.erros===0; if(_comCache.size>600) _comCache.clear(); return b };
-  const auto=_comCache.get(sigA);
-  if(auto && Object.keys(ov).length){ const L=comGera(P, u, auto.mk, {...auto.prm, cortes:ov}, ctx, st); if(L){ const b=finaliza({...L, frame:auto.frame, prm:auto.prm, nVar:auto.nVar}); _comCache.set(sig, b); return b } }
-  const ux=u.ux||lay.ux, vy=u.vy||lay.vy, frames=[];   // C3: unidade de uma ala traz o referencial da ala
-  // fachada principal (oposta ao corredor)
-  frames.push({fr:"f", ax:ux, dn: u.fac==="max"? [-vy[0],-vy[1]] : [vy[0],vy[1]]});
-  // fachada lateral (unidade de ponta): a zona social fica do lado do corredor
-  const bord=comBordas(P, null, ctx), corr=bord.filter(b=>b.c==="corredor"), lat=bord.filter(b=>b.c==="fachada" && b.len>=3 && Math.abs(G.dot([(b.b[0]-b.a[0])/b.len,(b.b[1]-b.a[1])/b.len],ux))<0.35);
-  lat.forEach(b=>{ const d=[(b.b[0]-b.a[0])/b.len,(b.b[1]-b.a[1])/b.len], dn=[-b.n[0],-b.n[1]]; frames.push({fr:"l", ax:d, dn, corr}) });
-  let best=null, n=0;
-  frames.forEach(fm=>{
-    let lados=["a","b"];
-    if(fm.fr==="l"){ if(!corr.length) return; const Fx=comFrame(P, fm.ax, fm.dn, "a"); const xc=corr.reduce((s,b)=>s+Fx.loc([(b.a[0]+b.b[0])/2,(b.a[1]+b.b[1])/2])[0],0)/corr.length; lados=[xc<Fx.W/2? "a" : "b"] }
-    const bsFs = P.length>4? [false,true] : [false];   // unidade em L: banho da suíte também na faixa de fachada
-    mks.forEach(mk=>lados.forEach(lado=>[0,-0.35,0.35].forEach(dWd=>bsFs.forEach(bsF=>{ if(bsF && (!COM_MODELOS[mk].suite || (COM_MODELOS[mk].nSuites||1)>1)) return;
-      const prm={fr:fm.fr, ax:fm.ax, dn:fm.dn, lado, dWd, bsF}, L=comGera(P, u, mk, {...prm, cortes:{}}, ctx, st); n++;
-      if(L && mks.length>1 && COM_MODELOS[mk].suite) L.score+=8;   // com suíte, quando cabe
-      if(L && (!best || L.score>best.score+1e-9)) best={...L, frame:fm.fr, prm} }))));
-  });
-  if(!best) return null;
-  best.nVar=n; finaliza(best); _comCache.set(sigA, best);
-  // ajuste manual: a variação escolhida no automático fica (não pula de arranjo ao arrastar); só os cortes mudam
-  if(Object.keys(ov).length){ const L=comGera(P, u, best.mk, {...best.prm, cortes:ov}, ctx, st); if(L) best=finaliza({...L, frame:best.frame, prm:best.prm, nVar:n}) }
-  _comCache.set(sig, best);
-  return best;
 }
 
 /* forma enxuta guardada na unidade (sem referências cruzadas: viaja do Worker por structured clone) */
 function comExporta(L){
-  const idx=new Map(L.rooms.map((r,i)=>[r,i])), F=L.F;
-  const seg=d=>{ const p0= d.ax==="x"? F.w(d.at,d.lo) : F.w(d.lo,d.at), p1= d.ax==="x"? F.w(d.at,d.hi) : F.w(d.hi,d.at); return [p0,p1] };
+  const F=L.F, pl=L.planta, idx=new Map(pl.ambientes.map((r,i)=>[r.id,i])), W=pts=>pts.map(q=>F.w(q[0],q[1]));
+  const probs=L.val.problemas, nv={}; probs.forEach(p=>{ if(p.amb && nv[p.amb]!=="bad") nv[p.amb]=p.nivel });
+  const integ=new Set(pl.portas.filter(p=>p.k==="integ").flatMap(p=>[p.a,p.b]));
+  const rooms=pl.ambientes.map(r=>{ const ci=aptoCirculoInscrito(r.poly), bb=aptoBBox(r.poly);
+    const jan=pl.janelas.filter(j=>j.amb===r.id).reduce((s,j)=>s+j.w*j.h,0)+pl.portas.filter(p=>p.k==="pj" && p.a===r.id).reduce((s,p)=>s+p.w*((L.janH)||2.1),0);
+    return {id:r.id, k:r.k, nome:r.nome, longo:r.longo, poly:W(r.poly), area:r.area, alvo:r.alvo, larg:Math.min(bb[2]-bb[0], bb[3]-bb[1]), d:r._d||ci.d, jan, janReq:0, duto:(L.val.dutos||[]).includes(r.id), integ:integ.has(r.id),
+      bordas:r.bordas.map(b=>({i:b.i, c:b.c})), alertas:probs.filter(p=>p.amb===r.id).map(p=>({nivel:p.nivel==="bad"?"erro":"aviso", msg:p.msg})), nivel:nv[r.id]||null, c:F.w(ci.c[0],ci.c[1]), rc:F.w(ci.c[0],ci.c[1])} });
+  const doors=pl.portas.map(p=>{ const into = p.k==="porta"? idx.get(p.abre) : p.k==="entrada"? idx.get(p.b) : idx.get(p.b), from = p.k==="entrada"? undefined : (p.k==="porta"? idx.get(p.abre===p.a? p.b : p.a) : idx.get(p.a));
+    const n=comVet(F, p.p0, p.n||[0,1]), l=Math.hypot(n[0],n[1])||1;
+    return {k:p.k, p0:F.w(p.p0[0],p.p0[1]), p1:F.w(p.p1[0],p.p1[1]), n:[n[0]/l,n[1]/l], hinge: p.dob==="p1"? "hi" : "lo", from, into} });
+  const windows=pl.janelas.map(j=>{ const n=comVet(F, j.p0, j.n), l=Math.hypot(n[0],n[1])||1; return {p0:F.w(j.p0[0],j.p0[1]), p1:F.w(j.p1[0],j.p1[1]), n:[n[0]/l,n[1]/l], room:idx.get(j.amb)} });
+  // divisões arrastáveis: linhas da grade do partido que são parede de verdade
+  const gd=pl.grade, divs=[], cortes={}, R=gd.R, Wr=R[2]-R[0], Dr=R[3]-R[1];
+  const lado=(ax,k,v)=>{ let lo=Infinity, hi=-Infinity; pl.ambientes.forEach(r=>r.poly.forEach((p,i)=>{ const q=r.poly[(i+1)%r.poly.length], c= ax==="x"? 0 : 1, o=1-c; if(Math.abs(p[c]-v)<1e-3 && Math.abs(q[c]-v)<1e-3 && Math.abs(p[o]-q[o])>0.05){ lo=Math.min(lo,p[o],q[o]); hi=Math.max(hi,p[o],q[o]) } })); return hi-lo>0.3? [lo,hi] : null };
+  [["x",gd.xs,Wr,R[0]],["y",gd.ys,Dr,R[1]]].forEach(([ax,vs,tot,o0])=>{ for(let k=1;k<vs.length-1;k++){ const v=vs[k]; cortes[ax+k]=+((v-o0)/tot).toFixed(4); const sp=lado(ax,k,v); if(!sp) continue;
+    const d={id:ax+k, ax, lo:vs[k-1]+0.5, hi:vs[k+1]-0.5, o0, tot}; if(ax==="x"){ d.x=v; d.y0=sp[0]; d.y1=sp[1]; d.p0=F.w(v,sp[0]); d.p1=F.w(v,sp[1]) } else { d.y=v; d.x0=sp[0]; d.x1=sp[1]; d.p0=F.w(sp[0],v); d.p1=F.w(sp[1],v) } divs.push(d) } });
   return {
-    modelo:L.mk, frame:L.frame, lado:F.lado, nVar:L.nVar, score:L.score, ok:L.ok, erros:L.erros, avisos:L.avisos, soma:L.soma,
-    ax:F.ax, dn:F.dn, a0:F.a0, a1:F.a1, d0:F.d0, W:F.W, D:F.D,
-    rooms:L.rooms.map(r=>({k:r.k, nome:r.k==="dorm"? `Dorm. ${r.n}` : COM_K[r.k].nome, longo:(r.k==="dorm"||r.k==="banho") && r.n? `${COM_K[r.k].longo} ${r.n}` : COM_K[r.k].longo, poly:r.poly, area:r.area, larg:r.larg, jan:r.jan||0, janReq:r.janReq||0, duto:!!r.duto,
-      integ:!!r.integ, bordas:r.bordas.map(b=>({i:b.i,c:b.c})), alertas:r.alertas||[], c:G.centroid(r.poly), rc:F.w((r.x0+r.x1)/2,(r.y0+r.y1)/2)})),
-    doors:L.doors.map(d=>{ const [p0,p1]=seg(d), into=d.into, s= d.ax==="x"? (into.x0>=d.at-1e-6? 1 : -1) : (into.y0>=d.at-1e-6? 1 : -1);
-      const nl= d.ax==="x"? [s,0] : [0,s], n=[F.ax[0]*(F.lado==="b"?-nl[0]:nl[0])+F.dn[0]*nl[1], F.ax[1]*(F.lado==="b"?-nl[0]:nl[0])+F.dn[1]*nl[1]];
-      return {k:d.k, p0, p1, n, hinge:d.hinge||"lo", from:idx.get(d.from), into:idx.get(into)} })
-      .concat(L.entrada? [{k:"entrada", p0:L.entrada.p0, p1:L.entrada.p1, n:L.entrada.n, hinge:"lo", into:idx.get(L.entrada.room)}] : []),
-    windows:L.windows.map(w=>({p0:w.p0, p1:w.p1, n:w.n, room:idx.get(w.room)})),
-    movel:L.movel, divs:L.divs.map(d=>({id:d.id, ax:d.ax, p0:d.p0, p1:d.p1, lo:d.lo, hi:d.hi, v: d.ax==="x"? d.x : d.y})),
-    cortes:L.cortes, alertas:L.alertas
+    modelo:L.mk, partido:L.mod.id, partidoNome:L.mod.nome, origem:L.mod.origem||"catalogo", encaixe:L.enc, frame:L.frame, lado:F.lado, nVar:L.nVar, score:L.nota, nota:L.nota, notas:L.notas,
+    ok:L.ok, erros:L.erros, avisos:L.avisos, soma:L.soma, semPartido:!!L.semPartido, aviso:L.aviso||"",
+    ax:F.ax, dn:F.dn, a0:F.a0, a1:F.a1, d0:F.d0, W:F.W, D:F.D, R,
+    rooms, doors, windows, movel:L.movel||comMoveis(L), divs:divs.map(d=>({id:d.id, ax:d.ax, p0:d.p0, p1:d.p1, lo:d.lo, hi:d.hi, o0:d.o0, tot:d.tot, v: d.ax==="x"? d.x : d.y})),
+    cortes, alertas:L.alertas, problemas:probs
   };
 }
 
 /* ---------- todas as unidades do pavimento tipo ---------- */
 function comodosCalc(m, st){
-  const out={unidades:0, validas:0, erros:0, avisos:0, porTipo:{}, lista:[]};
+  const out={unidades:0, validas:0, erros:0, avisos:0, semPartido:0, nota:0, porTipo:{}, lista:[]};
   (m.tipo||[]).forEach((lay,ti)=>{ if(!lay) return;
     const ctx={plate:(m.T[ti]||{}).plate||[], corridor:lay.corridor, core:lay.coreOut||lay.core}; ctx.sig=JSON.stringify([ctx.plate, ctx.corridor, ctx.core].map(p=>(p||[]).map(q=>[+q[0].toFixed(2),+q[1].toFixed(2)])));
     lay.units.forEach((u,ui)=>{ if(u.livre){ u.com=null; return }
       let L=null; try{ L=comUnidade(u, lay, st, ctx) }catch(e){ console.error("[comodos]", e) }
       if(!L){ u.com=null; return }
-      if(st.comodos && st.comodos.on){ const sac=L.rooms.find(r=>r.k==="sacada"); if(sac && u.sac && u.sac.tipo!=="balanco"){ u.sac.poly=sac.poly; u.sac.area=sac.area } else comSacBalanco(L, u) }
+      if(st.comodos && st.comodos.on){ const sac=L.planta.ambientes.find(r=>r.k==="sacada"); if(sac && u.sac && u.sac.tipo!=="balanco"){ u.sac.poly=sac.poly.map(q=>L.F.w(q[0],q[1])); u.sac.area=sac.area } else comSacBalanco(L, u) }
       u.com=comExporta(L);
-      out.unidades++; if(L.ok) out.validas++; out.erros+=L.erros; out.avisos+=L.avisos;
-      const T=out.porTipo[u.nome]=out.porTipo[u.nome]||{nome:u.nome, modelo:L.mk, n:0, validas:0, ex:{ti,ui}};
-      T.n++; if(L.ok) T.validas++;
-      out.lista.push({ti, ui, nome:u.nome, ok:L.ok, alertas:L.alertas});
+      out.unidades++; if(L.ok) out.validas++; if(L.semPartido) out.semPartido++; out.erros+=L.erros; out.avisos+=L.avisos; out.nota+=L.nota;
+      const T=out.porTipo[u.nome]=out.porTipo[u.nome]||{nome:u.nome, modelo:L.mk, partido:L.mod.id, partidoNome:L.mod.nome, n:0, validas:0, nota:0, ex:{ti,ui}, usados:{}, notas:{}};
+      T.n++; if(L.ok) T.validas++; T.nota+=L.nota; T.usados[L.mod.id]=(T.usados[L.mod.id]||0)+1; T.notaUso=T.notaUso||{}; T.notaUso[L.mod.id]=(T.notaUso[L.mod.id]||0)+L.nota;
+      Object.entries(L.notas||{}).forEach(([id,n])=>{ if(T.notas[id]==null || n<T.notas[id]) T.notas[id]=n });   // nota do partido na pior unidade da tipologia
+      if(L.semPartido && !T.aviso) T.aviso=L.aviso;
+      out.lista.push({ti, ui, nome:u.nome, ok:L.ok, nota:L.nota, alertas:L.alertas});
     });
   });
+  Object.values(out.porTipo).forEach(T=>{ T.nota=Math.round(T.nota/Math.max(1,T.n)); Object.keys(T.notaUso||{}).forEach(id=>{ T.notaUso[id]=Math.round(T.notaUso[id]/T.usados[id]) }); const us=Object.entries(T.usados).sort((a,b)=>b[1]-a[1]); if(us.length){ T.partido=us[0][0]; const md=aptoModelo(T.partido, st); if(md) T.partidoNome=md.nome } });
+  out.nota=out.unidades? Math.round(out.nota/out.unidades) : 0;
   // sacadas embutidas reposicionadas na frente da sala: refaz a soma (só informativa; a área vendável não muda)
   if(st.comodos && st.comodos.on){ m.sacA=0; (m.T||[]).forEach((t,i)=>{ const l=m.tipo[i]; if(l) l.units.forEach(u=>{ if(u.sac) m.sacA+=u.sac.area*t.tipoFloors }) }) }
   m.comodos=out; return out;
@@ -440,8 +260,9 @@ HOOK.compute.push((m, st, opt)=>{ if(opt && opt.quick && opt.layouts!==false) re
 function comQuadro(m){
   const out=[];
   Object.values((m.comodos||{}).porTipo||{}).forEach(T=>{ const lay=m.tipo[T.ex.ti], u=lay&&lay.units[T.ex.ui]; if(!u||!u.com) return;
-    const rooms=u.com.rooms.slice().sort((a,b)=>{ const o=k=>["sala","sacada","lavabo","cozinha","serv","desp","circ","suite","bsuite","closet","dorm","banho"].indexOf(k); return o(a.k)-o(b.k) || a.nome.localeCompare(b.nome) });
-    out.push({nome:u.nome, modelo:COM_MODELOS[u.com.modelo].nome, area:u.area, alvo:u.alvo, n:T.n, validas:T.validas, rooms:rooms.map(r=>({nome:r.longo, k:r.k, area:r.area, larg:r.larg, st: r.alertas.some(a=>a.nivel==="erro")? "bad" : r.alertas.length? "warn" : "ok"})), soma:u.com.soma}) });
+    const rooms=u.com.rooms.slice().sort((a,b)=>{ const o=k=>["sala","sacada","lavabo","cozinha","serv","desp","circ","office","suite","bsuite","closet","dorm","banho"].indexOf(k); return o(a.k)-o(b.k) || a.nome.localeCompare(b.nome) });
+    out.push({nome:u.nome, modelo:u.com.partidoNome || (COM_MODELOS[u.com.modelo]||{}).nome || u.com.modelo, programa:(COM_MODELOS[u.com.modelo]||{}).nome||u.com.modelo, nota:T.nota, area:u.area, alvo:u.alvo, n:T.n, validas:T.validas,
+      rooms:rooms.map(r=>({nome:r.longo, k:r.k, area:r.area, larg:r.larg, st: r.alertas.some(a=>a.nivel==="erro")? "bad" : r.alertas.length? "warn" : "ok"})), soma:u.com.soma}) });
   return out;
 }
 /* página do PDF: quadro de áreas por cômodo (registrada em src/ui/comodos.js) */
@@ -450,12 +271,12 @@ async function comPdf(ctx){
   const Q=comQuadro(m); if(!Q.length) return;
   ctx.newPage(); ctx.h2("Quadro de áreas por cômodo");
   const doc=ctx.doc; doc.setFontSize(8.5); doc.setTextColor(...(ctx.mut||[110,110,115]));
-  doc.text(ctx.T(`${m.comodos.validas} de ${m.comodos.unidades} unidades do pavimento tipo com cômodos válidos. Áreas de eixo a eixo (somam a área da unidade).`), ctx.M, ctx.y()); ctx.setY(ctx.y()+6);
+  doc.text(ctx.T(`${m.comodos.validas} de ${m.comodos.unidades} unidades do pavimento tipo com planta sem problema grave (nota média ${m.comodos.nota}). Áreas de eixo a eixo (somam a área da unidade).`), ctx.M, ctx.y()); ctx.setY(ctx.y()+6);
   Q.forEach(q=>{ if(ctx.y()>235) ctx.newPage();
-    doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...(ctx.ink||[29,29,31])); doc.text(ctx.T(`${q.nome}  ·  ${q.modelo}  ·  ${q.validas} de ${q.n} unidades válidas`), ctx.M, ctx.y()); doc.setFont("helvetica","normal"); ctx.setY(ctx.y()+5);
+    doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...(ctx.ink||[29,29,31])); doc.text(ctx.T(`${q.nome}  ·  ${q.modelo}  ·  nota ${q.nota}  ·  ${q.validas} de ${q.n} unidades sem problema grave`), ctx.M, ctx.y()); doc.setFont("helvetica","normal"); ctx.setY(ctx.y()+5);
     ctx.rows(q.rooms.map(r=>[r.nome, `${nf(r.area,2)} m²  ·  ${nf(r.larg,2)} m`, r.st]).concat([["Total da unidade", `${nf(q.soma,2)} m²`]]), {bold:["Total da unidade"]});
   });
-  doc.setFontSize(7.5); doc.setTextColor(...(ctx.mut||[110,110,115])); if(ctx.y()<282) doc.text(ctx.T("Mínimos de referência (código de obras genérico) — conferir no código de obras do município. Iluminação e ventilação de no mínimo 1/"+((S.comodos&&S.comodos.jan&&S.comodos.jan.frac)||6)+" da área do piso."), ctx.M, Math.min(286, ctx.y()+2));
+  doc.setFontSize(7.5); doc.setTextColor(...(ctx.mut||[110,110,115])); if(ctx.y()<282) doc.text(ctx.T("Partidos de mercado conferidos por regras de projeto (círculo inscrito, áreas mínimas, acessos, iluminação de 1/"+((S.comodos&&S.comodos.jan&&S.comodos.jan.frac)||6)+" do piso, mobiliário). Mínimos de referência: conferir no código de obras do município."), ctx.M, Math.min(286, ctx.y()+2));
   ctx.setY(ctx.y()+8);
 }
 

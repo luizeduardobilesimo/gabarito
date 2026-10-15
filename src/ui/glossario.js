@@ -28,6 +28,8 @@ const GLOSS_DATA = {
   "Andar tipo": { t:"Pavimento tipo", d:"Andar que se repete na torre, com as unidades residenciais." },
   "Mix": { t:"Mix de tipologias", d:"Combinação de tipos de unidade em cada andar (ex.: 2 de 2 dormitórios + 2 de 3 dormitórios)." },
   "Tipologia": { t:"Tipologia", d:"Tipo de unidade: studio, 1, 2, 3 dormitórios, com ou sem suíte." },
+  "Círculo inscrito": { t:"Círculo inscrito (raio mínimo)", d:"O maior círculo que cabe dentro do ambiente, já descontadas as paredes. Mede se o cômodo tem largura de verdade em todas as direções (nada de \"corredor-quarto\").", ex:"Dormitório: Ø 2,30 m · suíte: Ø 2,50 m · sala: Ø 2,60 m · banho: Ø 1,10 m." },
+  "Nota da planta": { t:"Nota da planta", d:"Parte de 100 e perde 25 por problema grave (ambiente sem janela ou sem acesso, cama que não cabe…), 6 por atenção (porta que bate, armário que não cabe…) e um pouco quando as áreas fogem do desenho do partido. Planta com problema grave só aparece se nenhum partido cabe — com o aviso do motivo." },
   "Ático": { t:"Ático técnico", d:"Pavimento no topo para casa de máquinas, reservatórios e equipamentos. Em geral não é computável." },
   "Duplex": { t:"Cobertura duplex", d:"Unidade no último andar com dois pavimentos (o de cima com terraço/lazer privativo)." },
   "Sacada": { t:"Sacada", d:"Varanda da unidade. Algumas cidades não contam parte dela no CA." },

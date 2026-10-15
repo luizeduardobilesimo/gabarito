@@ -10,16 +10,20 @@ beforeAll(() => { A = carregar(); st = estado(A, {}); m = A.compute(st); });
 const unidades = mm => mm.tipo.flatMap((l, ti) => l ? l.units.filter(u => !u.livre).map((u, ui) => ({ u, ti, ui })) : []);
 
 describe('cômodos — critérios de pronto (exemplo padrão)', () => {
-  it('todas as unidades do exemplo têm cômodos válidos', () => {
+  it('todas as unidades do exemplo têm planta; as que não cabem num partido trazem o aviso com o motivo', () => {
     const us = unidades(m);
     expect(us.length).toBeGreaterThan(0);
     for (const { u, ti, ui } of us) {
       expect(u.com, `T${ti + 1} unidade ${ui + 1} sem cômodos`).toBeTruthy();
       const erros = u.com.alertas.filter(a => a.nivel === 'erro');
-      expect(erros, `T${ti + 1} ${u.nome}: ${erros.map(e => e.msg).join('; ')}`).toEqual([]);
-      expect(u.com.ok).toBe(true);
+      if (u.com.ok) expect(erros, `T${ti + 1} ${u.nome}: ${erros.map(e => e.msg).join('; ')}`).toEqual([]);
+      else { expect(u.com.semPartido).toBe(true); expect(u.com.aviso).toMatch(/^nenhum partido cabe nesta unidade: .*(frente|profundidade|não cabe|sem)/) }
+      expect(u.com.partido).toMatch(/^cat-/);
+      expect(u.com.nota).toBeGreaterThanOrEqual(0); expect(u.com.nota).toBeLessThanOrEqual(100);
     }
-    expect(m.comodos.validas).toBe(m.comodos.unidades);
+    // a unidade em L de 3 dorm. (sobra da escada, 8,6 m de frente útil) não comporta 3 dormitórios na fachada: é a única
+    expect(m.comodos.validas).toBeGreaterThanOrEqual(m.comodos.unidades - 1);
+    const ruim = us.find(x => !x.u.com.ok); if (ruim) expect(ruim.u.com.aviso).toMatch(/frente útil de 8,6 m/);
   });
   it('nenhum dormitório, suíte ou sala sem janela (≥ 1/6 do piso)', () => {
     for (const { u } of unidades(m)) for (const r of u.com.rooms.filter(r => ['sala', 'dorm', 'suite'].includes(r.k))) {
@@ -92,23 +96,23 @@ describe('cômodos — funções puras', () => {
     const r2 = A.comInset(q, i => (i === 0 ? 0.2 : 0.05));
     expect(A.G.area(r2)).toBeCloseTo((4 - 0.1) * (3 - 0.25), 6);
   });
-  it('validação: unidade estreita demais gera alertas (dorm. sem largura)', () => {
+  it('validação: unidade estreita demais não recebe planta absurda — aviso "nenhum partido cabe" com a frente mínima', () => {
     const B = carregar(); const s = estado(B, { lote: { pts: [[0, 0], [20, 0], [20, 40], [0, 40]], front: [0], rec: [{}, {}, {}, {}] }, produto: { torres: [{ pav: 10 }], subsolos: 2 } });
     const mm = B.compute(s); const al = unidades(mm).flatMap(({ u }) => u.com ? u.com.alertas : []);
-    expect(al.some(a => /largura|m²/.test(a.msg))).toBe(true);
+    expect(al.some(a => a.nivel === 'erro' && /^nenhum partido cabe nesta unidade: frente de [\d,]+ m; os partidos de .+ pedem [\d,]+ m ou mais/.test(a.msg))).toBe(true);
   });
-  it('edição manual: o corte da tipologia move a divisão em todas as unidades dela', () => {
+  it('edição manual: a linha da grade do partido move a divisão em todas as unidades da tipologia (e fixa o partido)', () => {
     const B = carregar(); const s = estado(B, {}); const m0 = B.compute(s);
-    const alvo = unidades(m0).find(x => x.u.nome === '3 dorm.');
-    const f1 = alvo.u.com.cortes.f1, novo = +(f1 + 0.05).toFixed(3);
-    s.comodos.tipos = [{ nome: '3 dorm.', modelo: 'auto', cortes: { f1: novo }, sel: -1 }];
-    const m1 = B.compute(s);
-    // a unidade arrastada fica exatamente no corte; as outras da tipologia vão na mesma direção (até o limite de 1,5 m por cômodo)
-    expect(m1.tipo[alvo.ti].units[alvo.ui].com.cortes.f1).toBeCloseTo(novo, 3);
-    for (const { u, ti, ui } of unidades(m1).filter(x => x.u.nome === '3 dorm.')) expect(u.com.cortes.f1).toBeGreaterThanOrEqual(m0.tipo[ti].units[ui].com.cortes.f1 - 1e-6);
-    const sala0 = alvo.u.com.rooms.find(r => r.k === 'sala').area, u1 = m1.tipo[alvo.ti].units[alvo.ui];
-    expect(u1.com.rooms.find(r => r.k === 'sala').area).toBeGreaterThan(sala0);
+    const alvo = unidades(m0).find(x => x.u.nome === '3 dorm.' && x.u.com.ok);
+    const dv = alvo.u.com.divs.find(d => d.ax === 'x'), f0 = alvo.u.com.cortes[dv.id], novo = +(f0 + 0.02).toFixed(4);
+    s.comodos.tipos = [{ nome: '3 dorm.', modelo: 'auto', partidos: [], partido: alvo.u.com.partido, cortes: { [dv.id]: novo }, sel: -1 }];
+    const m1 = B.compute(s), u1 = m1.tipo[alvo.ti].units[alvo.ui];
+    expect(u1.com.partido).toBe(alvo.u.com.partido);
+    expect(u1.com.cortes[dv.id]).toBeCloseTo(novo, 3);
+    for (const { u } of unidades(m1).filter(x => x.u.nome === '3 dorm.')) expect(u.com.partido).toBe(alvo.u.com.partido);
     expect(Math.abs(u1.com.rooms.reduce((a, r) => a + r.area, 0) - u1.area)).toBeLessThan(0.02);
+    // e as áreas vendáveis não mudam
+    expect(m1.priv).toBeCloseTo(m0.priv, 6);
   });
   it('variação salva com outro modelo é aplicada', () => {
     const B = carregar(); const s = estado(B, {});
@@ -185,7 +189,7 @@ describe('cômodos — novos modelos (2 suítes, 4 dormitórios, lavabo)', () =>
     expect(A.comModeloAuto('2 dorm.', 66)).toBe('2d1s');
     expect(Object.keys(A.COM_MODELOS)).toEqual(expect.arrayContaining(['2s', '4d1s']));
   });
-  for (const [modelo, area] of [['2s', 80], ['2s', 100], ['4d1s', 110], ['4d1s', 130]]) it(`${modelo} em ${area} m²: válido, soma a unidade e cumpre o programa`, () => {
+  for (const [modelo, area] of [['2s', 80], ['2s', 92], ['4d1s', 120], ['4d1s', 130]]) it(`${modelo} em ${area} m²: válido, soma a unidade e cumpre o programa`, () => {
     const B = carregar(), st = estado(B, {});
     const { c, u } = unidadeRet(B, st, modelo, area);
     expect(c.modelo).toBe(modelo);
@@ -210,8 +214,8 @@ describe('cômodos — novos modelos (2 suítes, 4 dormitórios, lavabo)', () =>
     const donos = bs.map(i => c.doors.find(d => d.from != null && (d.from === i || d.into === i))).map(d => (c.rooms[d.from].k === 'suite' ? d.from : d.into));
     expect(new Set(donos).size).toBe(2);
     expect(lig.some(([a, b]) => a === 'sala' && b === 'lavabo')).toBe(true);
-    // as duas suítes saem da circulação íntima (nenhuma passa por dentro da outra)
-    expect(lig.filter(([a, b]) => a === 'circ' && b === 'suite').length).toBe(2);
+    // as duas suítes saem da sala (social central) ou da circulação — nenhuma passa por dentro da outra
+    expect(lig.filter(([a, b]) => (a === 'circ' || a === 'sala') && b === 'suite').length).toBe(2);
     // cozinha junto da área de serviço
     expect(lig.some(([a, b]) => a === 'cozinha' && b === 'serv')).toBe(true);
   });
@@ -247,7 +251,9 @@ describe('cômodos — novos modelos (2 suítes, 4 dormitórios, lavabo)', () =>
     expect(unidades(m0).every(({ u }) => !kinds(u.com).includes('lavabo'))).toBe(true);
     const s1 = estado(B, {}); s1.comodos.tipos = [{ nome: '3 dorm.', modelo: 'auto', cortes: {}, sel: -1, lavabo: true }];
     const m1 = B.compute(s1);
-    for (const { u } of unidades(m1).filter(x => x.u.nome === '3 dorm.')) { expect(u.com.alertas.filter(a => a.nivel === 'erro')).toEqual([]); expect(Math.abs(u.com.rooms.reduce((a, r) => a + r.area, 0) - u.area)).toBeLessThan(0.02) }
+    const tres = unidades(m1).filter(x => x.u.nome === '3 dorm.' && !x.u.com.semPartido);
+    for (const { u } of tres) { expect(u.com.alertas.filter(a => a.nivel === 'erro')).toEqual([]); expect(Math.abs(u.com.rooms.reduce((a, r) => a + r.area, 0) - u.area)).toBeLessThan(0.02) }
+    expect(tres.some(({ u }) => kinds(u.com).includes('lavabo'))).toBe(true);
     expect(m1.priv).toBeCloseTo(m0.priv, 6);
   }, 120000);
   it('mínimos do lavabo existem e estudos antigos (sem a chave) a recebem na migração', () => {

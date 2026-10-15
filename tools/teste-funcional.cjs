@@ -705,6 +705,23 @@ async function tProjeto(b) {
   await p.locator('#tabbody [data-act=comDel]').first().click(); await fim(); ok(await ev(() => S.comodos.variantes.length) === nv0, 'cômodos: excluir variação');
   await undo(); ok(await ev(() => S.comodos.variantes.length) === nv0 + 1, '  Ctrl+Z restaura a variação');
   const mod0 = await h.J('S.comodos.tipos');
+  // galeria de partidos (Plantas das unidades): desmarcar um partido e Ctrl+Z
+  await h.abre('comodos'); const pt0 = await h.J('S.comodos.tipos');
+  await p.locator('#tabbody .comPc[aria-pressed="true"]').first().click(); await fim();
+  ok(await ev(() => S.comodos.tipos.some(t => (t.partidos || []).length > 0)), 'plantas: desmarcar um partido da galeria');
+  await undo(); ok(await h.J('S.comodos.tipos') === pt0, '  Ctrl+Z volta a marcação');
+  // modelo do usuário (biblioteca do editor): aparece na galeria; marcar copia para o estudo (S.comodos.modelos)
+  if (await ev(() => typeof aptoBibSalvar === 'function')) {
+    await ev(() => { const m = JSON.parse(JSON.stringify(aptoCatalogo('2d')[0])); m.id = 'usr-teste-func'; m.nome = 'Meu 2 dorm.'; m.origem = 'usuario'; aptoBibSalvar(m); renderTab() }); await W(200);
+    await h.abre('comodos'); const meu = p.locator('#tabbody .comPc[data-id="usr-teste-func"]');
+    ok(await meu.count() > 0 && await meu.first().getAttribute('aria-pressed') === 'false', 'plantas: modelo da biblioteca na galeria (desmarcado)');
+    await meu.first().click(); await fim();
+    ok(await ev(() => S.comodos.modelos.some(m => m.id === 'usr-teste-func') && S.comodos.tipos.some(t => (t.partidos || []).includes('usr-teste-func'))), '  marcar copia o modelo para o estudo');
+    await undo(); ok(await ev(() => !S.comodos.modelos.some(m => m.id === 'usr-teste-func')), '  Ctrl+Z desfaz');
+    ok(await p.locator('#tabbody [data-act="comMeus"]').count() > 0, 'plantas: botão "Meus modelos"');
+    await ev(() => aptoBibExcluir('usr-teste-func'));
+  }
+  await h.abre('comodos'); await h.mais('comodos');
   await p.selectOption('#tabbody select[data-p="comodos.tipos.0.modelo"]', { index: 2 }); await fim();
   ok(await ev(() => S.comodos.tipos[0].modelo !== 'auto'), 'cômodos: trocar o modelo da tipologia', await ev(() => S.comodos.tipos[0].modelo));
   await undo(); ok(await h.J('S.comodos.tipos') === mod0, '  Ctrl+Z volta o modelo', await ev(() => S.comodos.tipos[0].modelo));
