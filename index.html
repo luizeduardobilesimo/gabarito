@@ -7523,7 +7523,7 @@ const PROG_AVANCA = {
   produto: ()=>({rotulo:"Ver a viabilidade →", etapa:"viab", sub:"res"}),
   viab:    ()=>({rotulo:"Conferir o projeto →", etapa:"projeto", sub:"gar"}),
   projeto: sub=>({ gar:{rotulo:"Conferir os andares →", etapa:"projeto", sub:"tipo"}, tipo:{rotulo:"Ver o sol →", etapa:"projeto", sub:"sol"},
-    sol:{rotulo:"Ver o vento →", etapa:"projeto", sub:"vento"} }[sub] || {rotulo:"Entregar →", etapa:"cen", sub:null}),
+    sol:{rotulo:"Ver o vento →", etapa:"projeto", sub:"vento"} }[sub] || {rotulo:"Entregar →", etapa:"cen", sub:"entregar"}),
   cen:     ()=>({rotulo:"Baixar relatório PDF", etapa:"cen", sub:null, act:"progPdf"}),
 };
 function proximoPasso(st, m, f, tab, sub){
@@ -15595,7 +15595,7 @@ const PROG_AVANCA = {
   produto: ()=>({rotulo:"Ver a viabilidade →", etapa:"viab", sub:"res"}),
   viab:    ()=>({rotulo:"Conferir o projeto →", etapa:"projeto", sub:"gar"}),
   projeto: sub=>({ gar:{rotulo:"Conferir os andares →", etapa:"projeto", sub:"tipo"}, tipo:{rotulo:"Ver o sol →", etapa:"projeto", sub:"sol"},
-    sol:{rotulo:"Ver o vento →", etapa:"projeto", sub:"vento"} }[sub] || {rotulo:"Entregar →", etapa:"cen", sub:null}),
+    sol:{rotulo:"Ver o vento →", etapa:"projeto", sub:"vento"} }[sub] || {rotulo:"Entregar →", etapa:"cen", sub:"entregar"}),
   cen:     ()=>({rotulo:"Baixar relatório PDF", etapa:"cen", sub:null, act:"progPdf"}),
 };
 function proximoPasso(st, m, f, tab, sub){
@@ -17313,9 +17313,15 @@ function stageBackdrop(dark){
 }
 function render3(){ if(V3.R) V3.R.render(V3.scene,V3.cam) }
 function size3d(){ if(!V3.R) return; const c3=document.getElementById("c3d"), r=c3.getBoundingClientRect(); if(!r.width) return; V3.R.setSize(r.width,r.height,false); V3.cam.aspect=r.width/r.height; V3.cam.updateProjectionMatrix(); render3() }
+/* enquadra agora e de novo quando o cálculo completo chegar (troca de estudo, opção aplicada: a altura do prédio muda) */
+function fit3dDepois(){ fit3d(); if(typeof calcPronto==="function") calcPronto().then(()=>{ try{ fit3d() }catch(e){} }, ()=>{}) }
+/* enquadra o lote e o prédio: a esfera que envolve o lote (raio = maior distância ao centro) e a altura cabe no menor ângulo de visão
+   (vertical ou horizontal, pela proporção do palco), olhando de cima e de lado */
 function fit3d(m){ if(!V3.R) return; const L=S.lote.pts, c=G.centroid(L); m=m||(window._last&&window._last.m); const span=Math.max(...L.map(q=>Math.hypot(q[0]-c[0],q[1]-c[1]))); const h=m? m.H:30;
-  let d=Math.max(span*2.6, h*1.6, 40); const r=document.getElementById("c3d").getBoundingClientRect(); if(r.width&&r.height) d*=Math.max(1, r.height/r.width*1.15);
-  V3.ctl.target.set(c[0], h*0.35, -c[1]); V3.cam.position.set(c[0]+d*0.75, h*0.55+d*0.6, -c[1]+d*0.85); V3.ctl.update(); render3() }
+  const r=document.getElementById("c3d").getBoundingClientRect(), asp = r.width&&r.height? r.width/r.height : (V3.cam.aspect||1.4);
+  const vf=V3.cam.fov*Math.PI/360, half=Math.min(vf, Math.atan(Math.tan(vf)*asp)), R=Math.hypot(Math.max(span,12), h/2);
+  const D=Math.max(45, R/Math.sin(half)*0.94), dir=[0.75,0.6,0.85], n=Math.hypot(...dir);
+  V3.ctl.target.set(c[0], h*0.42, -c[1]); V3.cam.position.set(c[0]+D*dir[0]/n, h*0.42+D*dir[1]/n, -c[1]+D*dir[2]/n); V3.ctl.update(); render3() }
 // posição solar (aprox. NOAA simplificada) → vetor no referencial do desenho
 function sunVector(hora){ const v=sunVectorAt(S.sol.mes, S.sol.dia, hora??S.sol.hora); const lat=S.lote.lat*Math.PI/180; return v }
 function shapeOf(p, holes){ const s=new THREE.Shape(); p.forEach((q,i)=> i? s.lineTo(q[0],q[1]) : s.moveTo(q[0],q[1])); s.closePath();
@@ -17654,7 +17660,8 @@ function goStep(k, sub){
 /* vista que cada etapa pede (só troca quando a atual não faz sentido) */
 function stepView(){
   const pj = {gar:["gar"], tipo:["tipo","andar"], sol:["clima","3d"], vento: CSUB==="v3d"? ["v3d"] : ["clima"]}[PSUB];
-  const ok = { terreno:["impl"], produto:["3d","impl","andar"], viab:["3d"], projeto:pj, cen:null }[TAB];
+  // Entrega mantém a vista, menos os mapas de sol/vento e o túnel (entregar é mostrar o prédio)
+  const ok = { terreno:["impl"], produto:["3d","impl","andar"], viab:["3d"], projeto:pj, cen: VIEW==="clima"||VIEW==="v3d"? ["3d"] : null }[TAB];
   if(TAB==="projeto" && (PSUB==="sol" || (PSUB==="vento" && CSUB!=="v3d"))) S.clima.modo = PSUB==="sol"? "sol" : "vento";
   if(VIEW==="v3d" && !(TAB==="projeto" && PSUB==="vento" && CSUB==="v3d")) return ok? ok[0] : "3d";   // saiu do túnel 3D: a simulação para (setView → cfdLeave)
   if(!ok || ok.includes(VIEW)) return null;
@@ -17799,7 +17806,9 @@ function renderKPIs(m,f){
   const h =
     k("units", "Unidades", nf(m.units), `${tor}<span class="lx"> · ${m.T.map(t=>t.pav).join(" e ")} and.</span>`, s.apto==="bad"? "bad" : s.tor, ["produto",null,"pr-mix"], `${m.units} unidades · ${tor}${m.lojaA?" + lojas":""} — ver as unidades por andar`) +
     k("regras", "Regras", fora.length? `${fora.length} fora` : "dentro", fora.length? fora[0].txt : "CA, altura e ocupação", fora.length? "bad" : "ok", ["produto",null,null], fora.length? "Fora das regras: "+fora.map(x=>x.txt).join(" · ") : "Dentro das regras da prefeitura (aproveitamento, altura, ocupação, permeável e menor unidade)") +
-    k("vagas", "Vagas", `${m.vagas}/${m.vagasReq}`, S.estudo.usarLayout?"pelo layout":"estimadas", s.vg, ["projeto","gar",null], `${m.vagas} vagas ${S.estudo.usarLayout?"no layout":"estimadas"} · ${m.vagasReq} exigidas — ver a garagem`, true) +
+    // vagas pelo layout: no 1º cálculo rápido ainda não há layout (a estimativa por área engana) — espera o completo
+    (S.estudo.usarLayout && !m.gar? k("vagas", "Vagas", `…/${m.vagasReq}`, "calculando…", null, ["projeto","gar",null], "Calculando o layout da garagem", true) :
+    k("vagas", "Vagas", `${m.vagas}/${m.vagasReq}`, S.estudo.usarLayout?"pelo layout":"estimadas", s.vg, ["projeto","gar",null], `${m.vagas} vagas ${S.estudo.usarLayout?"no layout":"estimadas"} · ${m.vagasReq} exigidas — ver a garagem`, true)) +
     k("vgv", TERMO("VGV"), mi(f.vgv), `${mi(f.vgv/un)}/un`, null, ["viab","res","essencial"], `Valor geral de vendas · ${mi(f.vgv/un)} por unidade — ver os preços`) +
     k("margem", TERMO("Margem s/ VGV","Margem"), pct(sd.margemVGV), `meta ${pct(S.fin.margemAlvo,0)}<span class="lx"> · lucro ${kpiMi(f.lucro)}</span>`, sc(sd.nivel.margem), ["viab","res",null], `Lucro ${mi(f.lucro)} · margem s/ VGV · meta ${pct(S.fin.margemAlvo,0)} · s/ receita ${pct(f.margem)}`, true) +
     k("tir", TERMO("TIR","Retorno"), f.tirA==null?"—":pct(f.tirA), `alvo ${pct(S.metas.tir.alvo,0)}`, sc(sd.nivel.tir), ["viab","risco","alavancas"], `Retorno ao ano (TIR) · VPL ${mi(f.vpl)} · alvo ${pct(S.metas.tir.alvo,0)} · TMA ${pct(S.fin.tma,0)} — o que melhora o resultado`, true) +
@@ -19396,7 +19405,7 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
   .ass-foot .btn.pri{flex:1;min-width:0}
 }
 /* cartão "O que fizemos" */
-.ass-feito{position:fixed;right:20px;bottom:20px;z-index:58;width:min(372px,calc(100vw - 24px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg,16px);box-shadow:var(--shadow-pop);padding:16px 16px 12px;color:var(--ink);animation:assIn .35s var(--ease) both}
+.ass-feito{position:fixed;right:20px;bottom:92px;z-index:58;width:min(372px,calc(100vw - 24px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg,16px);box-shadow:var(--shadow-pop);padding:16px 16px 12px;color:var(--ink);animation:assIn .35s var(--ease) both}
 .ass-feito[hidden]{display:none}
 .ass-feito .fh{display:flex;align-items:flex-start;gap:10px}
 .ass-feito .fh .ic{width:28px;height:28px;border-radius:50%;background:var(--ok-soft,var(--surface-2));color:var(--ok);display:grid;place-items:center;flex:none}
@@ -19671,6 +19680,7 @@ async function assAplica(fin, nav){
   lastGar=null; if(typeof RS!=="undefined") RS=null; if(typeof CID_UNDO!=="undefined") CID_UNDO=null;
   nav();
   try{ fit2d(); fit3d() }catch(e){}
+  if(typeof calcPronto==="function") calcPronto().then(()=>{ try{ fit3d() }catch(e){} }, ()=>{});   // reenquadra com a altura do prédio novo
   if(typeof histCommit==="function") histCommit();
   assBanner();
 }
@@ -19678,7 +19688,7 @@ async function assAplica(fin, nav){
 /* ---------- cartão "O que fizemos" ---------- */
 function assFeitoFecha(){ const c=document.getElementById("assFeito"); if(c) c.hidden=true; ASS.feito=null }
 function assFeitoMostra(info){
-  ASS.feito=info;
+  ASS.feito=info; info.tab=TAB;   // o cartão é da etapa em que o estudo caiu: trocar de etapa o fecha
   let c=document.getElementById("assFeito");
   if(!c){ c=document.createElement("div"); c.id="assFeito"; c.className="ass-feito"; c.setAttribute("role","status"); document.body.appendChild(c);
     c.addEventListener("click", e=>{
@@ -19695,6 +19705,7 @@ function assFeitoMostra(info){
 }
 function assFeitoLive(){
   const c=document.getElementById("assFeito"), I=ASS.feito; if(!c || c.hidden || !I) return;
+  if(I.tab && TAB!==I.tab){ assFeitoFecha(); return }
   const L=window._last||{}, m=L.m, f=L.f, R=I.resp;
   const lote = R.lote.modo==="ret"? `${nf(assNum(R.lote.frente),1)} × ${nf(assNum(R.lote.fundo),1)} m · ${m2(G.area(S.lote.pts))}` : R.lote.modo==="coord"? `por coordenadas · ${m2(G.area(S.lote.pts))}` : "provisório — desenhe o seu";
   const regras = S.regrasRef && S.regrasRef.id? esc(S.regras.cidade) : R.regras.nome? esc(R.regras.nome) : "padrão — a conferir";
@@ -22003,14 +22014,14 @@ HOOK.pdf.push(async ctx=>{ const e=ctx.m && ctx.m.estr; if(!e) return;
     ...Object.entries(e.motivos||{}).map(([k,n])=>[`  pilares sobre ${k}`, String(n)])]);
 });
 
-/* ================= estudos, versões e cenários (etapa Cenários, sub-aba "Estudos") =================
+/* ================= estudos, versões e alternativas salvas (etapa Entrega, sub-aba "Estudos") =================
    Vários estudos no repositório (src/ui/repo.js). O estudo aberto continua sendo a cópia de trabalho em
    localStorage "gabarito.v2" (abre na hora e mantém compatibilidade); o id dele fica em "gabarito.estudo" e
    ele é gravado no repositório 1,5 s depois de cada mudança. Na primeira vez, o gabarito.v2 vira o primeiro estudo.
    Versões: automáticas a cada 5 min (se houve mudança) e nomeadas; abrir (como novo estudo), comparar e restaurar
    (restaurar reproduz exatamente o estado salvo — e os números).
-   Cenários: fotos rápidas da simulação (localStorage "gabarito.cenarios2"), valem para qualquer estudo.
-   Comparação única: o estudo atual contra tudo o que estiver marcado (estudos, versões e cenários). */
+   Alternativas salvas: fotos rápidas da simulação (localStorage "gabarito.cenarios2"), valem para qualquer estudo.
+   Comparação única: o estudo atual contra tudo o que estiver marcado (estudos, versões e alternativas). */
 const EST = { id:null, lista:[], versoes:[], cmp:{}, cmpE:{}, todas:false, t:0, pronto:false, ultimaAuto:Date.now(), autoMin:5, arm:{}, armC:null, x:null, xt:0 };
 const estDia = iso=>{ try{ const d=new Date(iso); return d.toLocaleDateString("pt-BR")+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) }catch(e){ return "" } };
 const estDiaC = iso=>{ try{ const d=new Date(iso); return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) }catch(e){ return "" } };
@@ -22065,7 +22076,7 @@ async function estAbrir(id, msg){
   EST.id=id; LS.set("gabarito.estudo", id); EST.cmp={}; EST.cmpE={}; EST.ultimaAuto=Date.now(); HIST.mudou=false;
   lastGar=null; OTIM=null; RS=null;
   document.getElementById("projName").value=S.nome;
-  renderTab(); fit3d(); fit2d(); histReset();
+  renderTab(); fit3dDepois(); fit2d(); histReset();
   await estRefresh(); toast(msg||("Estudo aberto: "+S.nome));
   // estudo antigo, sem resumo para a tela inicial: ganha um assim que o cálculo completo chega
   const r0=estResumoDe(rec); if(!r0 || r0.vgv==null) calcPronto().then(()=>{ if(EST.id===id) estGrava() });
@@ -22129,7 +22140,7 @@ async function versaoRestaurar(id){
   const v=await Repo.versoes.get(id); if(!v) return;
   histCommit(); if(HIST.mudou) await versaoSalvar("Antes de restaurar", true);
   S=versaoEstado(v.S); document.getElementById("projName").value=S.nome;
-  renderTab(); fit3d(); fit2d(); histCommit();
+  renderTab(); fit3dDepois(); fit2d(); histCommit();
   toast("Versão restaurada: "+v.nome+" (Ctrl+Z desfaz)");
   const k=await estNums();
   if(k && v.k && !estMesmos(k, v.k)) console.warn("[versões] números diferentes dos salvos", v.k, k);
@@ -22137,7 +22148,7 @@ async function versaoRestaurar(id){
 }
 const estMesmos = (a,b)=>["units","vagas","vgv","lucro","margem"].every(c=> a[c]==null&&b[c]==null || Math.abs((a[c]||0)-(b[c]||0)) <= 1e-6*Math.max(1,Math.abs(b[c]||0)));
 
-/* ---- cenários (fotos rápidas da simulação) ---- */
+/* ---- alternativas salvas (fotos rápidas da simulação; chave antiga "cenarios2") ---- */
 const cenLista = ()=> LS.get("gabarito.cenarios2")||[];
 
 /* ---- interface ---- */
@@ -22175,9 +22186,9 @@ function vsListHTML(){
     ${l.length>5? `<button type="button" class="btn sm ghost addbtn" data-act="vsTodas">${EST.todas?"Mostrar menos":`Ver todas (${l.length})`}</button>`:""}`;
 }
 function cenListHTML(){
-  const l=cenLista(); if(!l.length) return `<p class="note">Nenhum cenário salvo.</p>`;
+  const l=cenLista(); if(!l.length) return `<p class="note">Nenhuma alternativa guardada.</p>`;
   return `<div class="list">${l.map((c,i)=>{ const a=`data-i="${i}"`;
-    return estRow({ ck:estCk("cenCmp", c.cmp, a, c.nome), nome:c.nome, pill: c.aprovado? '<span class="pill ok">aprovado</span>' : "",
+    return estRow({ ck:estCk("cenCmp", c.cmp, a, c.nome), nome:c.nome, pill: c.aprovado? '<span class="pill ok">aprovada</span>' : "",
       meta:`${esc(c.data||"")} · ${estMeta(c.k)}`,
       acts:`<button type="button" class="btn sm" data-act="cenLoad" ${a}>Abrir</button>` + (EST.armC===i? estArm("cenDel",a) : estIco("cenDel","del","Excluir",a)) }) }).join("")}</div>`;
 }
@@ -22194,8 +22205,8 @@ function cmpHTML(){
   return compareHTML([{nome:"Atual", k:histNums(L.m,L.f)}, ...sel]) + `<button type="button" class="btn sm ghost addbtn" data-act="cmpLimpa">Limpar seleção</button>`;
 }
 function estUndoHTML(){ return EST.x? `<div class="undobar" role="status"><span>“${esc(EST.x.nome)}” excluído</span><button type="button" class="btn sm" data-act="estDesfaz">Desfazer</button></div>` : "" }
-const estStatus = ()=> `${estPl(EST.versoes.length,"versão","versões")} · ${estPl(cenLista().length,"cenário","cenários")}`;
-const estSums = ()=>({ estudos: estPl(EST.lista.length,"estudo","estudos"), versoes: EST.versoes.length? estPl(EST.versoes.length,"versão","versões") : "nenhuma", cenarios: cenLista().length? estPl(cenLista().length,"salvo","salvos") : "nenhum", cmp: estPl(cmpSel().length+1,"item","itens") });
+const estStatus = ()=> `${estPl(EST.versoes.length,"versão","versões")} · ${estPl(cenLista().length,"alternativa","alternativas")}`;
+const estSums = ()=>({ estudos: estPl(EST.lista.length,"estudo","estudos"), versoes: EST.versoes.length? estPl(EST.versoes.length,"versão","versões") : "nenhuma", cenarios: cenLista().length? estPl(cenLista().length,"guardada","guardadas") : "nenhuma", cmp: estPl(cmpSel().length+1,"item","itens") });
 /* atualiza as listas sem recriar o painel */
 function cenRefresh(){
   if(TAB!=="cen") return;
@@ -22204,12 +22215,12 @@ function cenRefresh(){
   const c=cmpHTML(), cs=document.getElementById("cmpSec"); if(cs){ const era=cs.hidden; cs.hidden=!c; set("cmpBox", c); if(c && era) cs.open=true }
   const st=document.getElementById("estCurSt"); if(st) st.textContent=estStatus();
   Object.entries(estSums()).forEach(([k,v])=>setSum(k,v));
-  const fs=document.getElementById("footStat"); if(fs) fs.textContent=estPl(cenLista().length,"cenário","cenários");
+  const fs=document.getElementById("footStat"); if(fs) fs.textContent=estPl(cenLista().length,"alternativa","alternativas");
 }
 /* corpo da sub-aba "Estudos" (chamado por STEP_R.cen) */
 function estCardsHTML(){
   const c=cmpHTML(), sm=estSums(), modo=Repo.modo();
-  const campo=(id,ph,rot,act,btn)=>`<div class="row" style="flex-wrap:nowrap"><div class="inp" style="flex:1"><input class="t" id="${id}" placeholder="${ph}" aria-label="${rot}" autocomplete="off"></div><button type="button" class="btn pri" data-act="${act}">${btn}</button></div>`;
+  const campo=(id,ph,rot,act,btn)=>`<div class="row" style="flex-wrap:nowrap"><div class="inp" style="flex:1"><input class="t" id="${id}" placeholder="${ph}" aria-label="${rot}" autocomplete="off"></div><button type="button" class="btn" data-act="${act}">${btn}</button></div>`;
   return `<div id="estUndo">${estUndoHTML()}</div>` +
     RES("Estudo aberto", `<div class="estcur"><b id="estCurNome">${esc(S.nome||"Estudo")}</b><span class="note" id="estCurSt">${estStatus()}</span></div>`,
       {aside: modo==="nuvem"? "salvo na sua conta" : modo==="idb"||modo==="local"? "salvo neste navegador" : "só nesta sessão"}) +
@@ -22220,8 +22231,8 @@ function estCardsHTML(){
         : "Cada estudo é um terreno ou uma proposta diferente. Ficam guardados neste navegador; o aberto é salvo sozinho a cada mudança. Use o .json (aba Entregar) para levar a outro aparelho."}) +
     SEC("Versões", campo("vsNome","Ex.: aprovada na reunião","Nome da versão","vsSalvar","Salvar versão") + `<div id="vsBox">${vsListHTML()}</div>`, {key:"versoes", open:true, sum:sm.versoes,
       info:`Fotos do estudo aberto ao longo do tempo. Salvas sozinhas a cada ${EST.autoMin} minutos quando ele muda, ou quando você pedir. Restaurar volta o estudo exatamente àquele ponto (Ctrl+Z desfaz); o ícone ao lado abre a versão como um estudo novo.`}) +
-    SEC("Cenários", campo("cenNome","Ex.: 2 torres · 12 e 9 pav","Nome do cenário","cenSave","Salvar") + `<div id="cenBox">${cenListHTML()}</div>`, {key:"cenarios", sum:sm.cenarios,
-      info:"Variações rápidas para comparar (por exemplo, número de torres ou de subsolos). Abrir um cenário troca o estudo atual por ele (Ctrl+Z desfaz). Valem para todos os estudos."});
+    SEC("Alternativas salvas", campo("cenNome","Ex.: 2 torres · 12 e 9 pav","Nome da alternativa","cenSave","Guardar") + `<div id="cenBox">${cenListHTML()}</div>`, {key:"cenarios", sum:sm.cenarios,
+      info:"Variações rápidas para comparar (por exemplo, número de torres ou de subsolos). Abrir uma alternativa troca o estudo atual por ele (Ctrl+Z desfaz). Valem para todos os estudos."});
 }
 function estXGuarda(x){ EST.x=x; clearTimeout(EST.xt); EST.xt=setTimeout(()=>{ EST.x=null; cenRefresh() }, 30000) }
 Object.assign(ACT, {
@@ -22237,10 +22248,10 @@ Object.assign(ACT, {
   vsAbrir: async b=>{ const v=await Repo.versoes.get(b.dataset.id); if(!v) return; await estNovo(versaoEstado(v.S), `${v.S.nome||S.nome} — ${v.nome} (${estDia(v.criado)})`) },
   vsTodas: ()=>{ EST.todas=!EST.todas; cenRefresh() },
   vsCmp: b=>{ const id=b.dataset.id; if(EST.cmp[id]) delete EST.cmp[id]; else EST.cmp[id]=1; cenRefresh() },
-  cenSave: async ()=>{ const i=document.getElementById("cenNome"), nome=i? i.value.trim() : ""; await calcPronto(); saveScenario(nome); if(i) i.value=""; cenRefresh(); toast("Cenário salvo") },
-  cenLoad: b=>{ const c=cenLista()[+b.dataset.i]; if(c){ S=merge(clone(DEF),c.S); document.getElementById("projName").value=S.nome; renderTab(); fit3d(); fit2d(); toast("Cenário aberto: "+c.nome+" (Ctrl+Z desfaz)") } },
+  cenSave: async ()=>{ const i=document.getElementById("cenNome"), nome=i? i.value.trim() : ""; await calcPronto(); saveScenario(nome); if(i) i.value=""; cenRefresh(); toast("Alternativa guardada") },
+  cenLoad: b=>{ const c=cenLista()[+b.dataset.i]; if(c){ S=merge(clone(DEF),c.S); document.getElementById("projName").value=S.nome; renderTab(); fit3dDepois(); fit2d(); toast("Alternativa aberta: "+c.nome+" (Ctrl+Z desfaz)") } },
   cenDel: b=>{ const i=+b.dataset.i; if(EST.armC!==i){ EST.armC=i; cenRefresh(); return } EST.armC=null;
-    const l=cenLista(), c=l.splice(i,1)[0]; LS.set("gabarito.cenarios2",l); if(c) estXGuarda({tipo:"cen", nome:c.nome, c, i}); cenRefresh(); toast("Cenário excluído") },
+    const l=cenLista(), c=l.splice(i,1)[0]; LS.set("gabarito.cenarios2",l); if(c) estXGuarda({tipo:"cen", nome:c.nome, c, i}); cenRefresh(); toast("Alternativa excluída") },
   cenCmp: b=>{ const l=cenLista(), c=l[+b.dataset.i]; if(!c) return; c.cmp=!c.cmp; LS.set("gabarito.cenarios2",l); cenRefresh() },
   cmpLimpa: ()=>{ EST.cmp={}; EST.cmpE={}; const l=cenLista(); l.forEach(c=>delete c.cmp); LS.set("gabarito.cenarios2",l); cenRefresh() },
   estDesfaz: async ()=>{ const x=EST.x; if(!x) return; EST.x=null; clearTimeout(EST.xt);
@@ -22391,6 +22402,7 @@ Object.assign(ACT,{
 .entacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .estcur .note:empty{display:none}
 #entNome{display:inline-block;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+@media (max-width:520px){#entNome{display:none}}
 `; document.head.appendChild(s) })();
 
 /* ---------------- comparação (quadro único; chamada por src/ui/estudos.js) ---------------- */
@@ -22450,7 +22462,7 @@ function entEstudosHTML(){
 
 /* duas sub-abas: "Entregar" (a primeira) e "Estudos" (estudos, versões, alternativas e comparação — src/ui/estudos.js) */
 STEP_R.cen = ()=>{
-  const sub=SUBTABS("cen",[["entregar","Entregar"],["estudos","Estudos"]]), s=subAtual("cen"), title="Mostrar e guardar", desc="Entregue o estudo e guarde as alternativas.";
+  const sub=SUBTABS("cen",[["entregar","Entregar"],["estudos","Estudos"]]), s=subAtual("cen"), title="Entrega", desc="Entregue o estudo e guarde as alternativas.";
   if(s==="estudos") return { title, desc, sub, subKey:"estudos", body:entEstudosHTML() };
   return { title, desc, sub, subKey:"entregar", after:()=>dlCheck(), body: entResHTML() + entArquivosHTML() };
 };
@@ -22655,9 +22667,9 @@ STEP_LIVE.projeto = (m, f, fast)=>{
     const ok=m.vagas>=m.vagasReq, gs=document.getElementById("garStat"); if(gs) gs.innerHTML = `<span class="pill ${ok?"ok":"bad"}">${ok?"atende":"faltam "+(m.vagasReq-m.vagas)}</span>`;
     const q=m.quadroVagas, quadro = q? garQuadroRows(m).filter(([l])=>!/^Total/.test(l)) : [], simples=quadro.every(([l])=>/^(Comuns|PCD|Idosos)$/.test(l));
     const tipos = q? [q.comum!=null?`${q.comum} comuns`:"", q.pcd?`${q.pcd} PCD`:"", q.idoso?`${q.idoso} idosos`:""].filter(Boolean).join(" · ") : "";
-    setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${tipos? tipos+" · " : ""}${nf(m.vagas/Math.max(1,m.units),2)} por unidade · estimativa ${m.vagasEst}</div></div></div>
+    setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${tipos? tipos+" · " : ""}${nf(m.vagas/Math.max(1,m.units),2)} por unidade${S.estudo.usarLayout? "" : ` · estimativa ${m.vagasEst}`}</div></div></div>
       ${quadro.length>1 && !simples? `<table class="tbl">${quadro.map(([l,v])=>`<tr><td>${esc(l)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
-      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="Ver este pavimento"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).map(a=>`<p class="note" style="color:var(--warn)">${esc(a)}</p>`).join("")}`);
+      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="Ver este pavimento"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).filter(a=>!/^Não couberam/.test(a)).map(a=>`<p class="note" style="color:var(--warn)">${esc(a)}</p>`).join("")}`);
     const ri=document.getElementById("rampInfo"); if(ri && m.vert){ const V_=m.vert, s0=V_.strips[0], pend=V_.ok?"":" · verifique os avisos";
       ri.textContent = !s0? "" : V_.helix? `helicoidal Ø ${nf(2*V_.helix.Re,1)} m · faixa ${nf(V_.helix.faixa,2)} m · ${nf(V_.helix.incl*100,1)}% no eixo${pend}`
         : V_.elev? `${V_.elev.n} poço${V_.elev.n>1?"s":""} de ${nf(EC_CAB[0]+2*EC_PAREDE,1)} × ${nf(EC_CAB[1]+2*EC_PAREDE,1)} m · ${V_.elev.espera.length} vaga${V_.elev.espera.length>1?"s":""} de espera · saída ${V_.elev.porta==="frente"?"pela frente (de ré)":"pelo fundo"}${pend}`
@@ -23559,7 +23571,7 @@ HOOK.pdf.push(async ctx=>{
   rows([["Curva de obra", {sen:"senoidal", s:`curva S (início ${pct(CV.ini,0)}, pico ${pct(CV.pico,0)}, fim ${pct(CV.fim,0)} do prazo)`, sis:`por sistema (início ${pct(CV.ini,0)}, fim ${pct(CV.fim,0)})`}[CV.modo]||"senoidal"],
     ["Recebimento", RD.modo==="det"? `ato ${pct(RD.ato,0)} · mensais ${pct(RD.mensais,0)} · semestrais ${pct(RD.interm,0)} · chaves ${pct(RD.chaves,0)}${RD.pos?` · pós-chaves ${pct(RD.pos,0)} em ${RD.posN} meses`:""} · repasse ${pct(flxRepasse(RD),0)} (+${RD.repasseMes} meses)` : `simples: ${pct(S.fin.entrada,0)} até as chaves, saldo nas chaves`],
     ...(RD.modo==="det"? [["Correção", `INCC ${pct(S.fin.incc)} até as chaves · IPCA ${pct(RD.ipca)} depois`], ["Distratos", RD.distrato? `${pct(RD.distrato,0)} dos contratos no mês ${RD.distratoMes} após o lançamento (retenção ${pct(RD.retencao,0)}): -${mi(f.distratoV)}` : "não considerados"]] : [])]);
-  const cs=flxCenarios(S,m,f); h2("Cenários");
+  const cs=flxCenarios(S,m,f); h2("Pessimista × otimista");
   rows([["", cs.map(c=>c.nome).join("  |  ")], ...[["Lucro",x=>mi(x.lucro)],["Margem s/ VGV",x=>pct(x.margemVGV)],["TIR a.a.",x=>finTir(x.tirA)],["VPL",x=>mi(x.vpl)],["Exposição",x=>mi(-x.exp)]].map(([l,fn])=>[l, cs.map(c=>fn(c.f)).join("  |  ")])]);
   const t=flxTornado(S,m,null,"margem"); h2("Sensibilidade da margem s/ VGV (desfavorável / favorável)");
   rows(t.vars.map(v=>[`${v.nome} (${v.faixa})`, `${pct(v.lo.margem)} / ${pct(v.hi.margem)}  ·  TIR ${finTir(v.lo.tir)} / ${finTir(v.hi.tir)}`]));
@@ -23993,6 +24005,7 @@ const iniIc = (k, cls="ico")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidd
 .ini-conta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ini-main{max-width:1180px;margin:0 auto;padding:30px 28px 72px}
 .ini-h{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+.ini-hb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .ini-h h1{margin:0;font-size:30px;line-height:1.1;font-weight:650;letter-spacing:-.03em}
 .ini-sub{margin:7px 0 0;font-size:13.5px;color:var(--muted)}
 .ini .btn.lg{min-height:42px;padding:9px 18px;font-size:14px;border-radius:12px;gap:8px}
@@ -24097,6 +24110,7 @@ body:has(>.ini:not([hidden])) #toast{visibility:hidden}
   .ini-conta span{display:none} .ini-conta{padding:3px}
   .ini-main{padding:18px 16px 96px}
   .ini-h{flex-direction:column;align-items:stretch;gap:16px;margin-bottom:18px}
+  .ini-hb{flex-direction:column-reverse;align-items:stretch;gap:6px}
   .ini-h h1{font-size:26px}
   .ini-h .btn.lg{min-height:50px;font-size:15px;width:100%}
   .ini-bar{gap:10px;margin-bottom:20px}
@@ -24223,17 +24237,17 @@ function iniRender(){
   const vazio = INI.carregou && iniProprios()===0;
   const brand = (document.querySelector(".top .brand")||{}).innerHTML || `<span class="wm">gabarito<i>.</i></span>`;
   el.innerHTML = `<header class="ini-top"><div class="brand" aria-hidden="true">${brand}</div>
-      <div class="ini-top-r">${INI.voltar? `<button type="button" class="btn ghost sm" data-ia="voltar" title="Voltar ao estudo aberto (Esc)">${iniIc("volta")}<span>Voltar ao estudo</span></button>` : ""}${iniContaHTML()}</div></header>
+      <div class="ini-top-r">${INI.voltar && !vazio? `<button type="button" class="btn ghost sm" data-ia="voltar" title="Voltar ao estudo aberto (Esc)">${iniIc("volta")}<span>Voltar ao estudo</span></button>` : ""}${iniContaHTML()}</div></header>
     <main class="ini-main">
       ${vazio? iniVazioHTML() : `<div class="ini-h"><div><h1 id="iniT">Meus estudos</h1><p class="ini-sub" id="iniSub">${iniSubTxt()}</p></div>
-        <button type="button" class="btn pri lg" data-ia="novo">${iniIc("novo")}Novo estudo</button></div>
+        <div class="ini-hb">${INI.carregou && !INI.lista.some(iniEhEx)? `<button type="button" class="btn ghost" data-ia="exemplo" title="Abre o estudo de exemplo como um estudo à parte">Ver o exemplo</button>` : ""}<button type="button" class="btn pri lg" data-ia="novo">${iniIc("novo")}Novo estudo</button></div></div>
       <div class="ini-bar" role="search">
         <div class="inp ini-q">${iniIc("busca")}<input type="search" id="iniQ" value="${esc(INI.q)}" placeholder="Buscar por nome ou cidade" aria-label="Buscar estudos" autocomplete="off"></div>
         <div class="seg" role="group" aria-label="Filtrar por status">${INI_F.map(([k,l])=>`<button type="button" data-if="${k}" aria-pressed="${INI.f===k}">${l}</button>`).join("")}</div>
         <label class="ini-ord"><span>Ordenar</span><select class="sel" id="iniOrd" aria-label="Ordenar estudos">${INI_ORD.map(([k,l])=>`<option value="${k}"${INI.ord===k?" selected":""}>${l}</option>`).join("")}</select></label>
       </div>
       <div id="iniGrid">${iniGridHTML()}</div>`}
-      <div class="ini-pe"><label class="sw"><input type="checkbox" id="iniPref"${iniPrefOn()?" checked":""}><span class="tg"></span><span>Abrir o Gabarito nesta tela</span></label></div>
+      <div class="ini-pe"><label class="sw"><input type="checkbox" id="iniPref"${iniPrefOn()?" checked":""}><span class="tg"></span><span>Mostrar esta tela ao abrir o Gabarito</span></label></div>
     </main>
     <div class="ini-snack" id="iniSnack" role="status" aria-live="polite"${INI.desf? "" : " hidden"}>${INI.desf? iniSnackHTML() : ""}</div>`;
   el.setAttribute("aria-labelledby", vazio? "iniVz" : "iniT");
@@ -25008,6 +25022,9 @@ ACT.mkLogoDel =()=>{ _marcaLogo=null; _logoMini=null; LS.set(MARCA_LS,null); ren
   .toast{bottom:calc(var(--folha,40vh) + 12px)}
   .pop,.prog-pop{bottom:calc(var(--nav-h) + 8px)}
   #exBanner{padding:6px 12px}
+  /* folha cheia: o palco fica só como uma faixa — sem as barras e dicas flutuantes por cima dela */
+  .nv-cheia .stage .view>:not(canvas):not(#c2d):not(#c3d){visibility:hidden}
+  .hint{font-size:11.5px;padding:6px 10px;line-height:1.35}
 }
 @media (max-width:900px){ .top .prog-anel{min-height:40px;min-width:40px;justify-content:center} }
 @media (max-width:520px){ .top .prog-anel{padding:3px;gap:0} .top .prog-anel span{display:none} }
@@ -25128,7 +25145,7 @@ const folhaDisp = ()=> Math.max(200, innerHeight - 52 - navBarra());
 const navBarra = ()=>{ const r=document.getElementById("rail"); return r && navCel()? r.getBoundingClientRect().height || 62 : 0 };
 function folhaPx(h){ const de=document.documentElement; de.style.setProperty("--folha-h", Math.round(h)+"px"); de.style.setProperty("--folha", Math.round(h+navBarra())+"px") }
 function folhaAplica(){ if(!navCel()) return; folhaPx(NAV_FOLHA[NAV.folha]*folhaDisp()) }
-function folhaSet(n){ if(!NAV_FOLHA[n]) return; NAV.folha=n; folhaAplica(); const p=document.getElementById("folhaPuxa"); if(p) p.setAttribute("aria-label", n==="cheia"? "Baixar o painel" : "Subir o painel") }
+function folhaSet(n){ if(!NAV_FOLHA[n]) return; NAV.folha=n; document.documentElement.classList.toggle("nv-cheia", n==="cheia"); folhaAplica(); const p=document.getElementById("folhaPuxa"); if(p) p.setAttribute("aria-label", n==="cheia"? "Baixar o painel" : "Subir o painel") }
 
 /* ---------- inicialização (chamada por main.js) ---------- */
 function navInit(){
@@ -25319,7 +25336,7 @@ FX.pf = ()=>{ save(); paretoLive() };
 Object.assign(ACT, {
   pfF: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; save(); renderTab() },
   pfSel: el=>{ PF_SEL=+el.dataset.i; paretoLive() },
-  pfApply: b=>{ const r=OTIM&&OTIM.pareto&&OTIM.pareto.pts[+b.dataset.i]; if(!r) return; PF_SEL=+b.dataset.i; aplicarOtim(r); renderTab(); fit3d();
+  pfApply: b=>{ const r=OTIM&&OTIM.pareto&&OTIM.pareto.pts[+b.dataset.i]; if(!r) return; PF_SEL=+b.dataset.i; aplicarOtim(r); renderTab(); fit3dDepois();
     toast(`Aplicado: lucro ${mi(r.lucro)} · sol ${nf(r.sol,1)} h · ${r.vagas}/${r.req} vagas — Ctrl+Z desfaz`) },
   otk2: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; save(); renderTab() },
 });
@@ -25687,7 +25704,7 @@ Object.assign(ACT,{
       toast(!r.res.length? "Nenhuma combinação viável — veja o motivo em Sugestões" : r.semLucro? "Nenhuma combinação dá lucro — veja o que fecharia a conta" : "Sugestões prontas — a melhor está no topo");
     }catch(e){ OTRUN=false; if(TAB==="produto") renderTab();
       if(!/cancelado|ocupado/.test(e && e.message||"")){ console.error("[produto] otimizador", e); toast("Não foi possível sugerir agora. Tente de novo.") } } },
-  otApply: b=>{ const r=OTIM&&OTIM.res[+b.dataset.i]; if(!r) return; aplicarOtim(r); PR.mix=-1; renderTab(); fit3d(); toast("Opção aplicada — Ctrl+Z desfaz") },
+  otApply: b=>{ const r=OTIM&&OTIM.res[+b.dataset.i]; if(!r) return; aplicarOtim(r); PR.mix=-1; renderTab(); fit3dDepois(); toast("Opção aplicada — Ctrl+Z desfaz") },
   addTorre: ()=>{ const T=S.produto.torres; if(T.length<4){ T.push({pav:T.at(-1)?.pav||8}); if(typeof blcTorreNova==="function") blcTorreNova(T.length-1); renderTab(); toast(`Torre ${T.length} adicionada`) } },
   rmT: b=>{ const T=S.produto.torres, i=+b.dataset.i; if(T.length<2 || !T[i]) return; T.splice(i,1); if(typeof blcTorreRemovida==="function") blcTorreRemovida(i); renderTab(); toast(`Torre ${i+1} removida — Ctrl+Z desfaz`) },
   maxPav: ()=>{ const t=maxPav(S); if(t>0){ S.produto.torres.forEach(x=>x.pav=t); update(); toast(`${t} pavimentos por torre (gabarito/CA)`) } else toast("Nenhum pavimento cabe com essas regras") },
@@ -25845,8 +25862,8 @@ Object.assign(ACT, {
   progSubsolo: ()=>{ S.produto.subsolos=Math.min(5,(+S.produto.subsolos||0)+1); update(); renderTab(); toast(`${S.produto.subsolos} subsolo${S.produto.subsolos>1?"s":""} — Ctrl+Z desfaz`) },
   progGaragem: ()=>{ S.produto.garAcima=(+S.produto.garAcima||0)+1; update(); renderTab(); toast("Garagem elevada adicionada — Ctrl+Z desfaz") },
   progLayout: ()=>{ S.estudo.usarLayout=true; update(); renderTab(); toast("As contas usam as vagas do layout") },
-  progConfPreco: ()=>{ progMarca("preco", true); renderTab() },
-  progConfCusto: ()=>{ progMarca("custo", true); renderTab() },
+  progConfPreco: ()=>{ progMarca("preco", true); renderTab(); toast("Preço de venda conferido") },
+  progConfCusto: ()=>{ progMarca("custo", true); renderTab(); toast("Terreno e custo da obra conferidos") },
   progConfRegras: ()=>{ progMarca("regras", true); renderTab() },
   progPdf: ()=>{ if(typeof exportPDF==="function") calcPronto().then(()=>exportPDF()) },
   progAbrir: b=>progressoAbrir(b),
