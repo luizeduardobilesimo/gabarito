@@ -104,6 +104,15 @@ Decisões:
 
 ## 3. Início guiado, exemplo e checklist
 
+### 3.0 Tela inicial "Meus estudos" (pedido do Luiz em 15/10/2026 · `src/ui/inicio.js`, pacote P6)
+
+- **Porta de entrada do app** (substitui as "Boas-vindas"): tela cheia sobre o app, com a marca, "Novo estudo" (laranja, abre o assistente `assAbrir`) e as **pastas** dos estudos do usuário (`Repo.estudos.list`), em grade de cartões (lista no celular).
+- **Cada pasta**: miniatura do lote e das torres (SVG gerado do estado, função pura), nome, cidade/endereço, data da última edição, **status** (`progressoResumo` do P7: rascunho · em andamento · confiável, com "6/9"), e 3 números (VGV, margem s/ VGV com o ponto do semáforo da Saúde, unidades). Os números vêm de um **resumo gravado junto do estudo** a cada `estGrava` (`resumo:{vgv, margem, nivelMargem, un, feitos, total, nivel, cidade, mini}`), para a tela abrir instantânea sem recalcular; estudo antigo sem resumo mostra "—" e ganha resumo ao ser aberto.
+- **Ações por pasta**: abrir (clique), menu "…" com renomear, duplicar, excluir (armar/confirmar, Ctrl+Z ou "Desfazer" no toast). Busca por nome e filtro por status; ordenar por recentes/nome/margem. O estudo de exemplo aparece como pasta "Exemplo" marcada.
+- **Voltar à tela inicial**: a marca/logo no topo e o item "Meus estudos" do menu do nome do estudo (P1 chama `inicioAbrir()`).
+- **Quando abre**: ao iniciar o app se o usuário tem 0 estudos próprios ou mais de 1 estudo (fora de `#ver=` e com `!navigator.webdriver`, para não quebrar testes); com 1 estudo só, abre direto nele. Preferência lembrada em `localStorage gabarito.inicio`.
+- Nuvem (`repo-nuvem.js`) continua transparente: a lista vem do `Repo`.
+
 ### 3.1 Assistente "Novo estudo" (`src/ui/assistente.js` + `src/calc/assistente.js`)
 
 - É uma tela cheia por cima do app, criada pelo próprio módulo, como `abreGlossario`, com listener próprio.
