@@ -47,7 +47,7 @@ function tabelaCSV() {
 
     // ---------- 1. calibrar com a tabela de vendas ----------
     await p.click('#rail [data-step=viab]'); await p.waitForTimeout(1200);
-    await p.click('#phead .sub [data-v="vendas"]'); await p.waitForTimeout(2200);
+    await p.click('#phead .sub [data-v="prem"]'); await p.waitForTimeout(2200);
     const fechado = await p.evaluate(() => { const d = document.querySelector('#tabbody details[data-key="vCal"]'); return !!d && !d.open });
     if (completo) ok(fechado, `[${tag}] card "Calibrar com tabela de vendas" existe e vem fechado`);
     await abre('vCal');

@@ -26,9 +26,11 @@ const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? proces
     await p.click('#rail [data-step=viab]'); await p.waitForTimeout(1200);
     await p.click('#phead .sub >> text=Riscos'); await p.waitForTimeout(1500);
     ok(await p.$('#tabbody details[data-key="alavancas"]') != null, 'seção Alavancas existe em Riscos · ' + await p.evaluate(() => typeof alavHTML + ' ' + location.href.slice(-60) + ' ' + curSub() + ' ' + [...document.querySelectorAll('#tabbody details')].map(d => d.dataset.key)));
-    ok(await p.$eval('#tabbody details[data-key="alavancas"]', d => !d.open), 'Alavancas começa fechada');
-    ok(/toque para calcular/.test(await p.$eval('#sum-alavancas', e => e.textContent)), 'resumo fechado não calcula nada');
-    ok(await p.$eval('#alavBox', e => /Calculando/.test(e.textContent)), 'nada foi calculado enquanto fechada');
+    // UX v3 §4.3: "O que melhora o resultado" vem aberta, logo depois do RES; fechada, não calcula nada
+    ok(await p.$eval('#tabbody details[data-key="alavancas"]', d => d.open && d.previousElementSibling && d.previousElementSibling.matches('section.card.res')), '"O que melhora o resultado" aberta, logo depois do RES');
+    await p.click('#tabbody details[data-key="alavancas"] > summary'); await p.waitForTimeout(300);
+    await p.evaluate(() => { ALAV_UI.sig = null; document.getElementById('alavBox').innerHTML = '<p class="note">Calculando…</p>'; update() }); await p.waitForTimeout(1500);
+    ok(await p.$eval('#alavBox', e => /Calculando/.test(e.textContent)), 'nada é calculado enquanto fechada');
     await p.click('#tabbody details[data-key="alavancas"] > summary'); await p.waitForTimeout(1500);
     const linhas = await p.$$eval('#alavBox table.alav tr', trs => trs.slice(1).map(t => t.innerText.replace(/\s+/g, ' ')));
     ok(linhas.length === 5, `5 linhas (${linhas.length})`);

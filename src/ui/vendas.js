@@ -19,6 +19,7 @@ const VENDA_STOPS=[[0,[52,96,158]],[0.35,[84,156,170]],[0.65,[226,186,84]],[1,[2
 .vdc .r{display:grid;grid-template-columns:78px minmax(0,1fr);gap:8px;align-items:baseline}
 .vdc .r>span:first-child{color:var(--muted);font-size:11px}
 .vdc .r>span:last-child{font-family:var(--f-mono);font-size:11px;overflow-wrap:anywhere}
+.mets.vdm{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:4px}.mets.vdm .met{padding:8px 10px}.mets.vdm .met .v{font-size:15px}
 #vdBar{top:60px;bottom:auto}
 @media (max-width:900px){#vdBar{top:auto;bottom:8px;left:8px;right:8px;max-width:none!important}}`; document.head.appendChild(st) }
 const VD = { sort:{k:"id", dir:1}, ft:"", fa:"", sel:null, meshes:[], ultimo:null };
@@ -43,18 +44,16 @@ function vendaCor(e, u){ const v=e.val(u); if(v==null||!isFinite(v)) return null
 const vdFmtEsc = (e,v)=> e.kind==="sol"? nf(v,1)+" h" : "R$ "+nf(v/1000,1)+" mil/m²";
 const vdGrad = e=> `linear-gradient(90deg,${e.stops.map(([t,c])=>`rgb(${c}) ${t*100}%`).join(",")})`;
 
-/* ---------- card na etapa Viabilidade ---------- */
-addCard("viab", { key:"vendas", sub:"vendas", order:40,
+/* ---------- seções na Viabilidade › Premissas › Receitas (UX v3: a antiga sub-aba Vendas) ---------- */
+addCard("viab", { key:"vendas", sub:"prem", order:23,
   html: ()=>{
-    const V=S.venda;
-    return RES("Tabela de vendas", `<div id="vdSum"></div>`, {aside:`<span id="vdModo">${V.modo==="unidade"?"VGV = soma das unidades":"VGV pelo preço médio"}</span>`}) +
-      SEC("Unidades", `<div class="fld wide"><span class="fl">VGV residencial ${INFO("VGV")}</span>${SEG("venda.modo",[["medio","Preço médio do mix"],["unidade","Soma por unidade"]],{full:true,label:"Como calcular o VGV"})}</div>` +
+    return SEC("Tabela de vendas", `<div id="vdSum"></div><div class="fld wide"><span class="fl">VGV residencial ${INFO("VGV")}</span>${SEG("venda.modo",[["medio","Preço médio do mix"],["unidade","Soma por unidade"]],{full:true,label:"Como calcular o VGV"})}</div>` +
         ROW("Cores no 3D", SEG("venda.cor",[["nada","sem cor"],["preco","preço/m²"],["sol","sol"]],{fx:"vendaCor",rr:false,label:"Colorir unidades"})) +
         `<div class="row sb" style="flex-wrap:nowrap;gap:6px"><select class="sel" id="vdFT" aria-label="Filtrar por torre" style="flex:1;min-width:0"></select><select class="sel" id="vdFA" aria-label="Filtrar por andar" style="flex:1;min-width:0"></select></div>
          <div id="vdTab" style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:0 6px"></div>
          <div id="vdUni"></div>
          <div class="row sb"><span class="row" style="gap:6px"><button type="button" class="btn sm" data-act="vendaCSV">CSV</button><button type="button" class="btn sm" data-act="vendaXLSX">Planilha XLSX</button></span><span class="note" id="vdN"></span></div>`,
-        {key:"vendas", open:true, info:"Tabela de vendas", sum:""}) +
+        {key:"vendas", info:"Tabela de vendas", sum:""}) +
       SEC("Valorização por unidade",
         KV(NUM("venda.andarPct","Por andar acima do 1º","%",{pct:true,step:0.1})+NUM("venda.solPct","Sol: por hora","%",{pct:true,step:0.1,help:"Prêmio por hora de sol direto por dia (média de inverno, equinócios e verão) acima da mediana do prédio."})+
           NUM("venda.vistaPct","Vista: até","± %",{pct:true,step:0.5,help:"Fração de céu visível em leque diante das fachadas, contra o entorno, mais a altura do andar. 0,25 acima da mediana dá o máximo."})+NUM("venda.cobPct","Coberturas","%",{pct:true,step:0.5})) +
@@ -72,15 +71,16 @@ addCard("viab", { key:"vendas", sub:"vendas", order:40,
 });
 function vendaLive(m,f){
   const U=m.unidades; if(!U){ setHTML("vdSum",`<p class="note">Tabela indisponível.</p>`); return }
-  const base=U.reduce((s,u)=>s+u.base,0), tab=m.unidadesTot, d=base? tab/base-1 : 0, sols=U.filter(u=>u.sol).map(u=>u.sol.media);
-  const pm=U.map(u=>u.precoM2), V=S.venda;
-  setHTML("vdSum", `<div class="mets"><div class="met big"><div class="l">Soma da tabela${m.unidadesRascunho?" · prévia":""}</div><div class="v">${mi(tab)}</div><div class="s">preço médio do mix ${mi(base)} · ${vdPct(d)}</div></div>
-    <div class="met"><div class="l">Faixa de preço</div><div class="v">${nf(Math.min(...pm)/1000,1)}–${nf(Math.max(...pm)/1000,1)}</div><div class="s">mil R$/m²</div></div>
-    <div class="met"><div class="l">Sol médio</div><div class="v">${sols.length? nf(sols.reduce((a,b)=>a+b,0)/sols.length,1)+" h" : "—"}</div><div class="s">por dia, na fachada</div></div></div>
-    ${V.modo==="medio"? `<p class="note" style="margin-top:6px">O VGV ainda usa o preço médio do mix (a tabela daria ${vdPct(d)}).</p>`:""}`);
-  { const e=document.getElementById("vdModo"), h=V.modo==="unidade"?"VGV = soma das unidades":"VGV pelo preço médio"; if(e && e.textContent!==h) e.textContent=h }
-  setSum("vendas", `<b>${U.length}</b> unidades · ${mi(tab)}`);
+  const V=S.venda, tab0=m.unidadesTot;
+  setSum("vendas", `<b>${U.length}</b> unidades · ${mi(tab0)}`);
   setSum("vendaPrem", `andar ${vdPct(V.andarPct)} · sol ${vdPct(V.solPct)}/h`);
+  if(!finVis("vdSum")) return;                                   // seção fechada: só os resumos
+  const base=U.reduce((s,u)=>s+u.base,0), tab=m.unidadesTot, d=base? tab/base-1 : 0, sols=U.filter(u=>u.sol).map(u=>u.sol.media);
+  const pm=U.map(u=>u.precoM2);
+  setHTML("vdSum", `<div class="mets vdm"><div class="met"><div class="l">Soma da tabela${m.unidadesRascunho?" · prévia":""}</div><div class="v">${mi(tab)}</div><div class="s">${vdPct(d)} sobre o mix</div></div>
+    <div class="met"><div class="l">Preço/m²</div><div class="v">${nf(Math.min(...pm)/1000,1)}–${nf(Math.max(...pm)/1000,1)}</div><div class="s">mil R$</div></div>
+    <div class="met"><div class="l">Sol médio</div><div class="v">${sols.length? nf(sols.reduce((a,b)=>a+b,0)/sols.length,1)+" h" : "—"}</div><div class="s">por dia</div></div></div>
+    ${V.modo==="medio"? `<p class="note">O VGV usa o preço médio do mix (${mi(base)}).</p>`:""}`);
   // filtros
   const torres=[...new Set(U.map(u=>u.torre))], andares=[...new Set(U.map(u=>u.andar))].sort((a,b)=>a-b);
   const ft=document.getElementById("vdFT"), fa=document.getElementById("vdFA");

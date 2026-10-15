@@ -1,7 +1,9 @@
 /* ================= Fase A: interface da "Saúde do negócio" e das "Metas e referências" =================
    Cálculo em src/calc/saude.js (saudeNegocio); aqui só marcação e ações.
-   - saudeResHTML(m,f)  → corpo do bloco "Saúde do negócio" (6 indicadores com semáforo e ⓘ + avisos), atualizado em finViabLive
-   - finMetasHTML()     → seção fechada "Metas e referências" (Premissas): margem alvo/mínima, TIR alvo e TMA visíveis; faixas em "Mais opções"
+   - saudeResHTML(m,f)  → corpo da seção "Saúde do negócio" (Viabilidade › Resultado, fechada): lista compacta com 4 indicadores
+                          (aproveitamento global, V/C, terreno, indiretos; margem e retorno ficam no RES) + avisos, atualizado em finViabLive
+   - saudeSumHTML(s)    → resumo da seção fechada ("3 ok · 1 atenção", os 4 indicadores da lista)
+   - finMetasHTML()     → seção fechada "Metas e referências" (Premissas › grupo Metas): margem alvo/mínima, TIR alvo e TMA visíveis; faixas em "Mais opções"
    - ACT: metasPadrao (salvar como padrão da empresa) · metasSug (restaurar sugeridas) · metasEmpresa (voltar ao padrão da empresa) · zerarTerreno
    O "padrão da empresa" fica em localStorage "gabarito.metas.padrao" ({metas, fin:{tma,margemAlvo}, salvo}); a interface não muda quando
    isso for para o Supabase (docs/BACKEND.md) — só saudePadraoEmpresa()/saudeSalvarPadrao() em src/calc/saude.js. */
@@ -10,28 +12,33 @@ const sdCls = n => ({ ruim: "bad", atencao: "warn", ok: "ok", otimo: "ok" })[n] 
 const sdTxt = n => ({ ruim: "ajustar", atencao: "atenção", ok: "ok", otimo: "ótimo" })[n] || "";
 const sdFaixa = (a, b, d = 0) => `${nf(a * 100, d)}–${pct(b, d)}`;
 
+/* uma linha da lista compacta: ponto · nome ⓘ · valor / faixa */
 function saudeItem(rot, v, sub, nivel, info){
-  return `<div class="met"><div class="l"><span class="dot ${sdCls(nivel)}" role="img" aria-label="${sdTxt(nivel)}" title="${sdTxt(nivel)}"></span>${rot}${INFO(info)}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`;
+  return `<div class="sd-r"><span class="dot ${sdCls(nivel)}" role="img" aria-label="${sdTxt(nivel)}" title="${sdTxt(nivel)}"></span><span class="sd-n">${rot}${INFO(info)}</span><span class="sd-v">${v}</span><span class="sd-f">${sub}</span></div>`;
 }
+/* Saúde do negócio (seção fechada em Viabilidade › Resultado). Margem s/ VGV e retorno (TIR) ficam só no RES do Resultado, com o
+   mesmo semáforo (UX v3: margem e TIR aparecem uma vez na tela); aqui vão os outros 4 indicadores, os avisos e a eficiência real. */
 function saudeResHTML(m, f){
-  const s = f.saude || saudeNegocio(S, m, f), M = S.metas, F = S.fin, n = s.nivel;
+  const s = f.saude || saudeNegocio(S, m, f), M = S.metas, n = s.nivel;
   const itens =
-    saudeItem("Eficiência", pct(s.eficGlobal, 1), `${sdFaixa(s.faixaEfic[0], s.faixaEfic[1])} · ${s.tipologiaNome}`, n.efic,
-      `Área privativa ÷ área total construída (ATC, com os subsolos). Para ${s.tipologiaNome} a referência é ${sdFaixa(s.faixaEfic[0], s.faixaEfic[1])}. Abaixo dela, garagem ou circulação estão pesando no produto.`) +
-    saudeItem("Margem s/ VGV", pct(s.margemVGV), `meta ${pct(F.margemAlvo, 0)} · s/ receita ${pct(s.margemReceita)}`, n.margem,
-      `Lucro ÷ VGV, a convenção do mercado. Meta ${pct(F.margemAlvo, 0)}; abaixo de ${pct(M.margem.min, 0)} a colinha diz "não toque". Sobre a receita nominal (com INCC e reajuste) a margem é ${pct(s.margemReceita)}.`) +
-    saudeItem("TIR a.a.", finTir(f.tirA), `alvo ${pct(M.tir.alvo, 0)} · TMA ${pct(F.tma, 0)}`, n.tir,
-      `Rentabilidade anual do fluxo de caixa. Alvo ${pct(M.tir.alvo, 0)} a.a.; abaixo da TMA (${pct(F.tma, 0)}) o projeto não paga o custo do capital. A TMA só desconta o VPL; a meta de retorno é a TIR alvo.`) +
-    saudeItem("V/C", nf(s.vc, 2) + "×", `${nf(M.vc.min, 1)}–${nf(M.vc.bom, 1)} · CUB puro ${nf(s.vcCUB, 2)}×`, n.vc,
-      `Relação venda/custo: preço médio por m² privativo (${brl(s.precoM2)}) ÷ custo de referência (CUB × fator = ${brl(s.custoRefM2)}). Abaixo de ${nf(M.vc.min, 1)} cuidado; ${nf(M.vc.min, 1)} a ${nf(M.vc.bom, 1)} saudável; acima de ${nf(M.vc.bom, 1)} excelente. Contra o CUB puro: ${nf(s.vcCUB, 2)}×.`) +
-    saudeItem("Terreno % VGV", pct(s.terrenoPctVGV), `bom até ${pct(M.terreno.ok, 0)} · máx. ${pct(M.terreno.max, 0)}`, n.terreno,
+    saudeItem("Aproveitamento global", pct(s.eficGlobal, 1), `referência ${sdFaixa(s.faixaEfic[0], s.faixaEfic[1])} · ${s.tipologiaNome}`, n.efic,
+      `Eficiência global: área privativa ÷ área total construída (ATC, com os subsolos). Para ${s.tipologiaNome} a referência é ${sdFaixa(s.faixaEfic[0], s.faixaEfic[1])}. Abaixo dela, garagem ou circulação estão pesando no produto.`) +
+    saudeItem("Venda ÷ custo", nf(s.vc, 2) + "×", `saudável ${nf(M.vc.min, 1)}–${nf(M.vc.bom, 1)}× · CUB puro ${nf(s.vcCUB, 2)}×`, n.vc,
+      `V/C: preço médio por m² privativo (${brl(s.precoM2)}) ÷ custo de referência (CUB × fator = ${brl(s.custoRefM2)}). Abaixo de ${nf(M.vc.min, 1)} cuidado; ${nf(M.vc.min, 1)} a ${nf(M.vc.bom, 1)} saudável; acima de ${nf(M.vc.bom, 1)} excelente. Contra o CUB puro: ${nf(s.vcCUB, 2)}×.`) +
+    saudeItem("Terreno ÷ VGV", pct(s.terrenoPctVGV), `bom até ${pct(M.terreno.ok, 0)} · máx. ${pct(M.terreno.max, 0)}`, n.terreno,
       `(Preço do terreno + permuta física e financeira) ÷ VGV de tabela, sem ITBI. Até ${pct(M.terreno.ok, 0)} é confortável; até ${pct(M.terreno.max, 0)} pede atenção; acima compromete a margem.`) +
-    saudeItem("Indiretos % VGV", pct(s.softPctVGV), `faixa ${sdFaixa(M.soft.min, M.soft.max)}`, n.soft,
+    saudeItem("Indiretos ÷ VGV", pct(s.softPctVGV), `faixa ${sdFaixa(M.soft.min, M.soft.max)}`, n.soft,
       `Soft costs: projetos, administração, contingência, corretagem, marketing, RET, ITBI, outorga e juros ÷ VGV. Faixa de referência ${sdFaixa(M.soft.min, M.soft.max)}.`);
-  const av = s.avisos.map(a => `<div class="row sb"><span class="note" style="color:var(--warn)">${esc(a.txt)}</span>${a.k === "permutaDupla" ? `<button type="button" class="btn sm ghost" data-act="zerarTerreno">Zerar terreno</button>` : ""}</div>`).join("");
+  const av = s.avisos.map(a => `<div class="row sb"><span class="note"><span class="dot warn"></span>${esc(a.txt)}</span>${a.k === "permutaDupla" ? `<button type="button" class="btn sm ghost" data-act="zerarTerreno">Zerar terreno</button>` : ""}</div>`).join("");
   // torre desenhada / contorno ocupado: a privativa vem das unidades desenhadas (blcPrivReal)
   const ef = m && m.eficReal != null ? `<p class="note">Eficiência real da planta <b>${pct(m.eficReal, 0)}</b> (informada ${pct(S.produto.efic, 0)})${INFO("Eficiência real da planta")}</p>` : "";
-  return `<div class="mets">${itens}</div>${ef}${av}<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="prem" data-open="metas">Ajustar metas →</button></div>`;
+  return `<div class="sdl">${itens}</div>${ef}${av ? `<div class="sdav">${av}</div>` : ""}<div class="row"><button type="button" class="btn sm ghost flink" data-act="finIr" data-v="prem" data-open="metas">Ajustar metas →</button></div>`;
+}
+/* resumo da seção fechada: conta os semáforos da lista (margem e retorno já têm o seu ponto no RES) */
+function saudeSumHTML(s){
+  const c = { ok: 0, atencao: 0, ruim: 0 };
+  ["efic", "vc", "terreno", "soft"].map(k => s.nivel[k]).filter(Boolean).forEach(v => { c[v === "otimo" ? "ok" : v] = (c[v === "otimo" ? "ok" : v] || 0) + 1 });
+  return [c.ok ? `<b>${c.ok}</b> ok` : "", c.atencao ? `<b>${c.atencao}</b> atenção` : "", c.ruim ? `<b>${c.ruim}</b> a ajustar` : ""].filter(Boolean).join(" · ");
 }
 function saudeStatusHTML(f){
   const s = f.saude; if(!s) return "";
@@ -77,7 +84,7 @@ Object.assign(ACT, {
 Object.assign(FX, {
   permuta: live => { FX.upd(live); if(!live && S.fin.permuta > 0 && S.fin.terreno > 0) toast("Permuta física com terreno preenchido: o terreno pode estar contado duas vezes. Use “Zerar terreno”.") }
 });
-/* aviso sob o campo "Permuta física" (Premissas › Receita) */
+/* aviso sob o campo "Permuta física" (Premissas › Receita e comissões › Mais opções) */
 function saudePermutaSub(){
   const F = S.fin;
   setSub("fin.permuta", F.permuta > 0 && F.terreno > 0

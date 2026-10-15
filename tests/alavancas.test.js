@@ -141,8 +141,12 @@ describe('otimizador: margem s/ VGV, hLim, eficiência global e V/C', () => {
     const o = await B.otimizar({ obj: 'lucro', torres: true, tipologias: true, unidades: true, mc: true, paretoMax: 8 }, null, null, { st, m });
     const dt = (Date.now() - t0) / 1000;
     console.log(`fronteira de Pareto: ${dt.toFixed(1)} s · ${o.testadas} combinações · ${o.pts.length} estimadas · ${o.pareto.pts.length} conferidas, ${o.pareto.pts.filter(p => p.fronteira).length} na fronteira`);
-    expect(o.res.map(r => B.otimKey(r))).toEqual(['1|alto|3|15|1|0', '1|alto|4|11|1|0', '2|alto|2|11|0|2', '1|alto|2|20|1|0', '2|atual|4|10|2|0']);   // as do otimizador anterior
-    expect(o.res.map(r => Math.round(r.lucro))).toEqual([35211511, 34629825, 33727734, 33328450, 19748241]);
+    // UX v3 P3 (mudança intencional): vagas calibradas por pavimento no layout real, alturas limitadas pelo que cabe (e mais baixas),
+    // conferência que sobe/desce andares e subsolos com o layout real e ordem "lucro > 0 e margem ≥ meta" antes do objetivo.
+    // As três melhores de antes continuam, com o mesmo lucro; entra uma melhor (2 torres × 11 pav, 1 subsolo: R$ 38,5 mi > 35,2 mi).
+    // Antes: ['1|alto|3|15|1|0', '1|alto|4|11|1|0', '2|alto|2|11|0|2', '1|alto|2|20|1|0', '2|atual|4|10|2|0'] · [35211511, 34629825, 33727734, 33328450, 19748241]
+    expect(o.res.map(r => B.otimKey(r))).toEqual(['2|alto|2|11|1|0', '1|alto|3|15|1|0', '1|alto|4|11|1|0', '1|alto|2|20|1|0', '2|alto|1|19|1|0']);
+    expect(o.res.map(r => Math.round(r.lucro))).toEqual([38457714, 35211511, 34629825, 33328450, 22836944]);
     expect(o.pareto.pts.length).toBeGreaterThan(5); expect(o.pareto.pts.some(p => p.fronteira)).toBe(true);
     expect(dt).toBeLessThan(30);        // a meta é ≤ 15 s numa máquina livre; o teto do teste é folgado para não oscilar com a carga
   }, 300000);

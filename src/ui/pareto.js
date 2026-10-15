@@ -1,7 +1,10 @@
-/* ================= etapa Produto: trocas entre critérios (fronteira de Pareto, item 1.3) =================
+/* ================= etapa Produto › Sugestões › "Trocas entre critérios" (fronteira de Pareto, item 1.3) =================
+   Subseção (details#pfCard) dentro da seção Sugestões de src/ui/produto.js.
    Lê OTIM.pareto (gerado por otimizar() em src/optim.js, na página ou no Worker). Os pontos do gráfico são combinações
    conferidas com a garagem real; aplicar um ponto reproduz os números mostrados. Filtros mínimos ficam em S.otim. */
 let PF_SEL = null; // índice em OTIM.pareto.pts
+let PF_ABERTO = false; // subseção "Trocas entre critérios" aberta (estado de tela, fora de S)
+document.addEventListener("toggle", e=>{ if(e.target && e.target.id==="pfCard"){ PF_ABERTO=e.target.open; if(PF_ABERTO) paretoLive() } }, true);
 (function(){ const s=document.createElement("style"); s.textContent=`
 .pf-chart{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:6px 4px 2px}
 .pf-chart svg{display:block;width:100%;height:auto}
@@ -12,6 +15,9 @@ let PF_SEL = null; // índice em OTIM.pareto.pts
 .pf-leg i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
 .pf-tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line-2);border-radius:8px;box-shadow:var(--shadow-s);padding:6px 8px;font-size:11px;line-height:1.4;color:var(--ink);white-space:nowrap;z-index:2}
 .pf-tip b{font-family:var(--f-mono);font-weight:500}
+.pf-sub{margin-top:6px;border-top:1px solid var(--line);padding-top:6px}
+.pf-sub>summary .info{margin-left:2px}
+.pf-cb{display:grid;gap:10px;margin-top:8px}
 `; document.head.appendChild(s) })();
 
 const pfDesc = r => `${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} gar. elevada${r.gac>1?"s":""}`:""}${r.forma&&r.dev>0.005?` · unidades ${pct(r.dev,0)} maiores`:""}`;
@@ -27,19 +33,21 @@ function paretoCardHTML(){
   if(!OTIM || !OTIM.pareto || !OTIM.pareto.pts.length) return "";
   const O=S.otim, src=OTIM.solFonte==="unidades"? "média das unidades, com sombras (módulo Unidades)" : "horas de sol direto nas fachadas no inverno (aproximação)";
   const nomes=pfCrit().map(c=>c.nome.toLowerCase()), lista=nomes.length>1? nomes.slice(0,-1).join(", ")+" e "+nomes[nomes.length-1] : nomes.join(""), info=`Cada ponto é uma combinação conferida com a garagem real. Em destaque, a fronteira: nenhuma outra opção é melhor em ${lista} ao mesmo tempo. ${O.efic?"Eficiência global: área privativa ÷ área total construída. ":""}${O.vc?"V/C: preço por m² privativo ÷ custo de referência (CUB × fator). ":""}Toque num ponto para ver e aplicar. Sol médio: ${src}. ${OTIM.ventoOn?"Conforto ao vento: 1 − fração do lote com vento forte (vento 2D, aproximado). ":""}Vagas pelo layout rápido da garagem; na tela o layout completo pode achar mais algumas.`;
-  return SEC("Trocas entre critérios", `<div class="chips"><button type="button" class="chip" data-act="pfF" data-k="fVagas" aria-pressed="${!!O.fVagas}">Vagas ≥ exigidas</button><button type="button" class="chip" data-act="pfF" data-k="fSol" aria-pressed="${!!O.fSol}">Sol médio ≥ ${nf(+O.solMin||0,1)} h</button></div>
+  const nFr=OTIM.pareto.pts.filter(p=>p.fronteira).length;
+  // subseção da seção "Sugestões" (Produto, UX v3 §4.2): fechada por padrão, o estado aberto vale enquanto a página estiver aberta
+  return `<details class="pr-more pf-sub" id="pfCard" data-key="pr-pareto" ${PF_ABERTO?"open":""}><summary>Trocas entre critérios · ${nFr} na fronteira${INFO(info)}</summary><div class="pf-cb"><div class="chips"><button type="button" class="chip" data-act="pfF" data-k="fVagas" aria-pressed="${!!O.fVagas}">Vagas ≥ exigidas</button><button type="button" class="chip" data-act="pfF" data-k="fSol" aria-pressed="${!!O.fSol}">Sol médio ≥ ${nf(+O.solMin||0,1)} h</button></div>
     ${O.fSol? KV(NUM("otim.solMin","Sol médio mínimo","h",{step:0.5,min:0,max:14,fx:"pf"})) : ""}
     <div class="pf-chart" id="pfChart"></div>
     <div class="pf-leg"><span><i style="background:var(--accent)"></i>fronteira</span><span><i style="border:1.5px solid var(--muted)"></i>outras</span><span><i style="border:2px solid var(--brand)"></i>estudo atual</span><span>tamanho = nº de vagas</span></div>
     <p class="note" id="pfPill"></p><div id="pfDet"></div>
-    <details class="pr-more" id="pfMore" hidden><summary id="pfMoreT">Todas da fronteira</summary><div class="list" id="pfFront"></div></details>`, {id:"pfCard", key:"pr-pareto", open:true, info});
+    <details class="pr-more" id="pfMore" hidden><summary id="pfMoreT">Todas da fronteira</summary><div class="list" id="pfFront"></div></details></div></details>`;
 }
 FX.pf = ()=>{ save(); paretoLive() };
 Object.assign(ACT, {
   pfF: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; save(); renderTab() },
   pfSel: el=>{ PF_SEL=+el.dataset.i; paretoLive() },
   pfApply: b=>{ const r=OTIM&&OTIM.pareto&&OTIM.pareto.pts[+b.dataset.i]; if(!r) return; PF_SEL=+b.dataset.i; aplicarOtim(r); renderTab(); fit3d();
-    toast(`Aplicado: lucro ${mi(r.lucro)} · sol ${nf(r.sol,1)} h · ${r.vagas}/${r.req} vagas`) },
+    toast(`Aplicado: lucro ${mi(r.lucro)} · sol ${nf(r.sol,1)} h · ${r.vagas}/${r.req} vagas — Ctrl+Z desfaz`) },
   otk2: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; save(); renderTab() },
 });
 /* chips extras do otimizador (vários critérios, vento, malha) — chamados de STEP_R.produto */
@@ -80,10 +88,10 @@ function paretoLive(){
   const nF=frL.length, nP=L.filter(o=>o.passa).length, pill=document.getElementById("pfPill"); // detalhe do ponto escolhido
   const s=PF_SEL!=null && L[PF_SEL]? L[PF_SEL] : null;
   if(pill) pill.textContent=`${nF} na fronteira · ${nP} de ${L.length} nos filtros${s?"":" · toque num ponto"}`;
-  const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button class="btn sm ${top?"pri":""}" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
+  const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button type="button" class="btn sm" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
     <div class="note">${pfDesc(p)}${o.passa?"":" · fora dos filtros"}</div>
-    <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem s/ VGV<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
-    ${p.tir!=null?`<span>TIR<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.forma?`<span>Unidades<b>${p.dev>0.005?"+"+pct(p.dev,0):"no mix"}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
+    <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
+    ${p.tir!=null?`<span>Retorno<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.forma?`<span>Unidades<b>${p.dev>0.005?"+"+pct(p.dev,0):"no mix"}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
   setHTML("pfDet", s? card(s,true) : nF? "" : `<p class="note">Nenhuma opção passa nos filtros. Afrouxe um deles.</p>`);
   const resto=frL.slice().reverse().filter(o=>!s||o.i!==s.i), more=document.getElementById("pfMore"), mt=document.getElementById("pfMoreT");
   if(more) more.hidden=!resto.length;

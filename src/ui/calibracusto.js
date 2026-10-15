@@ -1,6 +1,6 @@
 /* ================= Fase E (custos): interface da calibração, dos indiretos extras e da tabela CUB do estado =================
    Cálculo em src/calc/{calibracusto,indiretos,cub}.js; aqui só marcação e ações.
-   - Card "Calibrar com obras reais" (Viabilidade › Premissas, fechado): obras realizadas → fator sobre o CUB e peso da garagem, com erro por obra e R²;
+   - Card "Calibrar com obras reais" (Viabilidade › Premissas › grupo Custos, fechado): obras realizadas → fator sobre o CUB e peso da garagem, com erro por obra e R²;
      "Aplicar ao estudo", "Salvar como padrão da empresa" (localStorage gabarito.custo.padrao; o Supabase troca só ccalSalvarPadrao/ccalPadraoEmpresa),
      importação de CSV ou XLSX (SheetJS do cdnjs, só quando o arquivo é planilha) e modelo de CSV.
    (Leitor próprio e pequeno, com prefixo ccal: depois do merge pode passar a usar plaCSV/plaNum de src/calc/planilha.js e a leitura de planilhas de src/ui/arquivos.js.)
@@ -101,7 +101,7 @@ function ccalResHTML(res, m){
   if(par && m){ const p = ccalParam(S, m, res); if(p) pnote = `<p class="note">Orçamento paramétrico: escala ${p.chaves.map(k => ORC_SIS.find(s => s.k === k).nome.toLowerCase()).join(", ")} em ×${ccalN(p.s)}.</p>` }
   const emp = ccalPadraoEmpresa();
   return tiles + tab + av + ign + pnote +
-    `<div class="row"><button type="button" class="btn pri sm" data-act="ccalAplica" ${igual ? "disabled" : ""}>${igual ? "Aplicado ao estudo" : "Aplicar ao estudo"}</button><button type="button" class="btn sm ghost" data-act="ccalSalva">Salvar como padrão da empresa</button></div>` +
+    `<div class="row"><button type="button" class="btn sm" data-act="ccalAplica" ${igual ? "disabled" : ""}>${igual ? "Aplicado ao estudo" : "Aplicar ao estudo"}</button><button type="button" class="btn sm ghost" data-act="ccalSalva">Salvar como padrão da empresa</button></div>` +
     (emp ? `<p class="note">Padrão da empresa: ${ccalN(emp.fator)}× · garagem ${ccalN(emp.eqGar)} · ${emp.n} obra${emp.n === 1 ? "" : "s"}</p>` : "");
 }
 function ccalLive(m, f){
@@ -149,7 +149,7 @@ Object.assign(ACT, {
   ccalEmpresa: () => { if(ccalAplicarPadrao(S)){ update(); renderTab(); toast("Padrão da empresa aplicado") } },
   ccalModelo: () => { saveFile("obras-reais-modelo.csv", "﻿" + CCAL_MODELO_CSV) }
 });
-addCard("viab", { key: "ccal", sub: "prem", order: 70, html: ccalHTML, live: (m, f) => ccalLive(m, f), after: ccalAfter });
+addCard("viab", { key: "ccal", sub: "prem", order: 8, html: ccalHTML, live: (m, f) => ccalLive(m, f), after: ccalAfter });
 
 /* ---------------- peças usadas por src/ui/financeiro.js (tabela CUB, lucro após imprevistos, DRE e PDF) ---------------- */
 function finCubSug(){
