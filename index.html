@@ -18711,14 +18711,20 @@ function cfdRefresh(all){
   if(all) cfdParticlesInit();
   cfdLegend(); render3();
 }
-function cfdOnField(){ if(VIEW!=="v3d") return; cfdRefresh(false); cfdStatus(); if(CFD.probe) cfdProbeAt(CFD.probe.pt) }
+function cfdOnField(){ if(VIEW!=="v3d" || !cfdNoTunel()) return;
+  // com quadros muito lentos (3D por software), não redesenha a cada campo novo: deixa a página respirar entre um e outro
+  const agora=performance.now(); if(CFD.quadro>120 && agora-(CFD.ultRef||0) < 3*CFD.quadro){ cfdStatus(); return } CFD.ultRef=agora;
+  cfdRefresh(false); cfdStatus(); if(CFD.probe) cfdProbeAt(CFD.probe.pt) }
 function cfdLoop(){
   if(VIEW!=="v3d"){ CFD.raf=null; return }
-  const now=performance.now(), dt=Math.min(0.05,(now-(CFD.t||now))/1000); CFD.t=now;
+  if(!cfdNoTunel()){ CFD.raf=null; cfdStop(); return }   // saiu da sub-aba do túnel com o palco ainda nele: pausa e volta ao 3D comum
+  const now=performance.now(), bruto=now-(CFD.t||now), quadro=bruto-(CFD.esp||0), dt=Math.min(0.05,bruto/1000); CFD.t=now; CFD.esp=0; if(bruto>0) CFD.quadro=quadro;
   let draw=false; if(CFD.parts){ cfdParticlesStep(dt); draw=true }
   if(CFD.slMat){ CFD.slMat.uniforms.uTime.value+=dt*S.cfd.animVel; draw=true }
   if(draw) render3();
-  CFD.raf=requestAnimationFrame(cfdLoop);
+  // quadro muito lento (3D por software, máquina carregada): espera 1,5× o tempo dele antes do próximo, para a página seguir respondendo
+  if(draw && quadro>120){ const tk={}, esp=Math.min(10000, 1.5*quadro); CFD.raf=tk; CFD.esp=esp; setTimeout(()=>{ if(CFD.raf===tk) CFD.raf=requestAnimationFrame(cfdLoop) }, esp) }
+  else CFD.raf=requestAnimationFrame(cfdLoop);
 }
 function cfdBuildings(){ // prédio com o mesmo render do 3D (materiais, pavimentos, sombras)
   const corte=S.corte; S.corte=""; rebuild3d(window._last.m,true); S.corte=corte; V3.grp.visible=true;
@@ -18734,9 +18740,23 @@ function cfdEnter(){
   if(!CFD.dom || CFD.sig!==d.sig){ cfdStart(true) } else { cfdGroup(); if(!CFD.bld) cfdBuildStatic(); CFD.grp.visible=true; cfdRefresh(true); cfdFit() }
   if(CFD.grp) CFD.grp.visible=true;
   document.getElementById("cfdBar").hidden=false; document.getElementById("cfdLegend").hidden=false;
-  cfdBarUI(); cfdStatus(); if(!CFD.raf) CFD.raf=requestAnimationFrame(cfdLoop);
+  cfdBarUI(); cfdStatus(); if(!CFD.raf){ CFD.t=0; CFD.esp=0; CFD.raf=requestAnimationFrame(cfdLoop) }
 }
 function cfdLeave(){ if(V3.R) V3.R.toneMappingExposure=0.92; if(CFD.grp) CFD.grp.visible=false; if(V3.grp) V3.grp.visible=true; if(CFD.raf){ cancelAnimationFrame(CFD.raf); CFD.raf=null } document.getElementById("cfdBar").hidden=true; document.getElementById("cfdLegend").hidden=true; document.getElementById("cfdProbe").hidden=true; document.getElementById("cfdProbe").dataset.k=""; if(CFD.running) cfdPause(); applySun() }
+/* o túnel só roda com a sub-aba Vento › Túnel 3D na tela (Projeto, ou a etapa Clima enquanto ela existir). Trocar de etapa
+   ou de sub-aba sem trocar a vista (ex.: Entrega, que não pede vista) deixava a simulação e a animação rodando e travava a
+   página; cfdLoop confere a cada quadro e chama cfdStop, que pausa o Worker, para a animação e devolve o palco ao 3D comum. */
+function cfdNoTunel(){
+  if(typeof TAB==="undefined" || typeof CSUB==="undefined") return true;
+  if(typeof emClima==="function" ? !emClima() : TAB!=="clima") return false;
+  if(TAB==="projeto" && typeof PSUB!=="undefined" && PSUB!=="vento") return false;
+  return CSUB==="v3d";
+}
+function cfdStop(){
+  if(VIEW==="v3d"){ setView("3d"); return }   // setView → cfdLeave (pausa, esconde a barra e a legenda)
+  if(CFD.raf){ cancelAnimationFrame(CFD.raf); CFD.raf=null }
+  if(CFD.running) cfdPause();
+}
 function cfdStatus(msg){
   const el=document.getElementById("cfdStat"), el2=document.getElementById("cfdStat2"); const F=CFD.field, d=CFD.dom;
   const txt = msg || (!F? "Preparando a malha…" : `${CFD.running?"Simulando":"Pausado"} · passo ${nf(F.step,0)} · ${F.navg>2? "médias com "+nf(F.navg,0)+" amostras" : pct(Math.min(1,F.step/(1.2*d.nx/0.085)),0)+" até o regime"} · ${d.nx}×${d.ny}×${d.nz} células de ${nf(d.dx,1)} m`);
@@ -20925,7 +20945,7 @@ function comDragMove(d, w){
 }
 function comDragEnd(){ COMDRAG=null; update(); if(TAB==="projeto") renderTab() }
 
-/* ---------- inspetor (Projeto › Pavimento tipo) ---------- */
+/* ---------- inspetor (Projeto › Andares) ---------- */
 function comTiposSync(){ const C=S.comodos; C.tipos=C.tipos||[]; [...new Set(S.produto.mix.map(u=>u.nome))].forEach(n=>comTipoEntry(n)) }
 /* a tipologia usa um modelo em que o lavabo é opcional (3 dormitórios ou mais)? */
 function comLavOpc(nome){ const it=S.produto.mix.find(u=>u.nome===nome), mk=comModeloDe(S, nome, it? it.area : 60); return !!COM_MODELOS[mk] && COM_MODELOS[mk].lavabo==="opc" }
@@ -21527,7 +21547,7 @@ addCard("projeto",{ key:"entedit-vento", sub:"vento", order:55, html:entCardHTML
 if(typeof STEPS!=="undefined" && STEPS.some(s=>s.k==="clima")) addCard("clima",{ key:"entedit", order:55, html:entCardHTML });
 
 /* ================= 2.2 malha estrutural — interface =================
-   Card na etapa Projeto (todas as sub-abas), comparação de malhas (num Worker próprio, para não travar a página),
+   Card "Pilares (malha estrutural)" em Projeto › Garagem, comparação de malhas (num Worker próprio, para não travar a página),
    pilares nas plantas (HOOK.draw2d) e no 3D (HOOK.draw3d). Cálculo em src/calc/estrutura.js. */
 let ESTR_CMP = null; // {sig, list, rodando}
 const estrSig = ()=> JSON.stringify([S.lote, S.regras, S.produto, S.estudo, S.custom, S.estrutura, S.forma||0]);
@@ -21535,14 +21555,14 @@ function estrCardHTML(){
   const ES=S.estrutura;
   let h = SW("estrutura.on","Malha estrutural coordenada",{rr:true});
   const INF="Pilares da torre nas paredes entre unidades e no núcleo, casados com o módulo da garagem. O que não alinha vira viga de transição, com custo.";
-  if(!ES.on) return SEC("Malha estrutural", h, {key:"estrutura", sum:"desligada", info:INF});
+  if(!ES.on) return SEC("Pilares (malha estrutural)", h, {key:"estrutura", sum:"desligada", info:INF});
   h += SEG("estrutura.malha",[["casada","Casada com a garagem","Ajusta cada pilar (até a tolerância) para cair entre as vagas"],["paredes","Só nas paredes","Pilares exatamente nos encontros das paredes, sem coordenação"]],{full:true, label:"Malha"});
   h += `<div id="estrMet" class="kv" style="margin-top:4px"></div>`;
   h += `<div class="row"><button type="button" class="btn sm" data-act="estrComparar" id="estrCmpBtn">Comparar malhas</button><span class="note" id="estrCmpTxt"></span></div><div id="estrCmp"></div>`;
   h += ADV(KV((ES.malha==="casada"? NUM("estrutura.tol","Ajuste máx. do pilar","m",{step:0.1,min:0,max:2,help:"Quanto um pilar pode sair do encontro das paredes para descer entre as vagas"}) : "") + NUM("estrutura.vaoMax","Vão máximo","m",{step:0.5,min:3,max:15}))+
     `<div data-q="custo transição">${SW("estrutura.custo","Somar as transições ao custo da obra",{rr:true})}</div>`+
     (ES.custo? KV(NUM("estrutura.custoM","Viga de transição","R$/m",{step:250,min:0,help:"Custo por metro de viga; multiplicado pelo vão e por um fator de carga (0,5 + pavimentos ÷ 20)"})) : ""), {key:"estrAdv"});
-  return SEC("Malha estrutural", h, {key:"estrutura", sum:"pilares e transições", info:INF});
+  return SEC("Pilares (malha estrutural)", h, {key:"estrutura", sum:"pilares e transições", info:INF});
 }
 function estrMetHTML(m){
   const e=m && m.estr; if(!e) return `<p class="note">${S.estrutura.on? "Calculando os pilares…" : ""}</p>`;
@@ -21899,56 +21919,87 @@ Object.assign(ACT, {
 /* Enter nos campos de nome salva */
 document.getElementById("tabbody").addEventListener("keydown", e=>{ if(e.key!=="Enter") return; const id=e.target && e.target.id; if(id==="vsNome") ACT.vsSalvar(); else if(id==="cenNome") ACT.cenSave() });
 
-/* ================= etapa Clima (Sol · Vento no chão · Vento 3D) =================
-   Separado de src/steps.js (UX v3, P0), sem mudar comportamento. Aqui: STEP_R/STEP_LIVE.clima, climaSum, climaInfo
-   (chamada por ui.js e views.js) e as ações do clima e do entorno. */
-/* ---------------- 6. Clima ---------------- */
-STEP_R.clima = ()=>{
-  const C=S.clima, c=S.cfd;
-  const sub=`<div class="seg full subtabs" role="tablist" aria-label="Partes do clima">${ETAPA_SUBS.clima.map(([k,l])=>`<button type="button" role="tab" data-act="csub" data-v="${k}" aria-pressed="${CSUB===k}" aria-selected="${CSUB===k}">${l}</button>`).join("")}</div>`;
-  let body="";
-  if(CSUB==="sol") body =
-    RES("Horas de sol no chão", `<div id="solInfo"></div>`, {aside:`21/${MESES[S.sol.mes-1]}`, asideId:"solStat"}) +
+/* ================= Sol e vento (UX v3 §4.4: sub-abas Sol e Vento da etapa Projeto) =================
+   O conteúdo mora aqui e serve aos dois casos:
+   - com a etapa Clima no trilho (antes do P1): STEP_R.clima mostra as sub-abas Sol · Vento;
+   - sem ela (P1): STEP_R.projeto (src/ui/etapa-projeto.js) chama climaCorpo() para PSUB "sol" e "vento".
+   Dentro de Vento, a chave "No chão (rápido) | Túnel 3D" (ACT.vmodo) grava CSUB = "vento" | "v3d".
+   climaModo() diz o que está na tela ("sol" | "vento" | "v3d"); climaSum, climaInfo (chamada por ui.js e views.js) e as
+   ações do sol, do vento e do túnel ficam aqui. O túnel 3D pausa sozinho fora da sua tela (cfdNoTunel, src/wind3d.js). */
+(function climaCss(){ const s=document.createElement("style"); s.textContent=`
+.pbody>.vmodo{margin:0 0 2px}
+.pbody>.vmodo button{white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.pbody>.vmodo svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+`; document.head.appendChild(s) })();
+
+/* modo de clima mostrado agora: na etapa Clima vale CSUB; em Projeto, a sub-aba (Sol) ou a chave do Vento (chão / túnel) */
+function climaModo(){
+  if(typeof TAB!=="undefined" && TAB==="projeto") return PSUB==="sol"? "sol" : CSUB==="v3d"? "v3d" : "vento";
+  return CSUB==="v3d"? "v3d" : CSUB==="vento"? "vento" : "sol";
+}
+/* a sub-aba Sol está na tela (para o mapa da vizinhança e o 3D) */
+function climaSolNaTela(){ return typeof emClima==="function" && emClima() && climaModo()==="sol" }
+
+/* ---------- corpo de cada modo ---------- */
+function climaSolHTML(){
+  return RES("Horas de sol no chão", `<div id="solInfo"></div>`, {aside:`21/${MESES[S.sol.mes-1]}`, asideId:"solStat"}) +
     SEC("Data e hora", `<div class="seg full">${[["12,21","Verão"],["3,21","Equinócio"],["6,21","Inverno"]].map(([v,l])=>`<button type="button" data-act="sd" data-v="${v}" aria-pressed="${S.sol.mes+","+S.sol.dia===v}">${l}</button>`).join("")}</div>
       ${SLD("sol.mes","Mês (dia 21)",1,12,1,"",{fx:"sun",fmt:"mes"})}${SLD("sol.hora","Hora solar",6,19,0.25,"",{fx:"sun",fmt:"hora",help:"Hora solar: meio-dia é quando o sol está mais alto. Difere do relógio em até cerca de 1 hora."})}${SW("sol.on","Sol e sombras no 3D",{fx:"sun"})}
       <button class="btn full" data-act="solAnim" id="solAnimBtn">${typeof SUNANIM!=="undefined"&&SUNANIM?"❚❚ Pausar":"▶ Animar o dia no 3D"}</button>`+
-      ADV(SW("clima.overlay3d","Mapa de horas de sol também no 3D",{fx:"r3"}), {key:"cSol"}),
+      ADV(`<div class="row sb" style="flex-wrap:nowrap">${SW("clima.overlay3d","Mapa do chão também no 3D",{fx:"r3"})}${INFO("Pinta no chão do 3D o mapa que está aberto no palco: as horas de sol aqui e, em Vento › No chão, a velocidade do vento.","o mapa no 3D")}</div>`, {key:"cSol"}),
       {open:true, key:"cSol", sum:climaSum("sol"), info:"Horas de sol"});
-  else if(CSUB==="vento") body =
+}
+/* chave do Vento: no chão (2D, rápido) ou túnel 3D */
+function climaVmodoHTML(modo){
+  return `<div class="seg full vmodo" role="group" aria-label="Como simular o vento">${[["vento","No chão (rápido)",'<path d="M3 9h11a3 3 0 1 0-3-3M3 13h15a3 3 0 1 1-3 3M3 19h18"/>'],["v3d","Túnel 3D",'<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>']].map(([v,l,ic])=>`<button type="button" data-act="vmodo" data-v="${v}" aria-pressed="${modo===v}"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${l}</button>`).join("")}</div>`;
+}
+function climaVentoHTML(modo){
+  const C=S.clima, c=S.cfd;
+  if(modo!=="v3d") return climaVmodoHTML("vento") +
     RES("Vento no chão", `<div id="ventoInfo"></div>`) +
-    SEC("Vento de referência", compassSVG(C.ventoDir)+SLD("clima.ventoVel","Velocidade",1,20,0.5,"m/s",{fx:"clima"})+SLD("clima.ventoAlt","Altura da fatia",0.5,120,0.5,"m",{fx:"clima",help:"Altura acima do chão em que o vento é simulado. 1,5 m é a altura do pedestre."})+
-      ADV(SW("clima.overlay3d","Mapa do vento também no 3D",{fx:"r3"}), {key:"cVen"}),
+    SEC("Vento de referência", compassSVG(C.ventoDir)+SLD("clima.ventoVel","Velocidade",1,20,0.5,"m/s",{fx:"clima"})+SLD("clima.ventoAlt","Altura da fatia",0.5,120,0.5,"m",{fx:"clima",help:"Altura acima do chão em que o vento é simulado. 1,5 m é a altura do pedestre."}),
       {open:true, key:"cVen", sum:climaSum("vento"), info:"Toque na rosa para escolher de onde o vento vem. No litoral sul de SC predomina o nordeste, com rajadas de sul em frentes frias — confira no INMET."});
-  else {
-    const V=c.viz, on=k=>!!V[k];
-    const grupos =
-      (on("linhas")? GRP("Linhas de corrente")+SLD("cfd.linhasN","Quantidade",8,160,1,"",{fx:"cfdLines",int:true})+SLD("cfd.linhasAlt.0","Começam a",0,1,0.05,"% da torre",{fx:"cfdLines",pct:true})+SLD("cfd.linhasAlt.1","Terminam a",0.2,2,0.05,"% da torre",{fx:"cfdLines",pct:true})+SLD("cfd.espessura","Espessura",0.4,3,0.1,"×",{fx:"cfdLines"})+
-        SW("cfd.tubos","Tubos 3D (sem animação)",{fx:"cfdLines"})+SW("cfd.linhasMedia","Escoamento médio",{fx:"cfdLines"}) : "") +
-      (on("fumaca")? GRP("Fumaça")+ROW(`Emissor${INFO("Coluna: um fio de fumaça do chão até acima da torre. Cortina: uma parede de fumaça de lado a lado, em toda a altura. Ponto: um jato fino num ponto.","o emissor de fumaça")}`,SEG("cfd.emissorTipo",[["linha","coluna"],["cortina","cortina"],["ponto","ponto"]],{fx:"cfdParts",rr:false}))+
-        SLD("cfd.fumacaN","Densidade",300,8000,100,"",{fx:"cfdParts",int:true})+(on("particulas")?"":SLD("cfd.partTam","Tamanho dos puffs",0.3,3,0.1,"×",{fx:"save"}))+SW("cfd.fumacaCor","Colorir pela velocidade",{fx:"save"}) : "") +
-      (on("particulas")? GRP("Partículas")+SLD("cfd.partN","Quantidade",500,12000,100,"",{fx:"cfdParts",int:true})+SLD("cfd.partTam","Tamanho",0.3,3,0.1,"×",{fx:"save"})+SW("cfd.rastro","Rastros",{fx:"cfdParts",rr:true})+(c.rastro?SLD("cfd.rastroLen","Comprimento do rastro",0.05,1.5,0.05,"s",{fx:"save"}):"") : "") +
-      (on("plano")||on("setas")? GRP(on("plano")?"Plano de cor":"Setas")+ROW("Plano",SEG("cfd.plano.orient",[["h","horizontal"],["l","longitudinal"],["t","transversal"]],{fx:"cfdLight"}))+
-        (c.plano.orient==="h"? SLD("cfd.plano.h","Altura",0.5,120,0.5,"m",{fx:"cfdLight"}) : SLD("cfd.plano.pos","Posição",0,1,0.01,"%",{fx:"cfdLight",pct:true}))+
-        (on("plano")? SLD("cfd.planoOpac","Opacidade",0.2,1,0.05,"%",{fx:"cfdLight",pct:true}) : "")+(on("setas")? SLD("cfd.setasDens","Densidade das setas",0.4,3,0.1,"×",{fx:"cfdLight"}) : "") : "") +
-      (on("pressao")? GRP(`Pressão nas fachadas${INFO("Cp")}`)+SLD("cfd.opac","Opacidade",0.1,1,0.05,"%",{fx:"cfdBld",pct:true}) : "");
-    const pontos = (c.semente && on("linhas")? `<div class="row sb"><span class="pill">linhas pelo ponto da sonda</span><button class="btn sm ghost" data-act="semX">Soltar da entrada</button></div>` : "") +
-      (c.emissor && on("fumaca")? `<div class="row sb"><span class="pill">fumaça no ponto da sonda</span><button class="btn sm ghost" data-act="emX">Voltar a barlavento</button></div>` : "");
-    body =
-      SEC("Simular", `<div class="row" style="flex-wrap:nowrap"><button class="btn pri" data-act="cfdPlay" style="flex:1">${typeof CFD!=="undefined"&&CFD.running?"Pausar":"Simular"}</button><button class="btn" data-act="cfdReset">Reiniciar</button></div><span class="cfstat note" id="cfdStat2"></span>
-        <div style="display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px;align-items:center">${compassSVG(C.ventoDir)}${SLD("clima.ventoVel","Velocidade a 10 m",1,20,0.5,"m/s",{fx:"cfdStart",wide:false})}</div>`+
-        ADV(ROW(`Entorno${INFO("Rugosidade")}`,SEG("cfd.rug",[["aberto","aberto"],["suburbano","subúrbio"],["urbano","urbano"]],{fx:"cfdStart",rr:false}))+
-          ROW(`Precisão${INFO("“Alta” mostra melhor esteiras e cantos, mas leva minutos.","a precisão")}`,SEG("cfd.res",Object.entries(CFD_RES).map(([k,v])=>[k,v[1]]),{fx:"cfdStart",rr:false})), {key:"cSim"}),
-        {open:true, key:"cSim", sum:climaSum("v3d"), info:"LBM"}) +
-      SEC("O que ver", `<div class="chips">${CFD_VIZ.map(([k,l])=>`<button type="button" class="chip" data-act="cviz" data-k="${k}" aria-pressed="${on(k)}">${l}</button>`).join("")}</div>
-        <div class="fld wide"><label class="fl" for="cfdVarSel">Colorir por${INFO("Lawson")}</label><select class="sel" id="cfdVarSel" data-p="cfd.var" data-t="s" data-fx="cfdRef" data-rr="1">${Object.entries(CFD_VARS).map(([k,l])=>`<option value="${k}" ${c.var===k?"selected":""}>${l}</option>`).join("")}</select></div>${pontos}`+
-        ADV(ROW("Escala",SEG("cfd.escala",[["auto","automática"],["fixa","fixa"]],{fx:"cfdRef"}))+(c.escala==="fixa"? KV(NUM("cfd.min","Mínimo","",{fx:"cfdRef",step:0.5})+NUM("cfd.max","Máximo","",{fx:"cfdRef",step:0.5})) : "")+
-          grupos+GRP("Aparência")+ROW("Fundo",SEG("cfd.fundo",[["claro","claro"],["escuro","escuro"]],{fx:"cfdLook",rr:false}))+SW("cfd.vidro","Prédios em vidro (ver através)",{fx:"cfdLook"})+SLD("cfd.animVel","Velocidade da animação",0.1,4,0.1,"×",{fx:"save"}), {key:"cVer"}),
-        {open:true, key:"cVer", sum:climaSum("ver"), info:"Toque num ponto do 3D para medir com a sonda: dali dá para soltar fumaça ou linhas de corrente."});
-  }
-  return { sub, subKey:CSUB, body, after:()=>{ if(CSUB==="sol" && window._last) try{ sunHours(S, window._last.m) }catch(e){}   // resultado do sol também quando a vista é o 3D
-    if(CSUB!=="v3d") climaInfo(); else if(typeof cfdStatus==="function") cfdStatus() } };
+  const V=c.viz, on=k=>!!V[k];
+  const grupos =
+    (on("linhas")? GRP("Linhas de corrente")+SLD("cfd.linhasN","Quantidade",8,160,1,"",{fx:"cfdLines",int:true})+SLD("cfd.linhasAlt.0","Começam a",0,1,0.05,"% da torre",{fx:"cfdLines",pct:true})+SLD("cfd.linhasAlt.1","Terminam a",0.2,2,0.05,"% da torre",{fx:"cfdLines",pct:true})+SLD("cfd.espessura","Espessura",0.4,3,0.1,"×",{fx:"cfdLines"})+
+      SW("cfd.tubos","Tubos 3D (sem animação)",{fx:"cfdLines"})+SW("cfd.linhasMedia","Escoamento médio",{fx:"cfdLines"}) : "") +
+    (on("fumaca")? GRP("Fumaça")+ROW(`Emissor${INFO("Coluna: um fio de fumaça do chão até acima da torre. Cortina: uma parede de fumaça de lado a lado, em toda a altura. Ponto: um jato fino num ponto.","o emissor de fumaça")}`,SEG("cfd.emissorTipo",[["linha","coluna"],["cortina","cortina"],["ponto","ponto"]],{fx:"cfdParts",rr:false}))+
+      SLD("cfd.fumacaN","Densidade",300,8000,100,"",{fx:"cfdParts",int:true})+(on("particulas")?"":SLD("cfd.partTam","Tamanho dos puffs",0.3,3,0.1,"×",{fx:"save"}))+SW("cfd.fumacaCor","Colorir pela velocidade",{fx:"save"}) : "") +
+    (on("particulas")? GRP("Partículas")+SLD("cfd.partN","Quantidade",500,12000,100,"",{fx:"cfdParts",int:true})+SLD("cfd.partTam","Tamanho",0.3,3,0.1,"×",{fx:"save"})+SW("cfd.rastro","Rastros",{fx:"cfdParts",rr:true})+(c.rastro?SLD("cfd.rastroLen","Comprimento do rastro",0.05,1.5,0.05,"s",{fx:"save"}):"") : "") +
+    (on("plano")||on("setas")? GRP(on("plano")?"Plano de cor":"Setas")+ROW("Plano",SEG("cfd.plano.orient",[["h","horizontal"],["l","longitudinal"],["t","transversal"]],{fx:"cfdLight"}))+
+      (c.plano.orient==="h"? SLD("cfd.plano.h","Altura",0.5,120,0.5,"m",{fx:"cfdLight"}) : SLD("cfd.plano.pos","Posição",0,1,0.01,"%",{fx:"cfdLight",pct:true}))+
+      (on("plano")? SLD("cfd.planoOpac","Opacidade",0.2,1,0.05,"%",{fx:"cfdLight",pct:true}) : "")+(on("setas")? SLD("cfd.setasDens","Densidade das setas",0.4,3,0.1,"×",{fx:"cfdLight"}) : "") : "") +
+    (on("pressao")? GRP(`Pressão nas fachadas${INFO("Cp")}`)+SLD("cfd.opac","Opacidade",0.1,1,0.05,"%",{fx:"cfdBld",pct:true}) : "");
+  const pontos = (c.semente && on("linhas")? `<div class="row sb"><span class="pill">linhas pelo ponto da sonda</span><button class="btn sm ghost" data-act="semX">Soltar da entrada</button></div>` : "") +
+    (c.emissor && on("fumaca")? `<div class="row sb"><span class="pill">fumaça no ponto da sonda</span><button class="btn sm ghost" data-act="emX">Voltar a barlavento</button></div>` : "");
+  const rodando = typeof CFD!=="undefined" && CFD.running;
+  return climaVmodoHTML("v3d") +
+    SEC("Simular", `<div class="row" style="flex-wrap:nowrap"><button class="btn${rodando?" on":""}" data-act="cfdPlay" style="flex:1">${rodando?"Pausar":"Simular"}</button><button class="btn ghost" data-act="cfdReset">Reiniciar</button></div><span class="cfstat note" id="cfdStat2"></span>
+      <div style="display:grid;grid-template-columns:118px minmax(0,1fr);gap:12px;align-items:center">${compassSVG(C.ventoDir)}${SLD("clima.ventoVel","Velocidade a 10 m",1,20,0.5,"m/s",{fx:"cfdStart",wide:false})}</div>`+
+      ADV(ROW(`Entorno${INFO("Rugosidade")}`,SEG("cfd.rug",[["aberto","aberto"],["suburbano","subúrbio"],["urbano","urbano"]],{fx:"cfdStart",rr:false}))+
+        ROW(`Precisão${INFO("“Alta” mostra melhor esteiras e cantos, mas leva minutos.","a precisão")}`,SEG("cfd.res",Object.entries(CFD_RES).map(([k,v])=>[k,v[1]]),{fx:"cfdStart",rr:false})), {key:"cSim"}),
+      {open:true, key:"cSim", sum:climaSum("v3d"), info:"LBM"}) +
+    SEC("O que ver", `<div class="chips">${CFD_VIZ.map(([k,l])=>`<button type="button" class="chip" data-act="cviz" data-k="${k}" aria-pressed="${on(k)}">${l}</button>`).join("")}</div>
+      <div class="fld wide"><label class="fl" for="cfdVarSel">Colorir por${INFO("Lawson")}</label><select class="sel" id="cfdVarSel" data-p="cfd.var" data-t="s" data-fx="cfdRef" data-rr="1">${Object.entries(CFD_VARS).map(([k,l])=>`<option value="${k}" ${c.var===k?"selected":""}>${l}</option>`).join("")}</select></div>${pontos}`+
+      ADV(ROW("Escala",SEG("cfd.escala",[["auto","automática"],["fixa","fixa"]],{fx:"cfdRef"}))+(c.escala==="fixa"? KV(NUM("cfd.min","Mínimo","",{fx:"cfdRef",step:0.5})+NUM("cfd.max","Máximo","",{fx:"cfdRef",step:0.5})) : "")+
+        grupos+GRP("Aparência")+ROW("Fundo",SEG("cfd.fundo",[["claro","claro"],["escuro","escuro"]],{fx:"cfdLook",rr:false}))+SW("cfd.vidro","Prédios em vidro (ver através)",{fx:"cfdLook"})+SLD("cfd.animVel","Velocidade da animação",0.1,4,0.1,"×",{fx:"save"}), {key:"cVer"}),
+      {open:true, key:"cVer", sum:climaSum("ver"), info:"Toque num ponto do 3D para medir com a sonda: dali dá para soltar fumaça ou linhas de corrente."});
+}
+/* corpo + after de um modo (usado pela etapa Clima e pelas sub-abas Sol/Vento do Projeto) */
+function climaCorpo(modo){
+  return { body: modo==="sol"? climaSolHTML() : climaVentoHTML(modo),
+    after: ()=>{ if(modo==="sol" && window._last) try{ sunHours(S, window._last.m) }catch(e){}   // resultado do sol também quando a vista é o 3D
+      if(modo!=="v3d") climaInfo(); else if(typeof cfdStatus==="function") cfdStatus() } };
+}
+
+/* ---------- etapa Clima (enquanto ela existir no trilho) ---------- */
+STEP_R.clima = ()=>{
+  const modo=climaModo(), tabs=[["sol","Sol"],["vento","Vento"]], ativo=modo==="sol"? "sol" : "vento";
+  // a aba Vento leva ao modo em uso (tocar nela de novo não sai do túnel)
+  const sub=`<div class="seg full subtabs" role="tablist" aria-label="Partes do clima">${tabs.map(([k,l])=>`<button type="button" role="tab" data-act="csub" data-v="${k==="vento"&&modo==="v3d"?"v3d":k}" aria-pressed="${ativo===k}" aria-selected="${ativo===k}">${l}</button>`).join("")}</div>`;
+  const R=climaCorpo(modo);
+  return { sub, subKey:modo, body:R.body, after:R.after };
 };
-/* entorno do Clima: a mesma seção "Entorno" do Terreno (src/ui/entorno.js: criar, desenhar, gerar genéricos, nomes e alturas, OSM) */
 function climaSum(k){
   const C=S.clima, c=S.cfd, dir=["N","NE","L","SE","S","SO","O","NO"][Math.round((C.ventoDir||0)/45)%8];
   if(k==="sol") return `21/${MESES[S.sol.mes-1]} · ${hhmm(S.sol.hora)}${S.sol.on?" · sombras no 3D":""}`;
@@ -21957,14 +22008,23 @@ function climaSum(k){
   if(k==="ver") return CFD_VIZ.filter(([q])=>c.viz[q]).map(([,l])=>l.toLowerCase()).join(" · ")||"nada";
   return "";
 }
-STEP_LIVE.clima = ()=>{ if(CSUB==="sol"){ setSum("cSol", climaSum("sol")); const s=document.getElementById("solStat"); if(s) s.textContent=`21/${MESES[S.sol.mes-1]}` } else if(CSUB==="vento") setSum("cVen", climaSum("vento")) };
+STEP_LIVE.clima = ()=>{ const k=climaModo(); if(k==="sol"){ setSum("cSol", climaSum("sol")); const s=document.getElementById("solStat"); if(s) s.textContent=`21/${MESES[S.sol.mes-1]}` } else if(k==="vento") setSum("cVen", climaSum("vento")); else { setSum("cSim", climaSum("v3d")); setSum("cVer", climaSum("ver")) } };
 function climaInfo(){
   const si=document.getElementById("solInfo"), vi=document.getElementById("ventoInfo");
-  if(si) si.innerHTML = _sunCache? `<div class="mets"><div class="met"><div class="l">Sol possível no dia</div><div class="v">${nf(_sunCache.max,1)} h</div></div><div class="met"><div class="l">Média nas áreas livres</div><div class="v">${nf(_sunCache.mediaLote,1)} h</div></div><div class="met big"><div class="l">Áreas livres com menos de 2 h de sol</div><div class="v">${pct(_sunCache.pctBaixo,0)}</div></div></div>` : `<p class="note">Abra a vista Mapas para calcular.</p>`;
-  if(vi){ const w=windStats(S); vi.innerHTML = w? `<div class="mets"><div class="met big"><div class="l">Rajada máxima no lote</div><div class="v">${nf(w.max*S.clima.ventoVel,1)} m/s</div><div class="s">${nf(w.max,2)}× o vento de referência · ${WIND.steps>=2400?"simulação concluída":"rodando "+pct(WIND.steps/2400,0)}</div></div><div class="met"><div class="l">Acelerado &gt;1,3×</div><div class="v">${pct(w.hi,0)}</div></div><div class="met"><div class="l">Calmaria &lt;0,35×</div><div class="v">${pct(w.calm,0)}</div></div></div>` : `<p class="note">Abra a vista Mapas › Vento no chão para simular.</p>` }
+  if(si) si.innerHTML = _sunCache? `<div class="mets"><div class="met"><div class="l">Sol possível no dia</div><div class="v">${nf(_sunCache.max,1)} h</div></div><div class="met"><div class="l">Média nas áreas livres</div><div class="v">${nf(_sunCache.mediaLote,1)} h</div></div><div class="met big"><div class="l">Áreas livres com menos de 2 h de sol</div><div class="v">${pct(_sunCache.pctBaixo,0)}</div></div></div>` : `<p class="note">Calculando as horas de sol…</p>`;
+  if(vi){ const w=windStats(S); vi.innerHTML = w? `<div class="mets"><div class="met big"><div class="l">Rajada máxima no lote</div><div class="v">${nf(w.max*S.clima.ventoVel,1)} m/s</div><div class="s">${nf(w.max,2)}× o vento de referência · ${WIND.steps>=2400?"simulação concluída":"rodando "+pct(WIND.steps/2400,0)}</div></div><div class="met"><div class="l">Acelerado &gt;1,3×</div><div class="v">${pct(w.hi,0)}</div></div><div class="met"><div class="l">Calmaria &lt;0,35×</div><div class="v">${pct(w.calm,0)}</div></div></div>` : `<p class="note">Simulando o vento no chão…</p>` }
   if(emClima()) STEP_LIVE.clima();
 }
+/* troca de modo do Vento (no chão ↔ túnel 3D): grava CSUB e leva o palco para a vista do modo */
+function climaVmodo(v){
+  v = v==="v3d"? "v3d" : "vento";
+  CSUB=v; if(v==="vento") S.clima.modo="vento";
+  renderTab(); TB.scrollTop=0;
+  const w = v==="v3d"? "v3d" : "clima";
+  if(VIEW!==w) setView(w); else if(w==="clima" && window._last){ viewbarSegs(window._last.m); climaRun(); hintFor() }
+}
 Object.assign(ACT,{
+  vmodo: b=>climaVmodo(b.dataset.v),
   sd: b=>{ const [mm,d]=b.dataset.v.split(",").map(Number); S.sol.mes=mm; S.sol.dia=d; sunUI(); applySun(); climaRun(); renderTab() },
   solAnim: ()=>{ if(!S.sol.on){ S.sol.on=true; save() } if(VIEW!=="3d") setView("3d"); sunUI(); applySun(); const p=document.getElementById("sunPlay"); if(p) p.click(); const b=document.getElementById("solAnimBtn"); if(b) b.textContent=SUNANIM?"❚❚ Pausar":"▶ Animar o dia no 3D"; setSum("cSol", climaSum("sol")) },
   entGen: b=>{ if(S.entorno.length && b && !b.dataset.arm){ b.dataset.arm=1; b.textContent="Substituir os atuais?"; b.classList.add("on"); return } genNeighbors(); renderTab(); fit3d(); if(VIEW==="v3d") cfdStart(true); toast("Vizinhos genéricos criados — ajuste as alturas") },
@@ -21977,6 +22037,10 @@ Object.assign(ACT,{
   semX: ()=>{ S.cfd.semente=null; save(); if(cfdOn()){ cfdLines(); render3() } renderTab() },
   emX: ()=>{ S.cfd.emissor=null; save(); if(cfdOn()) cfdParticlesInit(); renderTab() },
 });
+/* túnel 3D fora da tela: toda troca de etapa ou sub-aba passa por renderTab, então confere logo depois de montar o painel
+   (sem esperar o próximo quadro do túnel, que pode demorar com o 3D por software). cfdNoTunel/cfdStop em src/wind3d.js */
+["terreno","regras","produto","viab","projeto","clima","cen"].forEach(k=>addCard(k, {key:"cfdGuarda", order:1000, html:()=>"",
+  after:()=>{ if(typeof cfdNoTunel==="function" && VIEW==="v3d" && !cfdNoTunel()) cfdStop() }}));
 
 /* ================= etapa Entrega — "Mostrar e guardar" (sub-abas Entregar · Estudos) =================
    UX v3 (P6). Separado de src/steps.js (P0). Aqui: STEP_R/STEP_LIVE.cen, compareHTML (usada por src/ui/estudos.js),
@@ -22108,35 +22172,91 @@ if(typeof ACT.estNovo==="function" && !ACT.estNovoVazio){
   ACT.estNovo = ()=>{ if(typeof assAbrir==="function") assAbrir(); else ACT.estNovoVazio() };
 }
 
-/* ================= etapa Projeto (Garagem · Pavimento tipo · Andares) =================
-   Separado de src/steps.js (UX v3, P0), sem mudar comportamento. Aqui: STEP_R/STEP_LIVE.projeto, garSum, tipoSum,
-   GAR_RAMPA_INFO, garLegExtra (legenda da garagem, usada por views.js), RS/rsHTML (estudo do melhor acesso) e as ações.
-   ACT.acessoStudy é envolvido pelo Worker em calcInstalar() (src/ui/calcworker.js), chamado por main.js depois de tudo carregar. */
-/* ---------------- 5. Projeto ---------------- */
+/* ================= etapa Projeto: "Funciona no desenho?" (UX v3 §4.4) =================
+   Sub-abas gar | tipo | sol | vento (rótulos Garagem · Andares · Sol · Vento; data-act="psub", lógica em ui.js).
+   - Garagem: RES Vagas · Acesso e rampas (Entradas = acessosSecHTML() do Terreno/P2, com reserva aqui; circulação vertical,
+     Mover na planta, Encontrar o melhor acesso) · Vagas · PCD e idoso · Medidas da vaga (casa única de vaga, corredor,
+     pilar e, nas rampas reta/alternada/L, largura e inclinação) · Vagas extras · Editar vagas à mão · Pilares (estrutura.js).
+   - Andares: RES Andar tipo · Escadas e elevadores ([+] posição do núcleo) · Medidas do andar (casa única de corrTipo,
+     profMin, sacProf) · Núcleo e unidades por torre · Alas · Cômodos · Todos os andares (antiga sub-aba) · Saídas e
+     acessibilidade (normasSecHTML() de src/ui/normas.js, com reserva aqui).
+   - Sol e Vento: conteúdo de src/ui/etapa-clima.js (climaCorpo). Enquanto a etapa Clima existir no trilho (antes do P1),
+     Projeto mostra só Garagem · Andares e o Sol/Vento ficam na etapa Clima.
+   Também aqui: garSum, tipoSum, GAR_RAMPA_INFO, garLegExtra (legenda da garagem, usada por views.js), RS/rsHTML (estudo do
+   melhor acesso) e as ações. ACT.acessoStudy é envolvido pelo Worker em calcInstalar() (src/ui/calcworker.js). */
+(function projCss(){ const s=document.createElement("style"); s.textContent=`
+#andList.andpilha{gap:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface-2)}
+#andList.andpilha .li{border:0;border-top:1px solid var(--line);border-radius:0;padding:5px 12px;background:transparent}
+#andList.andpilha .li:first-child{border-top:0}
+#andList.andpilha .li.clk:hover{background:var(--surface)}
+#andList.andpilha .li.on{background:var(--surface);box-shadow:inset 3px 0 0 var(--brand)}
+#andList.andpilha .li .tt{font-size:12.5px;font-weight:500}
+@media (max-width:900px){ #andList.andpilha .li{padding:10px 12px} }
+`; document.head.appendChild(s) })();
+const projTemClima = ()=> typeof STEPS!=="undefined" && STEPS.some(s=>s.k==="clima");
+const projSubs = ()=> [["gar","Garagem"],["tipo","Andares"]].concat(projTemClima()? [] : [["sol","Sol"],["vento","Vento"]]);
+/* subsDe("projeto") / auditoria: a antiga sub-aba "andar" vive dentro de "tipo"; Sol e Vento entram quando a etapa Clima sai */
+try{ ETAPA_SUBS.projeto = projSubs(); if(projTemClima()) ETAPA_SUBS.clima = [["sol","Sol"],["vento","Vento"]] }catch(e){}
+/* Entradas (sliders de acesso): a versão do Terreno (P2) quando existir; esta é a reserva, com a mesma marcação */
+function projAcessosHTML(){
+  if(typeof acessosSecHTML==="function") return acessosSecHTML();
+  return GRP("Entradas") +
+    SLD("lote.acessoPed",`Pedestres · L${acPrincipal(S)+1}`,0.05,0.95,0.01,"%",{pct:true,help:"Posição da entrada de pedestres ao longo da frente principal: 0% é o início do lado e 100% o fim."}) +
+    SLD("lote.acessoVei",`Veículos · L${ladoVeiIdx(S)+1}`,0.05,0.95,0.01,"%",{pct:true,sub:"",help:"Posição da entrada de veículos (rampas e faixa da garagem) ao longo do lado marcado com “veículos” em Terreno › Ruas e frentes (padrão: a frente principal). Se cair sobre um núcleo, o hall ou as lojas, o acesso é deslocado."});
+}
+function projAcessosLive(m){
+  if(typeof acessosLive==="function") return acessosLive(m);
+  const T=m.ter||{}, ac=m.acesso||{}, lv=ac.edgeV!=null && ac.edgeV!==ac.edge;
+  setSub("lote.acessoVei", T.drive0? `${T.drive0.dv? nf(T.drive0.dv[1]-T.drive0.dv[0],1)+" m de largura (rampas"+(T.lanes?" + faixa da garagem":"")+")" : ""}${T.veiShift? " · ajustado "+nf(Math.abs(T.veiShift),1)+(lv? " m para não passar pelo hall nem pelos núcleos" : " m para não passar pelos núcleos"):""}` : "");
+}
+/* Saídas e acessibilidade: normasSecHTML() (src/ui/normas.js, P2) quando existir; senão monta a seção com as peças de hoje */
+const NRM_INFO = "Checklist PRELIMINAR de saídas de emergência (IN 09 do CBMSC, com referência na NBR 9077) e de acessibilidade (NBR 9050, LBI), conferido no núcleo e na garagem desenhados. Toque num item para ver o exigido, o porquê e a fonte. Não substitui o projeto de prevenção e o de acessibilidade.";
+function projNormasHTML(){
+  if(typeof normasSecHTML==="function"){ const h=normasSecHTML(); return /^\s*<details/.test(h)? h : SEC("Saídas e acessibilidade (preliminar)", h, {key:"nrmList", info:NRM_INFO}) }
+  return SEC("Saídas e acessibilidade (preliminar)", `<div class="nrm-res" id="nrmRes"></div><div id="nrmList"><p class="note">Calculando…</p></div>` +
+    ADV(`<div data-q="chuveiros sprinklers automáticos">${SW("normas.chuveiros","Edificação com chuveiros automáticos")}</div><div data-q="rota fuga escada pavimento tipo">${SW("normas.rotaFuga","Rota até a escada no pavimento tipo",{fx:"r3n"})}</div>`, {key:"nrmOpc"}),
+    {key:"nrmList", sum:"conferindo…", info:NRM_INFO});
+}
+function projNormasLive(m, fast){
+  if(typeof normasLive!=="function" || !document.getElementById("nrmList")) return;
+  normasLive(m, fast);
+  if(typeof normasSecHTML==="function") return;   // a versão do P2 escreve o próprio resumo
+  const n=s=>document.querySelectorAll(`#nrmList .nrm-it .dot.${s}`).length, ok=n("ok"), wa=n("warn"), bd=n("bad");
+  if(ok+wa+bd) setSum("nrmList", [ok? `${ok} atende${ok>1?"m":""}` : "", wa? `<span style="color:var(--warn)">${wa} atenção</span>` : "", bd? `<span style="color:var(--bad)">${bd} não atende${bd>1?"m":""}</span>` : ""].filter(Boolean).join(" · "));
+}
 STEP_R.projeto = ()=>{
-  const E=S.estudo, X=S.garagem||DEF.garagem;
-  const sub=`<div class="seg full subtabs" role="tablist" aria-label="Partes do projeto">${ETAPA_SUBS.projeto.map(([k,l])=>`<button type="button" role="tab" data-act="psub" data-v="${k}" aria-pressed="${PSUB===k}" aria-selected="${PSUB===k}">${l}</button>`).join("")}</div>`;
+  const E=S.estudo, X=S.garagem||DEF.garagem, subs=projSubs();
+  if(PSUB==="andar") PSUB="tipo";   // a lista de andares agora mora em "Andares" (tipo); a vista "andar" continua valendo
+  if(!subs.some(([k])=>k===PSUB)) PSUB=subs[0][0];
+  // a seção de normas vem do card "nrmList" daqui (normasSecHTML): desliga já o card reserva de src/ui/normas.js,
+  // antes de renderTab filtrar os cards (senão a primeira montagem mostraria os dois)
+  if(typeof normasSecHTML==="function") try{ NRM_EXT=true }catch(e){}
+  const sub=`<div class="seg full subtabs" role="tablist" aria-label="Partes do projeto">${subs.map(([k,l])=>`<button type="button" role="tab" data-act="psub" data-v="${k}" aria-pressed="${PSUB===k}" aria-selected="${PSUB===k}">${l}</button>`).join("")}</div>`;
+  if(PSUB==="sol" || PSUB==="vento"){ const modo=climaModo(), R=climaCorpo(modo); return { sub, subKey:PSUB+(modo==="v3d"?"3d":""), body:R.body, after:R.after, desc:"Funciona no desenho?" } }
   let body="";
   if(PSUB==="gar"){
+    const naMedida = ["reta","alternada","L"].includes(E.rampaTipo);
     const rampAdv = E.rampaTipo==="elevador"? KV(NUM("garagem.ecN","Elevadores","un",{int:true,step:1,min:1,max:3})+NUM("garagem.ecEspera","Vagas de espera","vg",{int:true,step:1,min:0,zero:true,ph:"auto"})+NUM("garagem.ecVel","Velocidade","m/s",{step:0.05,min:0.1})+NUM("garagem.ecManobra","Manobra e portas","s",{step:5,min:5,help:"Tempo de manobra e de abrir e fechar as portas em cada ponta da viagem."})+NUM("garagem.ecPico","Movimento no pico","%",{pct:true,step:1,help:"Parte das vagas que entra ou sai na hora de pico."})+NUM("garagem.ecCusto","Custo por elevador","R$",{step:10000}))
       : E.rampaTipo==="helicoidal"? KV(NUM("garagem.heliRi","Raio interno","m",{step:0.1,min:3,help:"Mínimo de 3 m."})+NUM("garagem.heliRe","Raio externo","m",{step:0.1,min:7.5,help:"Mínimo de 7,5 m."})+NUM("estudo.rampaL","Faixa de entrada","m",{step:0.05})+NUM("estudo.rampaInc","Inclinação máx.","%",{pct:true,step:1,help:"Medida no eixo da faixa."}))
-      : KV(NUM("estudo.rampaL","Largura","m",{step:0.05,help:"Mínimo de 2,75 m em mão única e 5 m em mão dupla."})+NUM("estudo.rampaInc","Inclinação","%",{pct:true,step:1,help:"Em garagens residenciais, até 20%."}));
+      : "";
     body =
     RES("Vagas", `<div id="garRes"></div>`, {aside:"", asideId:"garStat"}) +
     SEC("Acesso e rampas",
-      `<div class="fld wide"><label class="fl" for="rampSel">Circulação vertical${INFO(GAR_RAMPA_INFO[E.rampaTipo]||GAR_RAMPA_INFO.reta,"a circulação vertical")}</label><select class="sel" id="rampSel" data-p="estudo.rampaTipo" data-t="s" data-rr="1">${Object.entries(RAMPA_TIPOS).map(([k,l])=>`<option value="${k}" ${E.rampaTipo===k?"selected":""}>${l}</option>`).join("")}</select><div class="fsub" id="rampInfo"></div>${E.rampaTipo==="elevador"?`<div class="fsub" id="ecInfo"></div>`:""}</div>
+      projAcessosHTML() + GRP("Circulação vertical") +
+      `<div class="fld wide"><label class="fl" for="rampSel">Tipo${INFO(GAR_RAMPA_INFO[E.rampaTipo]||GAR_RAMPA_INFO.reta,"a circulação vertical")}</label><select class="sel" id="rampSel" data-p="estudo.rampaTipo" data-t="s" data-rr="1">${Object.entries(RAMPA_TIPOS).map(([k,l])=>`<option value="${k}" ${E.rampaTipo===k?"selected":""}>${l}</option>`).join("")}</select><div class="fsub" id="rampInfo"></div>${E.rampaTipo==="elevador"?`<div class="fsub" id="ecInfo"></div>`:""}</div>
       <div class="row sb"><span class="pill">${E.rampa?"posição desenhada":"no acesso de veículos"}</span><span class="row" style="gap:4px">${E.rampa?`<button class="btn sm ghost" data-act="rampAuto">Automática</button>`:""}<button class="btn sm" data-act="rampMover">Mover na planta</button></span></div>
-      <button class="btn pri full" data-act="acessoStudy">Encontrar o melhor acesso</button><span class="note" id="rsStat"></span><div class="list" id="rsList">${RS?rsHTML():""}</div>`+
-      ADV(rampAdv, {key:"gRampa"}),
-      {open:true, key:"gRampa", sum:garSum("rampa"), info:"O carro entra pela rua no acesso de veículos (etapa Terreno), anda no plano pelo menos 5 m e só então começa a rampa. A rampa que desce e a que sobe ficam em faixas separadas. “Encontrar o melhor acesso” testa posições do acesso e tipos de rampa e mostra as que dão mais vagas."}) +
-    SEC("Layout das vagas",
+      <button class="btn full" data-act="acessoStudy">Encontrar o melhor acesso</button><span class="note" id="rsStat"></span><div class="list" id="rsList">${RS?rsHTML():""}</div>`+
+      (rampAdv? ADV(rampAdv, {key:"gRampa"}) : ""),
+      {open:true, key:"gRampa", sum:garSum("rampa"), info:"O carro entra pela rua no acesso de veículos, anda no plano pelo menos 5 m e só então começa a rampa. A rampa que desce e a que sobe ficam em faixas separadas. “Encontrar o melhor acesso” testa posições do acesso e tipos de rampa e mostra as que dão mais vagas."}) +
+    SEC("Vagas",
       ROW(`Ângulo${INFO("90°: corredor de mão dupla. 60° e 45°: mão única, corredores mais estreitos ligados em circuito. “Melhor” testa os três e fica com o que dá mais vagas.","o ângulo das vagas")}`, SEG("estudo.angulo",[["90","90°"],["60","60°"],["45","45°"],["melhor","melhor"]],{rr:false}))+
       ROW("Fileiras",SEG("estudo.garDir",[["auto","automáticas"],["man","manual"]]))+(E.garDir==="auto"?"":SLD("estudo.garDirGraus","Rotação das fileiras",0,179,1,"°"))+
       SW("estudo.usarLayout","Usar as vagas do layout nas contas"),
       {open:true, key:"gLay", sum:garSum("lay")}) +
-    SEC("Vagas PCD e idoso", KV(NUM("estudo.pcd","PCD","%",{pct:true,step:1,help:"Vaga PCD"})+NUM("estudo.idoso","Idosos","%",{pct:true,step:1,help:"Vaga idoso"})),
+    SEC("PCD e idoso", KV(NUM("estudo.pcd","Vagas PCD","%",{pct:true,step:1,help:"Vaga PCD"})+NUM("estudo.idoso","Vagas idoso","%",{pct:true,step:1,help:"Vaga idoso"})),
       {key:"gPcd", sum:garSum("pcd"), info:"Percentuais das vagas reservadas. Ficam nas vagas mais perto dos núcleos. Para não ter vagas automáticas, zere os percentuais."}) +
-    SEC("Dimensões da vaga", KV(NUM("estudo.vagaL","Largura","m",{step:0.05})+NUM("estudo.vagaC","Comprimento","m",{step:0.05})+NUM("estudo.corredor","Corredor 90°","m",{step:0.1})+NUM("estudo.porModulo","Entre pilares","vg",{int:true,step:1,help:"Quantas vagas cabem entre dois pilares."})+NUM("estudo.pilar","Pilar","m",{step:0.05})),
+    SEC("Medidas da vaga", KV(NUM("estudo.vagaL","Largura","m",{step:0.05})+NUM("estudo.vagaC","Comprimento","m",{step:0.05})+NUM("estudo.corredor","Corredor 90°","m",{step:0.1})+NUM("estudo.porModulo","Entre pilares","vg",{int:true,step:1,help:"Quantas vagas cabem entre dois pilares."})+NUM("estudo.pilar","Pilar","m",{step:0.05}))+
+      (naMedida? GRP("Rampa")+KV(NUM("estudo.rampaL","Largura da rampa","m",{step:0.05,help:"Mínimo de 2,75 m em mão única e 5 m em mão dupla."})+NUM("estudo.rampaInc","Inclinação da rampa","%",{pct:true,step:1,help:"Em garagens residenciais, até 20%."})) : ""),
       {key:"gDim", sum:garSum("dim")}) +
     SEC("Vagas extras",
       SW("garagem.presas","Vagas presas (tandem)",{rr:true})+
@@ -22146,29 +22266,32 @@ STEP_R.projeto = ()=>{
       (X.bici==="un"? NUM("garagem.biciPorUn","Bicicletas por unidade","bic.",{step:0.1,min:0,wide:true}) : X.bici==="area"? NUM("garagem.biciM2","Uma bicicleta a cada","m² constr.",{step:5,min:1,wide:true}) : "")+
       SLD("garagem.ev","Vagas com recarga (EV)",0,1,0.05,"%",{pct:true,sub:"",help:"EV"})+`<div id="evCustoW" ${X.ev>0?"":"hidden"}>${NUM("garagem.evCusto","Custo por ponto de recarga","R$",{step:500,min:0,wide:true})}</div>`,
       {key:"gExt", sum:garSum("ext"), info:"Presas, motos (1,0 × 2,2 m) e bicicletas entram nas sobras, de frente para a circulação, sem tirar o acesso de nenhuma vaga. A recarga fica nas vagas comuns mais perto do quadro elétrico (QE), junto ao núcleo."}) +
-    SEC("Ajuste manual",
+    SEC("Editar vagas à mão",
       ROW("Toque na vaga",`<div class="seg" role="group" aria-label="O que o toque na vaga faz">${[["off","tirar"],["n","comum"],["pcd","PCD"],["idoso","idoso"]].map(([v,l])=>`<button type="button" data-act="tapm" data-v="${v}" aria-pressed="${TAPMODE===v}">${l}</button>`).join("")}</div>`)+
       `<div class="row sb"><span class="note" id="garManN"></span><button class="btn sm ghost" data-act="resetOff">Desfazer marcações</button></div>`,
       {key:"gMan", sum:garSum("man"), info:"Na planta da garagem, toque numa vaga para tirá-la ou devolvê-la, ou para marcá-la como comum, PCD ou idoso. O mesmo seletor fica na barra da planta."});
   }
-  else if(PSUB==="tipo"){
+  else {
     const bal=E.escTipo==="pf_balcao";
     const desc={ep:"Escada enclausurada com portas corta-fogo e hall de acesso. Edifícios baixos e médios.",pf_duto:"Antecâmara ventilada por dutos de entrada e saída de ar. A mais comum em residenciais altos.",pf_balcao:"Acesso pela fachada por um balcão aberto — exige núcleo encostado na fachada.",pf_press:"Escada pressurizada por ventilador; dispensa dutos na antecâmara, pede casa de máquinas."}[E.escTipo];
     body =
     RES("Andar tipo", `<div id="tipoRes"></div>`, {aside:"", asideId:"tipoStat"}) +
-    SEC("Núcleo de circulação", `<div class="fld wide"><label class="fl" for="escSel">Escada${INFO(desc||"Tipo de escada de emergência.","o tipo de escada")}</label><select class="sel" id="escSel" data-p="estudo.escTipo" data-t="s" data-rr="1">${Object.entries(ESC_TIPOS).map(([k,l])=>`<option value="${k}" ${E.escTipo===k?"selected":""}>${l}</option>`).join("")}</select></div>
+    SEC("Escadas e elevadores", `<div class="fld wide"><label class="fl" for="escSel">Escada${INFO(desc||"Tipo de escada de emergência.","o tipo de escada")}</label><select class="sel" id="escSel" data-p="estudo.escTipo" data-t="s" data-rr="1">${Object.entries(ESC_TIPOS).map(([k,l])=>`<option value="${k}" ${E.escTipo===k?"selected":""}>${l}</option>`).join("")}</select></div>
       ${ROW("Escadas",SEG("estudo.nEsc",[[1,"1"],[2,"2"]],{rr:false}))}${ROW("Elevadores",SEG("estudo.elevadores",[[0,"auto"],[1,"1"],[2,"2"],[3,"3"],[4,"4"]],{rr:false}))}
-      ${SW("estudo.emerg","Elevador de emergência")}${SW("estudo.fachada",bal?"Núcleo na fachada (obrigatório com balcão)":"Núcleo encostado na fachada",{dis:bal})}`,
+      ${SW("estudo.emerg","Elevador de emergência")}${SW("estudo.fachada",bal?"Núcleo na fachada (obrigatório com balcão)":"Núcleo encostado na fachada",{dis:bal})}`+
+      ADV(ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
+        {key:"tPos", label:"Posição do núcleo", fechar:"Fechar posição do núcleo"}),
       {open:true, key:"tNuc", sum:tipoSum("nuc"), info:"Núcleo"}) +
-    SEC("Posição no andar", ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
-      {open:true, key:"tPos", sum:tipoSum("pos")}) +
-    SEC("Dimensões", KV(NUM("estudo.corrTipo","Corredor / hall","m",{step:0.05})+NUM("estudo.profMin","Prof. mín. unidade","m",{step:0.25})+NUM("produto.sacProf","Prof. sacada","m",{step:0.1})),
-      {key:"tDim", sum:tipoSum("dim"), info:"Dimensões de estudo. Confirme saídas, tipo de escada e elevador de emergência com a NBR 9077 e a IN do Corpo de Bombeiros."}) +
+    SEC("Medidas do andar", KV(NUM("estudo.corrTipo","Corredor / hall","m",{step:0.05})+NUM("estudo.profMin","Prof. mín. da unidade","m",{step:0.25})+NUM("produto.sacProf","Prof. da sacada","m",{step:0.1,help:"Sacada"})),
+      {key:"tDim", sum:tipoSum("dim"), info:"Medidas de estudo do pavimento tipo. Confirme saídas, tipo de escada e elevador de emergência com a NBR 9077 e a IN do Corpo de Bombeiros."}) +
     SEC("Núcleo e unidades por torre", `<div id="tipoDet"></div>`, {key:"tDet", sum:"áreas do núcleo e das unidades"});
   }
-  else body = RES("Andares do edifício", `<div class="list" id="andList"></div><p class="note">Toque num andar para ver a planta. Nas garagens, toque nas vagas para editar.</p>`, {aside:"", asideId:"andStat"}) + `<button class="btn full" data-act="corte3d">Ver o andar selecionado cortado no 3D</button>`;
-  return { sub, subKey:PSUB, body };
+  return { sub, subKey:PSUB, body, desc:"Funciona no desenho?" };
 };
+/* Andares: lista de todos os pavimentos (antiga sub-aba) e as saídas/acessibilidade, depois de alas (52) e cômodos (55) */
+addCard("projeto", { key:"andares", order:60, sub:"tipo", html:()=>SEC("Todos os andares", `<div class="list andpilha" id="andList"></div><button class="btn full" data-act="corte3d">Ver o andar cortado no 3D</button>`,
+  {open:true, key:"andares", sum:"", info:"Toque num andar para ver a planta dele no palco. Nas garagens, toque nas vagas para editar."}) });
+addCard("projeto", { key:"nrmList", order:65, sub:"tipo", html:()=>projNormasHTML() });
 /* textos de ajuda e resumos das seções do Projeto */
 const GAR_RAMPA_INFO = { reta:"Todas na mesma projeção: em cada pavimento o carro chega pela ponta de dentro e volta até a frente para descer de novo.",
   alternada:"Duas faixas lado a lado com sentidos opostos: o carro chega e já faz o retorno para a próxima rampa na mesma ponta.",
@@ -22177,7 +22300,7 @@ const GAR_RAMPA_INFO = { reta:"Todas na mesma projeção: em cada pavimento o ca
   elevador:"Para lotes estreitos: vagas de espera na entrada, poço com cabine de 2,7 × 5,8 m e área de acomodação em cada pavimento." };
 function garSum(k, m){
   const E=S.estudo, X=S.garagem||DEF.garagem;
-  if(k==="rampa") return `${esc(RAMPA_TIPOS[E.rampaTipo]||"")} · ${E.rampa?"desenhada":"no acesso"}`;
+  if(k==="rampa") return `veículos ${pct(S.lote.acessoVei,0)} · ${esc(RAMPA_TIPOS[E.rampaTipo]||"")}${E.rampa?" · desenhada":""}`;
   if(k==="lay") return `${E.angulo==="melhor"?"melhor ângulo":E.angulo+"°"} · fileiras ${E.garDir==="auto"?"automáticas":"manuais"}`;
   if(k==="pcd"){ if(m && m.gar){ let p=0,i=0; Object.values(m.gar).forEach(l=>{ if(l&&l.vagas) l.vagas.forEach(v=>{ if(v.tipo==="pcd") p++; else if(v.tipo==="idoso") i++ }) }); return `<b>${p}</b> PCD · <b>${i}</b> idoso` } return `PCD ${pct(E.pcd,0)} · idoso ${pct(E.idoso,0)}` }
   if(k==="dim") return `${nf(E.vagaL,2)} × ${nf(E.vagaC,2)} m · corredor ${nf(E.corredor,1)} m`;
@@ -22192,7 +22315,9 @@ function tipoSum(k){
   if(k==="dim") return `corredor ${nf(E.corrTipo,2)} m · prof. ${nf(E.profMin,2)} m`;
   return "";
 }
-STEP_LIVE.projeto = (m)=>{
+STEP_LIVE.projeto = (m, f, fast)=>{
+  if(PSUB==="sol" || PSUB==="vento"){ STEP_LIVE.clima(); return }
+  if(PSUB==="gar") projAcessosLive(m);
   if(PSUB==="gar" && m.gar){
     const flo=Object.keys(m.gar).sort((a,b)=>{ const o=k=>k==="ter"?0:k[0]==="s"? -(+k.slice(1)) : +k.slice(1); return o(a)-o(b) });
     const ok=m.vagas>=m.vagasReq, gs=document.getElementById("garStat"); if(gs) gs.innerHTML = `<span class="pill ${ok?"ok":"bad"}">${ok?"atende":"faltam "+(m.vagasReq-m.vagas)}</span>`;
@@ -22220,18 +22345,19 @@ STEP_LIVE.projeto = (m)=>{
     if(ts) ts.innerHTML = !ok.length? "" : `<span class="pill ${baixo?"warn":"ok"}">${baixo? baixo+" abaixo do alvo" : "áreas no alvo"}</span>`;
     const met=(l,v,s)=>`<div class="met"><div class="l">${l}</div><div class="v">${v}</div>${s?`<div class="s">${s}</div>`:""}</div>`;
     setHTML("tipoRes", !ok.length? `<p class="note">Sem andar tipo no produto atual.</p>`
-      : ok.length===1? `<div class="mets">${met("Unidades por andar", ok[0].us.length, ok[0].l.dbl?"corredor central":"corredor lateral")+met(`Eficiência do andar${INFO("Eficiência")}`, pct(ok[0].ef,0), "unidades ÷ andar")+met("Núcleo", m2(ok[0].l.coreA))}</div>`
-      : `<table class="tbl"><tr><th>Torre</th><th>Un./andar</th><th>Efic. do andar${INFO("Eficiência")}</th><th>Núcleo</th></tr>${R.map((r,i)=>r? `<tr><td>Torre ${i+1}</td><td>${r.us.length}</td><td>${pct(r.ef,0)}</td><td>${m2(r.l.coreA)}</td></tr>` : `<tr><td>Torre ${i+1}</td><td colspan="3">sem andar tipo</td></tr>`).join("")}</table>`);
+      : ok.length===1? `<div class="mets">${met("Unidades por andar", ok[0].us.length, ok[0].l.dbl?"corredor central":"corredor lateral")+met(`Aproveitamento${INFO("Aproveitamento do andar")}`, pct(ok[0].ef,0), "privativo ÷ andar")+met("Núcleo", m2(ok[0].l.coreA))}</div>`
+      : `<table class="tbl"><tr><th>Torre</th><th>Un./andar</th><th>Aproveit.${INFO("Aproveitamento do andar")}</th><th>Núcleo</th></tr>${R.map((r,i)=>r? `<tr><td>Torre ${i+1}</td><td>${r.us.length}</td><td>${pct(r.ef,0)}</td><td>${m2(r.l.coreA)}</td></tr>` : `<tr><td>Torre ${i+1}</td><td colspan="3">sem andar tipo</td></tr>`).join("")}</table>`);
     setHTML("tipoDet", ok.map(({i,t,l,us})=>{ const K=l.coreKinds||{};
       return `${ok.length>1?`<p class="fl" style="margin:4px 0"><b>Torre ${i+1}</b></p>`:""}
         <div class="stack">${Object.entries(K).filter(([k,a])=>a>0.3).map(([k,a])=>`<span title="${nomes[k]||k}" style="width:${a/l.coreA*100}%;background:var(--c-${k})"></span>`).join("")}</div>
         <div class="stackleg">${Object.entries(K).filter(([k,a])=>a>0.3).map(([k,a])=>`<span><i style="background:var(--c-${k})"></i>${nomes[k]||k} ${nf(a,1)} m²</span>`).join("")}</div>
         <table class="tbl">${us.map(u=>`<tr><td>${esc(u.nome)} · alvo ${nf(u.alvo,0)} m²</td><td style="${u.area<u.alvo?"color:var(--bad)":""}">${nf(u.area,1)} m²</td></tr>`).join("")}</table>` }).join(""));
-    setSum("tNuc", tipoSum("nuc")); setSum("tPos", tipoSum("pos")); setSum("tDim", tipoSum("dim"));
-    if(ok.length) setSum("tDet", ok.map(r=>`núcleo ${m2(r.l.coreA)}`).join(" · "));
+    setSum("tNuc", tipoSum("nuc")); setSum("tDim", tipoSum("dim"));
+    if(ok.length) setSum("tDet", [...new Set(ok.map(r=>`núcleo ${m2(r.l.coreA)}`))].join(" · "));
+    projNormasLive(m, fast);
   }
-  if(PSUB==="andar"){
-    const fl=floorsList(m).slice().reverse(), as=document.getElementById("andStat"); if(as) as.textContent=`${fl.length} pavimentos · ${nf(m.H,1)} m`;
+  if(document.getElementById("andList")){
+    const fl=floorsList(m).slice().reverse(); setSum("andares", `${fl.length} pavimentos · ${nf(m.H,1)} m`);
     setHTML("andList", fl.map(a=>{ const lay = a.tipo==="ter"? m.gar&&m.gar.ter : a.lay? m.gar&&m.gar[a.lay] : null;
       const info = a.tipo==="tipo"? `${m.T.filter(t=>t.pav>a.j).reduce((s,t)=>s+t.units/Math.max(1,t.pav),0).toFixed(0)} un · +${nf(a.z0,1)} m` : lay? `${lay.count} vagas · ${nf(a.z0,1)} m` : `${nf(a.z0,1)} m`;
       return `<div class="li clk ${ANDAR===a.key&&VIEW==="andar"?"on":""}" data-act="andar" data-k="${a.key}" role="button" tabindex="0"><span class="dot ${a.tipo==="tipo"?"ok":a.tipo==="ter"?"warn":""}"></span><span class="tt">${a.nome}</span><span class="ss">${info}</span></div>` }).join(""));
@@ -22248,7 +22374,7 @@ function garLegExtra(sw){ const m=window._last&&window._last.m, q=m&&m.quadroVag
   return h }
 let RS=null;
 function rsHTML(){ const base=RS.cur? RS.cur.vagas : 0;
-  return RS.list.slice(0,4).map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${c.atual?"Atual":k===0?"Melhor acesso":"Opção "+(k+1)} · ${c.lado!=null && S.lote.front.length>1? `L${c.lado+1}${c.lado===acPrincipal(S)?" (principal)":""} · ${pct(c.acessoVei,0)} do lado` : `${pct(c.acessoVei,0)} da frente`}</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">${c.rampaTipo==="elevador"? `Elevador de carros${c.cap?` · ${c.cap} carros/h`:""}${c.fila!=null&&isFinite(c.fila)?` · fila ${c.fila}`:""}` : c.rampaTipo==="alternada"? "Rampas alternadas" : c.rampaTipo==="reta"? "Rampas retas empilhadas" : (RAMPA_TIPOS[c.rampaTipo]||"")}${c.ok?"":" · com pendências"}</div>${c.atual?"":`<button class="btn sm ${k===0?"pri":""}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
+  return RS.list.slice(0,4).map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${c.atual?"Atual":k===0?"Melhor acesso":"Opção "+(k+1)} · ${c.lado!=null && S.lote.front.length>1? `L${c.lado+1}${c.lado===acPrincipal(S)?" (principal)":""} · ${pct(c.acessoVei,0)} do lado` : `${pct(c.acessoVei,0)} da frente`}</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">${c.rampaTipo==="elevador"? `Elevador de carros${c.cap?` · ${c.cap} carros/h`:""}${c.fila!=null&&isFinite(c.fila)?` · fila ${c.fila}`:""}` : c.rampaTipo==="alternada"? "Rampas alternadas" : c.rampaTipo==="reta"? "Rampas retas empilhadas" : (RAMPA_TIPOS[c.rampaTipo]||"")}${c.ok?"":" · com pendências"}</div>${c.atual?"":`<button class="btn sm${k===0?"":" ghost"}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
     + `<div class="row sb"><span class="note">Atual: ${base} vagas ${INFO("Cada opção refaz todos os pavimentos com rotas verificadas (análise rápida); as quatro melhores são confirmadas com o cálculo completo.","o estudo de acesso")}</span><button class="btn sm ghost" data-act="rsClose">Fechar</button></div>` }
 Object.assign(ACT,{
   garFl: b=>{ FLOOR=b.dataset.k; if(VIEW!=="gar") setView("gar"); else { viewbarSegs(window._last.m); fit2d() } STEP_LIVE.projeto(window._last.m) },
@@ -26275,11 +26401,14 @@ HOOK.pdf.push(async ctx=>{
   doc.setFont("helvetica","bold"); doc.text(T(`${U.length} unidades`),M,ctx.y()+1); doc.text(T(brl(m.unidadesTot)),PW-M,ctx.y()+1,{align:"right"}); ctx.setY(ctx.y()+6);
 });
 
-/* ================= 1.4 impacto de vizinhança: card no Clima › Sol, mapa na planta e no 3D, animação anual e PDF ================= */
+/* ================= 1.4 impacto de vizinhança: card em Projeto › Sol (addCard "clima"/sol vira projeto/sol pelo ETAPA_ALIAS),
+   mapa na planta e no 3D, animação anual e PDF ================= */
 const VZ = { anim:null };
 const VZ_MESES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
 const VZ_STOPS=[[0,[247,222,150]],[0.5,[226,128,62]],[1,[160,38,34]]];
 const vzOn = ()=> !!(S.vizinhanca && S.vizinhanca.on);
+/* a sub-aba Sol está na tela (Projeto › Sol, ou a etapa Clima › Sol enquanto ela existir) */
+const vzSolNaTela = ()=> typeof climaSolNaTela==="function"? climaSolNaTela() : (typeof emClima==="function" && emClima() && (TAB==="projeto"? PSUB==="sol" : CSUB==="sol"));
 /* a prévia rápida (enquanto o Worker calcula) não traz m.viz: usa o último resultado completo */
 function vzR(m){ if(m && m.viz){ VZ.ultimo=m.viz; return m.viz } return vzOn()? VZ.ultimo : null }
 
@@ -26287,10 +26416,10 @@ addCard("clima", { key:"viz", sub:"sol", order:45,
   html: ()=>{
     const V=S.vizinhanca, has=(S.entorno||[]).some(e=>e.pts&&e.pts.length>2&&+e.h>0);
     const body = SW("vizinhanca.on","Calcular o sol tirado dos vizinhos",{rr:true}) + (!V.on ? ""
-      : !has ? `<p class="note">Sem entorno: use “Gerar genéricos” na seção Entorno.</p>`
+      : !has ? `<p class="note">Sem vizinhos: crie-os na seção Vizinhos e ruas, logo abaixo.</p>`
       : `<div id="vzSum"></div><div id="vzTab"></div><div id="vzMeses"></div>`+
         SLD("vizinhanca.mes","Mapa do dia 21 de",1,12,1,"",{fmt:"mes"})+SW("vizinhanca.mapa","Mapa de horas perdidas na planta e no 3D",{fx:"vzMapa"})+
-        `<div class="row"><button class="btn sm pri" data-act="vzAnim" id="vzAnimBtn">${VZ.anim?"❚❚ Pausar":"▶ Animar a sombra no ano"}</button></div>`);
+        `<div class="row"><button class="btn sm" data-act="vzAnim" id="vzAnimBtn">${VZ.anim?"❚❚ Pausar":"▶ Animar a sombra no ano"}</button></div>`);
     return SEC("Impacto de vizinhança", body, {key:"viz", sum: !V.on? "desligado" : !has? "sem entorno" : (VZ.ultimo? `perda média <b>${nf(VZ.ultimo.perdaInv,1)} h</b>/dia` : "calculando…"), info:"Horas de sol nas fachadas e coberturas do entorno, com e sem o empreendimento, no dia 21 de cada mês. Ajuda a antecipar o EIV (estudo de impacto de vizinhança)."});
   },
   live: m=>vzLive(m)
@@ -26334,7 +26463,7 @@ HOOK.draw2d.push((g, ctx)=>{
 
 /* ---------- 3D: mapa no chão e fachadas vizinhas coloridas pela perda ---------- */
 HOOK.draw3d.push((grp, m)=>{
-  const r=vzR(m); if(!vzOn()||!S.vizinhanca.mapa||!r||TAB!=="clima"||CSUB!=="sol") return;
+  const r=vzR(m); if(!vzOn()||!S.vizinhanca.mapa||!r||!vzSolNaTela()) return;
   const M=r.mapa, k=(M?M.mes:r.mes)-1;
   if(M && !VZ.anim){ const cv=vzCanvas(M), z=0.16, X0=M.x0, Y0=M.y0, X1=M.x0+M.nx*M.cs, Y1=M.y0+M.ny*M.cs;
     const geo=new THREE.BufferGeometry(), P=a=>[a[0],z,-a[1]];

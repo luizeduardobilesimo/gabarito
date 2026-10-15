@@ -354,14 +354,20 @@ function cfdRefresh(all){
   if(all) cfdParticlesInit();
   cfdLegend(); render3();
 }
-function cfdOnField(){ if(VIEW!=="v3d") return; cfdRefresh(false); cfdStatus(); if(CFD.probe) cfdProbeAt(CFD.probe.pt) }
+function cfdOnField(){ if(VIEW!=="v3d" || !cfdNoTunel()) return;
+  // com quadros muito lentos (3D por software), não redesenha a cada campo novo: deixa a página respirar entre um e outro
+  const agora=performance.now(); if(CFD.quadro>120 && agora-(CFD.ultRef||0) < 3*CFD.quadro){ cfdStatus(); return } CFD.ultRef=agora;
+  cfdRefresh(false); cfdStatus(); if(CFD.probe) cfdProbeAt(CFD.probe.pt) }
 function cfdLoop(){
   if(VIEW!=="v3d"){ CFD.raf=null; return }
-  const now=performance.now(), dt=Math.min(0.05,(now-(CFD.t||now))/1000); CFD.t=now;
+  if(!cfdNoTunel()){ CFD.raf=null; cfdStop(); return }   // saiu da sub-aba do túnel com o palco ainda nele: pausa e volta ao 3D comum
+  const now=performance.now(), bruto=now-(CFD.t||now), quadro=bruto-(CFD.esp||0), dt=Math.min(0.05,bruto/1000); CFD.t=now; CFD.esp=0; if(bruto>0) CFD.quadro=quadro;
   let draw=false; if(CFD.parts){ cfdParticlesStep(dt); draw=true }
   if(CFD.slMat){ CFD.slMat.uniforms.uTime.value+=dt*S.cfd.animVel; draw=true }
   if(draw) render3();
-  CFD.raf=requestAnimationFrame(cfdLoop);
+  // quadro muito lento (3D por software, máquina carregada): espera 1,5× o tempo dele antes do próximo, para a página seguir respondendo
+  if(draw && quadro>120){ const tk={}, esp=Math.min(10000, 1.5*quadro); CFD.raf=tk; CFD.esp=esp; setTimeout(()=>{ if(CFD.raf===tk) CFD.raf=requestAnimationFrame(cfdLoop) }, esp) }
+  else CFD.raf=requestAnimationFrame(cfdLoop);
 }
 function cfdBuildings(){ // prédio com o mesmo render do 3D (materiais, pavimentos, sombras)
   const corte=S.corte; S.corte=""; rebuild3d(window._last.m,true); S.corte=corte; V3.grp.visible=true;
@@ -377,9 +383,23 @@ function cfdEnter(){
   if(!CFD.dom || CFD.sig!==d.sig){ cfdStart(true) } else { cfdGroup(); if(!CFD.bld) cfdBuildStatic(); CFD.grp.visible=true; cfdRefresh(true); cfdFit() }
   if(CFD.grp) CFD.grp.visible=true;
   document.getElementById("cfdBar").hidden=false; document.getElementById("cfdLegend").hidden=false;
-  cfdBarUI(); cfdStatus(); if(!CFD.raf) CFD.raf=requestAnimationFrame(cfdLoop);
+  cfdBarUI(); cfdStatus(); if(!CFD.raf){ CFD.t=0; CFD.esp=0; CFD.raf=requestAnimationFrame(cfdLoop) }
 }
 function cfdLeave(){ if(V3.R) V3.R.toneMappingExposure=0.92; if(CFD.grp) CFD.grp.visible=false; if(V3.grp) V3.grp.visible=true; if(CFD.raf){ cancelAnimationFrame(CFD.raf); CFD.raf=null } document.getElementById("cfdBar").hidden=true; document.getElementById("cfdLegend").hidden=true; document.getElementById("cfdProbe").hidden=true; document.getElementById("cfdProbe").dataset.k=""; if(CFD.running) cfdPause(); applySun() }
+/* o túnel só roda com a sub-aba Vento › Túnel 3D na tela (Projeto, ou a etapa Clima enquanto ela existir). Trocar de etapa
+   ou de sub-aba sem trocar a vista (ex.: Entrega, que não pede vista) deixava a simulação e a animação rodando e travava a
+   página; cfdLoop confere a cada quadro e chama cfdStop, que pausa o Worker, para a animação e devolve o palco ao 3D comum. */
+function cfdNoTunel(){
+  if(typeof TAB==="undefined" || typeof CSUB==="undefined") return true;
+  if(typeof emClima==="function" ? !emClima() : TAB!=="clima") return false;
+  if(TAB==="projeto" && typeof PSUB!=="undefined" && PSUB!=="vento") return false;
+  return CSUB==="v3d";
+}
+function cfdStop(){
+  if(VIEW==="v3d"){ setView("3d"); return }   // setView → cfdLeave (pausa, esconde a barra e a legenda)
+  if(CFD.raf){ cancelAnimationFrame(CFD.raf); CFD.raf=null }
+  if(CFD.running) cfdPause();
+}
 function cfdStatus(msg){
   const el=document.getElementById("cfdStat"), el2=document.getElementById("cfdStat2"); const F=CFD.field, d=CFD.dom;
   const txt = msg || (!F? "Preparando a malha…" : `${CFD.running?"Simulando":"Pausado"} · passo ${nf(F.step,0)} · ${F.navg>2? "médias com "+nf(F.navg,0)+" amostras" : pct(Math.min(1,F.step/(1.2*d.nx/0.085)),0)+" até o regime"} · ${d.nx}×${d.ny}×${d.nz} células de ${nf(d.dx,1)} m`);

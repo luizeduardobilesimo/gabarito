@@ -1,8 +1,11 @@
-/* ================= 1.4 impacto de vizinhança: card no Clima › Sol, mapa na planta e no 3D, animação anual e PDF ================= */
+/* ================= 1.4 impacto de vizinhança: card em Projeto › Sol (addCard "clima"/sol vira projeto/sol pelo ETAPA_ALIAS),
+   mapa na planta e no 3D, animação anual e PDF ================= */
 const VZ = { anim:null };
 const VZ_MESES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
 const VZ_STOPS=[[0,[247,222,150]],[0.5,[226,128,62]],[1,[160,38,34]]];
 const vzOn = ()=> !!(S.vizinhanca && S.vizinhanca.on);
+/* a sub-aba Sol está na tela (Projeto › Sol, ou a etapa Clima › Sol enquanto ela existir) */
+const vzSolNaTela = ()=> typeof climaSolNaTela==="function"? climaSolNaTela() : (typeof emClima==="function" && emClima() && (TAB==="projeto"? PSUB==="sol" : CSUB==="sol"));
 /* a prévia rápida (enquanto o Worker calcula) não traz m.viz: usa o último resultado completo */
 function vzR(m){ if(m && m.viz){ VZ.ultimo=m.viz; return m.viz } return vzOn()? VZ.ultimo : null }
 
@@ -10,10 +13,10 @@ addCard("clima", { key:"viz", sub:"sol", order:45,
   html: ()=>{
     const V=S.vizinhanca, has=(S.entorno||[]).some(e=>e.pts&&e.pts.length>2&&+e.h>0);
     const body = SW("vizinhanca.on","Calcular o sol tirado dos vizinhos",{rr:true}) + (!V.on ? ""
-      : !has ? `<p class="note">Sem entorno: use “Gerar genéricos” na seção Entorno.</p>`
+      : !has ? `<p class="note">Sem vizinhos: crie-os na seção Vizinhos e ruas, logo abaixo.</p>`
       : `<div id="vzSum"></div><div id="vzTab"></div><div id="vzMeses"></div>`+
         SLD("vizinhanca.mes","Mapa do dia 21 de",1,12,1,"",{fmt:"mes"})+SW("vizinhanca.mapa","Mapa de horas perdidas na planta e no 3D",{fx:"vzMapa"})+
-        `<div class="row"><button class="btn sm pri" data-act="vzAnim" id="vzAnimBtn">${VZ.anim?"❚❚ Pausar":"▶ Animar a sombra no ano"}</button></div>`);
+        `<div class="row"><button class="btn sm" data-act="vzAnim" id="vzAnimBtn">${VZ.anim?"❚❚ Pausar":"▶ Animar a sombra no ano"}</button></div>`);
     return SEC("Impacto de vizinhança", body, {key:"viz", sum: !V.on? "desligado" : !has? "sem entorno" : (VZ.ultimo? `perda média <b>${nf(VZ.ultimo.perdaInv,1)} h</b>/dia` : "calculando…"), info:"Horas de sol nas fachadas e coberturas do entorno, com e sem o empreendimento, no dia 21 de cada mês. Ajuda a antecipar o EIV (estudo de impacto de vizinhança)."});
   },
   live: m=>vzLive(m)
@@ -57,7 +60,7 @@ HOOK.draw2d.push((g, ctx)=>{
 
 /* ---------- 3D: mapa no chão e fachadas vizinhas coloridas pela perda ---------- */
 HOOK.draw3d.push((grp, m)=>{
-  const r=vzR(m); if(!vzOn()||!S.vizinhanca.mapa||!r||TAB!=="clima"||CSUB!=="sol") return;
+  const r=vzR(m); if(!vzOn()||!S.vizinhanca.mapa||!r||!vzSolNaTela()) return;
   const M=r.mapa, k=(M?M.mes:r.mes)-1;
   if(M && !VZ.anim){ const cv=vzCanvas(M), z=0.16, X0=M.x0, Y0=M.y0, X1=M.x0+M.nx*M.cs, Y1=M.y0+M.ny*M.cs;
     const geo=new THREE.BufferGeometry(), P=a=>[a[0],z,-a[1]];

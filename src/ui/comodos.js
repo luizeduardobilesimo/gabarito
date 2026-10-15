@@ -98,7 +98,7 @@ function comDragMove(d, w){
 }
 function comDragEnd(){ COMDRAG=null; update(); if(TAB==="projeto") renderTab() }
 
-/* ---------- inspetor (Projeto › Pavimento tipo) ---------- */
+/* ---------- inspetor (Projeto › Andares) ---------- */
 function comTiposSync(){ const C=S.comodos; C.tipos=C.tipos||[]; [...new Set(S.produto.mix.map(u=>u.nome))].forEach(n=>comTipoEntry(n)) }
 /* a tipologia usa um modelo em que o lavabo é opcional (3 dormitórios ou mais)? */
 function comLavOpc(nome){ const it=S.produto.mix.find(u=>u.nome===nome), mk=comModeloDe(S, nome, it? it.area : 60); return !!COM_MODELOS[mk] && COM_MODELOS[mk].lavabo==="opc" }

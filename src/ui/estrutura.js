@@ -1,5 +1,5 @@
 /* ================= 2.2 malha estrutural — interface =================
-   Card na etapa Projeto (todas as sub-abas), comparação de malhas (num Worker próprio, para não travar a página),
+   Card "Pilares (malha estrutural)" em Projeto › Garagem, comparação de malhas (num Worker próprio, para não travar a página),
    pilares nas plantas (HOOK.draw2d) e no 3D (HOOK.draw3d). Cálculo em src/calc/estrutura.js. */
 let ESTR_CMP = null; // {sig, list, rodando}
 const estrSig = ()=> JSON.stringify([S.lote, S.regras, S.produto, S.estudo, S.custom, S.estrutura, S.forma||0]);
@@ -7,14 +7,14 @@ function estrCardHTML(){
   const ES=S.estrutura;
   let h = SW("estrutura.on","Malha estrutural coordenada",{rr:true});
   const INF="Pilares da torre nas paredes entre unidades e no núcleo, casados com o módulo da garagem. O que não alinha vira viga de transição, com custo.";
-  if(!ES.on) return SEC("Malha estrutural", h, {key:"estrutura", sum:"desligada", info:INF});
+  if(!ES.on) return SEC("Pilares (malha estrutural)", h, {key:"estrutura", sum:"desligada", info:INF});
   h += SEG("estrutura.malha",[["casada","Casada com a garagem","Ajusta cada pilar (até a tolerância) para cair entre as vagas"],["paredes","Só nas paredes","Pilares exatamente nos encontros das paredes, sem coordenação"]],{full:true, label:"Malha"});
   h += `<div id="estrMet" class="kv" style="margin-top:4px"></div>`;
   h += `<div class="row"><button type="button" class="btn sm" data-act="estrComparar" id="estrCmpBtn">Comparar malhas</button><span class="note" id="estrCmpTxt"></span></div><div id="estrCmp"></div>`;
   h += ADV(KV((ES.malha==="casada"? NUM("estrutura.tol","Ajuste máx. do pilar","m",{step:0.1,min:0,max:2,help:"Quanto um pilar pode sair do encontro das paredes para descer entre as vagas"}) : "") + NUM("estrutura.vaoMax","Vão máximo","m",{step:0.5,min:3,max:15}))+
     `<div data-q="custo transição">${SW("estrutura.custo","Somar as transições ao custo da obra",{rr:true})}</div>`+
     (ES.custo? KV(NUM("estrutura.custoM","Viga de transição","R$/m",{step:250,min:0,help:"Custo por metro de viga; multiplicado pelo vão e por um fator de carga (0,5 + pavimentos ÷ 20)"})) : ""), {key:"estrAdv"});
-  return SEC("Malha estrutural", h, {key:"estrutura", sum:"pilares e transições", info:INF});
+  return SEC("Pilares (malha estrutural)", h, {key:"estrutura", sum:"pilares e transições", info:INF});
 }
 function estrMetHTML(m){
   const e=m && m.estr; if(!e) return `<p class="note">${S.estrutura.on? "Calculando os pilares…" : ""}</p>`;

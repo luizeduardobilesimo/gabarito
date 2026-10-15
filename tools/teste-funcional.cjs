@@ -693,8 +693,8 @@ async function tProjeto(b) {
   await p.selectOption('#tabbody select[data-p="comodos.tipos.0.modelo"]', { index: 2 }); await fim();
   ok(await ev(() => S.comodos.tipos[0].modelo !== 'auto'), 'cômodos: trocar o modelo da tipologia', await ev(() => S.comodos.tipos[0].modelo));
   await undo(); ok(await h.J('S.comodos.tipos') === mod0, '  Ctrl+Z volta o modelo', await ev(() => S.comodos.tipos[0].modelo));
-  // andares
-  await sub('andar');
+  // andares (lista dentro de Projeto › Andares, UX v3)
+  await sub('tipo'); await h.abre('andares');
   const n = await p.locator('#andList .li').count(); ok(n > 3, 'andares: lista de pavimentos', n);
   await p.locator('#andList .li').nth(2).click(); await W(300);
   const k2 = await ev(() => ANDAR); ok(await ev(() => VIEW === 'andar') && await p.locator('#andList .li.on').count() === 1, 'andares: escolher um andar', k2);
@@ -718,7 +718,7 @@ async function tClima(b) {
   await p.click('#sunPlay'); await W(300); ok(await ev(() => !SUNANIM), 'sol: pausar a animação');
   // seção de entorno: uma só, a mesma do Terreno
   const secs = await ev(() => [...document.querySelectorAll('#tabbody details.sec .st')].map(e => e.textContent.trim()));
-  ok(secs.filter(t => /entorno|volumes/i.test(t)).length === 1, 'uma única seção de entorno no Clima', secs.filter(t => /entorno|volumes/i.test(t)));
+  ok(secs.filter(t => /entorno|volumes|vizinhos e ruas/i.test(t)).length === 1, 'uma única seção de entorno no Clima', secs.filter(t => /entorno|volumes|vizinhos e ruas/i.test(t)));
   await abre('entedit'); await p.click('#tabbody [data-act=entGen]'); await fim();
   const ne = await ev(() => S.entorno.length); ok(ne > 0, 'entorno: gerar genéricos', ne);
   await abre('entedit'); await h.mais('entedit');
@@ -740,7 +740,7 @@ async function tClima(b) {
   await undo(); ok(await ev(() => S.clima.ventoDir !== 180), '  Ctrl+Z volta a direção');
   ok(/m\/s/.test(await p.locator('#ventoInfo').textContent()), 'vento: resultado');
   // túnel de vento 3D
-  await sub('v3d'); await W(4000);
+  await p.click('#tabbody [data-act=vmodo][data-v=v3d]'); await W(4000);
   ok(await ev(() => VIEW === 'v3d' && !!CFD.dom), 'túnel 3D: vista');
   const r0 = await ev(() => CFD.running); await p.click('#tabbody [data-act=cfdPlay]'); await W(500);
   ok(await ev(() => CFD.running) !== r0, 'túnel 3D: iniciar/pausar', `${r0} → ${await ev(() => CFD.running)}`);
