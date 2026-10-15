@@ -46,7 +46,7 @@ FX.pf = ()=>{ save(); paretoLive() };
 Object.assign(ACT, {
   pfF: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; save(); renderTab() },
   pfSel: el=>{ PF_SEL=+el.dataset.i; paretoLive() },
-  pfApply: b=>{ const r=OTIM&&OTIM.pareto&&OTIM.pareto.pts[+b.dataset.i]; if(!r) return; PF_SEL=+b.dataset.i; aplicarOtim(r); renderTab(); fit3d();
+  pfApply: b=>{ const r=OTIM&&OTIM.pareto&&OTIM.pareto.pts[+b.dataset.i]; if(!r) return; PF_SEL=+b.dataset.i; aplicarOtim(r); renderTab(); fit3dDepois();
     toast(`Aplicado: lucro ${mi(r.lucro)} · sol ${nf(r.sol,1)} h · ${r.vagas}/${r.req} vagas — Ctrl+Z desfaz`) },
   otk2: b=>{ const k=b.dataset.k; S.otim[k]=!S.otim[k]; save(); renderTab() },
 });

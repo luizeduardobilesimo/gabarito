@@ -87,7 +87,7 @@ const PROG_AVANCA = {
   produto: ()=>({rotulo:"Ver a viabilidade →", etapa:"viab", sub:"res"}),
   viab:    ()=>({rotulo:"Conferir o projeto →", etapa:"projeto", sub:"gar"}),
   projeto: sub=>({ gar:{rotulo:"Conferir os andares →", etapa:"projeto", sub:"tipo"}, tipo:{rotulo:"Ver o sol →", etapa:"projeto", sub:"sol"},
-    sol:{rotulo:"Ver o vento →", etapa:"projeto", sub:"vento"} }[sub] || {rotulo:"Entregar →", etapa:"cen", sub:null}),
+    sol:{rotulo:"Ver o vento →", etapa:"projeto", sub:"vento"} }[sub] || {rotulo:"Entregar →", etapa:"cen", sub:"entregar"}),
   cen:     ()=>({rotulo:"Baixar relatório PDF", etapa:"cen", sub:null, act:"progPdf"}),
 };
 function proximoPasso(st, m, f, tab, sub){

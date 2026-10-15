@@ -26,9 +26,15 @@ function stageBackdrop(dark){
 }
 function render3(){ if(V3.R) V3.R.render(V3.scene,V3.cam) }
 function size3d(){ if(!V3.R) return; const c3=document.getElementById("c3d"), r=c3.getBoundingClientRect(); if(!r.width) return; V3.R.setSize(r.width,r.height,false); V3.cam.aspect=r.width/r.height; V3.cam.updateProjectionMatrix(); render3() }
+/* enquadra agora e de novo quando o cálculo completo chegar (troca de estudo, opção aplicada: a altura do prédio muda) */
+function fit3dDepois(){ fit3d(); if(typeof calcPronto==="function") calcPronto().then(()=>{ try{ fit3d() }catch(e){} }, ()=>{}) }
+/* enquadra o lote e o prédio: a esfera que envolve o lote (raio = maior distância ao centro) e a altura cabe no menor ângulo de visão
+   (vertical ou horizontal, pela proporção do palco), olhando de cima e de lado */
 function fit3d(m){ if(!V3.R) return; const L=S.lote.pts, c=G.centroid(L); m=m||(window._last&&window._last.m); const span=Math.max(...L.map(q=>Math.hypot(q[0]-c[0],q[1]-c[1]))); const h=m? m.H:30;
-  let d=Math.max(span*2.6, h*1.6, 40); const r=document.getElementById("c3d").getBoundingClientRect(); if(r.width&&r.height) d*=Math.max(1, r.height/r.width*1.15);
-  V3.ctl.target.set(c[0], h*0.35, -c[1]); V3.cam.position.set(c[0]+d*0.75, h*0.55+d*0.6, -c[1]+d*0.85); V3.ctl.update(); render3() }
+  const r=document.getElementById("c3d").getBoundingClientRect(), asp = r.width&&r.height? r.width/r.height : (V3.cam.aspect||1.4);
+  const vf=V3.cam.fov*Math.PI/360, half=Math.min(vf, Math.atan(Math.tan(vf)*asp)), R=Math.hypot(Math.max(span,12), h/2);
+  const D=Math.max(45, R/Math.sin(half)*0.94), dir=[0.75,0.6,0.85], n=Math.hypot(...dir);
+  V3.ctl.target.set(c[0], h*0.42, -c[1]); V3.cam.position.set(c[0]+D*dir[0]/n, h*0.42+D*dir[1]/n, -c[1]+D*dir[2]/n); V3.ctl.update(); render3() }
 // posição solar (aprox. NOAA simplificada) → vetor no referencial do desenho
 function sunVector(hora){ const v=sunVectorAt(S.sol.mes, S.sol.dia, hora??S.sol.hora); const lat=S.lote.lat*Math.PI/180; return v }
 function shapeOf(p, holes){ const s=new THREE.Shape(); p.forEach((q,i)=> i? s.lineTo(q[0],q[1]) : s.moveTo(q[0],q[1])); s.closePath();

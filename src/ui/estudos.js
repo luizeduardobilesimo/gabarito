@@ -1,11 +1,11 @@
-/* ================= estudos, versões e cenários (etapa Cenários, sub-aba "Estudos") =================
+/* ================= estudos, versões e alternativas salvas (etapa Entrega, sub-aba "Estudos") =================
    Vários estudos no repositório (src/ui/repo.js). O estudo aberto continua sendo a cópia de trabalho em
    localStorage "gabarito.v2" (abre na hora e mantém compatibilidade); o id dele fica em "gabarito.estudo" e
    ele é gravado no repositório 1,5 s depois de cada mudança. Na primeira vez, o gabarito.v2 vira o primeiro estudo.
    Versões: automáticas a cada 5 min (se houve mudança) e nomeadas; abrir (como novo estudo), comparar e restaurar
    (restaurar reproduz exatamente o estado salvo — e os números).
-   Cenários: fotos rápidas da simulação (localStorage "gabarito.cenarios2"), valem para qualquer estudo.
-   Comparação única: o estudo atual contra tudo o que estiver marcado (estudos, versões e cenários). */
+   Alternativas salvas: fotos rápidas da simulação (localStorage "gabarito.cenarios2"), valem para qualquer estudo.
+   Comparação única: o estudo atual contra tudo o que estiver marcado (estudos, versões e alternativas). */
 const EST = { id:null, lista:[], versoes:[], cmp:{}, cmpE:{}, todas:false, t:0, pronto:false, ultimaAuto:Date.now(), autoMin:5, arm:{}, armC:null, x:null, xt:0 };
 const estDia = iso=>{ try{ const d=new Date(iso); return d.toLocaleDateString("pt-BR")+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) }catch(e){ return "" } };
 const estDiaC = iso=>{ try{ const d=new Date(iso); return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) }catch(e){ return "" } };
@@ -60,7 +60,7 @@ async function estAbrir(id, msg){
   EST.id=id; LS.set("gabarito.estudo", id); EST.cmp={}; EST.cmpE={}; EST.ultimaAuto=Date.now(); HIST.mudou=false;
   lastGar=null; OTIM=null; RS=null;
   document.getElementById("projName").value=S.nome;
-  renderTab(); fit3d(); fit2d(); histReset();
+  renderTab(); fit3dDepois(); fit2d(); histReset();
   await estRefresh(); toast(msg||("Estudo aberto: "+S.nome));
   // estudo antigo, sem resumo para a tela inicial: ganha um assim que o cálculo completo chega
   const r0=estResumoDe(rec); if(!r0 || r0.vgv==null) calcPronto().then(()=>{ if(EST.id===id) estGrava() });
@@ -124,7 +124,7 @@ async function versaoRestaurar(id){
   const v=await Repo.versoes.get(id); if(!v) return;
   histCommit(); if(HIST.mudou) await versaoSalvar("Antes de restaurar", true);
   S=versaoEstado(v.S); document.getElementById("projName").value=S.nome;
-  renderTab(); fit3d(); fit2d(); histCommit();
+  renderTab(); fit3dDepois(); fit2d(); histCommit();
   toast("Versão restaurada: "+v.nome+" (Ctrl+Z desfaz)");
   const k=await estNums();
   if(k && v.k && !estMesmos(k, v.k)) console.warn("[versões] números diferentes dos salvos", v.k, k);
@@ -132,7 +132,7 @@ async function versaoRestaurar(id){
 }
 const estMesmos = (a,b)=>["units","vagas","vgv","lucro","margem"].every(c=> a[c]==null&&b[c]==null || Math.abs((a[c]||0)-(b[c]||0)) <= 1e-6*Math.max(1,Math.abs(b[c]||0)));
 
-/* ---- cenários (fotos rápidas da simulação) ---- */
+/* ---- alternativas salvas (fotos rápidas da simulação; chave antiga "cenarios2") ---- */
 const cenLista = ()=> LS.get("gabarito.cenarios2")||[];
 
 /* ---- interface ---- */
@@ -170,9 +170,9 @@ function vsListHTML(){
     ${l.length>5? `<button type="button" class="btn sm ghost addbtn" data-act="vsTodas">${EST.todas?"Mostrar menos":`Ver todas (${l.length})`}</button>`:""}`;
 }
 function cenListHTML(){
-  const l=cenLista(); if(!l.length) return `<p class="note">Nenhum cenário salvo.</p>`;
+  const l=cenLista(); if(!l.length) return `<p class="note">Nenhuma alternativa guardada.</p>`;
   return `<div class="list">${l.map((c,i)=>{ const a=`data-i="${i}"`;
-    return estRow({ ck:estCk("cenCmp", c.cmp, a, c.nome), nome:c.nome, pill: c.aprovado? '<span class="pill ok">aprovado</span>' : "",
+    return estRow({ ck:estCk("cenCmp", c.cmp, a, c.nome), nome:c.nome, pill: c.aprovado? '<span class="pill ok">aprovada</span>' : "",
       meta:`${esc(c.data||"")} · ${estMeta(c.k)}`,
       acts:`<button type="button" class="btn sm" data-act="cenLoad" ${a}>Abrir</button>` + (EST.armC===i? estArm("cenDel",a) : estIco("cenDel","del","Excluir",a)) }) }).join("")}</div>`;
 }
@@ -189,8 +189,8 @@ function cmpHTML(){
   return compareHTML([{nome:"Atual", k:histNums(L.m,L.f)}, ...sel]) + `<button type="button" class="btn sm ghost addbtn" data-act="cmpLimpa">Limpar seleção</button>`;
 }
 function estUndoHTML(){ return EST.x? `<div class="undobar" role="status"><span>“${esc(EST.x.nome)}” excluído</span><button type="button" class="btn sm" data-act="estDesfaz">Desfazer</button></div>` : "" }
-const estStatus = ()=> `${estPl(EST.versoes.length,"versão","versões")} · ${estPl(cenLista().length,"cenário","cenários")}`;
-const estSums = ()=>({ estudos: estPl(EST.lista.length,"estudo","estudos"), versoes: EST.versoes.length? estPl(EST.versoes.length,"versão","versões") : "nenhuma", cenarios: cenLista().length? estPl(cenLista().length,"salvo","salvos") : "nenhum", cmp: estPl(cmpSel().length+1,"item","itens") });
+const estStatus = ()=> `${estPl(EST.versoes.length,"versão","versões")} · ${estPl(cenLista().length,"alternativa","alternativas")}`;
+const estSums = ()=>({ estudos: estPl(EST.lista.length,"estudo","estudos"), versoes: EST.versoes.length? estPl(EST.versoes.length,"versão","versões") : "nenhuma", cenarios: cenLista().length? estPl(cenLista().length,"guardada","guardadas") : "nenhuma", cmp: estPl(cmpSel().length+1,"item","itens") });
 /* atualiza as listas sem recriar o painel */
 function cenRefresh(){
   if(TAB!=="cen") return;
@@ -199,12 +199,12 @@ function cenRefresh(){
   const c=cmpHTML(), cs=document.getElementById("cmpSec"); if(cs){ const era=cs.hidden; cs.hidden=!c; set("cmpBox", c); if(c && era) cs.open=true }
   const st=document.getElementById("estCurSt"); if(st) st.textContent=estStatus();
   Object.entries(estSums()).forEach(([k,v])=>setSum(k,v));
-  const fs=document.getElementById("footStat"); if(fs) fs.textContent=estPl(cenLista().length,"cenário","cenários");
+  const fs=document.getElementById("footStat"); if(fs) fs.textContent=estPl(cenLista().length,"alternativa","alternativas");
 }
 /* corpo da sub-aba "Estudos" (chamado por STEP_R.cen) */
 function estCardsHTML(){
   const c=cmpHTML(), sm=estSums(), modo=Repo.modo();
-  const campo=(id,ph,rot,act,btn)=>`<div class="row" style="flex-wrap:nowrap"><div class="inp" style="flex:1"><input class="t" id="${id}" placeholder="${ph}" aria-label="${rot}" autocomplete="off"></div><button type="button" class="btn pri" data-act="${act}">${btn}</button></div>`;
+  const campo=(id,ph,rot,act,btn)=>`<div class="row" style="flex-wrap:nowrap"><div class="inp" style="flex:1"><input class="t" id="${id}" placeholder="${ph}" aria-label="${rot}" autocomplete="off"></div><button type="button" class="btn" data-act="${act}">${btn}</button></div>`;
   return `<div id="estUndo">${estUndoHTML()}</div>` +
     RES("Estudo aberto", `<div class="estcur"><b id="estCurNome">${esc(S.nome||"Estudo")}</b><span class="note" id="estCurSt">${estStatus()}</span></div>`,
       {aside: modo==="nuvem"? "salvo na sua conta" : modo==="idb"||modo==="local"? "salvo neste navegador" : "só nesta sessão"}) +
@@ -215,8 +215,8 @@ function estCardsHTML(){
         : "Cada estudo é um terreno ou uma proposta diferente. Ficam guardados neste navegador; o aberto é salvo sozinho a cada mudança. Use o .json (aba Entregar) para levar a outro aparelho."}) +
     SEC("Versões", campo("vsNome","Ex.: aprovada na reunião","Nome da versão","vsSalvar","Salvar versão") + `<div id="vsBox">${vsListHTML()}</div>`, {key:"versoes", open:true, sum:sm.versoes,
       info:`Fotos do estudo aberto ao longo do tempo. Salvas sozinhas a cada ${EST.autoMin} minutos quando ele muda, ou quando você pedir. Restaurar volta o estudo exatamente àquele ponto (Ctrl+Z desfaz); o ícone ao lado abre a versão como um estudo novo.`}) +
-    SEC("Cenários", campo("cenNome","Ex.: 2 torres · 12 e 9 pav","Nome do cenário","cenSave","Salvar") + `<div id="cenBox">${cenListHTML()}</div>`, {key:"cenarios", sum:sm.cenarios,
-      info:"Variações rápidas para comparar (por exemplo, número de torres ou de subsolos). Abrir um cenário troca o estudo atual por ele (Ctrl+Z desfaz). Valem para todos os estudos."});
+    SEC("Alternativas salvas", campo("cenNome","Ex.: 2 torres · 12 e 9 pav","Nome da alternativa","cenSave","Guardar") + `<div id="cenBox">${cenListHTML()}</div>`, {key:"cenarios", sum:sm.cenarios,
+      info:"Variações rápidas para comparar (por exemplo, número de torres ou de subsolos). Abrir uma alternativa troca o estudo atual por ele (Ctrl+Z desfaz). Valem para todos os estudos."});
 }
 function estXGuarda(x){ EST.x=x; clearTimeout(EST.xt); EST.xt=setTimeout(()=>{ EST.x=null; cenRefresh() }, 30000) }
 Object.assign(ACT, {
@@ -232,10 +232,10 @@ Object.assign(ACT, {
   vsAbrir: async b=>{ const v=await Repo.versoes.get(b.dataset.id); if(!v) return; await estNovo(versaoEstado(v.S), `${v.S.nome||S.nome} — ${v.nome} (${estDia(v.criado)})`) },
   vsTodas: ()=>{ EST.todas=!EST.todas; cenRefresh() },
   vsCmp: b=>{ const id=b.dataset.id; if(EST.cmp[id]) delete EST.cmp[id]; else EST.cmp[id]=1; cenRefresh() },
-  cenSave: async ()=>{ const i=document.getElementById("cenNome"), nome=i? i.value.trim() : ""; await calcPronto(); saveScenario(nome); if(i) i.value=""; cenRefresh(); toast("Cenário salvo") },
-  cenLoad: b=>{ const c=cenLista()[+b.dataset.i]; if(c){ S=merge(clone(DEF),c.S); document.getElementById("projName").value=S.nome; renderTab(); fit3d(); fit2d(); toast("Cenário aberto: "+c.nome+" (Ctrl+Z desfaz)") } },
+  cenSave: async ()=>{ const i=document.getElementById("cenNome"), nome=i? i.value.trim() : ""; await calcPronto(); saveScenario(nome); if(i) i.value=""; cenRefresh(); toast("Alternativa guardada") },
+  cenLoad: b=>{ const c=cenLista()[+b.dataset.i]; if(c){ S=merge(clone(DEF),c.S); document.getElementById("projName").value=S.nome; renderTab(); fit3dDepois(); fit2d(); toast("Alternativa aberta: "+c.nome+" (Ctrl+Z desfaz)") } },
   cenDel: b=>{ const i=+b.dataset.i; if(EST.armC!==i){ EST.armC=i; cenRefresh(); return } EST.armC=null;
-    const l=cenLista(), c=l.splice(i,1)[0]; LS.set("gabarito.cenarios2",l); if(c) estXGuarda({tipo:"cen", nome:c.nome, c, i}); cenRefresh(); toast("Cenário excluído") },
+    const l=cenLista(), c=l.splice(i,1)[0]; LS.set("gabarito.cenarios2",l); if(c) estXGuarda({tipo:"cen", nome:c.nome, c, i}); cenRefresh(); toast("Alternativa excluída") },
   cenCmp: b=>{ const l=cenLista(), c=l[+b.dataset.i]; if(!c) return; c.cmp=!c.cmp; LS.set("gabarito.cenarios2",l); cenRefresh() },
   cmpLimpa: ()=>{ EST.cmp={}; EST.cmpE={}; const l=cenLista(); l.forEach(c=>delete c.cmp); LS.set("gabarito.cenarios2",l); cenRefresh() },
   estDesfaz: async ()=>{ const x=EST.x; if(!x) return; EST.x=null; clearTimeout(EST.xt);

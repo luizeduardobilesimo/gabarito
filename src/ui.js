@@ -163,7 +163,8 @@ function goStep(k, sub){
 /* vista que cada etapa pede (só troca quando a atual não faz sentido) */
 function stepView(){
   const pj = {gar:["gar"], tipo:["tipo","andar"], sol:["clima","3d"], vento: CSUB==="v3d"? ["v3d"] : ["clima"]}[PSUB];
-  const ok = { terreno:["impl"], produto:["3d","impl","andar"], viab:["3d"], projeto:pj, cen:null }[TAB];
+  // Entrega mantém a vista, menos os mapas de sol/vento e o túnel (entregar é mostrar o prédio)
+  const ok = { terreno:["impl"], produto:["3d","impl","andar"], viab:["3d"], projeto:pj, cen: VIEW==="clima"||VIEW==="v3d"? ["3d"] : null }[TAB];
   if(TAB==="projeto" && (PSUB==="sol" || (PSUB==="vento" && CSUB!=="v3d"))) S.clima.modo = PSUB==="sol"? "sol" : "vento";
   if(VIEW==="v3d" && !(TAB==="projeto" && PSUB==="vento" && CSUB==="v3d")) return ok? ok[0] : "3d";   // saiu do túnel 3D: a simulação para (setView → cfdLeave)
   if(!ok || ok.includes(VIEW)) return null;
@@ -308,7 +309,9 @@ function renderKPIs(m,f){
   const h =
     k("units", "Unidades", nf(m.units), `${tor}<span class="lx"> · ${m.T.map(t=>t.pav).join(" e ")} and.</span>`, s.apto==="bad"? "bad" : s.tor, ["produto",null,"pr-mix"], `${m.units} unidades · ${tor}${m.lojaA?" + lojas":""} — ver as unidades por andar`) +
     k("regras", "Regras", fora.length? `${fora.length} fora` : "dentro", fora.length? fora[0].txt : "CA, altura e ocupação", fora.length? "bad" : "ok", ["produto",null,null], fora.length? "Fora das regras: "+fora.map(x=>x.txt).join(" · ") : "Dentro das regras da prefeitura (aproveitamento, altura, ocupação, permeável e menor unidade)") +
-    k("vagas", "Vagas", `${m.vagas}/${m.vagasReq}`, S.estudo.usarLayout?"pelo layout":"estimadas", s.vg, ["projeto","gar",null], `${m.vagas} vagas ${S.estudo.usarLayout?"no layout":"estimadas"} · ${m.vagasReq} exigidas — ver a garagem`, true) +
+    // vagas pelo layout: no 1º cálculo rápido ainda não há layout (a estimativa por área engana) — espera o completo
+    (S.estudo.usarLayout && !m.gar? k("vagas", "Vagas", `…/${m.vagasReq}`, "calculando…", null, ["projeto","gar",null], "Calculando o layout da garagem", true) :
+    k("vagas", "Vagas", `${m.vagas}/${m.vagasReq}`, S.estudo.usarLayout?"pelo layout":"estimadas", s.vg, ["projeto","gar",null], `${m.vagas} vagas ${S.estudo.usarLayout?"no layout":"estimadas"} · ${m.vagasReq} exigidas — ver a garagem`, true)) +
     k("vgv", TERMO("VGV"), mi(f.vgv), `${mi(f.vgv/un)}/un`, null, ["viab","res","essencial"], `Valor geral de vendas · ${mi(f.vgv/un)} por unidade — ver os preços`) +
     k("margem", TERMO("Margem s/ VGV","Margem"), pct(sd.margemVGV), `meta ${pct(S.fin.margemAlvo,0)}<span class="lx"> · lucro ${kpiMi(f.lucro)}</span>`, sc(sd.nivel.margem), ["viab","res",null], `Lucro ${mi(f.lucro)} · margem s/ VGV · meta ${pct(S.fin.margemAlvo,0)} · s/ receita ${pct(f.margem)}`, true) +
     k("tir", TERMO("TIR","Retorno"), f.tirA==null?"—":pct(f.tirA), `alvo ${pct(S.metas.tir.alvo,0)}`, sc(sd.nivel.tir), ["viab","risco","alavancas"], `Retorno ao ano (TIR) · VPL ${mi(f.vpl)} · alvo ${pct(S.metas.tir.alvo,0)} · TMA ${pct(S.fin.tma,0)} — o que melhora o resultado`, true) +

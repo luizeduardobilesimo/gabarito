@@ -43,6 +43,7 @@ const iniIc = (k, cls="ico")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidd
 .ini-conta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ini-main{max-width:1180px;margin:0 auto;padding:30px 28px 72px}
 .ini-h{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+.ini-hb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .ini-h h1{margin:0;font-size:30px;line-height:1.1;font-weight:650;letter-spacing:-.03em}
 .ini-sub{margin:7px 0 0;font-size:13.5px;color:var(--muted)}
 .ini .btn.lg{min-height:42px;padding:9px 18px;font-size:14px;border-radius:12px;gap:8px}
@@ -147,6 +148,7 @@ body:has(>.ini:not([hidden])) #toast{visibility:hidden}
   .ini-conta span{display:none} .ini-conta{padding:3px}
   .ini-main{padding:18px 16px 96px}
   .ini-h{flex-direction:column;align-items:stretch;gap:16px;margin-bottom:18px}
+  .ini-hb{flex-direction:column-reverse;align-items:stretch;gap:6px}
   .ini-h h1{font-size:26px}
   .ini-h .btn.lg{min-height:50px;font-size:15px;width:100%}
   .ini-bar{gap:10px;margin-bottom:20px}
@@ -273,17 +275,17 @@ function iniRender(){
   const vazio = INI.carregou && iniProprios()===0;
   const brand = (document.querySelector(".top .brand")||{}).innerHTML || `<span class="wm">gabarito<i>.</i></span>`;
   el.innerHTML = `<header class="ini-top"><div class="brand" aria-hidden="true">${brand}</div>
-      <div class="ini-top-r">${INI.voltar? `<button type="button" class="btn ghost sm" data-ia="voltar" title="Voltar ao estudo aberto (Esc)">${iniIc("volta")}<span>Voltar ao estudo</span></button>` : ""}${iniContaHTML()}</div></header>
+      <div class="ini-top-r">${INI.voltar && !vazio? `<button type="button" class="btn ghost sm" data-ia="voltar" title="Voltar ao estudo aberto (Esc)">${iniIc("volta")}<span>Voltar ao estudo</span></button>` : ""}${iniContaHTML()}</div></header>
     <main class="ini-main">
       ${vazio? iniVazioHTML() : `<div class="ini-h"><div><h1 id="iniT">Meus estudos</h1><p class="ini-sub" id="iniSub">${iniSubTxt()}</p></div>
-        <button type="button" class="btn pri lg" data-ia="novo">${iniIc("novo")}Novo estudo</button></div>
+        <div class="ini-hb">${INI.carregou && !INI.lista.some(iniEhEx)? `<button type="button" class="btn ghost" data-ia="exemplo" title="Abre o estudo de exemplo como um estudo à parte">Ver o exemplo</button>` : ""}<button type="button" class="btn pri lg" data-ia="novo">${iniIc("novo")}Novo estudo</button></div></div>
       <div class="ini-bar" role="search">
         <div class="inp ini-q">${iniIc("busca")}<input type="search" id="iniQ" value="${esc(INI.q)}" placeholder="Buscar por nome ou cidade" aria-label="Buscar estudos" autocomplete="off"></div>
         <div class="seg" role="group" aria-label="Filtrar por status">${INI_F.map(([k,l])=>`<button type="button" data-if="${k}" aria-pressed="${INI.f===k}">${l}</button>`).join("")}</div>
         <label class="ini-ord"><span>Ordenar</span><select class="sel" id="iniOrd" aria-label="Ordenar estudos">${INI_ORD.map(([k,l])=>`<option value="${k}"${INI.ord===k?" selected":""}>${l}</option>`).join("")}</select></label>
       </div>
       <div id="iniGrid">${iniGridHTML()}</div>`}
-      <div class="ini-pe"><label class="sw"><input type="checkbox" id="iniPref"${iniPrefOn()?" checked":""}><span class="tg"></span><span>Abrir o Gabarito nesta tela</span></label></div>
+      <div class="ini-pe"><label class="sw"><input type="checkbox" id="iniPref"${iniPrefOn()?" checked":""}><span class="tg"></span><span>Mostrar esta tela ao abrir o Gabarito</span></label></div>
     </main>
     <div class="ini-snack" id="iniSnack" role="status" aria-live="polite"${INI.desf? "" : " hidden"}>${INI.desf? iniSnackHTML() : ""}</div>`;
   el.setAttribute("aria-labelledby", vazio? "iniVz" : "iniT");

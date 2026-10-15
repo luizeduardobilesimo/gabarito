@@ -212,6 +212,9 @@
   .toast{bottom:calc(var(--folha,40vh) + 12px)}
   .pop,.prog-pop{bottom:calc(var(--nav-h) + 8px)}
   #exBanner{padding:6px 12px}
+  /* folha cheia: o palco fica só como uma faixa — sem as barras e dicas flutuantes por cima dela */
+  .nv-cheia .stage .view>:not(canvas):not(#c2d):not(#c3d){visibility:hidden}
+  .hint{font-size:11.5px;padding:6px 10px;line-height:1.35}
 }
 @media (max-width:900px){ .top .prog-anel{min-height:40px;min-width:40px;justify-content:center} }
 @media (max-width:520px){ .top .prog-anel{padding:3px;gap:0} .top .prog-anel span{display:none} }
@@ -332,7 +335,7 @@ const folhaDisp = ()=> Math.max(200, innerHeight - 52 - navBarra());
 const navBarra = ()=>{ const r=document.getElementById("rail"); return r && navCel()? r.getBoundingClientRect().height || 62 : 0 };
 function folhaPx(h){ const de=document.documentElement; de.style.setProperty("--folha-h", Math.round(h)+"px"); de.style.setProperty("--folha", Math.round(h+navBarra())+"px") }
 function folhaAplica(){ if(!navCel()) return; folhaPx(NAV_FOLHA[NAV.folha]*folhaDisp()) }
-function folhaSet(n){ if(!NAV_FOLHA[n]) return; NAV.folha=n; folhaAplica(); const p=document.getElementById("folhaPuxa"); if(p) p.setAttribute("aria-label", n==="cheia"? "Baixar o painel" : "Subir o painel") }
+function folhaSet(n){ if(!NAV_FOLHA[n]) return; NAV.folha=n; document.documentElement.classList.toggle("nv-cheia", n==="cheia"); folhaAplica(); const p=document.getElementById("folhaPuxa"); if(p) p.setAttribute("aria-label", n==="cheia"? "Baixar o painel" : "Subir o painel") }
 
 /* ---------- inicialização (chamada por main.js) ---------- */
 function navInit(){

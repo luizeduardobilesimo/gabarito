@@ -562,7 +562,7 @@ HOOK.pdf.push(async ctx=>{
   rows([["Curva de obra", {sen:"senoidal", s:`curva S (início ${pct(CV.ini,0)}, pico ${pct(CV.pico,0)}, fim ${pct(CV.fim,0)} do prazo)`, sis:`por sistema (início ${pct(CV.ini,0)}, fim ${pct(CV.fim,0)})`}[CV.modo]||"senoidal"],
     ["Recebimento", RD.modo==="det"? `ato ${pct(RD.ato,0)} · mensais ${pct(RD.mensais,0)} · semestrais ${pct(RD.interm,0)} · chaves ${pct(RD.chaves,0)}${RD.pos?` · pós-chaves ${pct(RD.pos,0)} em ${RD.posN} meses`:""} · repasse ${pct(flxRepasse(RD),0)} (+${RD.repasseMes} meses)` : `simples: ${pct(S.fin.entrada,0)} até as chaves, saldo nas chaves`],
     ...(RD.modo==="det"? [["Correção", `INCC ${pct(S.fin.incc)} até as chaves · IPCA ${pct(RD.ipca)} depois`], ["Distratos", RD.distrato? `${pct(RD.distrato,0)} dos contratos no mês ${RD.distratoMes} após o lançamento (retenção ${pct(RD.retencao,0)}): -${mi(f.distratoV)}` : "não considerados"]] : [])]);
-  const cs=flxCenarios(S,m,f); h2("Cenários");
+  const cs=flxCenarios(S,m,f); h2("Pessimista × otimista");
   rows([["", cs.map(c=>c.nome).join("  |  ")], ...[["Lucro",x=>mi(x.lucro)],["Margem s/ VGV",x=>pct(x.margemVGV)],["TIR a.a.",x=>finTir(x.tirA)],["VPL",x=>mi(x.vpl)],["Exposição",x=>mi(-x.exp)]].map(([l,fn])=>[l, cs.map(c=>fn(c.f)).join("  |  ")])]);
   const t=flxTornado(S,m,null,"margem"); h2("Sensibilidade da margem s/ VGV (desfavorável / favorável)");
   rows(t.vars.map(v=>[`${v.nome} (${v.faixa})`, `${pct(v.lo.margem)} / ${pct(v.hi.margem)}  ·  TIR ${finTir(v.lo.tir)} / ${finTir(v.hi.tir)}`]));

@@ -124,7 +124,7 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
   .ass-foot .btn.pri{flex:1;min-width:0}
 }
 /* cartão "O que fizemos" */
-.ass-feito{position:fixed;right:20px;bottom:20px;z-index:58;width:min(372px,calc(100vw - 24px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg,16px);box-shadow:var(--shadow-pop);padding:16px 16px 12px;color:var(--ink);animation:assIn .35s var(--ease) both}
+.ass-feito{position:fixed;right:20px;bottom:92px;z-index:58;width:min(372px,calc(100vw - 24px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg,16px);box-shadow:var(--shadow-pop);padding:16px 16px 12px;color:var(--ink);animation:assIn .35s var(--ease) both}
 .ass-feito[hidden]{display:none}
 .ass-feito .fh{display:flex;align-items:flex-start;gap:10px}
 .ass-feito .fh .ic{width:28px;height:28px;border-radius:50%;background:var(--ok-soft,var(--surface-2));color:var(--ok);display:grid;place-items:center;flex:none}
@@ -399,6 +399,7 @@ async function assAplica(fin, nav){
   lastGar=null; if(typeof RS!=="undefined") RS=null; if(typeof CID_UNDO!=="undefined") CID_UNDO=null;
   nav();
   try{ fit2d(); fit3d() }catch(e){}
+  if(typeof calcPronto==="function") calcPronto().then(()=>{ try{ fit3d() }catch(e){} }, ()=>{});   // reenquadra com a altura do prédio novo
   if(typeof histCommit==="function") histCommit();
   assBanner();
 }
@@ -406,7 +407,7 @@ async function assAplica(fin, nav){
 /* ---------- cartão "O que fizemos" ---------- */
 function assFeitoFecha(){ const c=document.getElementById("assFeito"); if(c) c.hidden=true; ASS.feito=null }
 function assFeitoMostra(info){
-  ASS.feito=info;
+  ASS.feito=info; info.tab=TAB;   // o cartão é da etapa em que o estudo caiu: trocar de etapa o fecha
   let c=document.getElementById("assFeito");
   if(!c){ c=document.createElement("div"); c.id="assFeito"; c.className="ass-feito"; c.setAttribute("role","status"); document.body.appendChild(c);
     c.addEventListener("click", e=>{
@@ -423,6 +424,7 @@ function assFeitoMostra(info){
 }
 function assFeitoLive(){
   const c=document.getElementById("assFeito"), I=ASS.feito; if(!c || c.hidden || !I) return;
+  if(I.tab && TAB!==I.tab){ assFeitoFecha(); return }
   const L=window._last||{}, m=L.m, f=L.f, R=I.resp;
   const lote = R.lote.modo==="ret"? `${nf(assNum(R.lote.frente),1)} × ${nf(assNum(R.lote.fundo),1)} m · ${m2(G.area(S.lote.pts))}` : R.lote.modo==="coord"? `por coordenadas · ${m2(G.area(S.lote.pts))}` : "provisório — desenhe o seu";
   const regras = S.regrasRef && S.regrasRef.id? esc(S.regras.cidade) : R.regras.nome? esc(R.regras.nome) : "padrão — a conferir";

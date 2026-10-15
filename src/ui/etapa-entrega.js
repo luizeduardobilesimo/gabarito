@@ -15,6 +15,7 @@
 .entacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .estcur .note:empty{display:none}
 #entNome{display:inline-block;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+@media (max-width:520px){#entNome{display:none}}
 `; document.head.appendChild(s) })();
 
 /* ---------------- comparação (quadro único; chamada por src/ui/estudos.js) ---------------- */
@@ -74,7 +75,7 @@ function entEstudosHTML(){
 
 /* duas sub-abas: "Entregar" (a primeira) e "Estudos" (estudos, versões, alternativas e comparação — src/ui/estudos.js) */
 STEP_R.cen = ()=>{
-  const sub=SUBTABS("cen",[["entregar","Entregar"],["estudos","Estudos"]]), s=subAtual("cen"), title="Mostrar e guardar", desc="Entregue o estudo e guarde as alternativas.";
+  const sub=SUBTABS("cen",[["entregar","Entregar"],["estudos","Estudos"]]), s=subAtual("cen"), title="Entrega", desc="Entregue o estudo e guarde as alternativas.";
   if(s==="estudos") return { title, desc, sub, subKey:"estudos", body:entEstudosHTML() };
   return { title, desc, sub, subKey:"entregar", after:()=>dlCheck(), body: entResHTML() + entArquivosHTML() };
 };
