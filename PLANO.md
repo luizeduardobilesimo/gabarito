@@ -358,6 +358,23 @@ Execução de 05/10/2026 (protótipo local, 9 agentes em paralelo sobre a funda�
 - [x] CUB publicado pelos Sinduscons por UF (com mês e fonte; "Seguir a tabela do estado" desligado), calibração do custo com obras reais (fator e peso da garagem), indiretos que faltavam (desligados, com "Usar sugeridos") e lucro após imprevistos. **Decisão pendente do Luiz:** o estudo padrão usa CUB 3.159 (média residencial de SC); com o R8-N real de SC (2.800,40) o lucro do exemplo sobe de R$ 19,8 mi para R$ 26,0 mi — esperar a calibração com obras reais antes de trocar.
 - Aguardando o Luiz: tabela de vendas de um lançamento da região, planilha de viabilidade, custos de obras recentes.
 
+## Andamento — UX v3 e identidade Rixel (15/10/2026)
+
+Pedido do Luiz: sistema intuitivo para usar sozinho, minimalista, só informação útil, sem idas e vindas. Especificação em `docs/UX-v3.md`; guia do dia a dia em `docs/UX.md` (v3). Números de cálculo e os 5 estudos de referência intactos.
+
+- [x] Identidade Rixel — DM Sans, cinzas neutros, laranja `#e8702a` só no botão primário e nos indicadores vivos, marca "gabarito. by Rixel", PDF com a mesma marca.
+- [x] P0 Preparação — `steps.js` dividido em `src/ui/etapa-*.js`; `irPara`, `emClima`, `subsDe`, `SECGRP`; auditoria com inventário (`docs/aud-v2.json`, 232 caminhos).
+- [x] P1 Casca — 5 etapas num stepper no topo (aliases `regras`→Terreno, `clima`→Projeto › Sol), régua com 6 KPIs clicáveis + "⋯", rodapé com o "Próximo passo" (único botão laranja), celular com folha de 3 alturas e barra inferior, busca global Ctrl+K (`src/ui/navegacao.js`, `src/ui/busca.js`).
+- [x] P2 Terreno — absorve Regras: RES "Lote e potencial", Contorno, Ruas e frentes, Regras da prefeitura (cidade e zona + 7 campos), Altura e recuos por faixa, Terreno inclinado, Áreas restritas, Vizinhos e ruas.
+- [x] P3 Produto — uma tela só: RES "Uso do potencial" com a conformidade, "Sugerir a melhor combinação" (otimizador sem prejuízo quando há opção lucrativa), Torres, Unidades por andar, Garagem e térreo, Forma das torres, lazer, coberturas e quadro.
+- [x] P4 Projeto — Garagem · Andares · Sol · Vento; casa única das medidas de vaga, rampa, PCD e andar; túnel 3D como modo do Vento, pausando sozinho fora da tela.
+- [x] P5 Viabilidade — um RES (lucro, margem, retorno, caixa necessário, veredito e checklist), Premissas principais com espelho dos preços, Premissas agrupadas (12 seções fechadas) e Riscos com "O que melhora o resultado" logo no topo.
+- [x] P6 Entrega — Entregar (relatório, arquivos, apresentar) e Estudos (alternativas salvas, comparação, estudos, versões); abrir .json de qualquer lugar.
+- [x] P7 Assistente, exemplo e checklist — "Novo estudo" em 3 perguntas, faixa do exemplo, checklist de 9 itens e `proximoPasso`.
+- [x] Tela inicial "Meus estudos" — pastas com miniatura, status e números; renomear, duplicar, excluir e desfazer.
+- [x] P8 Integração — pendências dos pacotes (textos "cenário" → "alternativa", Entrega com título próprio e saindo dos mapas de sol/vento para o 3D, "Entregar →" abre Entregar, cartão "Estudo pronto" acima da régua e fechando ao trocar de etapa, enquadramento 3D pela esfera do lote e do prédio e de novo quando o cálculo chega, folha cheia sem sobreposições, vagas "…" até o layout chegar, "Ver o exemplo" na tela inicial, avisos de lazer fora da Garagem); ferramentas lendo as 5 etapas (`tools/pw-comum.cjs`: fonte em cache local, `domcontentloaded` + app pronto; capturas do celular com folha média e cheia e do túnel 3D; auditoria com o modo túnel 3D e a linha "Metas"); Vitest em `forks` com no máximo núcleos − 1 processos; documentação (`docs/UX.md` v3, `CLAUDE.md`, `HANDOFF.md`).
+- Pendências conhecidas: exportações XLSX/DXF+IFC/PDF não testáveis aqui (CDN bloqueada no ambiente de testes); o túnel 3D por software (swiftshader) é lento nas capturas; a estimativa de vagas por área (antes do layout) é bem maior que o layout real.
+
 ## Próxima etapa — Evolução v2 (08/10/2026)
 
 Diagnóstico contra a colinha de viabilidade, relevo e ruas automáticos e construção personalizada por blocos: ver `docs/EVOLUCAO.md` (fases A–E, ordem e decisões pendentes do Luiz).

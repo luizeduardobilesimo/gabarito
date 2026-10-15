@@ -100,10 +100,13 @@ A ideia original do Luiz: desenhar o lote num mapa, colocar as regras da prefeit
   - Marca: ícone Rixel (redesenhado em SVG a partir do `rixel-icon.png`) + "gabarito." com o ponto laranja + "by Rixel"; favicon igual; PDF com faixa grafite, ícone em vetor e o mesmo wordmark (helvetica).
   - Desenho técnico em neutros da Rixel com matizes suaves por função; azul `--d-acc` para pedestres/PCD/seleção e âmbar `--mark` para marcações (frente, rampa); escalas de sol e vento mantidas.
   - Vidro fosco sobre o palco. O teal `#1c6878` e o amarelo de obra saíram da interface.
-- **Interface:**
-  - trilho de etapas, inspetor e palco;
-  - a etapa puxa a vista certa do palco e vice-versa;
-  - guia de UX em `docs/UX.md` (resultado no topo, seções fechadas com resumo, "Mais opções", ⓘ com glossário).
+- **Interface (UX v3, 15/10/2026):**
+  - tela inicial "Meus estudos" (pastas com miniatura, status e números) e assistente "Novo estudo" (3 perguntas → estudo pronto em Viabilidade);
+  - 5 etapas num stepper no topo: Terreno (absorveu Regras) → Produto (uma tela, com "Sugerir a melhor combinação") → Viabilidade (Resultado · Premissas · Riscos) → Projeto, opcional (Garagem · Andares · Sol · Vento, com o túnel 3D como modo do Vento) → Entrega (Entregar · Estudos);
+  - checklist de 9 itens (anel "6/9") e rodapé com um único botão laranja, o "Próximo passo", que resolve a pendência ou avança;
+  - régua com 6 indicadores clicáveis; celular com folha deslizante (3 alturas) e barra inferior com as 5 etapas; busca global Ctrl+K;
+  - cada campo mora numa tela só (espelhos declarados em `docs/UX-v3.md` §4.6); metas medidas pela auditoria;
+  - guia de UX em `docs/UX.md` (v3) e especificação em `docs/UX-v3.md`.
 - **Recursos novos vêm desligados** quando mudam números. Os 5 estudos de referência só mudam de propósito, com regeneração e anotação.
 - **Garagem:**
   - nada de vaga sem rota;
@@ -117,6 +120,7 @@ A ideia original do Luiz: desenhar o lote num mapa, colocar as regras da prefeit
 
 ## 5. Onde o projeto está (pela documentação da pasta)
 
+- **UX v3 + identidade Rixel (15/10/2026): feitas.** Reforma da interface em 9 pacotes (P0–P8): fluxo em 5 etapas, tela inicial, assistente, checklist e próximo passo, celular com folha, busca global, ferramentas de teste atualizadas (`tools/pw-comum.cjs`). Detalhes no Andamento do `PLANO.md`.
 - **PLANO.md:**
   - Fases 0 a 4 feitas;
   - 0.1 parcial: falta trocar globais por `import/export`;
@@ -124,10 +128,8 @@ A ideia original do Luiz: desenhar o lote num mapa, colocar as regras da prefeit
 - **Evolução v2:**
   - Fase A ("Saúde do negócio") feita;
   - Fase B feita: georreferência, relevo pelo AWS Terrarium, ruas → frentes, busca resiliente.
-- **Próximas pela ordem do `docs/EVOLUCAO.md`:**
-  - **Fase C — construção personalizada por blocos:** C0 (limite da torre vira a planta) → C1 (forma livre com formatos prontos) → C2 (pilha de blocos) → C3 opcional (L/U/H com layout por ala).
-  - **Fase D — alavancas e otimização pela eficiência:** card "Alavancas"; `potencial()` com eficiência global; otimizador com eficiência e V/C.
-  - **Fase E — calibração com dados reais** (depende do Luiz).
+  - Fases C (blocos C0–C3), D (alavancas e eficiência) e E (calibração: ferramentas prontas, faltam os dados reais do Luiz) feitas.
+- **Próximos passos naturais:** publicar o app web (Vercel + Supabase, `docs/DEPLOY.md`), calibrar com dados reais e o MVP com módulos ES/TypeScript.
 
 ## 6. Pendências e limitações conhecidas
 
