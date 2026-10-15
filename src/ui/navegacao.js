@@ -249,6 +249,7 @@ const NAV_ACOES = {
     const f=document.createElement("button"); f.dataset.arm=1; ACT.reset(f) },
   busca: ()=>{ if(typeof buscaAbrir==="function") buscaAbrir() },
   gloss: ()=>abreGlossario(),
+  aptos: ()=>{ if(typeof aptoEditorAbrir==="function") aptoEditorAbrir() },
   ap: ()=>{ const b=document.getElementById("apTop"); if(b) b.click() },
   pdf: ()=>calcPronto().then(()=>exportPDF()),
   zip: ()=>ACT.zip && ACT.zip(),
@@ -349,6 +350,9 @@ function navInit(){
     if(e.target.closest("#themeBtn")) setTimeout(navMenuFecha, 0);
   });
   document.getElementById("buscaBtn").addEventListener("click", ()=>NAV_ACOES.busca());
+  // "Modelos de apartamento" (editor e biblioteca, src/ui/aptoeditor.js) no menu "…", depois do glossário
+  const gl=document.getElementById("glossBtn"); if(gl && typeof aptoEditorAbrir==="function" && !document.querySelector('#maisMenu [data-nv="aptos"]')) gl.insertAdjacentHTML("afterend",
+    `<button type="button" role="menuitem" data-nv="aptos"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M10.5 4.5v8h-7M10.5 15.5v4M14.5 12.5h6"/></svg>Modelos de apartamento</button>`);
   document.addEventListener("pointerdown", e=>{ if(NAV.menuAberto && !e.target.closest(".nv-menu,[aria-controls]")) navMenuFecha();
     if(NAV.kpop && !NAV.kpop.hidden && !e.target.closest("#kpiPop,#kpiMais")) navKpiFecha() }, true);
   document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ if(NAV.menuAberto){ const b=document.querySelector(`[aria-controls='${NAV.menuAberto}']`); navMenuFecha(); if(b) b.focus() } navKpiFecha() }

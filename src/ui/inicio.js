@@ -275,7 +275,7 @@ function iniRender(){
   const vazio = INI.carregou && iniProprios()===0;
   const brand = (document.querySelector(".top .brand")||{}).innerHTML || `<span class="wm">gabarito<i>.</i></span>`;
   el.innerHTML = `<header class="ini-top"><div class="brand" aria-hidden="true">${brand}</div>
-      <div class="ini-top-r">${INI.voltar && !vazio? `<button type="button" class="btn ghost sm" data-ia="voltar" title="Voltar ao estudo aberto (Esc)">${iniIc("volta")}<span>Voltar ao estudo</span></button>` : ""}${iniContaHTML()}</div></header>
+      <div class="ini-top-r">${typeof aptoEditorAbrir==="function"? `<button type="button" class="btn ghost sm" data-ia="aptos" title="Plantas de apartamento que você usa como modelo nos estudos">Modelos de apartamento</button>` : ""}${INI.voltar && !vazio? `<button type="button" class="btn ghost sm" data-ia="voltar" title="Voltar ao estudo aberto (Esc)">${iniIc("volta")}<span>Voltar ao estudo</span></button>` : ""}${iniContaHTML()}</div></header>
     <main class="ini-main">
       ${vazio? iniVazioHTML() : `<div class="ini-h"><div><h1 id="iniT">Meus estudos</h1><p class="ini-sub" id="iniSub">${iniSubTxt()}</p></div>
         <div class="ini-hb">${INI.carregou && !INI.lista.some(iniEhEx)? `<button type="button" class="btn ghost" data-ia="exemplo" title="Abre o estudo de exemplo como um estudo à parte">Ver o exemplo</button>` : ""}<button type="button" class="btn pri lg" data-ia="novo">${iniIc("novo")}Novo estudo</button></div></div>
@@ -381,6 +381,7 @@ function iniClique(e){
   else if(a==="novo") iniNovo();
   else if(a==="exemplo") iniExemplo();
   else if(a==="voltar") inicioFechar();
+  else if(a==="aptos" && typeof aptoEditorAbrir==="function") aptoEditorAbrir();
   else if(a==="desfaz") iniDesfaz();
   else if(a==="limpa"){ INI.q=""; INI.f="todos"; iniRender(); iniFoco("#iniQ") }
 }
