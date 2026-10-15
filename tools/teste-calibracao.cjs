@@ -2,6 +2,7 @@
 // com divergências plantadas (comparação com a planilha), confere resultados, aplicar/desfazer e salva capturas.
 // Uso:  node tools/teste-calibracao.cjs [--html caminho/test.html] [--out pasta] [--xlsx]   (--xlsx tenta também o SheetJS pela CDN)
 const { chromium } = require('playwright');
+const { prepara, abre: abreApp } = require('./pw-comum.cjs');
 const path = require('path'), fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');
 const THREE_DIR = path.join(ROOT, 'node_modules', 'three');
@@ -32,10 +33,9 @@ function tabelaCSV() {
     await ctx.addInitScript(t => { try { localStorage.setItem('gabarito.tema', JSON.stringify(t)) } catch (e) {}
       window.claude = { use: async n => n === 'downloads' ? { save: async o => { (window.__dl = window.__dl || []).push(o) } } : null } }, th);
     const p = await ctx.newPage();
-    await p.route(/three@0\.128\.0\/build\/three\.min\.js/, r => r.fulfill({ path: path.join(THREE_DIR, 'build/three.min.js'), contentType: 'application/javascript' }));
-    await p.route(/OrbitControls\.js/, r => r.fulfill({ path: path.join(THREE_DIR, 'examples/js/controls/OrbitControls.js'), contentType: 'application/javascript' }));
+    await prepara(p);
     const errs = []; p.on('pageerror', e => errs.push('PE ' + e.message)); p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|net::ERR/.test(m.text())) errs.push('CE ' + m.text()) });
-    await p.goto('file://' + html.split(path.sep).join('/')); await p.waitForTimeout(2500);
+    await abreApp(p, html); await p.waitForTimeout(800);
     const tag = `${md}-${th}`;
     const shot = async (nome, sel) => {
       if (md === 'm') await p.screenshot({ path: path.join(out, `${tag}-${nome}.png`), fullPage: true });

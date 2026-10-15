@@ -2,6 +2,7 @@
 // Uso:  node tools/teste-plataforma.cjs [--html caminho/test.html] [--out pasta-de-capturas]
 // Sai com código 1 se alguma verificação falhar ou houver erro de JS.
 const { chromium } = require('playwright');
+const { prepara, abre } = require('./pw-comum.cjs');
 const path = require('path'), fs = require('fs');
 const { pathToFileURL } = require('url');
 const ROOT = path.resolve(__dirname, '..');
@@ -16,10 +17,8 @@ async function abrir(b, o = {}) {
   const ctx = await b.newContext({ viewport: o.viewport || { width: 1440, height: 900 }, colorScheme: o.tema || 'light' });
   if (o.init) await ctx.addInitScript(o.init);
   const p = await ctx.newPage();
-  await p.route(/three@0\.128\.0\/build\/three\.min\.js/, r => r.fulfill({ path: path.join(THREE, 'build/three.min.js'), contentType: 'application/javascript' }));
-  await p.route(/OrbitControls\.js/, r => r.fulfill({ path: path.join(THREE, 'examples/js/controls/OrbitControls.js'), contentType: 'application/javascript' }));
+  await prepara(p);
   p.errs = []; p.on('pageerror', e => p.errs.push('PE ' + e.message)); p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) p.errs.push('CE ' + m.text()) });
-  await p.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());   // não depende da internet
   await p.goto(pathToFileURL(HTML).href, { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => typeof CALC !== 'undefined' && window._last, null, { timeout: 30000 });
   return p;
@@ -91,8 +90,9 @@ async function travamento(p, fn) {
   console.log('0.4 — desfazer / refazer');
   await p.evaluate(() => histCommit());
   // em todas as etapas: muda o primeiro campo numérico e desfaz
-  for (const k of ['terreno', 'regras', 'produto', 'viab', 'projeto', 'clima']) {
-    await step(p, k);
+  // UX v3: 5 etapas; Projeto em duas sub-abas (Garagem e Sol, que absorveram Regras › Projeto e Clima)
+  for (const k of ['terreno', 'produto', 'viab', 'projeto:gar', 'projeto:sol']) {
+    if (k.includes(':')) { await p.evaluate(([e, s]) => goStep(e, s), k.split(':')); await p.waitForTimeout(400); await ocioso(p) } else await step(p, k);
     // interface v2: campos ficam em sub-abas e seções recolhidas — vai à sub-aba de premissas e abre as seções
     await p.evaluate(k => { if (k === 'viab') { SUBX.viab = 'prem'; renderTab() } document.querySelectorAll('#tabbody details.sec').forEach(d => d.open = true) }, k); await p.waitForTimeout(200);
     const antes = await p.evaluate(() => { histCommit(); return JSON.stringify(S) }), n0 = await p.evaluate(() => HIST.undo.length);
@@ -198,7 +198,7 @@ async function travamento(p, fn) {
   console.log('0.3 — volta para a página sem Worker');
   const q = await abrir(b, { init: () => { try { localStorage.setItem('gabarito.worker', 'false') } catch (e) {} } });
   ok(await q.evaluate(() => CALC.estado === 'falhou' && !!window._last.m.gar), 'sem Worker: cálculo completo na página', await q.evaluate(() => CALC.estado));
-  await q.evaluate(() => { SUBX.produto = 'otim'; goStep('produto') }); await q.waitForTimeout(300);
+  await q.evaluate(() => goStep('produto')); await q.waitForTimeout(300);
   await q.click('#tabbody [data-act="otim"]');
   await q.waitForFunction(() => !OTRUN && OTIM, null, { timeout: 240000 });
   ok(true, 'otimizador na página (sem Worker)');

@@ -6,6 +6,7 @@
 //    duplica (mesmos números) → exclui (armar/confirmar) e desfaz;
 //  - capturas (desktop 1440 e celular 400, claro e escuro; cheia e vazia) em --out. Sai com 1 se algo falhar ou houver erro de JS.
 const { chromium } = require('playwright');
+const { prepara, abre } = require('./pw-comum.cjs');
 const path = require('path'), fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');
 const THREE_DIR = path.join(ROOT, 'node_modules', 'three');
@@ -26,10 +27,9 @@ const ok = (c, msg) => { console.log((c ? '  ok   ' : '  FALHA ') + msg); if (!c
     const ctx = await b.newContext({ viewport: md === 'm' ? { width: 400, height: 860 } : { width: 1440, height: 900 }, deviceScaleFactor: md === 'm' ? 2 : 1, colorScheme: th });
     await ctx.addInitScript(t => { try { localStorage.setItem('gabarito.tema', JSON.stringify(t)) } catch (e) {} }, th);
     const p = await ctx.newPage();
-    await p.route(/three@0\.128\.0\/build\/three\.min\.js/, r => r.fulfill({ path: path.join(THREE_DIR, 'build/three.min.js'), contentType: 'application/javascript' }));
-    await p.route(/OrbitControls\.js/, r => r.fulfill({ path: path.join(THREE_DIR, 'examples/js/controls/OrbitControls.js'), contentType: 'application/javascript' }));
+    await prepara(p);
     const errs = []; p.on('pageerror', e => errs.push('PE ' + e.message)); p.on('console', m => { if (m.type() === 'error') errs.push('CE ' + m.text()) });
-    await p.goto('file://' + html.split(path.sep).join('/'));
+    await abre(p, html);
     await p.waitForFunction(() => typeof EST !== 'undefined' && EST.pronto, null, { timeout: 30000 });
     await p.evaluate(() => calcPronto()); await p.waitForTimeout(800);
     const shot = n => p.screenshot({ path: path.join(out, `${tag}-${n}.png`) });

@@ -3,6 +3,7 @@
 // Confere em Torres (SC): Morro do Farol (≈ 20% descendo para o sul/sudoeste, confiança alta ou média) e centro (plano ou inconclusivo),
 // o bloqueio sem lote georreferenciado, a mensagem sem rede, "Usar na topografia", "Só como desnível" (sinal), cotas dos cantos e Ctrl+Z.
 const { chromium } = require('playwright');
+const { prepara } = require('./pw-comum.cjs');
 const path = require('path');
 const fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');
@@ -14,8 +15,7 @@ let falhas = 0; const ok = (c, m) => { console.log((c ? 'ok   ' : 'FALHA') + ' '
   const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
   const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
   const THREE = path.join(ROOT, 'node_modules', 'three');
-  await p.route(/three@0\.128\.0\/build\/three\.min\.js/, r => r.fulfill({ path: path.join(THREE, 'build/three.min.js'), contentType: 'application/javascript' }));
-  await p.route(/OrbitControls\.js/, r => r.fulfill({ path: path.join(THREE, 'examples/js/controls/OrbitControls.js'), contentType: 'application/javascript' }));
+  await prepara(p);
   const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|net::ERR/.test(m.text())) errs.push(m.text()) });
   await p.goto(url || ('file://' + html.split(path.sep).join('/')), { waitUntil: 'domcontentloaded' }); await p.waitForTimeout(2500);
   const lote = (lat, lon, geo) => p.evaluate(([la, lo, g]) => { const d = 0.0002; aplicarLoteGeo([[la - d, lo - d * 0.6], [la - d, lo + d * 0.6], [la + d, lo + d * 0.6], [la + d, lo - d * 0.6]], 'teste'); S.lote.geo = g; S.topo.on = false; S.topo.pts = []; S.topo.fonte = ''; S.lote.desnivel = 0; S.relevo.plano = null; S.relevo.planos = []; S.relevo.conf = null; S.relevo.aplicado = ''; goStep('terreno'); setView('impl') }, [lat, lon, geo]);

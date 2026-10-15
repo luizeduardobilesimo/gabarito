@@ -6,6 +6,7 @@
 // Os downloads são capturados por um window.claude.use("downloads") falso (nome + tamanho).
 // Sai com código 1 se alguma verificação falhar ou houver erro de JS.
 const { chromium } = require('playwright');
+const { prepara } = require('./pw-comum.cjs');
 const path = require('path'), fs = require('fs');
 const { pathToFileURL } = require('url');
 const ROOT = path.resolve(__dirname, '..');
@@ -15,7 +16,9 @@ const HTML = path.resolve(arg('--html', path.join(ROOT, 'test.html')));
 const OUT = path.resolve(arg('--out', path.join(ROOT, 'shots', 'funcional')));
 const FIX = path.join(ROOT, 'tests', 'fixtures', 'overpass-torres.json');
 const TODAS = ['terreno', 'entorno', 'regras', 'produto', 'viab', 'projeto', 'clima', 'cen', 'global', 'celular'];
-const ETAPAS = arg('--etapas', TODAS.join(',')).split(',');
+// grupos de teste; os nomes das etapas da UX v3 também valem (entrega → cen, viabilidade → viab, sol/vento → clima)
+const ALIAS = { entrega: 'cen', cenarios: 'cen', viabilidade: 'viab', sol: 'clima', vento: 'clima', mobile: 'celular' };
+const ETAPAS = [...new Set(arg('--etapas', TODAS.join(',')).split(',').map(k => ALIAS[k] || k))];
 fs.mkdirSync(OUT, { recursive: true });
 
 const placar = {}; let etapaAtual = '';
@@ -36,10 +39,9 @@ async function abrir(b, o = {}) {
     window.claude = { use: n => n === 'downloads' ? { save: async o => { window.__dl.push({ nome: o.filename, tam: tam(o.data) }) } } : null };
   }, o.tema || 'light');
   const p = await ctx.newPage(); p.setDefaultTimeout(60000);
-  await p.route(/three@0\.128\.0\/build\/three\.min\.js/, r => r.fulfill({ path: path.join(THREE, 'build/three.min.js'), contentType: 'application/javascript' }));
-  await p.route(/OrbitControls\.js/, r => r.fulfill({ path: path.join(THREE, 'examples/js/controls/OrbitControls.js'), contentType: 'application/javascript' }));
+  await prepara(p);
   await p.route(/overpass|\/interpreter/, r => r.fulfill({ path: FIX, contentType: 'application/json' }));
-  await p.route(/unpkg\.com|arcgisonline|tile\.openstreetmap|nominatim|fonts\.(googleapis|gstatic)/, r => r.abort());
+  await p.route(/unpkg\.com|arcgisonline|tile\.openstreetmap|nominatim/, r => r.abort());
   p.errs = [];
   p.on('pageerror', e => p.errs.push('PE ' + (e.stack || e.message).split('\n').slice(0, 2).join(' | ')));
   p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|net::ERR|maplibre|MapLibre/i.test(m.text())) p.errs.push('CE ' + m.text().slice(0, 300)) });

@@ -6,6 +6,7 @@
 //   --inv  grava o inventário (caminhos por tela, abrindo seções e "Mais opções") nesse arquivo; sempre grava <out>/inventario.json
 //   --ref  inventário de referência (padrão docs/aud-v2.json, gerado antes da reforma de UX v3): lista os caminhos que deixaram de ser alcançáveis
 const { chromium } = require('playwright'); const path = require('path'), fs = require('fs');
+const { prepara, abre } = require('./pw-comum.cjs');
 const ROOT = path.resolve(__dirname, '..'); const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d };
 // espelhos permitidos (docs/UX-v3.md §4.6): o mesmo data-p em mais de uma tela, de propósito
 const ESPELHOS = [/^produto\.mix\.#\.preco$/, /^produto\.cob\.preco$/, /^mapa\.raio$/];
@@ -17,11 +18,10 @@ const SECOES_ESPELHO = ['entedit'];   // tudo o que fica dentro destas seções 
   const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
   const p = await b.newPage({ viewport: { width: W, height: 900 } });
   const T = path.join(ROOT, 'node_modules', 'three');
-  await p.route(/three@0\.128\.0\/build\/three\.min\.js/, r => r.fulfill({ path: path.join(T, 'build/three.min.js'), contentType: 'application/javascript' }));
-  await p.route(/OrbitControls\.js/, r => r.fulfill({ path: path.join(T, 'examples/js/controls/OrbitControls.js'), contentType: 'application/javascript' }));
+  await prepara(p);
   await p.addInitScript(() => { try { localStorage.clear(); localStorage.setItem('gabarito.tema', '"light"') } catch (e) {} });
   const erros = []; p.on('pageerror', e => erros.push(e.message));
-  await p.goto('file://' + html.split(path.sep).join('/')); await p.waitForTimeout(3000);
+  await abre(p, html); await p.waitForTimeout(3000);
   // etapas (STEPS) e sub-abas (subsDe) lidas da página
   const telas = await p.evaluate(() => {
     const ks = STEPS.map(s => s.k), l = [];
@@ -33,12 +33,16 @@ const SECOES_ESPELHO = ['entedit'];   // tudo o que fica dentro destas seções 
     }
     return l;
   });
+  // Projeto › Vento tem dois modos (chave "No chão | Túnel 3D"): o túnel 3D entra só no inventário (os campos cfd.*), não conta como tela
+  const extras = telas.some(t => t[0] === 'projeto' && t[1] === 'vento') ? [['projeto', 'vento', 'v3d']] : [];
   const rel = [], inv = {};
-  for (const [k, sub] of telas) {
-    await p.evaluate(([k, sub]) => {
+  for (const [k, sub, modo] of [...telas, ...extras]) {
+    await p.evaluate(([k, sub, modo]) => {
       // troca só o inspetor (sem levar o palco para a vista da sub-aba, como irPara faria: o túnel 3D por software trava a auditoria)
-      goStep(k); if (sub && k === 'projeto') { PSUB = sub; renderTab() } else if (sub && k === 'clima') { CSUB = sub; renderTab() } else if (sub) { SUBX[k] = sub; renderTab() }
-    }, [k, sub]); await p.waitForTimeout(1500);
+      goStep(k);
+      if (sub && k === 'projeto') { PSUB = sub; if (sub === 'vento') { CSUB = modo || 'vento'; if (typeof VMODO !== 'undefined') VMODO = CSUB } renderTab() }
+      else if (sub && k === 'clima') { CSUB = sub; renderTab() } else if (sub) { SUBX[k] = sub; renderTab() }
+    }, [k, sub, modo]); await p.waitForTimeout(1500);
     const r = await p.evaluate(() => {
       const TB = document.getElementById('tabbody'), pr = TB.getBoundingClientRect();
       const cards = [...TB.querySelectorAll(':scope > .card, :scope > details.card, :scope > section.card, :scope > div > .card')].map(c => {
@@ -65,7 +69,8 @@ const SECOES_ESPELHO = ['entedit'];   // tudo o que fica dentro destas seções 
     // captura do painel inteiro (estica o inspetor)
     const h = r.tot.alturaPx;
     await p.setViewportSize({ width: W, height: Math.min(6000, Math.max(900, h + 300)) }); await p.waitForTimeout(400);
-    await p.locator('aside, #insp, .insp').first().screenshot({ path: path.join(out, `insp-${k}${sub ? '-' + sub : ''}.png`) }).catch(async () => { await p.screenshot({ path: path.join(out, `insp-${k}${sub ? '-' + sub : ''}.png`), clip: { x: 0, y: 0, width: 470, height: Math.min(6000, h + 300) } }).catch(e => console.error('sem captura de ' + k + (sub ? '/' + sub : '') + ': ' + e.message.split('\n')[0])) });
+    const arqInsp = path.join(out, `insp-${k}${sub ? '-' + sub : ''}${modo ? '-' + modo : ''}.png`);
+    await p.locator('aside, #insp, .insp').first().screenshot({ path: arqInsp }).catch(async () => { await p.screenshot({ path: arqInsp, clip: { x: 0, y: 0, width: 470, height: Math.min(6000, h + 300) } }).catch(e => console.error('sem captura de ' + k + (sub ? '/' + sub : '') + ': ' + e.message.split('\n')[0])) });
     await p.setViewportSize({ width: W, height: 900 });
     // inventário: todos os caminhos alcançáveis na tela (o conteúdo das seções fechadas já está no DOM; "Mais opções" é só escondido).
     // Índices do meio viram # (produto.mix.0.preco → produto.mix.#.preco). Não grava nada no navegador.
@@ -77,9 +82,9 @@ const SECOES_ESPELHO = ['entedit'];   // tudo o que fica dentro destas seções 
       });
       return o;
     }, SECOES_ESPELHO);
-    const tela = k + (sub ? '/' + sub : '');
+    const tela = k + (sub ? '/' + sub : '') + (modo ? '/' + modo : '');
     inv[tela] = ps;
-    rel.push({ tela, ...r, caminhos: Object.keys(ps).length });
+    rel.push({ tela, modo: !!modo, ...r, caminhos: Object.keys(ps).length });
   }
   fs.writeFileSync(path.join(out, 'auditoria.json'), JSON.stringify(rel, null, 1));
   for (const r of rel) {
@@ -88,14 +93,18 @@ const SECOES_ESPELHO = ['entedit'];   // tudo o que fica dentro destas seções 
     if (r.cort.length) console.log('  CORTES: ' + r.cort.join(' | '));
   }
   // totais (os números de docs/UX-v3.md §1)
-  const porTela = {}; Object.entries(inv).forEach(([t, o]) => Object.keys(o).forEach(c => (porTela[c] = porTela[c] || []).push(t)));
+  // o modo "túnel 3D" de Vento é a mesma tela (os dois modos não aparecem juntos): para os duplicados conta como projeto/vento
+  const base = t => t.split('/').slice(0, 2).join('/');
+  const porTela = {}; Object.entries(inv).forEach(([t, o]) => Object.keys(o).forEach(c => { const l = porTela[c] = porTela[c] || []; if (!l.includes(base(t))) l.push(base(t)) }));
+  const invBase = {}; Object.entries(inv).forEach(([t, o]) => { const b = invBase[base(t)] = invBase[base(t)] || {}; Object.entries(o).forEach(([c, v]) => { b[c] = b[c] == null ? v : (b[c] && v) }) });
   const etapas = [...new Set(telas.map(t => t[0]))];
   const soma = (l, f) => l.reduce((s, r) => s + f(r), 0);
-  console.log(`\n# Totais: ${etapas.length} etapas · ${rel.length} telas · ${soma(rel, r => r.tot.secoes)} seções · ${Object.keys(porTela).length} caminhos de estado · ${soma(rel, r => r.tot.campos)} campos · ${soma(rel, r => r.tot.botoes)} botões`);
+  const relT = rel.filter(r => !r.modo);
+  console.log(`\n# Totais: ${etapas.length} etapas · ${relT.length} telas · ${soma(rel, r => r.tot.secoes)} seções · ${Object.keys(porTela).length} caminhos de estado · ${soma(rel, r => r.tot.campos)} campos · ${soma(rel, r => r.tot.botoes)} botões`);
   console.log('  campos por etapa: ' + etapas.map(k => { const l = rel.filter(r => r.tela.split('/')[0] === k); return `${k} ${soma(l, r => r.tot.campos)}${l.length > 1 ? ' (' + l.map(r => r.tela.split('/')[1] + ' ' + r.tot.campos).join(', ') + ')' : ''}` }).join(' · '));
   const maisPri = rel.filter(r => r.tot.pri > 1); if (maisPri.length) console.log('  telas com mais de 1 .btn.pri visível: ' + maisPri.map(r => `${r.tela} (${r.tot.pri})`).join(', '));
   // duplicados entre telas
-  const dups = Object.entries(porTela).filter(([, ts]) => ts.length > 1).map(([c, ts]) => ({ c, ts, espelho: ESPELHOS.some(re => re.test(c)) || ts.every(t => inv[t][c] === true) }));
+  const dups = Object.entries(porTela).filter(([, ts]) => ts.length > 1).map(([c, ts]) => ({ c, ts, espelho: ESPELHOS.some(re => re.test(c)) || ts.every(t => invBase[t][c] === true) }));
   const erroDup = dups.filter(d => !d.espelho);
   console.log(`  data-p em mais de uma tela: ${dups.length} (${erroDup.length} fora dos espelhos permitidos)`);
   if (DUP) dups.forEach(d => console.log(`    ${d.espelho ? '(espelho) ' : ''}${d.c} → ${d.ts.join(', ')}`));
@@ -107,6 +116,17 @@ const SECOES_ESPELHO = ['entedit'];   // tudo o que fica dentro destas seções 
     const ref = JSON.parse(fs.readFileSync(REF, 'utf8')), falta = ref.caminhos.filter(c => !porTela[c]);
     console.log(`  inventário de referência (${path.relative(ROOT, REF)}): ${ref.caminhos.length} caminhos · ${falta.length ? falta.length + ' não alcançáveis agora: ' + falta.join(', ') : 'todos alcançáveis'}`);
   }
+  // metas da UX v3 (docs/UX-v3.md §8 P8): campos visíveis, altura do painel, seções, botão laranja e duplicados
+  const LIM = { terreno: 9, produto: 8, 'viab/res': 8 }, fora = [];
+  relT.forEach(r => {
+    const lim = LIM[r.tela] || LIM[r.tela.split('/')[0]] || 6, sec = r.tela === 'viab/prem' ? r.tot.secoes : r.tot.secoes + r.tot.res, limSec = r.tela === 'viab/prem' ? 12 : 8;
+    if (r.tot.visiveis > lim) fora.push(`${r.tela}: ${r.tot.visiveis} campos visíveis (meta ${lim})`);
+    if (r.tot.alturaPx > 1400) fora.push(`${r.tela}: painel ${r.tot.alturaPx}px (meta 1.400)`);
+    if (sec > limSec) fora.push(`${r.tela}: ${sec} seções (meta ${limSec})`);
+    if (r.tot.pri > 1) fora.push(`${r.tela}: ${r.tot.pri} .btn.pri visíveis`);
+  });
+  if (erroDup.length) fora.push(`${erroDup.length} data-p duplicados fora dos espelhos`);
+  console.log(`\n# Metas: ${relT.length} telas · ${fora.length ? fora.length + ' fora: ' + fora.join(' · ') : 'todas dentro'}`);
   if (erros.length) console.log('\nERROS DE JS: ' + [...new Set(erros)].join(' | '));
   await b.close();
 })();

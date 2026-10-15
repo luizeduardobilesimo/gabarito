@@ -2,6 +2,7 @@
 // eficiência global / V/C na fronteira de Pareto. Salva capturas e lista erros de JS.
 // Uso:  node tools/teste-alavancas.cjs [--html caminho/test.html] [--out pasta] [--sem-otim]
 const { chromium } = require('playwright');
+const { prepara, abre } = require('./pw-comum.cjs');
 const path = require('path'), fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');
 const THREE_DIR = path.join(ROOT, 'node_modules', 'three');
@@ -16,10 +17,9 @@ const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? proces
     const ctx = await b.newContext({ viewport: md === 'm' ? { width: 400, height: 860 } : { width: 1440, height: 900 }, deviceScaleFactor: md === 'm' ? 2 : 1, colorScheme: th });
     await ctx.addInitScript(t => { try { localStorage.setItem('gabarito.tema', JSON.stringify(t)) } catch (e) {} }, th);
     const p = await ctx.newPage();
-    await p.route(/three@0\.128\.0\/build\/three\.min\.js/, r => r.fulfill({ path: path.join(THREE_DIR, 'build/three.min.js'), contentType: 'application/javascript' }));
-    await p.route(/OrbitControls\.js/, r => r.fulfill({ path: path.join(THREE_DIR, 'examples/js/controls/OrbitControls.js'), contentType: 'application/javascript' }));
+    await prepara(p);
     const errs = []; p.on('pageerror', e => errs.push('PE ' + e.message)); p.on('console', m => { if (m.type() === 'error') errs.push('CE ' + m.text()) });
-    await p.goto('file://' + html.split(path.sep).join('/'), { timeout: 90000 }); await p.waitForTimeout(2500);
+    await abre(p, html); await p.waitForTimeout(800);
     const cap = async (nome, sel) => { const f = path.join(out, `alav-${md}-${th}-${nome}.png`); if (sel) { const el = await p.$(sel); if (el) { await el.scrollIntoViewIfNeeded(); await el.screenshot({ path: f }); return } } await p.screenshot({ path: f, fullPage: md === 'm' }) };
 
     // --- Viabilidade › Riscos › Alavancas
@@ -50,28 +50,32 @@ const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? proces
     await p.click('#rail [data-step=produto]'); await p.waitForTimeout(1500);
     if (await p.$eval('#phead .sub [data-act]', e => e.getAttribute('aria-pressed') !== 'true').catch(() => false)) { await p.click('#phead .sub [data-act]'); await p.waitForTimeout(800) }
     const pot = await p.$eval('#pot', e => e.innerText.replace(/\s+/g, ' ')).catch(() => '');
-    ok(/Privativo possível/.test(pot), 'card Potencial do terreno: ' + pot.slice(0, 70));
-    const nota = await p.$eval('#potUso', e => e.innerText.replace(/\s+/g, ' ')).catch(() => '');
-    ok(!/Só pelo andar/.test(nota), 'sem nota “só pelo andar” quando a diferença é pequena (< 2%)');
+    // UX v3 (P3): o potencial está no RES "Uso do potencial" (#pot): privativo usado "de" possível; a conta só pelo andar foi para o ⓘ
+    ok(/Privativo/.test(pot) && /de [\d.]+ m²/.test(pot), 'RES Uso do potencial: ' + pot.slice(0, 70));
+    const info = await p.$eval('#pot [data-info]', e => e.dataset.info).catch(() => '');
+    ok(/eficiência global/.test(info) && /Pela eficiência do andar/.test(info), 'ⓘ do privativo explica a eficiência global e a conta só pelo andar');
     await cap('potencial', '#tabbody section.res');
     // com a garagem entrando no CA, a conta só pelo andar superestima: a nota aparece
     await p.evaluate(() => { S.regras.ncGaragem = false; save(); renderTab() }); await p.waitForTimeout(1500);
-    const nota2 = await p.$eval('#potUso', e => e.innerText.replace(/\s+/g, ' ')).catch(() => ''); ok(/Só pelo andar: [\d.]+ m² \(\+\d+%\)/.test(nota2), 'nota com garagem computável: ' + nota2.slice(-50));
+    const pos = await p.evaluate(() => { const po = potencial(S, window._last.m); return { priv: po.priv, priv0: po.priv0 } });
+    const info2 = await p.$eval('#pot [data-info]', e => e.dataset.info).catch(() => '');
+    ok(pos.priv0 > pos.priv * 1.02 && info2.includes('daria'), `garagem computável: só pelo andar superestima (${Math.round(pos.priv0)} > ${Math.round(pos.priv)} m²) e o ⓘ mostra a diferença`);
     await cap('potencial-garagem', '#tabbody section.res');
     await p.evaluate(() => { S.regras.ncGaragem = true; save(); renderTab() }); await p.waitForTimeout(800);
 
     // --- Produto › Otimizar (eficiência global e V/C na fronteira)
     if (!process.argv.includes('--sem-otim') && md === 'd' && th === 'light') {
-      await p.click('#phead .sub >> text=Otimizar'); await p.waitForTimeout(1200);
+      // UX v3 (P3): sem sub-aba Otimizar — os critérios ficam em "Opções", ao lado de "Sugerir a melhor combinação"
+      await p.evaluate(() => { const a = document.querySelector('#tabbody .pr-sug .advbtn'); if (a && a.getAttribute('aria-expanded') !== 'true') a.click() }); await p.waitForTimeout(600);
       ok(await p.$('#tabbody [data-act="otk2"][data-k="efic"]') != null && await p.$('#tabbody [data-act="otk2"][data-k="vc"]') != null, 'chips Eficiência global e V/C');
       await p.click('#tabbody [data-act="otk2"][data-k="efic"]'); await p.click('#tabbody [data-act="otk2"][data-k="vc"]'); await p.waitForTimeout(300);
-      await cap('otim-chips', '#otCard');
+      await cap('otim-chips', '#tabbody .pr-sug');
       const t0 = Date.now(); await p.click('#tabbody [data-act="otim"]');
       await p.waitForFunction(() => typeof OTIM !== 'undefined' && OTIM && OTIM.pareto && !document.querySelector('#tabbody [data-act="otim"][disabled]'), null, { timeout: 120000 });
       console.log(`    otimizador na página: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
       await p.waitForTimeout(1500);
       const crit = await p.evaluate(() => OTIM.pareto.criterios); ok(crit.includes('efic') && crit.includes('vc'), 'critérios na fronteira: ' + crit.join(', '));
-      const res = await p.$eval('#otRes', e => e.innerText.replace(/\s+/g, ' ')).catch(() => ''); ok(/Margem s\/ VGV/.test(res), 'resultados mostram Margem s/ VGV');
+      const res = await p.$eval('#otRes', e => e.innerText.replace(/\s+/g, ' ')).catch(() => ''); ok(/Margem/.test(res), 'resultados mostram a margem (s/ VGV)');
       await cap('otim-resultados', '#otRes');
       await cap('otim-pareto', '#pfCard');
     }

@@ -2,6 +2,7 @@
 // Uso:  node tools/teste-entorno.cjs [--html caminho/test.html]
 // Confere: selecionar, mover, redimensionar, pátio, apagar, desfazer, seleção por retângulo (Shift + arrastar).
 const { chromium } = require('playwright');
+const { prepara, abre } = require('./pw-comum.cjs');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d };
@@ -11,10 +12,9 @@ let falhas = 0; const ok = (c, m) => { console.log((c ? 'ok   ' : 'FALHA') + ' '
   const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
   const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
   const THREE = path.join(ROOT, 'node_modules', 'three');
-  await p.route(/three@0\.128\.0\/build\/three\.min\.js/, r => r.fulfill({ path: path.join(THREE, 'build/three.min.js'), contentType: 'application/javascript' }));
-  await p.route(/OrbitControls\.js/, r => r.fulfill({ path: path.join(THREE, 'examples/js/controls/OrbitControls.js'), contentType: 'application/javascript' }));
+  await prepara(p);
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('file://' + html.split(path.sep).join('/')); await p.waitForTimeout(2500);
+  await abre(p, html); await p.waitForTimeout(800);
   await p.evaluate(async () => {
     localStorage.clear(); S.entorno = [entNovo([60, 10], 24, 18, 30, 'A'), entNovo([-60, 10], 20, 20, 18, 'B'), entNovo([60, -50], 18, 18, 12, 'C')];
     goStep('terreno'); setView('impl'); await new Promise(r => setTimeout(r, 400)); entEnquadrar(); await new Promise(r => setTimeout(r, 400));
