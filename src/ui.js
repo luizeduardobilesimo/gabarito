@@ -230,6 +230,59 @@ function renderKPIs(m,f){
 function renderLive(m,f,fast){ const fn=STEP_LIVE[TAB]; if(fn) fn(m,f,fast); cardsFor(TAB, curSub()).forEach(c=>{ if(c.live) try{ c.live(m,f,fast) }catch(e){ console.error("[card "+c.key+"]",e) } }) }
 const curSub=()=> TAB==="projeto"? PSUB : TAB==="clima"? CSUB : (typeof subAtual==="function"? subAtual(TAB) : null);
 
+/* ================= navegação entre etapas, sub-abas e seções (UX v3) ================= */
+/* sub-abas fixas de Projeto (PSUB) e Clima (CSUB); as outras etapas usam SUBTABS/SUBDEF/SUBX (src/ui/ux.js) */
+const ETAPA_SUBS = {
+  projeto: [["gar","Garagem"],["tipo","Pavimento tipo"],["andar","Andares"]],
+  clima: [["sol","Sol"],["vento","Vento no chão"],["v3d","Vento 3D"]],
+};
+/* a etapa atual mostra sol/vento (hoje: a etapa Clima). Use no lugar de TAB==="clima". */
+function emClima(){ return TAB==="clima" }
+/* chaves das sub-abas da etapa k ([] se não tem). As de SUBTABS só se conhecem depois de a etapa montar o painel uma vez:
+   se ainda não montou, monta o HTML (sem pôr na tela) só para registrar. */
+function subsDe(k){
+  if(ETAPA_SUBS[k]) return ETAPA_SUBS[k].map(x=>x[0]);
+  if(typeof SUBDEF==="undefined") return [];
+  if(!SUBDEF[k] && STEP_R[k]) try{ STEP_R[k]() }catch(e){}
+  return (SUBDEF[k]||[]).map(x=>x[0]);
+}
+/* leva o usuário a um ponto do inspetor: troca a etapa e a sub-aba (PSUB, CSUB ou SUBX, conforme a etapa), abre a seção
+   <details data-key=secKey> (e o "Mais opções" que contém o campo), rola até ela e foca o campo [data-p=campoP] se dado.
+   Tudo opcional menos a etapa; sem etapa = a atual. Devolve o elemento focado/rolado (ou null). */
+function irPara(etapa, sub, secKey, campoP){
+  etapa = etapa || TAB;
+  // destinos da UX v3 (Projeto › Sol/Vento) enquanto a etapa Clima existir; sub-aba que a etapa não tem é ignorada
+  if(etapa==="projeto" && (sub==="sol"||sub==="vento") && STEPS.some(s=>s.k==="clima") && !ETAPA_SUBS.projeto.some(x=>x[0]===sub)) etapa="clima";
+  if(!STEPS.some(s=>s.k===etapa)) etapa=TAB;
+  if(sub && !subsDe(etapa).includes(sub)) sub=null;
+  if(sub){
+    if(etapa==="projeto") PSUB=sub;
+    else if(etapa==="clima"){ CSUB=sub; if(sub!=="v3d") S.clima.modo=sub }
+    else if(typeof SUBX!=="undefined"){ SUBX[etapa]=sub; LS.set("gabarito.subx",SUBX) }
+  }
+  // a seção fica lembrada como aberta (gabarito.det), assim sobrevive ao renderTab
+  if(secKey){ const st=LS.get("gabarito.det")||{}; st[etapa+":"+secKey]=1; LS.set("gabarito.det",st) }
+  if(etapa!==TAB) goStep(etapa);
+  else { renderTab(); const w=stepView(); if(w && w!==VIEW) setView(w); else if(etapa==="clima" && sub && VIEW==="clima" && window._last){ viewbarSegs(window._last.m); climaRun(); hintFor() } }   // como ACT.subx / ACT.csub
+  TB.scrollTop=0;
+  const q=s=>{ try{ return TB.querySelector(s) }catch(e){ return null } };
+  const sec = secKey ? q(`details[data-key="${CSS.escape(secKey)}"]`) : null;
+  if(sec) sec.open=true;
+  const cp = campoP && CSS.escape(campoP);
+  const campo = cp ? (q(`[data-p="${cp}"]`) || q(`[data-set="${cp}"][aria-pressed="true"]`) || q(`[data-set="${cp}"]`)) : null;
+  if(campo){
+    for(let d=campo.closest("details"); d; d=d.parentElement && d.parentElement.closest("details")) d.open=true;
+    const adv=campo.closest(".adv"), ab=adv && adv.querySelector(":scope > .advb");
+    if(ab && ab.hidden){ const bt=adv.querySelector(":scope > .advbtn"); if(bt && ACT.advTog) ACT.advTog(bt); else ab.hidden=false }
+  }
+  const alvo = campo || sec;
+  if(alvo){
+    alvo.scrollIntoView({block: campo? "center" : "start"});
+    if(campo && typeof campo.focus==="function") try{ campo.focus({preventScroll:true}) }catch(e){}
+  }
+  return alvo;
+}
+
 /* ================= utilidades compartilhadas ================= */
 function genNeighbors(){
   const L=S.lote.pts, out=[];
