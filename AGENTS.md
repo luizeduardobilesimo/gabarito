@@ -41,7 +41,7 @@ npm run typecheck                 # tsc sobre os scripts globais (arquivos com /
 
 | arquivo | papel |
 |---|---|
-| `shell.html` | CSS (design system: Archivo + IBM Plex, tokens claro/escuro, componentes) e marcação: topo, trilho de etapas `#rail`, inspetor (`#phead`, `#tabbody`, `#pfoot`), palco `#view` com barra de vistas e régua de KPIs `#kpis` |
+| `shell.html` | CSS (design system Rixel: DM Sans, tokens claro/escuro em camadas — ver CLAUDE.md —, componentes) e marcação: topo, trilho de etapas `#rail`, inspetor (`#phead`, `#tabbody`, `#pfoot`), palco `#view` com barra de vistas e régua de KPIs `#kpis` |
 | `state.js` | `DEF` (estado padrão), `S` (estado atual, salvo em localStorage `gabarito.v2`), `merge()` com migrações, formatadores `nf/brl/mi/pct/m2/esc/toast` |
 | `geom.js` | geometria 2D: área, offset por semiplano, recorte, `band`, `cutAt`, `clipToPoly` |
 | `garagem.js` | **motor de garagem**: `driveLayout` (arranjo das faixas de rampa e da faixa do térreo, testando ordens e deslocamentos para não passar pelos núcleos), `rampExt`, `vertical` (circulação vertical: faixas, rampas por pavimento, patamares e portais de chegada/saída), `genLayout` (fileiras), `rasterCheck` (malha de 0,5 m: alcance do carro e profundidade de manobra), `repair` (abre passagens tirando o mínimo de vagas), `infill` (vagas extras nas sobras), `rota` (rota real entre portais), `garageSolve`/`garageLayout`/`garagens`, `acessoCandidatos`/`acessoAvalia` (estudo do melhor acesso) |

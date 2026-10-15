@@ -1,5 +1,16 @@
 /* ================= relatório e exportações ================= */
 const useCap = n => (window.claude && window.claude.use) ? Promise.resolve(window.claude.use(n)).catch(()=>null) : Promise.resolve(null);
+/* cabeçalho padrão do PDF (sem marca do usuário): faixa grafite Rixel, ícone Rixel em vetor, "gabarito." com o ponto laranja e "by Rixel" */
+const PDF_RIXEL_GLIFO=[[[11.2,8.8],[18.6,16.2],[11.2,23.6],[8.3,20.7],[12.8,16.2],[8.3,11.7]],[[21.2,9.35],[23.75,11.9],[21.2,14.45],[18.65,11.9]],[[21.2,17.95],[23.75,20.5],[21.2,23.05],[18.65,20.5]]];
+function pdfIconeRixel(doc,x,y,s,cor){ const k=s/32; doc.setFillColor(...cor); doc.setDrawColor(...cor); doc.setLineWidth(2*k); if(doc.setLineJoin) doc.setLineJoin("round");
+  PDF_RIXEL_GLIFO.forEach(p=>{ const rel=p.slice(1).map((q,i)=>[(q[0]-p[i][0])*k,(q[1]-p[i][1])*k]); doc.lines(rel, x+p[0][0]*k, y+p[0][1]*k, [1,1], "FD", true) });
+  if(doc.setLineJoin) doc.setLineJoin("miter") }
+function pdfCabecalhoRixel(doc,t,PW,M,T){
+  doc.setFillColor(29,29,31); doc.rect(0,0,PW,16,"F"); pdfIconeRixel(doc,M-1,3,10,[255,255,255]);
+  doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(255);
+  const x=M+10.5; doc.text("gabarito",x,10.4); const w=doc.getTextWidth("gabarito"); doc.setTextColor(232,112,42); doc.text(".",x+w+0.05,10.4);
+  doc.setFontSize(6.5); doc.setTextColor(161,161,166); doc.text("BY RIXEL",x+w+3.2,10.3,{charSpace:0.45});
+  doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(255); doc.text(T(t),PW-M,10.4,{align:"right"}) }
 async function dlNS(){ return useCap("downloads") }
 async function dlCheck(){ const n=document.getElementById("dlNote"); if(!n) return; const d=await dlNS(); if(!d) n.textContent="Os downloads não estão disponíveis nesta visualização. Abra o Gabarito pelo link do claude.ai para baixar arquivos."; }
 async function saveFile(filename, data){
@@ -48,10 +59,10 @@ async function exportPDF(){
   const T=s=>String(s).replace(/[→]/g,"->").replace(/[≈]/g,"~").replace(/[−–—]/g,"-").replace(/[÷]/g,"/").replace(/[“”]/g,'"');
   const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"}); const PW=210, M=14; let y=0;
   const MK=(typeof marcaPdf==="function")? marcaPdf() : null;   // marca do usuário (null = PDF padrão do Gabarito)
-  const ink=[28,39,41], mut=[93,106,106], acc=MK?MK.cor:[31,95,139], mark=[227,169,11], ok=[44,138,87], bad=[191,61,42];
-  const head=(t)=>{ if(MK) marcaHead(doc,MK,t,PW,M,T); else { doc.setFillColor(...ink); doc.rect(0,0,PW,16,"F"); doc.setTextColor(255); doc.setFont("helvetica","bold"); doc.setFontSize(12); doc.text("GABARITO",M,10.5); doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.text(T(t),PW-M,10.5,{align:"right"}) } doc.setTextColor(...ink); y=24 };
+  const ink=[29,29,31], mut=[110,110,115], acc=MK?MK.cor:[232,112,42], mark=[232,112,42], ok=[31,157,85], warn=[184,116,15], bad=[208,52,44];   // identidade Rixel (tokens do shell.html)
+  const head=(t)=>{ if(MK) marcaHead(doc,MK,t,PW,M,T); else pdfCabecalhoRixel(doc,t,PW,M,T); doc.setTextColor(...ink); y=24 };
   const h2=(t)=>{ if(y>262){ doc.addPage(); head(S.nome) } doc.setFont("helvetica","bold"); doc.setFontSize(11.5); doc.setTextColor(...ink); doc.text(T(t).toUpperCase(),M,y); doc.setDrawColor(...(MK?MK.cor:mark)); doc.setLineWidth(0.6); doc.line(M,y+1.6,M+22,y+1.6); y+=7 };
-  const rows=(list,o={})=>{ doc.setFontSize(9); list.forEach(([a,b,st])=>{ if(y>280){ doc.addPage(); head(S.nome) } doc.setFont("helvetica",o.bold&&o.bold.includes(a)?"bold":"normal"); doc.setTextColor(...ink); doc.text(T(a),M+(st?4:0),y); if(st){ doc.setFillColor(...(st==="ok"?ok:st==="warn"?mark:bad)); doc.circle(M+1.2,y-1.1,1.1,"F") } doc.text(T(b),PW-M,y,{align:"right"}); doc.setDrawColor(220); doc.setLineWidth(0.1); doc.line(M,y+1.6,PW-M,y+1.6); y+=5.4 }); y+=2 };
+  const rows=(list,o={})=>{ doc.setFontSize(9); list.forEach(([a,b,st])=>{ if(y>280){ doc.addPage(); head(S.nome) } doc.setFont("helvetica",o.bold&&o.bold.includes(a)?"bold":"normal"); doc.setTextColor(...ink); doc.text(T(a),M+(st?4:0),y); if(st){ doc.setFillColor(...(st==="ok"?ok:st==="warn"?warn:bad)); doc.circle(M+1.2,y-1.1,1.1,"F") } doc.text(T(b),PW-M,y,{align:"right"}); doc.setDrawColor(220); doc.setLineWidth(0.1); doc.line(M,y+1.6,PW-M,y+1.6); y+=5.4 }); y+=2 };
   const img=(url,w,h)=>{ if(!url) return; if(y+h>285){ doc.addPage(); head(S.nome) } doc.addImage(url,"JPEG",M,y,w,h); doc.setDrawColor(200); doc.rect(M,y,w,h); y+=h+5 };
   // capa
   head("Estudo de viabilidade");
@@ -63,7 +74,7 @@ async function exportPDF(){
   if(!MK || MK.capa3d) img(imgs.v3,PW-2*M,(PW-2*M)*0.62);
   const sd=f.saude||saudeNegocio(S,m,f);   // Fase A: indicadores da colinha (src/calc/saude.js)
   const kp=[["Terreno",m2(m.A)],["Unidades",String(m.units)],["Área privativa",m2(m.priv)],["Vagas",`${m.vagas} / ${m.vagasReq}`],["VGV",mi(f.vgv)],["Lucro",mi(f.lucro)],["Margem s/ VGV",pct(sd.margemVGV)],["TIR a.a.",f.tirA==null?"-":pct(f.tirA)],["Eficiência global",pct(sd.eficGlobal)],["V/C",nf(sd.vc,2)+"x"],["Terreno % VGV",pct(sd.terrenoPctVGV)],["Margem s/ receita",pct(f.margem)]];
-  const cw=(PW-2*M)/4; kp.forEach(([l,v],i)=>{ const x=M+(i%4)*cw, yy=y+Math.floor(i/4)*16; doc.setFillColor(...(MK?MK.tint:[242,244,239])); doc.rect(x+0.5,yy,cw-1,14,"F"); doc.setFontSize(7.5); doc.setTextColor(...mut); doc.text(T(l.toUpperCase()),x+3,yy+5); doc.setFontSize(11.5); doc.setTextColor(...ink); doc.setFont("helvetica","bold"); doc.text(T(v),x+3,yy+11); doc.setFont("helvetica","normal") }); y+=Math.ceil(kp.length/4)*16+4;
+  const cw=(PW-2*M)/4; kp.forEach(([l,v],i)=>{ const x=M+(i%4)*cw, yy=y+Math.floor(i/4)*16; doc.setFillColor(...(MK?MK.tint:[245,245,247])); doc.rect(x+0.5,yy,cw-1,14,"F"); doc.setFontSize(7.5); doc.setTextColor(...mut); doc.text(T(l.toUpperCase()),x+3,yy+5); doc.setFontSize(11.5); doc.setTextColor(...ink); doc.setFont("helvetica","bold"); doc.text(T(v),x+3,yy+11); doc.setFont("helvetica","normal") }); y+=Math.ceil(kp.length/4)*16+4;
   doc.setFontSize(8); doc.setTextColor(...mut); doc.text(T("Estudo preliminar de massa. Não substitui projeto legal, consulta de viabilidade na prefeitura nem orçamento executivo."),M,y); doc.setTextColor(...ink);
   // implantação e regras
   doc.addPage(); head(S.nome); h2("Implantação"); img(imgs.impl,PW-2*M,(PW-2*M)*0.71);
@@ -105,7 +116,7 @@ async function exportPDF(){
   if(imgs.vento){ const w=windStats(S); if(y>150){ doc.addPage(); head(S.nome) } h2(`Vento - de ${["N","NE","L","SE","S","SO","O","NO"][Math.round(S.clima.ventoDir/45)%8]}, ${nf(S.clima.ventoVel,1)} m/s a ${nf(S.clima.ventoAlt,1)} m`); img(imgs.vento,PW-2*M,(PW-2*M)*0.62);
     if(w) rows([["Velocidade máxima no lote",`${nf(w.max*S.clima.ventoVel,1)} m/s`],["Áreas com aceleração (>1,3x)",pct(w.hi,0)],["Áreas de calmaria (<0,35x)",pct(w.calm,0)]]) }
   doc.setFontSize(7.5); doc.setTextColor(...mut); if(y<280) doc.text(T("Sol: traçado de sombras. Vento: simulação 2D simplificada (Lattice Boltzmann) - uso comparativo."),M,Math.min(286,y+2));
-  await runHooksAsync("pdf", {doc,m,f,T,PW,M,head,h2,rows,img,ink,mut,acc,mark,ok,bad,MK, y:()=>y, setY:v=>{y=v}, newPage:()=>{ doc.addPage(); head(S.nome) }});
+  await runHooksAsync("pdf", {doc,m,f,T,PW,M,head,h2,rows,img,ink,mut,acc,mark,ok,warn,bad,MK, y:()=>y, setY:v=>{y=v}, newPage:()=>{ doc.addPage(); head(S.nome) }});
   const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); if(MK) marcaRodape(doc,MK,T,PW,M); doc.setFontSize(7.5); doc.setTextColor(...mut); doc.text(`${i}/${pages}`,PW-M,292,{align:"right"}) }
   await saveFile(slug(S.nome)+"-viabilidade.pdf", doc.output("blob"));
 }

@@ -93,10 +93,13 @@ A ideia original do Luiz: desenhar o lote num mapa, colocar as regras da prefeit
 
 ## 4. Decisões de projeto que valem manter
 
-- **Visual:**
-  - Archivo + IBM Plex; porcelana/grafite;
-  - destaque teal `#1c6878` e amarelo de obra `#d49c17` só para marcações;
-  - vidro fosco sobre o palco.
+- **Visual (identidade Rixel, out/2026):** o Gabarito passou a ser vendido dentro do ecossistema Rixel e segue o design system do backoffice dela (`ecossistemarixel/src/app/backoffice.css`, `docs/backoffice-ui.md`).
+  - DM Sans (variável, Google Fonts), números tabulares; títulos com tracking negativo, "sobrancelhas" em caixa alta pequena; sem fonte monoespaçada.
+  - Claro por padrão (fundo `#f5f5f7`, cartões brancos com borda fina `#e4e4e9` e sombra discreta, cantos 12 px) e escuro de verdade (`#0c0c0e`/`#151517`).
+  - Laranja Rixel `#e8702a` (`--brand`) reservado ao botão primário, ao indicador fino da etapa/item ativo e aos indicadores vivos; seleção e interruptores em grafite neutro (`--sel`); situações em verde/âmbar/vermelho com fundo suave.
+  - Marca: ícone Rixel (redesenhado em SVG a partir do `rixel-icon.png`) + "gabarito." com o ponto laranja + "by Rixel"; favicon igual; PDF com faixa grafite, ícone em vetor e o mesmo wordmark (helvetica).
+  - Desenho técnico em neutros da Rixel com matizes suaves por função; azul `--d-acc` para pedestres/PCD/seleção e âmbar `--mark` para marcações (frente, rampa); escalas de sol e vento mantidas.
+  - Vidro fosco sobre o palco. O teal `#1c6878` e o amarelo de obra saíram da interface.
 - **Interface:**
   - trilho de etapas, inspetor e palco;
   - a etapa puxa a vista certa do palco e vice-versa;

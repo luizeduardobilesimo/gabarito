@@ -15,7 +15,7 @@ function comDraw(g, lay, K){
   const fill=(p,col,a=1)=>{ if(!p||p.length<3) return; path(p); g.globalAlpha=a; g.fillStyle=col; g.fill(); g.globalAlpha=1 };
   const add=(p,v,k)=>[p[0]+v[0]*k, p[1]+v[1]*k];
   const quad=(a,b,n,t0,t1)=>[add(a,n,t0),add(b,n,t0),add(b,n,t1),add(a,n,t1)];
-  const surf=css("--surface"), acc=css("--accent"), ink2=css("--ink-2"), muted=css("--muted");
+  const surf=css("--surface"), acc=css("--d-acc"), ink2=css("--ink-2"), muted=css("--muted");
   const roomCol=(u,r)=>{ const c=COM_COR[r.k]||"--surface"; return c==="pal"? (pal[names.indexOf(u.nome)%Math.max(1,pal.length)]||surf) : css(c) };
   const roomA=r=> r.k==="sacada"? 0.55 : COM_COR[r.k]==="pal"? 0.42 : r.k==="circ"? 1 : 0.85;
   const placed=[];   // etiquetas já desenhadas (evita sobreposição no corredor)
@@ -73,7 +73,7 @@ function comDraw(g, lay, K){
   return true;
 }
 /* legenda (planta tipo e andares) */
-function comLeg(sw){ if(!S.comodos||!S.comodos.on) return ""; return sw("var(--ink)","paredes")+sw("var(--c-ant)","áreas molhadas")+`<div><i style="background:none;border:0;border-top:2px solid var(--accent);height:0;margin-top:5px"></i>janelas</div>` }
+function comLeg(sw){ if(!S.comodos||!S.comodos.on) return ""; return sw("var(--ink)","paredes")+sw("var(--c-ant)","áreas molhadas")+`<div><i style="background:none;border:0;border-top:2px solid var(--d-acc);height:0;margin-top:5px"></i>janelas</div>` }
 
 /* ---------- edição: arrastar as divisões ---------- */
 function comSegDist(p,a,b){ const dx=b[0]-a[0], dy=b[1]-a[1], l2=dx*dx+dy*dy||1, t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2)); return Math.hypot(p[0]-a[0]-dx*t, p[1]-a[1]-dy*t) }

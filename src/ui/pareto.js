@@ -30,7 +30,7 @@ function paretoCardHTML(){
   return SEC("Trocas entre critérios", `<div class="chips"><button type="button" class="chip" data-act="pfF" data-k="fVagas" aria-pressed="${!!O.fVagas}">Vagas ≥ exigidas</button><button type="button" class="chip" data-act="pfF" data-k="fSol" aria-pressed="${!!O.fSol}">Sol médio ≥ ${nf(+O.solMin||0,1)} h</button></div>
     ${O.fSol? KV(NUM("otim.solMin","Sol médio mínimo","h",{step:0.5,min:0,max:14,fx:"pf"})) : ""}
     <div class="pf-chart" id="pfChart"></div>
-    <div class="pf-leg"><span><i style="background:var(--accent)"></i>fronteira</span><span><i style="border:1.5px solid var(--muted)"></i>outras</span><span><i style="border:2px solid var(--mark)"></i>estudo atual</span><span>tamanho = nº de vagas</span></div>
+    <div class="pf-leg"><span><i style="background:var(--accent)"></i>fronteira</span><span><i style="border:1.5px solid var(--muted)"></i>outras</span><span><i style="border:2px solid var(--brand)"></i>estudo atual</span><span>tamanho = nº de vagas</span></div>
     <p class="note" id="pfPill"></p><div id="pfDet"></div>
     <details class="pr-more" id="pfMore" hidden><summary id="pfMoreT">Todas da fronteira</summary><div class="list" id="pfFront"></div></details>`, {id:"pfCard", key:"pr-pareto", open:true, info});
 }
@@ -61,7 +61,7 @@ function paretoLive(){
   const W=340, H=232, pl=34, pr=12, pt=24, pb=30, sx=v=>pl+(W-pl-pr)*(v-x0)/(x1-x0), sy=v=>pt+(H-pt-pb)*(y1-v)/(y1-y0);
   const vs=L.map(o=>o.p.vagas), v0=Math.min(...vs), v1=Math.max(...vs), rad=v=>4+5*Math.sqrt((v-v0)/Math.max(1,v1-v0));
   const tick=(a,b,n)=>{ const st=Math.pow(10,Math.floor(Math.log10((b-a)/n))), e=[1,2,2.5,5,10].map(k=>k*st).find(s=>(b-a)/s<=n)||st*10, out=[]; for(let v=Math.ceil(a/e)*e; v<=b+1e-9; v+=e) out.push(+v.toFixed(6)); return out };
-  const gx=tick(x0,x1,4), gy=tick(y0,y1,4), dec=t=>t.length>1 && Math.abs(t[1]-t[0])<1? 1 : 0, mono='font-family="IBM Plex Mono" font-size="9" fill="var(--muted)"';
+  const gx=tick(x0,x1,4), gy=tick(y0,y1,4), dec=t=>t.length>1 && Math.abs(t[1]-t[0])<1? 1 : 0, mono='font-family="DM Sans, system-ui, sans-serif" font-size="9" fill="var(--muted)"';
   const ord=L.slice().sort((a,b)=>(a.front-b.front)||(a.passa-b.passa)); // fronteira por cima
   const frL=L.filter(o=>o.front).sort((a,b)=>a.p.lucro-b.p.lucro);
   ch.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Opções: lucro no eixo horizontal, sol médio no vertical, tamanho pelo número de vagas">
@@ -70,7 +70,7 @@ function paretoLive(){
     <line x1="${pl}" x2="${W-pr}" y1="${H-pb}" y2="${H-pb}" stroke="var(--line-2)"/>
     <text x="${W-pr}" y="${H-3}" text-anchor="end" font-size="9.5" fill="var(--muted)">lucro (R$ mi) →</text><text x="${pl-28}" y="${pt-11}" font-size="9.5" fill="var(--muted)">↑ sol médio (h)</text>
     ${frL.length>1? `<path d="${frL.map((o,k)=>(k?"L":"M")+sx(o.p.lucro/1e6).toFixed(1)+","+sy(o.p.sol).toFixed(1)).join("")}" fill="none" stroke="var(--accent)" stroke-width="1.2" stroke-opacity=".45" stroke-dasharray="3 3"/>` : ""}
-    ${cur&&solAtual!=null? `<circle cx="${sx(cur.f.lucro/1e6)}" cy="${sy(solAtual)}" r="9" fill="none" stroke="var(--mark)" stroke-width="2"><title>Estudo atual · lucro ${mi(cur.f.lucro)} · sol ${nf(solAtual,1)} h</title></circle>` : ""}
+    ${cur&&solAtual!=null? `<circle cx="${sx(cur.f.lucro/1e6)}" cy="${sy(solAtual)}" r="9" fill="none" stroke="var(--brand)" stroke-width="2"><title>Estudo atual · lucro ${mi(cur.f.lucro)} · sol ${nf(solAtual,1)} h</title></circle>` : ""}
     ${ord.map(o=>{ const p=o.p, x=sx(p.lucro/1e6), y=sy(p.sol), r=rad(p.vagas), sel=PF_SEL===o.i;
       return `<g class="pt" data-act="pfSel" data-i="${o.i}" tabindex="0" role="button" aria-label="${esc(pfDesc(p))}" data-tip="${esc(`${mi(p.lucro)} · sol ${nf(p.sol,1)} h · ${p.vagas}/${p.req} vagas`)}" opacity="${o.passa?1:0.28}">
         <circle cx="${x}" cy="${y}" r="${Math.max(r+5,11)}" fill="transparent"/>

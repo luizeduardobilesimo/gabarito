@@ -449,13 +449,13 @@ async function comPdf(ctx){
   const m=ctx.m; if(!m || !m.comodos || !m.comodos.unidades) return;
   const Q=comQuadro(m); if(!Q.length) return;
   ctx.newPage(); ctx.h2("Quadro de áreas por cômodo");
-  const doc=ctx.doc; doc.setFontSize(8.5); doc.setTextColor(...(ctx.mut||[93,106,106]));
+  const doc=ctx.doc; doc.setFontSize(8.5); doc.setTextColor(...(ctx.mut||[110,110,115]));
   doc.text(ctx.T(`${m.comodos.validas} de ${m.comodos.unidades} unidades do pavimento tipo com cômodos válidos. Áreas de eixo a eixo (somam a área da unidade).`), ctx.M, ctx.y()); ctx.setY(ctx.y()+6);
   Q.forEach(q=>{ if(ctx.y()>235) ctx.newPage();
-    doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...(ctx.ink||[28,39,41])); doc.text(ctx.T(`${q.nome}  ·  ${q.modelo}  ·  ${q.validas} de ${q.n} unidades válidas`), ctx.M, ctx.y()); doc.setFont("helvetica","normal"); ctx.setY(ctx.y()+5);
+    doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...(ctx.ink||[29,29,31])); doc.text(ctx.T(`${q.nome}  ·  ${q.modelo}  ·  ${q.validas} de ${q.n} unidades válidas`), ctx.M, ctx.y()); doc.setFont("helvetica","normal"); ctx.setY(ctx.y()+5);
     ctx.rows(q.rooms.map(r=>[r.nome, `${nf(r.area,2)} m²  ·  ${nf(r.larg,2)} m`, r.st]).concat([["Total da unidade", `${nf(q.soma,2)} m²`]]), {bold:["Total da unidade"]});
   });
-  doc.setFontSize(7.5); doc.setTextColor(...(ctx.mut||[93,106,106])); if(ctx.y()<282) doc.text(ctx.T("Mínimos de referência (código de obras genérico) — conferir no código de obras do município. Iluminação e ventilação de no mínimo 1/"+((S.comodos&&S.comodos.jan&&S.comodos.jan.frac)||6)+" da área do piso."), ctx.M, Math.min(286, ctx.y()+2));
+  doc.setFontSize(7.5); doc.setTextColor(...(ctx.mut||[110,110,115])); if(ctx.y()<282) doc.text(ctx.T("Mínimos de referência (código de obras genérico) — conferir no código de obras do município. Iluminação e ventilação de no mínimo 1/"+((S.comodos&&S.comodos.jan&&S.comodos.jan.frac)||6)+" da área do piso."), ctx.M, Math.min(286, ctx.y()+2));
   ctx.setY(ctx.y()+8);
 }
 

@@ -79,7 +79,7 @@ const TOPO_CV = { key:"", cv:null };
 function topoCurvasCache(sf){ const k=sf.id+"|"+S.topo.curvasInt; if(TOPO_CV.key!==k){ TOPO_CV.key=k; TOPO_CV.cv=topoCurvas(sf, S.topo.curvasInt, {mestra:5}) } return TOPO_CV.cv }
 HOOK.draw2d.push((g, c)=>{
   if(c.mode!=="impl" || !c.m || !c.m.topo || !S.topo.curvas) return;
-  const t=c.m.topo, sf=t.sf, cv=topoCurvasCache(sf), {W,H,w2s}=c, ink=css("--ink"), acc=css("--accent");
+  const t=c.m.topo, sf=t.sf, cv=topoCurvasCache(sf), {W,H,w2s}=c, ink=css("--ink"), acc=css("--d-acc");
   g.save(); g.setLineDash([]); g.lineCap="round";
   // as curvas passam por baixo das torres (recorte: tela inteira menos as projeções)
   g.beginPath(); g.rect(0,0,W,H); (c.m.T||[]).forEach(tr=>{ if(!tr.plate||tr.plate.length<3) return; tr.plate.forEach((q,i)=>{ const p=w2s(q); i? g.lineTo(p[0],p[1]) : g.moveTo(p[0],p[1]) }); g.closePath() }); g.clip("evenodd");
@@ -143,7 +143,7 @@ HOOK.draw3d.push((grp, m)=>{
     if(o===surf) return;
     if(o.type==="GridHelper") o.visible=false;
     else if(o.isMesh && o.geometry && o.geometry.type==="CircleGeometry") o.position.y=base-0.05;
-    else if(o.isMesh && o.material && o.material.color && o.material.color.getHex()===0x5c656b) o.position.y+=t.calc-t.c;
+    else if(o.isMesh && o.material && o.material.color && o.material.color.getHex()===0x5f5f64) o.position.y+=t.calc-t.c;
     else if(o.isMesh && o.geometry && o.geometry.type==="ExtrudeGeometry" && o.material && o.material.color && o.material.color.getHex()===viz){
       const p=o.geometry.attributes.position; let zmin=Infinity; for(let k=0;k<p.count;k+=Math.max(1,Math.floor(p.count/24))) zmin=Math.min(zmin, topoZ(sf, p.getX(k), -p.getZ(k)));
       const dy=zmin-t.c; o.position.y+=dy; const nx_=kids[i+1]; if(nx_ && nx_.type==="LineSegments") nx_.position.y+=dy }
@@ -156,7 +156,7 @@ function terrenoPdfMapa(m, dados){
   return withLight(()=>{
     const W=1400, H=760, w=W/2, h=H/2, cv=document.createElement("canvas"); cv.width=W; cv.height=H;
     const g=cv.getContext("2d"); g.scale(2,2);
-    const ink=css("--ink"), muted=css("--muted"), acc=css("--accent"), surf=css("--surface"), line=css("--line-2"), mono=css("--f-mono");
+    const ink=css("--ink"), muted=css("--muted"), acc=css("--d-acc"), surf=css("--surface"), line=css("--line-2"), mono=css("--f-mono");
     const L=S.lote.pts, xs=L.map(q=>q[0]), ys=L.map(q=>q[1]), mg=Math.max(14, 0.4*Math.max(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys)));
     const rect=[Math.min(...xs)-mg, Math.min(...ys)-mg, Math.max(...xs)+mg, Math.max(...ys)+mg];
     { const rw=rect[2]-rect[0], rh=rect[3]-rect[1], asp=w/h;   // a moldura ocupa a imagem toda (mesma proporção da tela)
@@ -227,7 +227,7 @@ function terrenoPdfMapa(m, dados){
 }
 HOOK.pdf.push(async ctx=>{
   const dados=terrenoPdfDados(S, ctx.m); if(!dados) return;
-  const {doc,PW,M,h2,rows,T}=ctx, mut=ctx.mut||[93,106,106], titulo = dados.topo&&dados.relevo? "Terreno: topografia e relevo" : dados.topo? "Terreno: topografia" : "Terreno: relevo do local";
+  const {doc,PW,M,h2,rows,T}=ctx, mut=ctx.mut||[110,110,115], titulo = dados.topo&&dados.relevo? "Terreno: topografia e relevo" : dados.topo? "Terreno: topografia" : "Terreno: relevo do local";
   ctx.newPage(); h2(titulo);
   doc.setFontSize(8.5); doc.setTextColor(...mut);
   doc.text(T(dados.topo? `Levantamento: ${dados.topo.fonte||"pontos importados"}. Curvas de nível a cada ${nf(dados.topo.nCurvas||1,2)} m; as mais fortes são as mestras (de 5 em 5).` : "Plano ajustado ao modelo digital de elevação: as linhas são cotas relativas ao centro do lote."), M, ctx.y()); ctx.setY(ctx.y()+4);

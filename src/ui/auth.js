@@ -84,7 +84,7 @@ async function authApi(metodo, caminho, corpo){
 }
 
 /* ================= tela de entrada ================= */
-const AUTH_MARCA = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="13" width="5" height="8" rx="1" fill="var(--ink)" opacity=".3"/><rect x="9.5" y="7" width="5" height="14" rx="1" fill="var(--ink)" opacity=".6"/><rect x="16" y="3" width="5" height="18" rx="1" fill="var(--accent)"/><path d="M2 21.5h20" stroke="var(--mark)" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const AUTH_MARCA = typeof RX_ICONE!=="undefined"? RX_ICONE : "";   // ícone Rixel (src/ui.js)
 function authCaixa(){
   let el=document.getElementById("authTela");
   if(!el){
@@ -125,7 +125,7 @@ function authTela(estado, o={}){
       <form class="auth-f" data-auth="novaSenha" novalidate><label class="fld"><span class="fl">Nova senha</span><span class="inp"><input class="t" type="password" name="senha" autocomplete="new-password" minlength="8" required></span></label>
       <button type="submit" class="btn pri full auth-b">Salvar e entrar</button></form>`,
   }[estado]||(()=> "");
-  el.innerHTML = `<div class="auth-card"><div class="auth-marca">${AUTH_MARCA}<span>Gabarito</span></div>${corpo()}</div><p class="auth-rod">Gabarito · ferramenta da comunidade Rixel</p>`;
+  el.innerHTML = `<div class="auth-card"><div class="auth-marca">${AUTH_MARCA}<span>gabarito<i>.</i></span><span class="by">by Rixel</span></div>${corpo()}</div><p class="auth-rod">Gabarito · ferramenta da comunidade Rixel</p>`;
   el.hidden=false; document.documentElement.classList.add("auth-on");
   const f=el.querySelector("input"); if(f) setTimeout(()=>{ try{ f.focus() }catch(e){} }, 30);
 }

@@ -162,9 +162,9 @@ function cfdBuildStatic(){
   // chão
   const gg=new THREE.PlaneGeometry(d.x1-d.x0, d.y1-d.y0); gg.rotateX(Math.PI/2); gg.translate((d.x0+d.x1)/2, -0.02, (d.y0+d.y1)/2);
   const dark=S.cfd.fundo!=="claro";
-  CFD.ground=new THREE.Mesh(gg, new THREE.MeshBasicMaterial({color:0x0f171d, side:THREE.DoubleSide, visible:dark})); grp.add(CFD.ground);
+  CFD.ground=new THREE.Mesh(gg, new THREE.MeshBasicMaterial({color:0x0e0e10, side:THREE.DoubleSide, visible:dark})); grp.add(CFD.ground);
   { const gs=[], st=Math.max(5, Math.round(d.dx*2)); for(let x=Math.ceil(d.x0/st)*st; x<=d.x1; x+=st) gs.push(x,0.01,d.y0, x,0.01,d.y1); for(let y=Math.ceil(d.y0/st)*st; y<=d.y1; y+=st) gs.push(d.x0,0.01,y, d.x1,0.01,y);
-    const gl=new THREE.BufferGeometry(); gl.setAttribute("position",new THREE.Float32BufferAttribute(gs,3)); if(dark) CFD.ground.add(new THREE.LineSegments(gl,new THREE.LineBasicMaterial({color:0x2a3a46, transparent:true, opacity:0.8}))) }
+    const gl=new THREE.BufferGeometry(); gl.setAttribute("position",new THREE.Float32BufferAttribute(gs,3)); if(dark) CFD.ground.add(new THREE.LineSegments(gl,new THREE.LineBasicMaterial({color:0x2c2c31, transparent:true, opacity:0.8}))) }
   const lot=S.lote.pts.map(q=>LV(G.dot(q,d.f),G.dot(q,d.pp),0.05)); const lg=new THREE.BufferGeometry().setFromPoints([...lot,lot[0]]); CFD.ground.add(new THREE.Line(lg,new THREE.LineBasicMaterial({color:col3("--mark")})));
   // edifícios com fachadas subdivididas (para colorir a pressão)
   const pos=[], nor=[], smp=[], idx=[]; const res=Math.max(0.8, d.dx*0.6); let vi=0;
@@ -187,12 +187,12 @@ function cfdBuildStatic(){
   // contornos
   const ep=[]; d.PR.forEach(p=>{ const L=p.poly.map(q=>[G.dot(q,d.f),G.dot(q,d.pp)]); L.forEach((a,i)=>{ const b=L[(i+1)%L.length]; ep.push(a[0],p.z1,a[1],b[0],p.z1,b[1], a[0],p.z0,a[1],b[0],p.z0,b[1], a[0],p.z0,a[1],a[0],p.z1,a[1]) }) });
   const eg=new THREE.BufferGeometry(); eg.setAttribute("position",new THREE.Float32BufferAttribute(ep,3));
-  CFD.edges=new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color: dark? 0xd8eef7 : 0x3d6f8f,transparent:true,opacity: dark? 0.55 : 0.7})); grp.add(CFD.edges);
+  CFD.edges=new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color: dark? 0xe4e4e8 : 0x4a4a50,transparent:true,opacity: dark? 0.55 : 0.7})); grp.add(CFD.edges);
   cfdColorBuildings(); cfdFit(); CFD.dirty=true; cfdRefresh(true);
 }
 function cfdColorBuildings(){
   if(!CFD.bld) return; const col=CFD.bld.geometry.attributes.color, s=CFD.smp, on=S.cfd.viz.pressao && CFD.field;
-  const base=new THREE.Color(S.cfd.fundo!=="claro"? 0xcfe6f2 : 0xa9cfe6);
+  const base=new THREE.Color(S.cfd.fundo!=="claro"? 0xe6e6ea : 0xc6c6cc);
   for(let i=0;i<col.count;i++){ if(on){ const c=cfdColor("cp", cfdValue("cp", s[3*i], s[3*i+1], s[3*i+2])); col.setXYZ(i,c[0]/255,c[1]/255,c[2]/255) } else col.setXYZ(i,base.r,base.g,base.b) }
   col.needsUpdate=true; const mt=CFD.bld.material; mt.opacity=1; mt.transparent=false; mt.depthWrite=true; mt.visible=!!on; mt.polygonOffset=true; mt.polygonOffsetFactor=-2; mt.polygonOffsetUnits=-2; mt.needsUpdate=true;
   if(CFD.edges) CFD.edges.visible=false;

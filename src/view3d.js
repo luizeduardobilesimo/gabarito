@@ -20,7 +20,7 @@ const col3 = n => new THREE.Color(css(n)||"#999");
 function gradTex(a,b){ const c=document.createElement("canvas"); c.width=4; c.height=256; const g=c.getContext("2d"), gr=g.createLinearGradient(0,0,0,256); gr.addColorStop(0,a); gr.addColorStop(1,b); g.fillStyle=gr; g.fillRect(0,0,4,256); const t=new THREE.CanvasTexture(c); t.encoding=THREE.sRGBEncoding; return t }
 function fadeTex(col){ const c=document.createElement("canvas"); c.width=c.height=256; const g=c.getContext("2d"), gr=g.createRadialGradient(128,128,10,128,128,128); gr.addColorStop(0,col); gr.addColorStop(0.55,col); gr.addColorStop(1,"rgba(0,0,0,0)"); g.fillStyle=gr; g.fillRect(0,0,256,256); return new THREE.CanvasTexture(c) }
 function stageBackdrop(dark){
-  const a = dark? "#1b2730" : css("--stage-a"), b = dark? "#0b1115" : css("--stage-b");
+  const a = dark? "#1f1f23" : css("--stage-a"), b = dark? "#0c0c0e" : css("--stage-b");
   if(V3.bgKey!==a+b){ if(V3.scene.background&&V3.scene.background.dispose) V3.scene.background.dispose(); V3.scene.background=gradTex(a,b); V3.bgKey=a+b }
   V3.scene.fog=new THREE.Fog(new THREE.Color(b), V3.ext*2.2, V3.ext*7);
 }
@@ -97,16 +97,16 @@ function rebuild3d(m, force){
   // rua
   const ctxA=k=>typeof ctx3dAssume==="function" && ctx3dAssume(k,m);   // contexto do OSM (src/ui/contexto.js) desenha ruas e vizinhos no lugar dos genéricos
   if(!ctxA("ruas")) S.lote.front.forEach(i=>{ const a=L[i], b=L[(i+1)%L.length]; if(!a||!b) return; const dx=b[0]-a[0], dy=b[1]-a[1], l=Math.hypot(dx,dy)||1, nx=dy/l, ny=-dx/l, w=12, ex=dx/l*10, ey=dy/l*10;
-    slab([[a[0]-ex,a[1]-ey],[b[0]+ex,b[1]+ey],[b[0]+ex+nx*w,b[1]+ey+ny*w],[a[0]-ex+nx*w,a[1]-ey+ny*w]],-0.06,0.04,new THREE.Color(0x5c656b),{eop:0,rough:0.95,noclip:true}) });
+    slab([[a[0]-ex,a[1]-ey],[b[0]+ex,b[1]+ey],[b[0]+ex+nx*w,b[1]+ey+ny*w],[a[0]-ex+nx*w,a[1]-ey+ny*w]],-0.06,0.04,new THREE.Color(0x5f5f64),{eop:0,rough:0.95,noclip:true}) });
   (m.vf&&m.vf.vagas||[]).forEach(v=>flat(v.poly,0.07,col3("--m-loja"),0.8));
-  const glass=new THREE.Color(0x9fc3d3), white=col3("--m-tipo");
+  const glass=new THREE.Color(0xa8bfcf), white=col3("--m-tipo");
   for(let k=0;k<P.subsolos;k++) slab(m.sub, -(k+1)*P.peGar, P.peGar-0.2, col3("--m-sub"), {op:0.4, eop:0.25});
   let y=0;
   const TZ=m.ter||{};
   (TZ.hall||[]).forEach(p=>slab(p, y, P.peTerreo-0.2, glass, {op:0.55, rough:0.2, metal:0.1}));
   (TZ.lojas||[]).forEach(p=>slab(p, y, P.peTerreo-0.2, col3("--m-loja"), {op:0.92, rough:0.3}));
   if(TZ.gar&&TZ.gar.length) slab(TZ.gar, y, P.peTerreo-0.2, col3("--m-gar"));
-  (TZ.drive||[]).forEach(p=>flat(p, 0.06, new THREE.Color(0x6b737a)));
+  (TZ.drive||[]).forEach(p=>flat(p, 0.06, new THREE.Color(0x6e6e73)));
   y+=P.peTerreo;
   for(let k=0;k<P.garAcima;k++){ slab(m.emb, y, P.peGar-0.2, col3("--m-gar")); y+=P.peGar }
   const y0=y, sacCol=col3("--c-sac"), LZ=m.lzLay||{};
@@ -188,7 +188,7 @@ function sunPath(){ // trajetória do sol: refeita a cada mudança de data/hora,
     G3.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([pos,new THREE.Vector3(c[0],0.1,-c[1])]), new THREE.LineDashedMaterial({color:0xd99a2b,dashSize:R*0.03,gapSize:R*0.02,transparent:true,opacity:0.6})).computeLineDistances()) }
   const ring=new THREE.Mesh(new THREE.RingGeometry(R*0.995,R,96), new THREE.MeshBasicMaterial({color:col3("--muted"),transparent:true,opacity:0.35,side:THREE.DoubleSide})); ring.rotation.x=-Math.PI/2; ring.position.set(c[0],0.05,-c[1]); G3.add(ring);
   // pontos cardeais no anel
-  const th=(S.lote.norte||0)*Math.PI/180; [["N",0],["L",90],["S",180],["O",270]].forEach(([t,a])=>{ const ang=a*Math.PI/180+th, cv=document.createElement("canvas"); cv.width=cv.height=64; const g=cv.getContext("2d"); g.fillStyle=css("--ink"); g.font="600 34px Archivo, sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(t,32,34);
+  const th=(S.lote.norte||0)*Math.PI/180; [["N",0],["L",90],["S",180],["O",270]].forEach(([t,a])=>{ const ang=a*Math.PI/180+th, cv=document.createElement("canvas"); cv.width=cv.height=64; const g=cv.getContext("2d"); g.fillStyle=css("--ink"); g.font="600 34px 'DM Sans', system-ui, sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(t,32,34);
     const tx=new THREE.CanvasTexture(cv), sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,transparent:true,depthWrite:false})); sp.scale.set(R*0.07,R*0.07,1); sp.position.set(c[0]+Math.sin(ang)*R*1.06, 0.6, -(c[1]+Math.cos(ang)*R*1.06)); G3.add(sp) });
 }
 function applySun(){

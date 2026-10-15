@@ -89,8 +89,8 @@ function apMarcaCor(){ return marcaOn() && verCorOk(S.marca.cor)? S.marca.cor : 
 function apMarca(){
   const on=marcaOn(), l=on? marcaLogo() : null, nome=on? String(S.marca.nome||"").trim() : "";
   apEl("apBrand").innerHTML = on && (l||nome)? `${l?`<img src="${l.url}" alt="">`:""}<span class="n">${esc(nome)}</span>`
-    : `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="13" width="5" height="8" rx="1" fill="var(--ink)" opacity=".3"/><rect x="9.5" y="7" width="5" height="14" rx="1" fill="var(--ink)" opacity=".6"/><rect x="16" y="3" width="5" height="18" rx="1" fill="var(--accent)"/><path d="M2 21.5h20" stroke="var(--mark)" stroke-width="1.6" stroke-linecap="round"/></svg><span class="n">Gabarito</span>`;
-  const c=apMarcaCor(); apEl("ap").style.setProperty("--ap-acc", c? `color-mix(in srgb, ${c} 72%, var(--ink))` : "var(--accent)");
+    : `${RX_ICONE}<span class="n">gabarito<i>.</i></span>`;
+  const c=apMarcaCor(); apEl("ap").style.setProperty("--ap-acc", c? `color-mix(in srgb, ${c} 72%, var(--ink))` : "var(--brand)");
 }
 function apRender(semAnim){
   if(!window._last) return; const {m,f}=window._last, p=AP_PASSOS[APR.i], box=apEl("apSlide"), top=box.scrollTop;

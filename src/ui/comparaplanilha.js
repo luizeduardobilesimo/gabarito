@@ -31,7 +31,7 @@ function cmpChart(c){
   const all=[...G,...P], mn=Math.min(0,...all), mx=Math.max(0,...all), sx=i=>pl+(W-pl-pr)*i/Math.max(1,N-1), sy=v=>pt+(H-pt-pb)*(1-(v-mn)/((mx-mn)||1));
   const path=a=>a.map((v,i)=>(i?"L":"M")+sx(i).toFixed(1)+","+sy(v).toFixed(1)).join("");
   const shade=c.divergencias.filter(d=>d.mes0!=null&&d.mes1!=null&&d.tipo==="janela"&&(CMPU.serie==="acum"||d.linha===CMPU.serie)).map(d=>`<rect x="${sx(d.mes0).toFixed(1)}" y="${pt}" width="${Math.max(2,sx(d.mes1)-sx(d.mes0)).toFixed(1)}" height="${H-pt-pb}" fill="var(--warn)" fill-opacity=".1"/>`).join("");
-  const ticks=[mn,(mn+mx)/2,mx].map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${sy(v).toFixed(1)}" y2="${sy(v).toFixed(1)}" stroke="var(--line)" stroke-dasharray="2 3"/><text x="${pl-4}" y="${(sy(v)+3).toFixed(1)}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${nf(v/1e6,1)}</text>`).join("");
+  const ticks=[mn,(mn+mx)/2,mx].map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${sy(v).toFixed(1)}" y2="${sy(v).toFixed(1)}" stroke="var(--line)" stroke-dasharray="2 3"/><text x="${pl-4}" y="${(sy(v)+3).toFixed(1)}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="DM Sans, system-ui, sans-serif">${nf(v/1e6,1)}</text>`).join("");
   const z=mn<0&&mx>0? `<line x1="${pl}" x2="${W-pr}" y1="${sy(0).toFixed(1)}" y2="${sy(0).toFixed(1)}" stroke="var(--ink)" stroke-opacity=".5"/>` : "";
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Fluxo do Gabarito e da planilha, sobrepostos">${shade}${ticks}${z}
     <path d="${path(G)}" fill="none" stroke="var(--accent)" stroke-width="2"/><path d="${path(P)}" fill="none" stroke="var(--mark)" stroke-width="2" stroke-dasharray="5 3"/>

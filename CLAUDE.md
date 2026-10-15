@@ -9,7 +9,10 @@ Contexto da conversa original (histórico, decisões e jeito de trabalhar do Lui
 ## Regras de trabalho
 
 - Interface e textos sempre em **português do Brasil**. Respostas ao Luiz em português, listas em tópicos (sem tabelas no chat).
-- Padrão visual **premium, sóbrio e moderno** (nada grosseiro). Qualquer controle novo usa os componentes e tokens existentes do `shell.html`.
+- Padrão visual **premium, sóbrio e moderno** (nada grosseiro), com a **identidade da Rixel** (design system do backoffice: `ecossistemarixel/src/app/backoffice.css`). Qualquer controle novo usa os componentes e tokens existentes do `shell.html` — nunca cor ou fonte fixa.
+  - DM Sans em tudo (números com `tabular-nums`; nada de fonte monoespaçada, exceto código: `--f-code`). Claro por padrão, escuro de verdade.
+  - **Laranja Rixel (`--brand`) só em:** botão primário (`btn pri`, um por seção), indicador da etapa/item ativo (filete fino) e indicadores vivos (ponto do `RES`, barra "calculando…", dica do palco, progresso). Seleção e estados ligados usam o neutro `--sel` (grafite no claro, quase branco no escuro).
+  - Situações: `--ok/--warn/--bad/--info` com fundo `*-soft` (pílulas, avisos). Desenho técnico: `--d-acc` (azul: pedestres, PCD, seleção no desenho) e `--mark` (âmbar: frente, rampa, pontos) — nunca na interface.
 - Mostrar só o que está ativo: configurações de uma visualização aparecem apenas quando ela está ligada.
 - **Guia de UX obrigatório: `docs/UX.md`** — resultado no topo (`RES`), essenciais abertos, demais seções fechadas com resumo (`SEC`), avançado em "Mais opções" (`ADV`), explicações no ⓘ (`INFO`/`TERMO` + `src/ui/glossario.js`), sub-abas (`SUBTABS`), até ~12 campos visíveis por tela, nada de parágrafo no corpo.
 - Não editar `index.html` à mão — ele é gerado.
@@ -44,7 +47,7 @@ npm run typecheck                 # tsc sobre os scripts globais (arquivos com /
 
 | arquivo | papel |
 |---|---|
-| `shell.html` | CSS (design system: Archivo + IBM Plex, tokens claro/escuro, componentes) e marcação: topo, trilho de etapas `#rail`, inspetor (`#phead`, `#tabbody`, `#pfoot`), palco `#view` com barra de vistas e régua de KPIs `#kpis` |
+| `shell.html` | CSS (design system Rixel: DM Sans; tokens em 3 camadas — base Rixel `--brand*`, `--sel*`, `--soft`, `--faint`, `--ok/--warn/--bad/--info` + `*-soft`, raios `--r-sm/--r/--r-lg/--r-xl`, `--shadow-s/-card/-pop`, `--ease`, `--f-sans/--f-code`; nomes antigos `--accent*`→`--sel*`, `--f-display/--f-body/--f-mono`→`--f-sans`; desenho `--m-*`, `--u1..5`, `--c-*`, `--lz-*`, `--ctx*`, `--stage-*`, `--d-acc`, `--mark` — claro/escuro; componentes) e marcação: topo com a marca (ícone Rixel + "gabarito." + "by Rixel"; favicon em SVG embutido; `RX_ICONE`/`RX_MARCA` em `ui.js` para JS) e marcação: topo, trilho de etapas `#rail`, inspetor (`#phead`, `#tabbody`, `#pfoot`), palco `#view` com barra de vistas e régua de KPIs `#kpis` |
 | `state.js` | `DEF` (estado padrão), `S` (estado atual, salvo em localStorage `gabarito.v2`), `merge()` com migrações, formatadores `nf/brl/mi/pct/m2/esc/toast` |
 | `geom.js` | geometria 2D: área, offset por semiplano, recorte, `band`, `cutAt`, `clipToPoly` |
 | `garagem.js` | **motor de garagem**: `driveLayout` (arranjo das faixas de rampa e da faixa do térreo, testando ordens e deslocamentos para não passar pelos núcleos), `rampExt`, `vertical` (circulação vertical: faixas, rampas por pavimento, patamares e portais de chegada/saída), `genLayout` (fileiras), `rasterCheck` (malha de 0,5 m: alcance do carro e profundidade de manobra), `repair` (abre passagens tirando o mínimo de vagas), `infill` (vagas extras nas sobras), `rota` (rota real entre portais), `garageSolve`/`garageLayout`/`garagens`, `acessoCandidatos`/`acessoAvalia` (estudo do melhor acesso) |

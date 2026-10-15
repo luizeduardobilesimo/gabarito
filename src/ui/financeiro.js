@@ -199,11 +199,11 @@ function finTornSVG(t, met){
   const mn=Math.min(...all), mx=Math.max(...all), W=360, L=122, R=40, rh=21, H=vs.length*rh+26, sx=v=>L+(W-L-R)*((v??mn)-mn)/((mx-mn)||1), x0=sx(b);
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Sensibilidade: impacto de cada variável na ${met==="tir"?"TIR":"margem sobre o VGV"}">
     ${vs.map((v,i)=>{ const y=6+i*rh, lo=sx(val(v.lo)), hi=sx(val(v.hi));
-      return `<text x="${L-8}" y="${y+9}" font-size="10.5" text-anchor="end" fill="var(--ink-2)">${esc(v.nome)}</text><text x="${L-8}" y="${y+18}" font-size="8.5" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${v.faixa}</text>
+      return `<text x="${L-8}" y="${y+9}" font-size="10.5" text-anchor="end" fill="var(--ink-2)">${esc(v.nome)}</text><text x="${L-8}" y="${y+18}" font-size="8.5" text-anchor="end" fill="var(--muted)" font-family="DM Sans, system-ui, sans-serif">${v.faixa}</text>
       <rect x="${Math.min(lo,x0).toFixed(1)}" y="${y+2}" width="${Math.max(0.8,Math.abs(lo-x0)).toFixed(1)}" height="13" rx="2" fill="var(--bad)" fill-opacity=".72"/>
       <rect x="${Math.min(hi,x0).toFixed(1)}" y="${y+2}" width="${Math.max(0.8,Math.abs(hi-x0)).toFixed(1)}" height="13" rx="2" fill="var(--ok)" fill-opacity=".72"/>
-      <text x="${(Math.max(lo,hi)+4).toFixed(1)}" y="${y+12}" font-size="8.5" fill="var(--muted)" font-family="IBM Plex Mono">${finTir(Math.max(val(v.lo)??-1,val(v.hi)??-1))}</text>` }).join("")}
-    <line x1="${x0}" x2="${x0}" y1="2" y2="${H-18}" stroke="var(--ink)" stroke-width="1"/><text x="${x0}" y="${H-5}" font-size="9" text-anchor="middle" fill="var(--ink-2)" font-family="IBM Plex Mono">base ${finTir(b)}</text>
+      <text x="${(Math.max(lo,hi)+4).toFixed(1)}" y="${y+12}" font-size="8.5" fill="var(--muted)" font-family="DM Sans, system-ui, sans-serif">${finTir(Math.max(val(v.lo)??-1,val(v.hi)??-1))}</text>` }).join("")}
+    <line x1="${x0}" x2="${x0}" y1="2" y2="${H-18}" stroke="var(--ink)" stroke-width="1"/><text x="${x0}" y="${H-5}" font-size="9" text-anchor="middle" fill="var(--ink-2)" font-family="DM Sans, system-ui, sans-serif">base ${finTir(b)}</text>
   </svg>`;
 }
 function finSensHTML(){
@@ -230,7 +230,7 @@ function finMCHTML(){
 function finMCHist(r){
   const L=r.lucros.slice().sort((a,b)=>a-b), mn=L[0], mx=L[L.length-1], nb=24, W=360, H=110, pl=6, pb=18, bw=(W-2*pl)/nb, h=new Array(nb).fill(0);
   L.forEach(v=>h[Math.min(nb-1,Math.floor((v-mn)/((mx-mn)||1)*nb))]++); const hm=Math.max(...h), sx=v=>pl+(W-2*pl)*(v-mn)/((mx-mn)||1);
-  const mk=(v,l,c)=>`<line x1="${sx(v)}" x2="${sx(v)}" y1="6" y2="${H-pb}" stroke="${c}" stroke-dasharray="3 2"/><text x="${sx(v)}" y="${H-5}" font-size="8.5" text-anchor="middle" fill="${c}" font-family="IBM Plex Mono">${l}</text>`;
+  const mk=(v,l,c)=>`<line x1="${sx(v)}" x2="${sx(v)}" y1="6" y2="${H-pb}" stroke="${c}" stroke-dasharray="3 2"/><text x="${sx(v)}" y="${H-5}" font-size="8.5" text-anchor="middle" fill="${c}" font-family="DM Sans, system-ui, sans-serif">${l}</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Distribuição do lucro">${h.map((c,i)=>`<rect x="${(pl+i*bw+0.5).toFixed(1)}" y="${(H-pb-(H-pb-8)*c/hm).toFixed(1)}" width="${(bw-1).toFixed(1)}" height="${((H-pb-8)*c/hm).toFixed(1)}" fill="${mn+(i+0.5)*(mx-mn)/nb<0?"var(--bad)":"var(--accent)"}" fill-opacity=".55"/>`).join("")}
     ${mk(r.lucro[0],"P10","var(--muted)")}${mk(r.lucro[1],"P50","var(--ink)")}${mk(r.lucro[2],"P90","var(--muted)")}${mn<0&&mx>0?mk(0,"0","var(--bad)"):""}</svg>`;
 }
@@ -272,7 +272,7 @@ function finTerSVG(r){
   const n=Math.max(...ks.map(k=>r.alts[k].terr.length)), cum={}; ks.forEach(k=>{ let s=0; cum[k]=r.alts[k].terr.map(v=>s+=v) });
   const mx=Math.max(1,...ks.map(k=>cum[k][cum[k].length-1])), W=360, H=130, pl=40, pr=6, pt=8, pb=18, sx=i=>pl+(W-pl-pr)*i/Math.max(1,n-1), sy=v=>pt+(H-pt-pb)*(1-v/mx);
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Recebimentos acumulados do terreneiro">
-    ${[0,mx/2,mx].map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)" ${v?'stroke-dasharray="2 3"':""}/><text x="${pl-4}" y="${sy(v)+3}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="IBM Plex Mono">${nf(v/1e6,1)}mi</text>`).join("")}
+    ${[0,mx/2,mx].map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)" ${v?'stroke-dasharray="2 3"':""}/><text x="${pl-4}" y="${sy(v)+3}" font-size="9" text-anchor="end" fill="var(--muted)" font-family="DM Sans, system-ui, sans-serif">${nf(v/1e6,1)}mi</text>`).join("")}
     ${ks.map(k=>`<path d="${cum[k].map((v,i)=>(i?"L":"M")+sx(i).toFixed(1)+","+sy(v).toFixed(1)).join("")}" fill="none" stroke="${cols[k]}" stroke-width="1.8"/>`).join("")}
     <text x="${W-pr}" y="${H-5}" font-size="9" text-anchor="end" fill="var(--muted)">meses</text><text x="${pl}" y="${H-5}" font-size="9" fill="var(--muted)">0</text>
   </svg><div class="stackleg">${ks.map(k=>`<span><i style="background:${cols[k]}"></i>${r.alts[k].nome}</span>`).join("")}</div>`;

@@ -70,7 +70,7 @@ function normasLive(m, fast){
 HOOK.draw2d.push((g, ctx)=>{
   if(ctx.mode!=="tipo" || !S.normas || !S.normas.rotaFuga || !ctx.m.tipo) return;
   const i=(ctx.opt&&ctx.opt.tower)||0, r=normaDistTipo(ctx.m.tipo[i]); if(!r || !r.caminho || r.caminho.length<2) return;
-  const col=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#1c6878";
+  const col=getComputedStyle(document.documentElement).getPropertyValue("--d-acc").trim()||"#2f6fed";
   g.save(); g.strokeStyle=col; g.lineWidth=2.4; g.setLineDash([7,4]); g.lineCap="round"; g.beginPath();
   r.caminho.forEach((p,k)=>{ const s=ctx.w2s(p); if(k) g.lineTo(s[0],s[1]); else g.moveTo(s[0],s[1]) }); g.stroke(); g.setLineDash([]);
   const a=ctx.w2s(r.caminho[0]); g.fillStyle=col; g.beginPath(); g.arc(a[0],a[1],4.5,0,7); g.fill();
