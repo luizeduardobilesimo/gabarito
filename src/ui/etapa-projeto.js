@@ -102,12 +102,14 @@ STEP_R.projeto = ()=>{
     const desc={ep:"Escada enclausurada com portas corta-fogo e hall de acesso. Edifícios baixos e médios.",pf_duto:"Antecâmara ventilada por dutos de entrada e saída de ar. A mais comum em residenciais altos.",pf_balcao:"Acesso pela fachada por um balcão aberto — exige núcleo encostado na fachada.",pf_press:"Escada pressurizada por ventilador; dispensa dutos na antecâmara, pede casa de máquinas."}[E.escTipo];
     body =
     RES("Andar tipo", `<div id="tipoRes"></div>`, {aside:"", asideId:"tipoStat"}) +
-    SEC("Escadas e elevadores", `<div class="fld wide"><label class="fl" for="escSel">Escada${INFO(desc||"Tipo de escada de emergência.","o tipo de escada")}</label><select class="sel" id="escSel" data-p="estudo.escTipo" data-t="s" data-rr="1">${Object.entries(ESC_TIPOS).map(([k,l])=>`<option value="${k}" ${E.escTipo===k?"selected":""}>${l}</option>`).join("")}</select></div>
+    SEC("Núcleo de circulação", `<div id="nucRes" class="nucres"></div><div class="fld wide"><label class="fl" for="escSel">Escada${INFO(desc||"Tipo de escada de emergência.","o tipo de escada")}</label><select class="sel" id="escSel" data-p="estudo.escTipo" data-t="s" data-rr="1">${Object.entries(ESC_TIPOS).map(([k,l])=>`<option value="${k}" ${E.escTipo===k?"selected":""}>${l}</option>`).join("")}</select></div>
       ${ROW("Escadas",SEG("estudo.nEsc",[[1,"1"],[2,"2"]],{rr:false}))}${ROW("Elevadores",SEG("estudo.elevadores",[[0,"auto"],[1,"1"],[2,"2"],[3,"3"],[4,"4"]],{rr:false}))}
       ${SW("estudo.emerg","Elevador de emergência")}${SW("estudo.fachada",bal?"Núcleo na fachada (obrigatório com balcão)":"Núcleo encostado na fachada",{dis:bal})}`+
-      ADV(ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["auto","auto"],["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
-        {key:"tPos", label:"Posição do núcleo", fechar:"Fechar posição do núcleo"}),
-      {open:true, key:"tNuc", sum:tipoSum("nuc"), info:"Núcleo"}) +
+      ADV(`<div class="fld wide"><label class="fl" for="nucPart">Partido do núcleo${INFO("Automático escolhe pelo número de elevadores e pelo tipo de escada. Fixe um partido para comparar: linear (elevadores no corredor e escada atrás), compacto (um elevador), frente a frente (hall dos elevadores perpendicular ao corredor) ou em L (escada no sentido da profundidade e ala rasa de elevadores).","o partido do núcleo")}</label><select class="sel" id="nucPart" data-p="nucleo.partido" data-t="s" data-rr="1">${[["auto","Automático"],...nucleoCatalogo().filter(c=>c.fixavel).map(c=>[c.id,c.nome])].map(([k,l])=>`<option value="${k}" ${(S.nucleo||{}).partido===k?"selected":""}>${l}</option>`).join("")}</select></div>`+
+        ROW(`Elevador${INFO("Capacidade da cabine. 8 pessoas (600 kg, cabine 1,10 × 1,40 m) é o mínimo acessível usual; conferir com o fabricante.","a capacidade do elevador")}`,SEG("nucleo.cap",[[6,"6"],[8,"8"],[10,"10"],[13,"13"]],{rr:false}))+
+        ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["auto","auto"],["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
+        {key:"tPos", label:"Partido e posição do núcleo", fechar:"Fechar partido e posição"}),
+      {open:true, key:"tNuc", sum:tipoSum("nuc"), info:"Núcleo de circulação vertical: escada, antecâmara, dutos, elevadores, hall, shafts e lixo/DML, na mesma posição em todos os pavimentos. A nota parte de 100 e perde 25 por problema grave e 6 por atenção (NBR 9077, IN 09, NBR 9050 — referência, conferir na lei)."}) +
     SEC("Medidas do andar", KV(NUM("estudo.corrTipo","Corredor / hall","m",{step:0.05})+NUM("estudo.profMin","Prof. mín. da unidade","m",{step:0.25})+NUM("produto.sacProf","Prof. da sacada","m",{step:0.1,help:"Sacada"})),
       {key:"tDim", sum:tipoSum("dim"), info:"Medidas de estudo do pavimento tipo. Confirme saídas, tipo de escada e elevador de emergência com a NBR 9077 e a IN do Corpo de Bombeiros."}) +
     SEC("Núcleo e unidades por torre", `<div id="tipoDet"></div>`, {key:"tDet", sum:"áreas do núcleo e das unidades"});
@@ -134,8 +136,10 @@ function garSum(k, m){
   if(k==="man"){ const n=Object.keys(E.off||{}).length+Object.keys(E.vtipo||{}).length; return n? `<b>${n}</b> marcaç${n>1?"ões":"ão"}` : "nenhuma" }
   return "";
 }
-function tipoSum(k){
+function tipoSum(k, m){
   const E=S.estudo;
+  const nu=m && (m.tipo||[]).map(l=>l&&l.nucleo).filter(Boolean);
+  if(k==="nuc" && nu && nu.length) return `${esc(nu[0].partidoNome)} · nota <b>${Math.min(...nu.map(n=>n.nota??100))}</b>`;
   if(k==="nuc") return `${E.nEsc} escada${E.nEsc>1?"s":""} · ${+E.elevadores? E.elevadores+" elev." : "elev. auto"}${E.emerg?" · emergência":""}`;
   if(k==="pos") return `${({auto:"planta auto",central:"corredor central",lateral:"lateral"})[E.tipoPlanta]||""} · ${pct(E.nucleoPos,0)}`;
   if(k==="dim") return `corredor ${nf(E.corrTipo,2)} m · prof. ${nf(E.profMin,2)} m`;
@@ -165,7 +169,7 @@ STEP_LIVE.projeto = (m, f, fast)=>{
     const mn=document.getElementById("garManN"); if(mn){ const n=Object.keys(S.estudo.off||{}).length+Object.keys(S.estudo.vtipo||{}).length; mn.textContent = n? `${n} marcaç${n>1?"ões":"ão"} manua${n>1?"is":"l"}` : "Sem marcações manuais" }
   }
   if(PSUB==="tipo"){
-    const nomes={esc:"Escada",ant:"Antecâmara / hall",duto:"Dutos",balc:"Balcão",elev:"Elevadores",emerg:"Elev. emergência",shaft:"Shafts",pass:"Acessos",hall:"Hall",tec:"Técnico",lixo:"Lixo / DML",hserv:"Hall de serviço"};
+    const nomes={esc:"Escada",ant:"Antecâmara / hall",hall:"Hall dos elevadores",duto:"Dutos",balc:"Balcão",elev:"Elevadores",emerg:"Elev. emergência",shaft:"Shafts",pass:"Acessos",hall:"Hall",tec:"Técnico",lixo:"Lixo / DML",hserv:"Hall de serviço"};
     const R=m.T.map((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l) return null; const us=l.units.filter(u=>!u.livre); return {i, t, l, us, ef:us.reduce((s,u)=>s+u.area,0)/Math.max(1,t.A), baixo:us.filter(u=>u.area<u.alvo).length} });
     const ok=R.filter(Boolean), baixo=ok.reduce((s,r)=>s+r.baixo,0), ts=document.getElementById("tipoStat");
     if(ts) ts.innerHTML = !ok.length? "" : `<span class="pill ${baixo?"warn":"ok"}">${baixo? baixo+" abaixo do alvo" : "áreas no alvo"}</span>`;
@@ -178,7 +182,7 @@ STEP_LIVE.projeto = (m, f, fast)=>{
         <div class="stack">${Object.entries(K).filter(([k,a])=>a>0.3).map(([k,a])=>`<span title="${nomes[k]||k}" style="width:${a/l.coreA*100}%;background:var(--c-${k})"></span>`).join("")}</div>
         <div class="stackleg">${Object.entries(K).filter(([k,a])=>a>0.3).map(([k,a])=>`<span><i style="background:var(--c-${k})"></i>${nomes[k]||k} ${nf(a,1)} m²</span>`).join("")}</div>
         <table class="tbl">${us.map(u=>`<tr><td>${esc(u.nome)} · alvo ${nf(u.alvo,0)} m²</td><td style="${u.area<u.alvo?"color:var(--bad)":""}">${nf(u.area,1)} m²</td></tr>`).join("")}</table>` }).join(""));
-    setSum("tNuc", tipoSum("nuc")); setSum("tDim", tipoSum("dim"));
+    setSum("tNuc", tipoSum("nuc", m)); setSum("tDim", tipoSum("dim")); nucResLive(m);
     if(ok.length) setSum("tDet", [...new Set(ok.map(r=>`núcleo ${m2(r.l.coreA)}`))].join(" · "));
     projNormasLive(m, fast);
   }
@@ -222,3 +226,22 @@ Object.assign(ACT,{
   andar: b=>{ ANDAR=b.dataset.k; if(VIEW!=="andar") setView("andar"); else { viewbarSegs(window._last.m); redraw2d(); planLegend() } STEP_LIVE.projeto(window._last.m) },
   corte3d: ()=>{ S.corte=ANDAR; save(); setView("3d") },
 });
+
+/* Núcleo de circulação (src/calc/nucleo.js): partido, nota, medidas e problemas em linguagem simples, por torre */
+function nucResLive(m){
+  const el=document.getElementById("nucRes"); if(!el) return;
+  const L=(m.tipo||[]).map((l,i)=>l&&l.nucleo? {i, n:l.nucleo, l} : null).filter(Boolean);
+  if(!L.length){ el.innerHTML=""; return }
+  const nv=n=>n>=85? "ok" : n>=60? "warn" : "bad", mult=L.length>1;
+  el.innerHTML = L.map(({i,n,l})=>{ const d=n.dim||{}, dg=d.degrau||{}, ev=d.elev||{}, pr=n.problemas||[];
+    const med=[`escada ${nf(d.escLarg||1.2,2)} m`, dg.n? `${dg.n} degraus de ${nf(dg.e*100,1)} × ${nf(dg.p*100,0)} cm` : "", d.patamar? `patamar ${nf(d.patamar,2)} m` : "",
+      ev.n? `${ev.n} elevador${ev.n>1?"es":""} de ${ev.cap} pessoas${n.elevNec>ev.n? ` (tráfego pede ${n.elevNec})` : ""}` : "", `${nf(d.L,1)} × ${nf(d.D,1)} m`].filter(Boolean).join(" · ");
+    return `<div class="nr-hd">${mult?`<span class="nr-t">Torre ${i+1}</span>`:""}<b>${esc(n.partidoNome)}</b><span class="pill ${nv(n.nota??100)}">nota ${n.nota??"—"}</span></div>
+      <div class="nr-med">${med}</div>${pr.length? `<ul class="nr-pr">${pr.slice(0,4).map(q=>`<li class="${q.nivel}">${esc(q.msg)}</li>`).join("")}${pr.length>4?`<li class="mais">+ ${pr.length-4}</li>`:""}</ul>` : ""}` }).join("");
+}
+(function nucEstilo(){ if(typeof document==="undefined" || document.getElementById("nucCss")) return; const st=document.createElement("style"); st.id="nucCss";
+  st.textContent=`.nucres{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}.nucres:empty{display:none}.nucres .nr-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.nucres .nr-hd b{font-weight:600}.nucres .nr-hd .pill{margin-left:auto}
+.nucres .nr-t{color:var(--muted);font-size:12px}.nucres .nr-med{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;line-height:1.45}
+.nucres .nr-pr{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:12px}.nucres .nr-pr li{position:relative;padding-left:12px;line-height:1.4}
+.nucres .nr-pr li::before{content:"";position:absolute;left:0;top:.5em;width:6px;height:6px;border-radius:50%;background:var(--warn)}.nucres .nr-pr li.bad::before{background:var(--bad)}.nucres .nr-pr li.mais::before{display:none}`;
+  document.head.appendChild(st) })();
