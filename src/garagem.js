@@ -626,7 +626,7 @@ function garagens(st, m, opt){
   const ext = q? {} : {presas:!!GX.presas, motos:!!GX.motos}, bReq = q? {n:0} : biciReq(st, m); let bici=bReq.n;
   const jobs=[]; // [chave, nível, solver(bicicletas que faltam)]
   // halls dos elevadores: a garagem liga cada um ao corredor por uma faixa de pedestres (portas do contrato do núcleo, se houver)
-  const LB=(m.coreSets||[]).filter(cs=>cs.lobby&&cs.lobby.length>2).map(cs=>{ const nu=cs.lay&&cs.lay.nucleo; const portas=nu&&Array.isArray(nu.portas)? nu.portas.filter(d=>d&&d.p&&(!d.tipo||d.tipo==="elev")).map(d=>d.p) : []; return {poly:cs.lobby, portas, i:cs.i} });
+  const LB=(m.coreSets||[]).filter(cs=>cs.lobby&&cs.lobby.length>2).map(cs=>{ const nu=cs.lay&&cs.lay.nucleo; const portas=nu&&Array.isArray(nu.portas)? nu.portas.filter(d=>d&&d.p&&(!d.tipo||d.tipo==="elev"||d.tipo==="escada")).map(d=>d.p) : []; return {poly:cs.lobby, portas, i:cs.i} });
   ext.gx=GX; ext.lobbies=LB;
   // subsolos e garagens elevadas: cada grupo de mesmo contorno é resolvido junto (mesmos corredores e pilares em todos)
   const grupos={}; Object.values(V.floors).forEach(f=>{ if(f.key==="ter" || !f.poly.length) return; (grupos[f.k<0? "s" : "g"]=grupos[f.k<0? "s" : "g"]||[]).push(f) });

@@ -226,7 +226,11 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       if(T.driveEnd && T.lanes){ const lc=(T.lanes[0]+T.lanes[1])/2, a=P_(lc,lf-2); arrow(a,T.driveEnd,css("--mark"),3,10) }
       // elevador de carros: vagas de espera antes do poço
       if(m.vert.elev) m.vert.elev.espera.forEach((p,i)=>{ fillP(p,css("--m-gar"),0.35); strokeP(p,css("--ink"),1,[4,3]); if(V.s>5) label(`espera ${i+1}`, w2s(G.centroid(p)), {size:9}) });
-      if(V.s>3 && !m.vert.elev){ const c=w2s(P_((T.drive0.dv[0]+T.drive0.dv[1])/2, (lf+(m.vert.strips[0]? m.vert.strips[0].d0 : lf+5))/2)); label("patamar ≥ 5 m", c, {size:9}) } }
+      // portão no fim da espera: o carro aguarda dentro do lote (5 m), fora da calçada e da rua; a rampa começa depois dele
+      if(!m.vert.elev){ const dv=T.drive0.dv, dg=m.vert.strips[0]? m.vert.strips[0].d0 : lf+5, a=w2s(P_(dv[0]+0.15,dg)), b=w2s(P_(dv[1]-0.15,dg));
+        g.save(); g.strokeStyle=css("--ink"); g.lineWidth=Math.max(1.5,V.s*0.12); g.setLineDash([Math.max(3,V.s*0.5),Math.max(2,V.s*0.25)]); g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke(); g.setLineDash([]);
+        const ps=Math.max(3,V.s*0.3); g.fillStyle=css("--ink"); [a,b].forEach(q=>g.fillRect(q[0]-ps/2,q[1]-ps/2,ps,ps)); g.restore();
+        if(V.s>3){ label("espera 5 m · fora da via", w2s(P_((dv[0]+dv[1])/2, (lf+dg)/2)), {size:9}); if(V.s>6) label("portão", w2s(P_((dv[0]+dv[1])/2, dg+0.9)), {size:8.5, col:css("--ink-2")}) } } }
     lzDraw(m.lzLay&&m.lzLay.terreo);
     coresAll(true);
     m.T.forEach(t=>strokeP(t.plate,css("--muted"),1,[5,4]));

@@ -643,7 +643,8 @@ function gmSobras(FR, R, L, P, vagas, pil){
     const rs=[]; runs.forEach(([a,b,j])=>{ const r=rs.find(x=>x.a===a && x.b===b && x.j1===j-1); if(r) r.j1=j; else rs.push({a,b,j0:j,j1:j}) });
     const fr=rs.map(r=>[X0+r.a*res, Y0+r.j0*res, X0+(r.b+1)*res, Y0+(r.j1+1)*res]).filter(r=>Math.min(r[2]-r[0], r[3]-r[1])>=1.5-1e-6);
     const ar=fr.reduce((s_,r)=>s_+(r[2]-r[0])*(r[3]-r[1]),0); if(ar<6) continue;
-    const aces=fr.some(r=>corr.some(c=>gmToca(r,c,0.6)));
+    // acesso: encostada num corredor (carro) ou no hall dos elevadores (a pé: depósitos, medidores, bombas)
+    const aces=fr.some(r=>corr.some(c=>gmToca(r,c,0.6)) || FR.LB.some(l=>gmToca(r,l.b,0.6)));
     const big=fr.reduce((m,r)=>(r[2]-r[0])*(r[3]-r[1])>(m[2]-m[0])*(m[3]-m[1])? r : m, fr[0]);
     out.push({area:ar, tipo: !aces && ar>40? "semAcesso" : aces? "deposito" : "tecnica", polys:fr.map(r=>[[r[0],r[1]],[r[2],r[1]],[r[2],r[3]],[r[0],r[3]]].map(q=>FR.Wd(q[0],q[1]))), c:FR.Wd((big[0]+big[2])/2,(big[1]+big[3])/2)}) }
   return out;
