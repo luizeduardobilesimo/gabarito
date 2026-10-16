@@ -132,6 +132,13 @@ function cmnRetangulos(g, pred){
     runs.forEach(key=>{ if(!open.has(key)){ const [a,b]=key.split(",").map(Number); open.set(key,{i:a,j,w:b-a,h:0}) } open.get(key).h++ }) }
   return out;
 }
+/* maior retângulo de células que satisfazem pred (histograma por linha) */
+function cmnMaiorRet(g, pred, mn=2){ const H=new Int32Array(g.nx); let best=null;
+  for(let j=0;j<g.ny;j++){ for(let i=0;i<g.nx;i++) H[i]= pred(g.c[j*g.nx+i])? H[i]+1 : 0;
+    const st=[]; for(let i=0;i<=g.nx;i++){ const h= i<g.nx? H[i] : 0; let ini=i;
+      while(st.length && st[st.length-1][1]>=h){ const [i0,h0]=st.pop(); const w=i-i0; if(h0>0 && (!best || w*h0>best.w*best.h) && Math.min(w,h0)>=mn) best={i:i0, j:j-h0+1, w, h:h0}; ini=i0 }
+      st.push([ini,h]) } }
+  return best }
 /* distância (em células, xadrez) até a célula não transitável mais próxima */
 function cmnFolga(g, pass){
   const n=g.nx*g.ny, d=new Int16Array(n), BIG=9999;
@@ -144,7 +151,7 @@ function cmnFolga(g, pass){
 }
 /* menor caminho (Manhattan, com custo de curva) das fontes até alguma célula vizinha do alvo */
 function cmnCaminho(g, fonte, alvo, passa, custo){
-  const n=g.nx*g.ny, D=new Float32Array(n*4).fill(Infinity), prev=new Int32Array(n*4).fill(-1), H=[];
+  const n=g.nx*g.ny, D=new Float64Array(n*4).fill(Infinity), prev=new Int32Array(n*4).fill(-1), H=[];
   const push=(c,s)=>{ H.push([c,s]); let i=H.length-1; while(i>0){ const p=(i-1)>>1; if(H[p][0]<=H[i][0]) break; [H[p],H[i]]=[H[i],H[p]]; i=p } };
   const pop=()=>{ const t=H[0], l=H.pop(); if(H.length){ H[0]=l; let i=0; for(;;){ const a=2*i+1, b=a+1; let s=i; if(a<H.length&&H[a][0]<H[s][0]) s=a; if(b<H.length&&H[b][0]<H[s][0]) s=b; if(s===i) break; [H[s],H[i]]=[H[i],H[s]]; i=s } } return t };
   const DI=[[1,0],[-1,0],[0,1],[0,-1]];
@@ -280,6 +287,82 @@ function cmnPoe(g, a, o){
             top.push({...r, sc, f, frT, ct:{luz:lz, luzLado:lzL}}); top.sort((x,y)=>y.sc-x.sc); if(top.length>K) top.pop() } } } } }
   return o.todos? top : top[0]||null;
 }
+/* partido "perimetral": o ambiente encosta as costas numa parede (fachada, divisa, núcleo, garagem ou outro ambiente) e
+   avança para dentro; a porta fica na face oposta, voltada para o vão central, que vira o hall/galeria. Profundidade pela
+   área; o vão que sobra na frente dele precisa ter ≥ centro (1,8 m) ou terminar na circulação (sem fresta morta). */
+const cmnParede=v=> v===CF || v===CO || v===CE || v>=10;
+function cmnPoeParede(g, a, o){
+  const c=CMN_CAT[a.k], res=g.res, luz=o.luz, ancora=o.ancora||null, par=o.par!=null? o.par : null;
+  const portaC=Math.ceil((c.porta||0.9)/res)+1, lim24=Math.round(2.4/res), dMin=Math.max(2,Math.ceil((c.d-0.05)/res)), A=a.A/(res*res);
+  const fMin=o.fMin??0.9, fMax=o.fMax??1.12, cMin=Math.round((o.centro||1.8)/res);
+  const SZ= luz? (o.SZ || [0,1,2,3].map(d=>cmnPS(g, k=>luz[k*4+d]))) : null, RN=cmnCorridas(g);
+  const SW=cmnPS(g, k=>cmnParede(g.c[k])?1:0), SP= par!=null? cmnPS(g, k=>g.c[k]===par?1:0) : null;
+  const segs=cmnFrentes(g, cmnParede).filter(s=>s.t1-s.t0>=dMin);
+  const wMax=Math.ceil(Math.sqrt(A*(c.prop+0.2)*fMax))+1, top=[], K=o.K||24;
+  for(const s of segs){ const len=s.t1-s.t0, [di,dj]=cmnDI[s.d], prof=new Int16Array(len), fim=new Uint8Array(len);
+    for(let t=0;t<len;t++){ const k=cmnSegCel(g,s,s.t0+t), p=RN[s.d][k]; prof[t]=p; const i=k%g.nx, j=(k/g.nx)|0; fim[t]= cmnCirc(g.at(i+di*p, j+dj*p))? 1 : 0 }
+    const lat= s.d>=2? [0,1] : [2,3];
+    for(let w=dMin; w<=Math.min(len,wMax); w++){ const hA=A/w;
+      for(let a0=0; a0+w<=len; a0++){
+        let mx=1e9; for(let t=a0;t<a0+w;t++) if(prof[t]<mx) mx=prof[t];
+        if(mx<dMin) continue;
+        const hs=new Set(); const h1=Math.max(dMin, Math.round(hA)); if(h1<=mx) hs.add(h1);
+        if(mx*w>=A*fMin && mx*w<=A*fMax) hs.add(mx);   // até a circulação ou até a outra parede
+        for(const h of hs){ const f=w*h/A; if(f<fMin-1e-9 || f>fMax+1e-9) continue; if(Math.max(w,h)/Math.min(w,h)>c.prop+0.3) continue;
+          // frente (lado da porta): vão livre ≥ centro ou que termina na circulação; fresta morta entre os dois é perda
+          let run=0, best=0, fresta=0, aberto=0;
+          for(let t=a0;t<a0+w;t++){ const gap=prof[t]-h, ok= gap>=cMin || (fim[t] && gap<cMin); if(ok){ run++; aberto++; if(run>best) best=run } else run=0; if(gap>0 && gap<cMin && !fim[t]) fresta++ }
+          if(best<portaC) continue;
+          const r=cmnSegRet(s, s.t0+a0, w, h), L=[r.h,r.h,r.w,r.w], cu=g.u0+(r.i+r.w/2)*res, cv=g.v0+(r.j+r.h/2)*res, Lm=Math.max(r.w,r.h)*res;
+          let sc=0;
+          if(SZ){ let lz=0; for(let d=0;d<4;d++) lz+=cmnQ(SZ[d],g,...cmnLadoDentro(r,d)); const luzM=lz*res;
+            if(c.luz==="sim") sc += luzM>0? 45*Math.min(1, luzM/(0.5*Lm)) : -30;
+            else if(c.luz==="pref" || c.luz==="vista") sc += 14*Math.min(1, luzM/(0.4*Lm));
+            else sc -= 16*Math.min(1, luzM/Lm) }
+          sc += 24*cmnQ(SW,g,...cmnLadoFora(r,s.d<2? (s.d===0? 1 : 0) : (s.d===2? 3 : 2)))/L[s.d];   // costas na parede
+          let latOk=0;
+          for(const d of lat){ const so=cmnLadoFora(r,d), wl=cmnQ(SW,g,...so); sc+=10*wl/L[d]; if(wl>=L[d]*0.5) latOk++;
+            if(wl<L[d]){ const t= d===0||d===2? a0-1 : a0+w; let gp=0; if(t>=0 && t<len){ const st=t<a0? -1 : 1; for(let q=t; q>=0 && q<len && prof[q]>=h; q+=st) gp++ } else gp=lim24;
+              if(gp>0 && gp<lim24) sc -= 16 } }   // fresta ao lado: sobra estreita entre ele e a próxima parede
+          if(!latOk) sc -= 35;   // só as costas encostadas: caixa solta avançando no hall
+          sc -= 30*fresta/w;
+          sc -= 3*(Math.max(r.w,r.h)/Math.min(r.w,r.h)-1);
+          sc -= f<1? 120*(1-f) : 40*(f-1);
+          if(SP){ let pc=0; for(let d=0;d<4;d++) pc+=cmnQ(SP,g,...cmnLadoFora(r,d)); if(o.parObrig && pc<portaC) continue; sc += 40*Math.min(1, pc*res/2) }
+          if(ancora) sc -= (o.pesoAncora??0.5)*Math.hypot(cu-ancora[0], cv-ancora[1]);
+          if(o.extra) sc += o.extra(r, {cu,cv});
+          if(top.length<K || sc>top[top.length-1].sc){ let lz=0; const lzL=[0,0,0,0]; if(SZ) for(let d=0;d<4;d++){ lzL[d]=cmnQ(SZ[d],g,...cmnLadoDentro(r,d)); lz+=lzL[d] }
+            // candidatos variados: um parecido (mais da metade sobreposto) só fica se for melhor que o outro
+            const sob=x=>{ const ow=Math.min(x.i+x.w,r.i+r.w)-Math.max(x.i,r.i), oh=Math.min(x.j+x.h,r.j+r.h)-Math.max(x.j,r.j); return ow>0&&oh>0? ow*oh/Math.min(x.w*x.h,r.w*r.h) : 0 };
+            const q=top.findIndex(x=>sob(x)>0.5); if(q>=0){ if(top[q].sc>=sc) continue; top.splice(q,1) }
+            top.push({...r, sc, f, frT:1, ladoPorta:s.d, ct:{luz:lz, luzLado:lzL}}); top.sort((x,y)=>y.sc-x.sc); if(top.length>K) top.pop() } } } } }
+  return top;
+}
+/* rede de circulação (partido perimetral): do hall de entrada (CH/CC), pelas células livres com folga de 1,20 m, até cada
+   hall de elevadores (alvos) e até a frente de cada ambiente já colocado (trecho de porta). Devolve true se tudo se liga. */
+function cmnRedeOk(g, alvos, feitos){
+  const n=g.nx*g.ny, rm=Math.max(1,Math.ceil((1.2/g.res-1)/2)), fol=cmnFolga(g, v=>v===CL||cmnCirc(v)), vis=new Uint8Array(n), Q=[];
+  for(let k=0;k<n;k++) if(g.c[k]===CH||g.c[k]===CC){ vis[k]=1; Q.push(k) }
+  if(!Q.length) return true;
+  for(let q=0;q<Q.length;q++){ const k=Q[q], i=k%g.nx, j=(k/g.nx)|0;
+    for(const [a,b] of cmnDI){ const ii=i+a, jj=j+b, v=g.at(ii,jj), kk=jj*g.nx+ii; if(vis[kk]) continue;
+      if(v===CC||v===CH||v===CA || (v===CL && fol[kk]>rm)){ vis[kk]=1; Q.push(kk) } } }
+  for(const al of alvos){ let ok=false; for(const k of al.set) if(vis[k]){ ok=true; break } if(!ok) return false }
+  const SV=cmnPS(g, k=>vis[k]?1:0);
+  for(const f of feitos){ if(!f.r || f.porFora) continue; const need=Math.ceil((CMN_CAT[f.k].porta||0.9)/g.res)+1, par=f.parCod; let ok=false;
+    for(const d of [0,1,2,3]){ const [i0,j0,w,h]=cmnLadoFora(f.r,d); let run=0;
+      for(let t=0;t<Math.max(w,h) && !ok;t++){ const i=i0+(w>1?t:0), j=j0+(h>1?t:0), v=g.at(i,j);
+        const ac= (par!=null && v===par) || (v!==CF && (cmnCirc(v)||v===CL) && cmnQ(SV,g,i-rm,j-rm,2*rm+1,2*rm+1)>0);
+        if(ac){ if(++run>=need) ok=true } else run=0 } if(ok) break }
+    if(!ok) return false }
+  return true;
+}
+/* quais alvos (hall dos elevadores) se alcançam a partir do hall de entrada andando pela circulação */
+function cmnAlcanca(g, alvos){ const n=g.nx*g.ny, vis=new Uint8Array(n), Q=[];
+  for(let k=0;k<n;k++) if(g.c[k]===CH){ vis[k]=1; Q.push(k) }
+  if(!Q.length) for(let k=0;k<n;k++) if(g.c[k]===CC){ vis[k]=1; Q.push(k) }
+  for(let q=0;q<Q.length;q++){ const k=Q[q], i=k%g.nx, j=(k/g.nx)|0; for(const [a,b] of cmnDI){ const kk=(j+b)*g.nx+i+a; if(!vis[kk] && cmnCirc(g.at(i+a,j+b))){ vis[kk]=1; Q.push(kk) } } }
+  return alvos.map(al=>{ for(const k of al.set) if(vis[k]) return true; return false }) }
 /* células livres que não se ligam à circulação (ambientes ilhados atrás de outros) */
 /* (pela passagem de ao menos 1,20 m: uma fresta de 0,5 m ao lado de um ambiente não é acesso) */
 /* fol = folga calculada antes de marcar o retângulo r (marcar só diminui a folga: perto de r ela é a distância até r) */
@@ -328,7 +411,8 @@ function cmnLiga(g, alvoSet, rb, modo, perto){   // perto: Uint8Array das célul
     // perto da origem a folga é pequena (encostada na clausura, numa galeria estreita): deixa sair de lá
     const n=g.nx*g.ny, dS=new Int16Array(n).fill(999), Q=[]; for(let k=0;k<n;k++) if(g.c[k]===CC||g.c[k]===CH){ dS[k]=0; Q.push(k) }
     for(let q=0;q<Q.length;q++){ const k=Q[q]; if(dS[k]>=r+1) continue; const i=k%g.nx, j=(k/g.nx)|0; for(const [a,b] of cmnDI){ const kk=(j+b)*g.nx+i+a; if(g.at(i+a,j+b)===CL && dS[kk]>dS[k]+1){ dS[kk]=dS[k]+1; Q.push(kk) } } }
-    const path=cmnCaminho(g, k=>g.c[k]===CC||g.c[k]===CH, k=>alvoSet.has(k), k=>(g.c[k]===CL||g.c[k]===CC||g.c[k]===CH) && (fol[k]>r || dS[k]<=r), custo);
+    // (o hall dos elevadores de uma torre é passagem para a outra, como no prédio de verdade)
+    const path=cmnCaminho(g, k=>g.c[k]===CC||g.c[k]===CH, k=>alvoSet.has(k), k=>g.c[k]===CA || (g.c[k]===CL||g.c[k]===CC||g.c[k]===CH) && (fol[k]>r || dS[k]<=r), custo);
     if(path){ cmnPincel(g, path, r, CC, v=>v===CL); return {path, estreito: r<rb} } }
   return null;
 }
@@ -471,8 +555,15 @@ function cmnPlaneja(g, lista, o){
   let id=o.id0||10;
   const poe=(a, flex, extra={})=>{ const c=CMN_CAT[a.k];
     const par = a.par && feitos.find(f=>f.id===a.par);
-    const cands=cmnPoe(g, a, {luz, flex, ancora: a.grupo==="servico"? o.ancoraServ||o.ancora : o.ancora, pesoAncora: a.grupo==="acesso"? 2.5 : a.grupo==="servico"? 0.9 : 0.35,
-      par: par? par.cod : null, parObrig: !!par, porta: true, todos:true, SZ, extra:o.extra? (r,ct)=>o.extra(a,r,ct,feitos) : null, ...extra});
+    const oo={luz, flex, ancora: a.grupo==="servico"? o.ancoraServ||o.ancora : o.ancora, pesoAncora: a.grupo==="acesso"? 2.5 : a.grupo==="servico"? 0.9 : 0.35,
+      par: par? par.cod : null, parObrig: !!par, porta: true, todos:true, SZ, extra:o.extra? (r,ct)=>o.extra(a,r,ct,feitos) : null, ...extra};
+    if(o.parede){   // partido perimetral: encostado na parede, e a rede (entrada → elevadores → portas) continua ligada
+      const cands=cmnPoeParede(g, a, oo); const cod=id++;
+      for(const cd of cands){ cmnMarca(g, cd, cod); const f={...a, cod, r:cd, ct:cd.ct, parCod: par? par.cod : null};
+        if(cmnRedeOk(g, o.alvos||[], [...feitos, f])){ f.poly=cmnRetPoly(g,cd); f.area=cd.w*cd.h*g.res*g.res; f.reduzido=cd.f<0.9; f.nomeCat=c.nome; feitos.push(f); return f }
+        cmnMarca(g, cd, CL) }
+      id--; return null }
+    const cands=cmnPoe(g, a, oo);
     if(!cands.length) return null;
     // não ilhar área livre: o ambiente não pode fechar o acesso a um vão livre (> 4 m²) atrás dele
     let ilh0=null, fol0=null; const cod=id++, lim=Math.round(4/(g.res*g.res)); let r=null;
@@ -484,6 +575,9 @@ function cmnPlaneja(g, lista, o){
     if(!r){ id--; return null }
     const f={...a, cod, r, ct:r.ct, poly:cmnRetPoly(g,r), area:r.w*r.h*g.res*g.res, reduzido:r.f<0.9, nomeCat:c.nome}; feitos.push(f); return f };
   const pend=lista.slice();
+  if(o.parede){ for(let q=0;q<pend.length;){ const f=poe(pend[q], null); if(f) pend.splice(q,1); else q++ }
+    for(let q=0;q<pend.length;){ const f=poe(pend[q], null, {fMin:0.72}); if(f) pend.splice(q,1); else q++ }
+    pend.forEach(a=>falta.push(a)); return {feitos, falta, rb} }
   for(let rodada=0; rodada<6 && pend.length; rodada++){
     for(let q=0;q<pend.length;){ const f=poe(pend[q], null); if(f) pend.splice(q,1); else q++ }
     if(!pend.length) break;
@@ -681,30 +775,39 @@ function comunsTerreo(st, m, prog){
     for(let q=0;q<Q.length;q++){ const k=Q[q]; perto[k]=1; if(dd[k]>=lim) continue; const i=k%g.nx, j=(k/g.nx)|0; for(const [a,b] of cmnDI){ const kk=(j+b)*g.nx+i+a; if(g.at(i+a,j+b)===CL && dd[kk]>dd[k]+1){ dd[kk]=dd[k]+1; Q.push(kk) } } } }
   const base=g.c.slice(), nBase=amb.length;
   let melhor=null, ligacoes=[];
-  for(const modo of ["neutro","centro","fachada"]){
+  // partidos: "perimetro" (ambientes encostados nas paredes, o vão do meio vira hall e galeria), "neutro" (galeria mais
+  // curta), "centro" (galeria pelo meio do vão) e "fachada" (galeria paralela à fachada com luz). Cada um vai até o fim
+  // (sobras, crescimento, livres) e fica o que acomoda mais programa, com luz, encostado e com menos sobra e galeria.
+  for(const modo of ["perimetro","galeria","neutro","centro","fachada"]){
+    // os partidos de galeria primeiro só entram se o perimetral não acomodou tudo ligado
+    if((modo==="neutro"||modo==="centro") && melhor && !melhor.falta.length && melhor.lig.every(l=>l.ok)) continue;
     g.c.set(base); amb.length=nBase;
-    const lig=[];
+    const lig=[], per=modo==="perimetro"||modo==="galeria";   // galeria: a galeria pelo meio do vão primeiro, ambientes encostados dos dois lados
     if(modo==="fachada" && !cmnGaleriaFachada(g, luz, rb)) continue;
-    alvos.forEach(al=>{ const toca=[...al.set].some(k=>{ const i=k%g.nx, j=(k/g.nx)|0; return cmnDI.some(([a,b])=>{ const v=g.at(i+a,j+b); return v===CC||v===CH }) });
+    if(modo!=="perimetro") alvos.forEach(al=>{ const toca=[...al.set].some(k=>{ const i=k%g.nx, j=(k/g.nx)|0; return cmnDI.some(([a,b])=>{ const v=g.at(i+a,j+b); return v===CC||v===CH }) });
       if(toca){ lig.push({al, ok:true}); return }
-      const r=cmnLiga(g, al.set, rb, modo, perto); lig.push({al, ok:!!r, estreito: r&&r.estreito}) });
-    const pl=cmnPlaneja(g, lista, {luz, galeria:+C.galeria||1.5, ancora, ancoraServ:ancServ, id0:300,
+      const r=cmnLiga(g, al.set, rb, modo==="galeria"? "centro" : modo, perto); lig.push({al, ok:!!r, estreito: r&&r.estreito}) });
+    const pl=cmnPlaneja(g, lista, {luz, galeria:+C.galeria||1.5, ancora, ancoraServ:ancServ, id0:300, parede:per, alvos,
       extra:(a,r,ct,feitos)=>{ // sanitários perto do salão / gourmet
         let sc=0; if(a.k==="wc"){ const alvo=feitos.find(f=>f.k==="salao"||f.k==="gourmet"); if(alvo){ const cu=g.u0+(r.i+r.w/2)*res, cv=g.v0+(r.j+r.h/2)*res, au=g.u0+(alvo.r.i+alvo.r.w/2)*res, av=g.v0+(alvo.r.j+alvo.r.h/2)*res; sc-=0.8*Math.hypot(cu-au,cv-av) } }
         return sc } });
-    let nota=0; pl.feitos.forEach(f=>{ const c=CMN_CAT[f.k]; nota += f.A*(c.luz==="sim"? (f.ct&&f.ct.luz>0? 1.5 : 0.75) : 1) * Math.min(1, f.area/f.A) });
+    cmnSobras(g, pl.feitos);
+    cmnCresce(g, pl.feitos.filter(f=>f.area<f.A*0.97));
+    const livres=cmnLivres(g, per? 1e9 : 15);
+    if(modo==="perimetro"){ const ok=cmnAlcanca(g, alvos); alvos.forEach((al,q)=>lig.push({al, ok:ok[q]})) }
+    let nota=0; pl.feitos.forEach(f=>{ const c=CMN_CAT[f.k], ct=cmnContato(g, f.r, null, null);
+      nota += f.A*(c.luz==="sim"? (f.ct&&f.ct.luz>0? 1.5 : 0.75) : 1) * Math.min(1, f.area/f.A) + 20*ct.parede/Math.max(1,ct.per) });
     pl.falta.forEach(a=>nota -= a.A*(a.obrig? 2.5 : 1.6));
     lig.forEach(l=>{ if(!l.ok) nota-=200 });
     let nC=0; for(let k=0;k<g.c.length;k++) if(g.c[k]===CC) nC++; nota -= 0.3*nC*res*res;
-    (typeof CMN_DEBUG!=="undefined") && CMN_DEBUG.push({modo, nota:Math.round(nota), falta:pl.falta.map(a=>a.nome), semLuz:pl.feitos.filter(f=>CMN_CAT[f.k].luz==="sim"&&!(f.ct&&f.ct.luz>0)).map(f=>f.nome)});
-    if(!melhor || nota>melhor.nota) melhor={nota, modo, c:g.c.slice(), feitos:pl.feitos, falta:pl.falta, lig};
+    livres.forEach(x=>{ if(x.A>=4) nota -= x.A*(x.toca? 0.6 : 1.0) });
+    (typeof CMN_DEBUG!=="undefined") && CMN_DEBUG.push({modo, nota:Math.round(nota), falta:pl.falta.map(a=>a.nome), circ:Math.round(nC*res*res), sobra:Math.round(livres.reduce((s,x)=>s+x.A,0)), semLuz:pl.feitos.filter(f=>CMN_CAT[f.k].luz==="sim"&&!(f.ct&&f.ct.luz>0)).map(f=>f.nome)});
+    if(!melhor || nota>melhor.nota) melhor={nota, modo, c:g.c.slice(), feitos:pl.feitos, falta:pl.falta, lig, livres};
   }
   g.c.set(melhor.c); amb.length=nBase; ligacoes=melhor.lig;
   melhor.feitos.forEach(f=>amb.push(f));
   melhor.falta.forEach(a=>falta.push({...a, motivo: cmnMotivoFalta(a, g)}));
-  cmnSobras(g, amb.filter(f=>!["clausura","portaria"].includes(f.k)));
-  cmnCresce(g, amb.filter(f=>!["clausura","portaria","hall"].includes(f.k) && f.area<f.A*0.97));
-  const livres=cmnLivres(g, 15);
+  const livres=melhor.livres, partido=melhor.modo;
   // sobras grandes: abertas para a circulação viram estar (até ~40 m²) ou área livre coberta (pilotis), com bancos e
   // jardineiras; fechadas (sem acesso pela circulação) ficam como reserva técnica
   const sobra=livres.filter(x=>x.A>=4).map(x=>({A:x.A, rets:cmnRetangulosDe(g, x.cells), toca:x.toca}));
@@ -712,6 +815,20 @@ function comunsTerreo(st, m, prog){
     const k= !x.toca? "reserva" : x.A>=40? "pilotis" : "estar", nome= k==="reserva"? "Reserva técnica" : k==="pilotis"? "Área livre coberta" : "Estar";
     const e={k, nome, area:x.A, poly:cmnRetPoly(g,r), r, toca:x.toca}; const cl=cmnContato(g, r, null, null).circLado, ld= r.w>=r.h? (cl[2]<=cl[3]? 2 : 3) : (cl[0]<=cl[1]? 0 : 1);   // bancos no lado comprido, longe da passagem
     e.moveis= k==="reserva"? [] : cmnMoveis(g, {k, r}, k==="estar"? cmnOposto(cmnLadoCirc(g,{r})) : ld, 3); return e }).filter(Boolean);
+  // vãos largos da circulação (partido perimetral): estar com sofás no meio do hall, 1,20 m livres em volta (portas e passagem);
+  // encostado só em parede cega (fachada, divisa, núcleo, garagem). O resto do vão é hall e galeria.
+  const CZ=7;
+  for(let q=0; q<3; q++){ const R0=cmnMaiorRet(g, v=>v===CC, Math.round(4.6/res)); if(!R0 || Math.min(R0.w,R0.h)*res<4.6 || R0.w*R0.h*res*res<28) break;
+    const mg=Math.round(1.2/res), fora=d=>{ const [i0,j0,w,h]=cmnLadoFora(R0,d); let p=0, t=0; for(let s_=0;s_<Math.max(w,h);s_++){ const v=g.at(i0+(w>1?s_:0), j0+(h>1?s_:0)); t++; if(v===CF||v===CO||v===CE) p++ } return p===t };
+    const cego=[0,1,2,3].map(fora), r={i:R0.i+(cego[0]?0:mg), j:R0.j+(cego[2]?0:mg), w:R0.w-(cego[0]?0:mg)-(cego[1]?0:mg), h:R0.h-(cego[2]?0:mg)-(cego[3]?0:mg)};
+    if(r.w*res<2.4 || r.h*res<2.4){ cmnMarca(g, R0, CZ+1); continue }
+    const salva=g.c.slice(); cmnMarca(g, r, CZ);
+    if(cmnAlcanca(g, alvos).some(x=>!x)){ g.c.set(salva); cmnMarca(g, R0, CZ+1); continue }
+    // fora o retângulo do estar, o resto deste vão não entra de novo na busca
+    for(let j=R0.j;j<R0.j+R0.h;j++) for(let i=R0.i;i<R0.i+R0.w;i++){ const k=j*g.nx+i; if(g.c[k]===CC) g.c[k]=CZ+1 }
+    const A_=R0.w*R0.h*res*res, ld= cego.findIndex(x=>x)>=0? cego.findIndex(x=>x) : (r.w>=r.h? 2 : 0);
+    estar.push({k:"estar", nome: A_>=60? "Área livre coberta" : "Estar", area:A_, poly:cmnRetPoly(g,R0), r, toca:true, noHall:true, moveis:cmnMoveis(g, {k:"estar", r}, ld, 3)}) }
+  for(let k=0;k<g.c.length;k++) if(g.c[k]===CZ+1) g.c[k]=CC;
   // portas, janelas e mobiliário
   amb.forEach(f=>{
     if(f.k==="hall"){ f.portas=[]; }
@@ -744,7 +861,7 @@ function comunsTerreo(st, m, prog){
   // circulação desenhada
   const circ=cmnRetangulos(g, v=>v===CC).map(r=>cmnRetPoly(g,r));
   const hallExt=cmnRetangulos(g, v=>v===CH).map(r=>cmnRetPoly(g,r));
-  return {g, amb, falta, avisos, circ, hallExt, rota, luz, ligacoes, ent, ancora, ancServ, estar, folgaFundoA, sobra:sobra.filter(x=>x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), reserva:sobra.filter(x=>!x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), sobraA:sobra.reduce((s,x)=>s+x.A,0), fCl, fPt, fHall, uPed, uVei, veiFrente};
+  return {g, amb, falta, avisos, circ, hallExt, rota, luz, ligacoes, ent, ancora, ancServ, estar, folgaFundoA, sobra:sobra.filter(x=>x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), reserva:sobra.filter(x=>!x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), sobraA:sobra.reduce((s,x)=>s+x.A,0), fCl, fPt, fHall, uPed, uVei, veiFrente, partido};
 }
 function cmnRetangulosDe(g, cells){ const c=new Int16Array(g.nx*g.ny); cells.forEach(k=>c[k]=1); return cmnRetangulos({nx:g.nx, ny:g.ny, c}, v=>v===1) }
 function cmnMotivoFalta(a, g){ const c=CMN_CAT[a.k]; return `pede ${cmnNf(a.A,0)} m² com ${cmnNf(c.d,1)} m de largura mínima e porta para a circulação` }
@@ -991,7 +1108,7 @@ function comunsCalc(st, m){
   // o que não coube porque o lugar não existe
   prog.forEach(a=>{ if(amb.some(x=>x.id===a.id) || falta.some(x=>x.id===a.id)) return; if(a.local==="emb" && !LJ) falta.push({...a, motivo:"não há laje livre no embasamento"}); else if((a.local==="pav"||a.local==="cob") && !(a.local==="pav"? PV : CB)) falta.push({...a, motivo:"sem torre para o pavimento"}); else if(a.local==="terreo" && !TT) falta.push({...a, motivo:"o térreo não tem hall"}) });
   const rota=[...((TT&&TT.rota)||[]).map(r=>({...r, local:"terreo"})), ...((LJ&&LJ.rota)||[]).map(r=>({...r, local:"emb"}))];
-  const out={ amb, falta, rota, prog,
+  const out={ amb, falta, rota, prog, partido:TT? TT.partido : null,
     circ:{ terreo:TT? TT.circ : [], hall:TT? TT.hallExt : [], emb:LJ? LJ.caminhos : [], pav:PV? PV.circ : [], cob:CB? CB.circ : [] },
     folgaFundoA:TT? TT.folgaFundoA : 0, sobra:TT? TT.sobra : [], reserva:TT? TT.reserva : [], sobraA:TT? TT.sobraA : 0, estar:TT? TT.estar.map(e=>({k:e.k, nome:e.nome, area:e.area, poly:e.poly, moveis:e.moveis})) : [],
     verde:{ terreo:TR? TR.verde : [], emb:LJ? LJ.verde : [] }, arvores:{ terreo:TR? TR.arvores : [], emb:LJ? LJ.arvores : [] },

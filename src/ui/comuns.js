@@ -35,7 +35,7 @@ function cmnDraw(g, m, local, K){
   if(local==="emb") ((C.circ||{}).emb||[]).forEach(p=>fill(p, css("--c-circ"), 1));
   // 2. piso do hall e das galerias (o hall social em branco; galerias e sobras num cinza claro)
   if(local!=="emb"){ ((C.circ||{})[local]||[]).forEach(p=>fill(p, css("--c-hall"), 1)); if(local==="terreo") ((C.circ||{}).hall||[]).forEach(p=>fill(p, css("--c-hall"), 1));
-    if(local==="terreo"){ (C.sobra||[]).forEach(p=>fill(p, css("--c-hall"), 1)); (C.reserva||[]).forEach(p=>{ fill(p, css("--c-circ"), 1); if(s>4) hatchP(p, ink, 0.12, 0.6) }) } }
+    if(local==="terreo"){ (C.sobra||[]).forEach(p=>fill(p, css("--c-hall"), 1)); (C.estar||[]).forEach(e=>fill(e.poly, css("--c-hall"), 1)); (C.reserva||[]).forEach(p=>{ fill(p, css("--c-circ"), 1); if(s>4) hatchP(p, ink, 0.12, 0.6) }) } }
   // 3. ambientes: parede (poché) e piso na cor do uso
   lst.forEach(a=>{ const c=CMN_CAT[a.k]||{}, col=css(CMN_COR[c.cor]||"--surface");
     if(a.k==="piscina"){ fill(a.poly, css("--lz-deck"), 1); hatchP(a.poly, ink, 0.1, 0.45, 0); stroke(a.poly, ink, 0.8, [4,3], 0.6);
@@ -85,11 +85,21 @@ function cmnDraw(g, m, local, K){
   function lbl(t, P, size, w, col){ g.font=`${w} ${size}px ${css("--f-sans")}`; g.textAlign="center"; g.textBaseline="middle"; g.lineWidth=3; g.strokeStyle=surf; g.globalAlpha=0.85; g.strokeText(t,P[0],P[1]); g.globalAlpha=1; g.fillStyle=col||ink; g.fillText(t,P[0],P[1]) }
   if(s>6) estar.forEach(a=>{ const p=a.poly, xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]), bw=Math.max(...xs)-Math.min(...xs), bh=Math.max(...ys)-Math.min(...ys), c=w2s(G.centroid(p));
     g.font=`500 9px ${css("--f-sans")}`; if(g.measureText(a.nome).width>bw-6 || bh<26) return; lbl(a.nome, [c[0], c[1]-5], 9, 500, ink2); lbl(`${nf(a.area,0)} m²`, [c[0], c[1]+6], 8.5, 500, ink2) });
+  // cada ambiente com nome (curto se preciso, menor, ou na vertical nos estreitos e compridos) e área
+  const CURTO={lixo:"Lixo",medidores:"Med.",gas:"Gás",clausura:"Claus.",portaria:"Port.",dml:"DML",wc:"WC PCD",vest:"Vest.",copaf:"Copa f.",apoioPisc:"Apoio",bici:"Bicic.",
+    gourmet:"Gourmet",salao:"Salão",academia:"Academia",brinq:"Brinq.",cowork:"Cowork",lavand:"Lavand.",jogos:"Jogos",cinema:"Cinema",sauna:"Sauna",copa:"Copa",playground:"Play",pet:"Pet",quadra:"Quadra",deck:"Solário",hall:"Hall"};
   if(s>3) lst.forEach(a=>{ const p=a.lamina||a.poly, xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]), bw=Math.max(...xs)-Math.min(...xs), bh=Math.max(...ys)-Math.min(...ys), c=w2s(G.centroid(p));
-    const size= s>14? 10.5 : 9.5; g.font=`600 ${size}px ${css("--f-sans")}`; let nome=a.nome; if(g.measureText(nome).width>bw-6){ const cur={lixo:"Lixo",medidores:"Med.",gas:"Gás",clausura:"Claus.",portaria:"Port.",dml:"DML",wc:"WC PCD",vest:"Vest.",copaf:"Copa f.",apoioPisc:"Apoio",bici:"Bicic."}[a.k]; if(cur) nome=cur }
-    if(g.measureText(nome).width>bw-4 || bh<12) return;
-    const two=bh>30 && s>6; lbl(nome, [c[0], two? c[1]-6 : c[1]], size, 600);
-    if(two){ const t=`${nf(a.area,0)} m²${a.k==="piscina"&&a.deckA? ` · deck ${nf(a.deckA,0)} m²` : ""}`; g.font=`500 9px ${css("--f-sans")}`; if(g.measureText(t).width<bw-4) lbl(t, [c[0], c[1]+6], 9, 500, ink2) } });
+    const nomes=[a.nome, CURTO[a.k]||a.nome].filter((x,i,v)=>v.indexOf(x)===i), tam=s>14? [10.5,9.5,8.5] : [9.5,8.5,7.5];
+    const area=`${nf(a.area,0)} m²${a.k==="piscina"&&a.deckA? ` · deck ${nf(a.deckA,0)} m²` : ""}`;
+    let esc0=null;
+    for(const vert of [false,true]){ const W_=vert? bh : bw, H_=vert? bw : bh;
+      for(const nm of nomes){ for(const sz of tam){ g.font=`600 ${sz}px ${css("--f-sans")}`; if(g.measureText(nm).width<=W_-4 && H_>=sz+3){ esc0={nm,sz,vert,W_,H_}; break } } if(esc0) break }
+      if(esc0) break }
+    if(!esc0) return;
+    g.save(); g.translate(c[0], c[1]); if(esc0.vert) g.rotate(-Math.PI/2);
+    const two=esc0.H_>esc0.sz*2+10 && s>6; lbl(esc0.nm, [0, two? -6 : 0], esc0.sz, 600);
+    if(two){ g.font=`500 ${Math.min(9,esc0.sz)}px ${css("--f-sans")}`; let t=area; if(g.measureText(t).width>esc0.W_-4) t=`${nf(a.area,0)} m²`; if(g.measureText(t).width<=esc0.W_-4) lbl(t, [0, 6], Math.min(9,esc0.sz), 500, ink2) }
+    g.restore() });
   return true;
 }
 /* legenda (plan2d/views): itens das áreas comuns */
