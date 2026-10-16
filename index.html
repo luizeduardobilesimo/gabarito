@@ -23309,6 +23309,11 @@ function assTecla(e){
   if(e.key==="Escape" && !ASS.rodando){ e.preventDefault(); assFechar(true) }
   if(e.key==="Enter" && !ASS.rodando && e.target.tagName!=="TEXTAREA" && e.target.tagName!=="BUTTON" && e.target.tagName!=="SELECT"){ e.preventDefault(); assSeguir() }
 }
+// Esc fecha o assistente mesmo antes do foco chegar nele (o foco entra 20 ms depois de abrir; até lá a tecla vai ao corpo da página)
+document.addEventListener("keydown", e=>{
+  if(e.key!=="Escape" || e.defaultPrevented || !ASS.el || ASS.el.hidden || ASS.rodando || ASS.el.contains(e.target)) return;
+  e.preventDefault(); assFechar(true);
+});
 function assClique(e){
   const tl=e.target.closest(".ass-tile");
   if(tl){ if(tl.dataset.modo){ ASS.r.lote.modo=tl.dataset.modo; ASS.erro=""; assRender(ASS.r.lote.modo==="coord"? "#assC" : ASS.r.lote.modo==="ret"? "#assF" : false) }
