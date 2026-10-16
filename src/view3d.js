@@ -145,11 +145,11 @@ function rebuild3d(m, force){
   if(S.forma && S.forma.on && S.forma.aero && m.hLim>0) flat(L, m.hLim, col3("--warn"), 0.14); // plano de proteção do aeródromo
   // rampas inclinadas entre os pavimentos (cada uma na sua faixa)
   if(m.vert){ const zk=k=> k<0? k*P.peGar : k===0? 0 : P.peTerreo+(k-1)*P.peGar;
-    m.vert.segs.forEach(sg=>{ if(sg.elev) return; if(sg.path) rampaPath3d(sg.path, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")); else rampa3d(sg.E, sg.X, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")) });
+    m.vert.segs.forEach(sg=>{ if(sg.elev || sg.cruza) return;   /* rampa que passaria pelo núcleo: fora do 3D */ if(sg.path) rampaPath3d(sg.path, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")); else rampa3d(sg.E, sg.X, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")) });
     // helicoidal: pilar central · elevador de carros: poço do fundo ao último pavimento servido
     const zTop=k=> zk(k)+(k===0? P.peTerreo : P.peGar), sH=(m.vert.strips||[]).find(s_=>s_.kind==="H");
-    if(sH && sH.hole) slab(sH.hole, zk(-P.subsolos), zTop(P.garAcima)-zk(-P.subsolos)-0.2, col3("--m-gar"), {eop:0.3});
-    if(m.vert.elev){ const E_=m.vert.elev; E_.shafts.forEach(p=>slab(p, zk(E_.kMin), zTop(E_.kMax)-zk(E_.kMin)-0.1, col3("--c-elev"), {op:0.55, eop:0.45})) } }
+    if(sH && sH.hole && !sH.cruza) slab(sH.hole, zk(-P.subsolos), zTop(P.garAcima)-zk(-P.subsolos)-0.2, col3("--m-gar"), {eop:0.3});
+    if(m.vert.elev && !m.vert.elev.cruza){ const E_=m.vert.elev; E_.shafts.forEach(p=>slab(p, zk(E_.kMin), zTop(E_.kMax)-zk(E_.kMin)-0.1, col3("--c-elev"), {op:0.55, eop:0.45})) } }
   if(!ctxA("predios")) (S.entorno||[]).forEach(e=>{ if(e.pts&&e.pts.length>2&&e.h>0) slab(e.pts, 0, e.h, col3("--m-viz"), {eop:0.35, noclip:true, rough:0.95, holes:entVazios(e)}) });
   // andar cortado: planta do pavimento sobre a laje
   if(fl) cutFloor(m, fl);

@@ -174,6 +174,8 @@ function otimMLite(m){   // o que o Worker precisa do modelo da tela (clonável 
 }
 function otimVagasCal(st, m){
   const gar=m && m.gar, mv=st.regras.m2Vaga||28; if(!gar || !Object.keys(gar).length) return null;
+  // circulação vertical inválida (rampa que não cabe ou passa pelo núcleo): o layout não mede nada — sem calibração daqui
+  if(m.vert && m.vert.ok===false) return null;
   const ks=re=>Object.keys(gar).filter(k=>re.test(k)), soma=l=>l.reduce((s,k)=>s+(gar[k]? +gar[k].count||0 : 0),0), cl=v=>Math.max(0, Math.min(1, v));
   const kS=ks(/^s\d+$/), kG=ks(/^g\d+$/), eS=kS.length*Math.floor((m.subA||0)/mv), eG=kG.length*Math.floor((m.embA||0)/mv), eT=Math.floor((m.gTer||0)/mv);
   let s = eS>0? cl(soma(kS)/eS) : null, g = eG>0? cl(soma(kG)/eG) : null, t = eT>0 && gar.ter? cl((+gar.ter.count||0)/eT) : null;
@@ -181,6 +183,27 @@ function otimVagasCal(st, m){
   if(g==null) g = 0.8*s;
   if(t==null) t = s;
   return {s, g, t, vf:(m.vf && +m.vf.count)||0, fonte:"layout"};
+}
+/* garagem que FUNCIONA no estado de partida (lote pequeno: "o subsolo ficou sem vaga nenhuma"). Se a circulação do estudo é inválida
+   (rampa que não cabe no pavimento ou passaria pelo núcleo), a calibração e a conferência das combinações usariam vagas de um layout
+   impossível. Testa cada tipo de circulação (src/calc/ciclo.js cicloTipos) na posição do acesso e, sem nenhum válido, nas pontas e no
+   meio da frente, com o cálculo rápido e ≥ 1 subsolo; sem garagem elevada se nem assim houver. Devolve {g, m, st, validas:[{g, vagas}]}
+   (a de mais vagas primeiro) ou null quando a do estudo já vale. Puro (Worker). */
+function otimGarValida(base, mNow){
+  const ok=m=>!!m && (!m.vert || m.vert.ok!==false);
+  if(ok(mNow) || typeof cicloGarDe!=="function") return null;
+  const g0=cicloGarDe(base), achados=[];
+  const roda=(st, g)=>{ const s=clone(st); cicloGarPoe(s, g); try{ const m=compute(s, {quick:true}); if(ok(m)) achados.push({g:cicloGarDe(s), m, st:s, vagas:m.vagasLay||0}) }catch(e){} };
+  const s1=clone(base); s1.produto.subsolos=Math.max(1, +s1.produto.subsolos||0);
+  const tentativas=[s1, ...(s1.produto.garAcima>0? [(()=>{ const s=clone(s1); s.produto.garAcima=0; return s })()] : [])];
+  for(const st of tentativas){
+    cicloTipos(st).forEach(t=>roda(st, {...g0, rampaTipo:t}));
+    if(!achados.length) cicloTipos(st).forEach(t=>[0.1,0.5,0.9].forEach(p=>roda(st, {...g0, rampaTipo:t, acessoVei:p})));
+    if(achados.length) break }
+  if(!achados.length) return null;
+  achados.sort((a,b)=>b.vagas-a.vagas);
+  const por=new Map(); achados.forEach(x=>{ if(!por.has(x.g.rampaTipo)) por.set(x.g.rampaTipo, x) });
+  return {...achados[0], de:g0, validas:[...por.values()].map(x=>({g:x.g, vagas:x.vagas}))};
 }
 /** vagas esperadas de uma combinação (massa) com a calibração por pavimento */
 function otimVagasEst(m, st, cal){ const P=st.produto, mv=st.regras.m2Vaga||28;
@@ -236,7 +259,8 @@ function otimFechaTxt(fx, semLucro){
 function otimMotor(base, o){
   const {cal, fin, score, forma=false, rTol=0.1, pavMinF=1, memoEf=null}=o, R0=base.regras;
   const cabe=m=>m.T.every(x=>x.fit) && m.H<=(m.hLim ?? R0.hMax)+1e-6 && m.CA<=R0.caMax+1e-6;
-  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m);
+  // vagas só contam com a circulação vertical válida (rampa dentro dos pavimentos e fora do núcleo — src/garagem.js verticalCruza)
+  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m) && (!x.m.vert || x.m.vert.ok!==false);
   const avalia=st=>{ const mm=compute(st,{quick:true}), f=fin(st,mm); return {st, m:mm, f, sc:score(f,mm)} };
   const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
   // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
@@ -250,6 +274,7 @@ function otimMotor(base, o){
   const repara=(cur, subir)=>{
     for(let t=0; t<3 && !nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, nT=P.torres.length, pav=P.torres[0].pav;
       const porPav=Math.max(1, nT*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), k=Math.max(1, Math.ceil((m.vagasReq-m.vagas)/porPav));
+      if(m.vert && m.vert.ok===false) break;   // a garagem deste tipo não funciona aqui: quem resolve é a troca de garagem (otimGarValida)
       const nx=melhorDe([
         pav-k>=pMinV ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav-k) }) : null,
         rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++ }),
@@ -312,8 +337,11 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const prog = typeof onProg==="function"? onProg : ()=>{};
   const base=clone(ctx.st||S);
   const mNow = ctx.m || (typeof window!=="undefined" && window._last && window._last.m) || compute(base);
+  // garagem do estudo inválida (rampa que não cabe ou passaria pelo núcleo): a busca parte de uma circulação que funciona
+  const garV = opts.cal? null : otimGarValida(base, mNow);
+  if(garV) cicloGarPoe(base, garV.g);
   // vagas: calibração por tipo de pavimento num layout real (o da tela; sem ele, um compute rápido do estado de partida com ≥ 1 subsolo)
-  let cal = opts.cal || otimVagasCal(base, mNow);
+  let cal = opts.cal || otimVagasCal(base, garV? garV.m : mNow);
   if(!cal){ try{ const sc=clone(base); sc.produto.subsolos=Math.max(1, +sc.produto.subsolos||0); cal=otimVagasCal(sc, compute(sc, {quick:true})) }catch(e){} }
   if(!cal) cal={s:0.6, g:0.5, t:0.6, vf:0, fonte:"padrão"};
   const k = cal.s;
@@ -405,9 +433,13 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const fechaFim=out=>{ if(parou()) return cancela();
       const o={res:out, obj:opts.obj, k, cal, meta, ms:performance.now()-t0, testadas:res.length, ...(tPct? {terrenoPct:tPct} : {}), ...(formaInfo? {forma:formaInfo} : {})};
       // nenhuma combinação conferida: por quê (lote pequeno para as regras, ou a garagem não comporta as vagas exigidas)
-      if(!out.length){ const mv=base.regras.m2Vaga||28, ys=Math.max(0, Math.round(cal.s*Math.floor((mNow.subA || G.area(base.lote.pts)*(1-base.regras.permeab))/mv)));
+      if(!out.length){ const mv=base.regras.m2Vaga||28, mR=(garV&&garV.m)||mNow, ys=Math.max(0, Math.round(cal.s*Math.floor((mR.subA || G.area(base.lote.pts)*(1-base.regras.permeab))/mv)));
+        const yg=Math.max(0, Math.round(cal.g*Math.floor((mR.embA||0)/mv))), va=+base.regras.vagasApto||0, maxV=Math.round((cal.vf||0)+5*ys+3*yg), gx= typeof cicloGarNome==="function"? cicloGarNome(cicloGarDe(base), base) : "";
+        const semGar = !garV && mNow.vert && mNow.vert.ok===false;
         o.semOpcao = !cont.cabe ? {k:"lote", motivo:"o lote é pequeno demais para as regras: nenhuma torre comporta as unidades dentro dos recuos e da ocupação"}
-          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo neste lote e as regras pedem ${nf(+base.regras.vagasApto||0,1)} por unidade`, porSubsolo:ys} }
+          : semGar ? {k:"vagas", motivo:"nenhuma circulação de veículos (rampa reta, alternada, helicoidal, em L ou elevador de carros) cabe neste lote sem passar pelo núcleo — mude a posição do núcleo ou o acesso de veículos", porSubsolo:0}
+          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo${yg? ` e ${yg} por garagem elevada` : ""} neste lote${gx? ` (${gx})` : ""} e as regras pedem ${nf(va,1)} por unidade: mesmo com 5 subsolos e 3 garagens elevadas seriam cerca de ${maxV} vagas${va>0? `, para no máximo ${Math.floor(maxV/va)} unidades` : ""}`, porSubsolo:ys, porElevada:yg, maxVagas:maxV} }
+      if(garV) o.garTroca={de:garV.de, para:cicloGarDe(base), validas:garV.validas};
       // sem lucro (ou abaixo da meta): o motivo e o que fecharia a conta da melhor (a menos ruim). Os preços que fecham a conta são os
       // MENORES entre as opções conferidas (opcaoZero/opcaoMeta = índice em res quando não é a primeira): com o preço maior, outra
       // combinação pode fechar antes
@@ -438,10 +470,19 @@ function otimizar(opts, onProg, onDone, ctx={}){
     return v };
   // confirma as melhores com o layout real da garagem (reparo em otimMotor)
   const conf=new Map();   // chave → {st, m, f, sc} das opções conferidas (para o ciclo e o "o que fecharia a conta" sem recalcular)
+  // a garagem com que a combinação foi conferida não funciona nela (ex.: 2 subsolos com rampa reta num lote curto): outra circulação
+  // válida (as que valeram na partida, senão cada tipo na posição atual), com o reparo — fica a de melhor nota que fecha as vagas
+  let nAlt=0;
+  const garAlt=c=>{ const g0=cicloGarDe(c.st), gs= garV? garV.validas.map(x=>x.g) : cicloTipos(c.st).map(t=>({...g0, rampaTipo:t}));
+    let best=null; for(const g of gs){ if(cicloGarIgual(g, g0)) continue; const s=clone(c.st); cicloGarPoe(s, g); const c2=repara(avalia(s), 0); if(nivelOk(c2) && (!best || c2.sc>best.sc)) best=c2 }
+    return best };
   const validar=(list, done)=>{ let j=0; const out=[];
     const stepV=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++];
-        const c=repara(avalia(stOf(r)), j<=3? 4 : 0), st=c.st, m=c.m;
+        let c=repara(avalia(stOf(r)), j<=3? 4 : 0);
+        // (sem o ciclo, a garagem é a do estudo)
+        if(!nivelOk(c) && c.m.vert && c.m.vert.ok===false && opts.ciclo!==false && typeof cicloTipos==="function" && nAlt<6){ nAlt++; const c2=garAlt(c); if(c2) c=c2 }
+        const st=c.st, m=c.m;
         if(!nivelOk(c) || (forma && otimDesvio(m)>rTol)) continue;   // forma: unidades além da tolerância não entram nas melhores
         const v=opcao(r, c);
         if(out.some(x=>x.key===v.key)) continue;   // o reparo pode levar duas opções à mesma combinação
@@ -479,8 +520,13 @@ function otimizar(opts, onProg, onDone, ctx={}){
     if(completo){
       for(let q=0; q<Math.min(2, out.length); q++){ const r=out[q], c=conf.get(r.key); if(!c) continue;
         if(q && performance.now()-t0>tot-2500){ [out[0], out[1]]=[out[1], out[0]]; break }   // sem tempo para conferir a 2ª: ela sobe sem o completo
-        const st=clone(c.st), m=compute(st), f=fin(st, m), cc={st, m, f, sc:score(f, m)};
-        const v=opcao(r, cc); v.garInfo=r.garInfo; v.completo=true; v.pend=cicloPend(m); v.sc=r.sc+(cc.sc-c.sc);
+        const st=clone(c.st), m=compute(st), f=fin(st, m); let cc={st, m, f, sc:score(f, m)};
+        // faltam poucas vagas no layout completo: um andar a menos (as unidades que as vagas comportam) costuma fechar — confere uma vez
+        if(!nivelOk(cc) && m.vagas<m.vagasReq && (!m.vert || m.vert.ok!==false)){ const P=st.produto, pav=P.torres[0].pav,
+          porPav=Math.max(1, P.torres.length*P.mix.reduce((s,u)=>s+u.qtd,0)*(+st.regras.vagasApto||1)), k=Math.ceil((m.vagasReq-m.vagas)/porPav);
+          if(k<=2 && pav-k>=Math.max(2, pavMinF)){ const s2=clone(st); s2.produto.torres.forEach(x=>x.pav=pav-k); const m2=compute(s2), f2=fin(s2, m2), c2={st:s2, m:m2, f:f2, sc:score(f2, m2)};
+            if(nivelOk(c2)) cc=c2 } }
+        const v=opcao(r, cc); v.garInfo=r.garInfo; v.completo=true; v.pend=cicloPend(cc.m); v.sc=r.sc+(cc.sc-c.sc);
         OTIM_EXTRAS.forEach(k=>{ if(r[k]!==undefined) v[k]=r[k] });
         conf.set(v.key, cc);
         if(nivelOk(cc)){ out.splice(q, 1); out.unshift(v); break }   // a 2ª fecha e a 1ª não: a 2ª passa para o topo

@@ -110,7 +110,10 @@ describe('convivência com a garagem do térreo e com o núcleo real', () => {
   it('lote estreito (estudo de referência): com o hall dos elevadores invadido pela faixa de veículos, o programa cabe e o problema é grave e claro', T, () => {
     const st = estado(A, { lote: { pts: [[0, 0], [20, 0], [20, 40], [0, 40]], front: [0], rec: [{}, {}, {}, {}] }, produto: { torres: [{ pav: 10 }], subsolos: 2 } }), m = A.compute(st), C = m.comuns;
     expect(C.falta.filter(a => a.local === 'terreo' && a.k !== 'hall')).toEqual([]);
-    expect(C.problemas.some(p => p.k === 'veiculos' && p.nivel === 'bad' && /hall dos elevadores/.test(p.msg))).toBe(true);
+    // a faixa desenhada não cobre mais o núcleo (src/programa.js): a rampa/faixa que passaria por ele invalida a circulação vertical,
+    // com o motivo (regra dura de src/garagem.js verticalCruza) — antes o problema aparecia só nas áreas comuns
+    expect(C.problemas.some(p => p.k === 'veiculos' && p.nivel === 'bad' && /hall dos elevadores/.test(p.msg))
+      || (m.vert.ok === false && m.vert.warn.some(w => /passa(r)? pelo núcleo/.test(w)))).toBe(true);
   });
   it('partido perimetral: cada ambiente coberto encosta as costas numa parede, no núcleo ou em outro ambiente', T, () => {
     for (const k of ['exemplo', 'grande']) { const { m } = calc(k), C = m.comuns, [ux, vy] = C.eixos.terreo; if (!['perimetro', 'galeria'].includes(C.partido)) continue;

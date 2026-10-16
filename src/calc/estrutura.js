@@ -23,7 +23,8 @@ function estrPisos(st, m){
     out.push({k, poly, box: poly.length? estrBox(poly) : null, z:estrZTop(st,k),
       vagas: pack(lay.vagas.filter(v=>v.tipo!=="off").map(v=>v.poly)),
       ramps: pack([...(f.ramps||[]).map(r=>r.poly), ...(f.landings||[])]),
-      pil: (lay.pillars||[]).map(p=>G.centroid(p)), grid: lay.grid||null, reach: lay.reach||null, extra: [] }) });
+      pil: (lay.pillars||[]).map(p=>G.centroid(p)), grid: lay.grid||null, reach: lay.reach||null, extra: [],
+      obst: k==="ter"? null : m.obstGar||null }) });   // subsolos/elevadas: a faixa atrás do núcleo é piso de garagem (src/garagem.js)
   // térreo: o acesso de veículos e a passagem de pedestres também não recebem pilar
   const ex=pack([...(T.drive||[]), ...(T.walk||[])]);
   if(ex.length){ let t=out.find(o=>o.k==="ter"); if(!t){ t={k:"ter", poly:[], box:null, z:estrZTop(st,"ter"), vagas:[], ramps:pack(((V.ter||{}).ramps||[]).map(r=>r.poly)), pil:[], grid:null, reach:null, extra:[]}; out.push(t) } t.extra=ex }
@@ -34,7 +35,7 @@ function estrConflito(pi, q, c, h, obst){
   const b=estrBox(q);
   for(const e of pi.extra) if(estrBoxHit(b,e.b) && G.polysOverlap(q,e.p)) return "acesso";
   if(!pi.box || !estrBoxHit(b,pi.box) || !(G.pip(c,pi.poly) || G.polysOverlap(q,pi.poly))) return null;
-  if(obst.some(o=>G.pip(c,o))) return null; // núcleo / hall dos elevadores: estrutura própria
+  if((pi.obst||obst).some(o=>G.pip(c,o))) return null; // núcleo / hall dos elevadores: estrutura própria
   for(const v of pi.vagas) if(estrBoxHit(b,v.b) && G.polysOverlap(q,v.p)) return "vaga";
   for(const r of pi.ramps) if(estrBoxHit(b,r.b) && G.polysOverlap(q,r.p)) return "rampa";
   const g=pi.grid, R=pi.reach;

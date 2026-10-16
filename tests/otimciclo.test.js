@@ -22,7 +22,9 @@ describe('garagem real na escolha (tipo de rampa, acesso, ângulo)', () => {
     const g = await A.cicloGarFinalista(M, c0, sempre);
     expect(g.melhor.g.rampaTipo).toBe('elevador');
     expect(M.nivelOk(g.melhor.c)).toBe(true);
-    expect(g.melhor.c.f.lucro).toBeGreaterThan(c0.f.lucro);
+    // neste lote a rampa reta só caberia passando pelo núcleo (regra dura, src/garagem.js verticalCruza): a combinação dela não vale,
+    // e o elevador é a garagem que fecha as vagas; quando a reta vale, o elevador precisa render mais
+    if (A.cicloGarOk(c0.m)) expect(g.melhor.c.f.lucro).toBeGreaterThan(c0.f.lucro); else expect(M.nivelOk(c0)).toBe(false);
     expect(g.melhor.c.st.produto.torres[0].pav).toBeGreaterThanOrEqual(c0.st.produto.torres[0].pav);
     // o elevador entra com o custo dele
     expect((g.melhor.c.m.custosExtra || []).some(x => x.k === 'garElevCarros')).toBe(true);

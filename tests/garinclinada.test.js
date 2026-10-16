@@ -17,6 +17,8 @@ const CASOS = {
   canto: { lote: lote([[0, 0], [40, 0], [40, 35], [25, 50], [0, 50]]), produto: P },
   quadrilatero: { lote: lote([[0, 0], [42, 0], [48, 40], [2, 46]]), produto: P },
 };
+// obstáculos dos pavimentos de garagem: nos subsolos/elevadas a faixa atrás do núcleo (coreFundo) é piso (m.obstGar)
+const obsDe = (m, k) => k === 'ter' ? m.obst : (m.obstGar || m.obst);
 const calc = parcial => { const st = estado(A, parcial); return { st, m: A.compute(st) } };
 const RES = Object.fromEntries(Object.entries(CASOS).map(([k, p]) => [k, calc(p)]));
 const subs = m => Object.entries(m.gar).filter(([k]) => k[0] === 's');
@@ -24,7 +26,7 @@ const pisoDe = (m, k) => k === 'ter' ? m.ter.gar : m.vert.floors[k].poly;
 const inter = (a, b) => A.garAreaInter(a, b);
 const malhaOk = (m, k) => {
   const l = m.gar[k], vs = l.vagas.filter(v => v.tipo !== 'off' && v.tipo !== 'faixa');
-  const R = A.rasterCheck(pisoDe(m, k), [...m.obst, ...l.blocks], vs, l.pillars, l.portals, l.aisle);
+  const R = A.rasterCheck(pisoDe(m, k), [...obsDe(m, k), ...l.blocks], vs, l.pillars, l.portals, l.aisle);
   return { conn: R.allConn, todas: R.okV.length === vs.length, n: vs.length };
 };
 const vagasSub = m => subs(m).reduce((s, [, l]) => s + l.count, 0);
@@ -34,7 +36,9 @@ describe('referencial do lote girado e paredes inclinadas', () => {
     const base = vagasSub(RES.alinhado.m);
     for (const k of ['g20', 'g30', 'g45']) {
       const { m } = RES[k], n = vagasSub(m);
-      expect(n).toBeGreaterThanOrEqual(base - 4);                        // mesma área: ±2 vagas por subsolo
+      // mesma área: ±2 vagas por subsolo — ou 6%: com a faixa atrás do núcleo livre nos subsolos o alinhado ganha mais (no girado o núcleo
+      // não fica no referencial do lote e a sobra ao lado dele é inclinada)
+      expect(n).toBeGreaterThanOrEqual(base - Math.max(4, Math.round(0.06 * base)));
       for (const [, l] of subs(m)) {
         expect(l.met.m2v).toBeLessThanOrEqual(RES.alinhado.m.gar.s1.met.m2v + 2);
         // os corredores seguem o lote: o eixo principal é paralelo a um lado do lote (girado), não aos eixos x/y
@@ -65,7 +69,7 @@ describe('regras mantidas nos lotes inclinados e girados', () => {
   it('rota e manobra (malha de 0,5 m), nada sobre núcleo/rampa/patamar/corredor/faixa/pilar, sem problema grave', T, () => {
     for (const { m } of Object.values(RES)) for (const [k, l] of Object.entries(m.gar)) {
       const r = malhaOk(m, k); expect(r.conn).toBe(true); expect(r.todas).toBe(true);
-      const proib = [...m.obst, ...l.blocks, ...l.landings, ...l.aisles.map(a => a.poly), ...l.peds.filter(p => p.poly).map(p => p.poly), ...l.pillars];
+      const proib = [...obsDe(m, k), ...l.blocks, ...l.landings, ...l.aisles.map(a => a.poly), ...l.peds.filter(p => p.poly).map(p => p.poly), ...l.pillars];
       l.vagas.filter(v => v.tipo !== 'off').forEach(v => proib.forEach(p => expect(inter(v.poly, p)).toBeLessThan(0.1)));
       expect(l.problemas.filter(p => p.nivel === 'bad')).toEqual([]);
       // vagas não se sobrepõem

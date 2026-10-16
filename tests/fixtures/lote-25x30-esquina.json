@@ -1,0 +1,208 @@
+{
+ "nome": "Lote 25 × 30 de esquina (caso real)",
+ "lote": {
+  "pts": [
+   [
+    -12.958078060657364,
+    14.925785936588106
+   ],
+   [
+    -12.941723746360626,
+    -15.074209605684963
+   ],
+   [
+    12.057994341073844,
+    -14.955484929219228
+   ],
+   [
+    11.997989334334244,
+    15.044455060706852
+   ]
+  ],
+  "front": [
+   0,
+   3
+  ],
+  "principal": 3,
+  "rec": [
+   {},
+   {},
+   {},
+   {}
+  ],
+  "acessoPed": 0.5,
+  "acessoVei": 0.75,
+  "ladoVei": null,
+  "norte": 0,
+  "desnivel": 0
+ },
+ "regras": {
+  "caBas": 2.5,
+  "caMax": 4.5,
+  "outorgaRS": 350,
+  "toEmb": 0.8,
+  "toTorre": 0.6,
+  "permeab": 0.2,
+  "hMax": 60,
+  "recFrente": 4,
+  "recEmb": 1.5,
+  "afMin": 2.5,
+  "afDiv": 8,
+  "afTorresDiv": 5,
+  "recSub": 0,
+  "ncGaragem": true,
+  "ncTerreo": true,
+  "ncTipo": 0.12,
+  "vagasApto": 1,
+  "m2LojaVaga": 50,
+  "m2Vaga": 28,
+  "aptoMin": 40
+ },
+ "produto": {
+  "subsolos": 1,
+  "garAcima": 1,
+  "garTerreo": 0.45,
+  "lojaTerreo": 0,
+  "peTerreo": 4.5,
+  "peGar": 3,
+  "pe": 3,
+  "efic": 0.8,
+  "atico": true,
+  "torreEixo": "long",
+  "vagasFrente": false,
+  "sacTipo": "embutida",
+  "sacProf": 1.6,
+  "torres": [
+   {
+    "pav": 13
+   }
+  ],
+  "mix": [
+   {
+    "nome": "3 dorm.",
+    "area": 90,
+    "preco": 10000,
+    "sac": 8,
+    "qtd": 2
+   },
+   {
+    "nome": "2 dorm.",
+    "area": 70,
+    "qtd": 2,
+    "preco": 11000,
+    "sac": 6
+   }
+  ],
+  "cob": {
+   "on": true,
+   "qtd": 1,
+   "area": 220,
+   "preco": 15000
+  },
+  "garTerOn": true,
+  "lazer": {
+   "hall": 50,
+   "itens": [
+    {
+     "nome": "Salão de festas",
+     "area": 80,
+     "local": "cob",
+     "desc": false
+    },
+    {
+     "nome": "Espaço gourmet",
+     "area": 40,
+     "local": "pav",
+     "desc": true
+    },
+    {
+     "nome": "Academia",
+     "area": 40,
+     "local": "pav"
+    },
+    {
+     "nome": "Playground",
+     "area": 20,
+     "local": "pav",
+     "desc": false
+    }
+   ]
+  }
+ },
+ "estudo": {
+  "usarLayout": true,
+  "vagaL": 2.5,
+  "vagaC": 5,
+  "corredor": 5.5,
+  "porModulo": 3,
+  "pilar": 0.4,
+  "rampaInc": 0.2,
+  "rampaL": 3.5,
+  "pcd": 0.02,
+  "idoso": 0.05,
+  "corrTipo": 1.5,
+  "profMin": 5,
+  "angulo": "melhor",
+  "garDir": "auto",
+  "garDirGraus": 0,
+  "rampa": null,
+  "nucleoPos": 0.5,
+  "nucleoLado": "B",
+  "escadaLado": "auto",
+  "elevadores": 0,
+  "tipoPlanta": "auto",
+  "escTipo": "pf_duto",
+  "nEsc": 1,
+  "emerg": false,
+  "fachada": true,
+  "rampaTipo": "reta"
+ },
+ "garagem": {
+  "heliRi": 3.5,
+  "heliRe": 7.5,
+  "ecN": 1,
+  "ecEspera": 0,
+  "ecVel": 0.5,
+  "ecManobra": 40,
+  "ecPico": 0.3,
+  "ecCusto": 450000,
+  "presas": false,
+  "presasMax": 0.3,
+  "presasVinc": "unidade",
+  "motos": false,
+  "motosMax": 0.1,
+  "bici": "off",
+  "biciPorUn": 1,
+  "biciM2": 100,
+  "ev": 0,
+  "evCusto": 9000,
+  "partido": "auto",
+  "acrParede": 0.2,
+  "acrPilar": 0.1,
+  "pcdModo": "auto",
+  "zonas": "auto"
+ },
+ "otim": {
+  "obj": "lucro",
+  "torres": true,
+  "tipologias": true,
+  "unidades": true,
+  "rTol": 0.1,
+  "mc": false,
+  "vento": false,
+  "malha": false,
+  "efic": false,
+  "vc": false,
+  "paretoMax": 8,
+  "fVagas": false,
+  "fSol": false,
+  "solMin": 3
+ },
+ "comuns": {
+  "on": true,
+  "gas": "glp",
+  "funcionarios": false,
+  "bici": true,
+  "galeria": 1.5
+ }
+}

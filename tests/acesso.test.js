@@ -12,7 +12,7 @@ const inter = (a, b) => (a && b && a.length > 2 && b.length > 2) ? G.area(G.clip
 // na malha de 0,5 m, o carro sai do portal e chega à frente de todas as vagas de carro do pavimento
 const malhaOk = (m, k, piso, extra = []) => {
   const l = m.gar[k], vs = l.vagas.filter(v => v.tipo !== 'off' && v.tipo !== 'faixa');
-  const R = A.rasterCheck(piso, [...m.obst, ...extra, ...l.blocks], vs, l.pillars, l.portals, l.aisle);
+  const R = A.rasterCheck(piso, [...(k === 'ter' ? m.obst : (m.obstGar || m.obst)), ...extra, ...l.blocks], vs, l.pillars, l.portals, l.aisle);
   return { conn: R.allConn, todas: R.okV.length === vs.length, n: vs.length };
 };
 // pedaços de pedestre do térreo: hall, lojas, passagem e caminhos até os núcleos
