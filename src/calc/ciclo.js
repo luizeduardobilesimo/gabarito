@@ -49,7 +49,7 @@ function cicloGarNome(g, st){ if(!g) return "";
 /* tipos de rampa que fazem sentido no estudo (sem subsolo nem elevada não há rampa: só a posição do acesso conta) */
 function cicloTipos(st){ const P=st.produto, n=(+P.subsolos||0)+(+P.garAcima||0), t0=st.estudo.rampaTipo||"reta";
   if(!n) return [t0];
-  return [...new Set([t0, "reta", ...(P.subsolos>1||P.garAcima>1? ["alternada"] : []), "helicoidal", "L", "elevador"])] }
+  return [...new Set([t0, "reta", ...(P.subsolos>1||P.garAcima>1? ["alternada"] : []), "helicoidal", "L", "elevador"])].filter(t=>typeof dirRampaOk!=="function" || dirRampaOk(st, t)) }   // diretrizes: elevador de carros pode ser proibido
 
 async function cicloGarFinalista(M, c0, o={}){
   const st0=c0.st, g0=cicloGarDe(st0), tem=o.tem||(()=>true), parou=o.parou||(()=>false), pausa=o.pausa||(()=>Promise.resolve());
@@ -105,7 +105,8 @@ function cicloLazerEnxuto(st, m){
   const it=(st.produto.lazer&&st.produto.lazer.itens)||[]; if(!it.length) return null;
   const L=(m&&m.lzLay)||{}, missIx=new Set(L.missIx||[]), missN=new Set((L.miss||[]).filter(x=>!x.apoio).map(x=>x.nome));
   const tira=[], fica=[], naoCoube=[];
-  it.forEach((x,i)=>{ const falta=missIx.has(i) || missN.has(x.nome), extra=!CICLO_LZ_BASE.test(x.nome||""); if(falta) naoCoube.push(x.nome||"ambiente"); (falta||extra? tira : fica).push(x) });
+  const obrig=x=>typeof dirLazerObrig==="function" && dirLazerObrig(st, x.nome);   // diretrizes: o lazer obrigatório fica
+  it.forEach((x,i)=>{ if(obrig(x)) return fica.push(x); const falta=missIx.has(i) || missN.has(x.nome), extra=!CICLO_LZ_BASE.test(x.nome||""); if(falta) naoCoube.push(x.nome||"ambiente"); (falta||extra? tira : fica).push(x) });
   if(!tira.length) return null;
   return {itens:clone(fica), tira:tira.map(x=>x.nome||"ambiente"), naoCoube};
 }
@@ -130,6 +131,7 @@ function cicloMudouTxt(a, b, o={}){
 
 async function cicloEstudo(st0, opts={}, onProg, ctx={}){
   const base=clone(st0), prog=typeof onProg==="function"? onProg : ()=>{}, parou=()=>!!(ctx.cancelado && ctx.cancelado());
+  if(typeof dirInterno==="function") dirInterno(base);   // diretrizes do produto: vagas por unidade e margem mínima na conta
   const t0=performance.now(), bud=+opts.tempo||9000, pausa=()=>new Promise(r=>setTimeout(r,0));
   const chk=()=>{ if(parou()) throw new Error("cancelado") };
   const mTela=ctx.m||{};
