@@ -150,7 +150,10 @@ describe('otimizador: margem s/ VGV, hLim, eficiência global e V/C', () => {
     // troca o subsolo por garagem elevada nas três melhores. Antes: ['2|alto|2|11|1|0', '1|alto|3|15|1|0', '1|alto|4|11|1|0', '1|alto|2|20|1|0']
     // · [38457714, 35211511, 34629825, 33328450].
     expect(o.res.slice(0, 4).map(r => B.otimKey(r))).toEqual(['1|alto|3|15|0|1', '1|alto|4|11|0|1', '2|alto|2|11|0|2', '1|alto|2|20|1|0']);
-    expect(o.res.slice(0, 4).map(r => Math.round(r.lucro))).toEqual([36303093, 35717524, 34281211, 33412691]);
+    // Térreo e áreas comuns (docs/COMUNS.md §3, mudança intencional): o apoio do condomínio (portaria, sanitários, funcionários,
+    // DML, bicicletário) entra na profundidade do hall e a garagem do térreo encolhe um pouco: mesmas opções, lucro ±0,2%.
+    // Antes: [36303093, 35717524, 34281211, 33412691].
+    expect(o.res.slice(0, 4).map(r => Math.round(r.lucro))).toEqual([36237204, 35717581, 34221710, 33348497]);
     expect(o.res.length).toBe(5); expect(o.res[4].lucro).toBeLessThan(o.res[3].lucro);
     expect(o.pareto.pts.length).toBeGreaterThan(5); expect(o.pareto.pts.some(p => p.fronteira)).toBe(true);
     expect(dt).toBeLessThan(30);        // a meta é ≤ 15 s numa máquina livre; o teto do teste é folgado para não oscilar com a carga

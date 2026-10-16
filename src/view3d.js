@@ -119,6 +119,7 @@ function rebuild3d(m, force){
   // lazer sobre a laje do embasamento
   const lzMesh=(list,yb)=>(list||[]).forEach(({poly,item})=>{ if(item.desc){ const agua=/piscina/i.test(item.nome); slab(poly, yb+0.02, agua?0.12:0.06, agua? new THREE.Color(0x5fb3cc) : col3("--lz-deck"), {eop:0.2, rough: agua?0.15:0.8, metal: agua?0.1:0}) } else slab(poly, yb, 3.0, col3("--lz-c"), {op:0.85, eop:0.3, rough:0.4}) });
   lzMesh(LZ.emb, y0);
+  if(typeof cmn3d==="function") cmn3d(m, y0);   // áreas comuns: apoio da piscina, árvores da laje e dos jardins do térreo (src/ui/comuns.js)
   m.T.forEach((t,ti)=>{
     let yy=y0; const lay=m.tipo[ti];
     if(ti===0 && m.pavLz){ slab(t.plate, yy, P.pe-0.22, glass, {op:0.6, rough:0.2, metal:0.1, eop:0.3}); lzMesh(LZ.pav, yy+0.02); yy+=P.pe }

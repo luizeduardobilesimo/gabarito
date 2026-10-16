@@ -41,9 +41,11 @@ function terreoZones(st, m, lz, extra=0){
       out.veiReal=W2((dv[0]+dv[1])/2, G.dot(m.acesso.vei,fd)); out.veiShift=dl.shift||0;
       const RX=rampExt(st, m, fd); out.rx=RX;
       dEnd = hasRamp && !E.rampa ? Math.min(dmx, RX.s0 + Math.max(P.subsolos? RX.LD:0, P.garAcima? RX.LU:0)) : dmn+PATAMAR } }
-  // profundidade do hall: o que o programa pede (hall social + lazer coberto do térreo)
-  const HT = hallSocial(st, (m.T||[]).length) + (lz? lz.terreo.c : 0);
-  const HTe = hallSocial(st, (m.T||[]).length) + (lz? lz.terreo.c*1.35 : 0) + extra; // folga para circulação entre os ambientes
+  // profundidade do hall: o que o programa pede (hall social + lazer coberto do térreo + apoio do condomínio de src/calc/comuns.js:
+  // portaria, sanitários, funcionários, DML, bicicletário). Se mesmo assim não couber, o compute cresce o hall (lazerLayout → miss)
+  const apoio = typeof comunsApoioTerreo==="function" && (st.comuns||{}).on!==false ? comunsApoioTerreo(st, m) : 0;
+  const HT = hallSocial(st, (m.T||[]).length) + (lz? lz.terreo.c : 0) + apoio;
+  const HTe = hallSocial(st, (m.T||[]).length) + (lz? lz.terreo.c*1.35 : 0) + apoio*1.25 + extra; // folga para circulação entre os ambientes
   const coreIn=d=>(m.coreSets||[]).reduce((s,cs)=>s + G.area(G.band(cs.core,fd,d1,d)) + G.area(G.band(scaleBy(cs.lobby||[],1.25),fd,d1,d)),0) + (lz&&lz.terreo.c>0? 2.6*(lmx-lmn) : 0);
   const hallArea=d=>{ const b=box(d1,d,lmn,lmx); let a=G.area(b); if(dv) a-=G.area(box(d1,d,dv[0],dv[1])); return a };
   let d2=dmx;
@@ -106,8 +108,28 @@ function packItems(regions, obst, items, ax){
   });
   return {placed, miss};
 }
-function lazerLayout(st, m){
-  const it=(st.produto.lazer&&st.produto.lazer.itens)||[], T=m.ter||{}, out={terreo:[],terreoDesc:[],emb:[],pav:[],cob:[],miss:[]};
+/* lazer e áreas comuns: no cálculo completo, o planejador de src/calc/comuns.js (m.comuns: ambientes com portas, mobiliário,
+   rota acessível e nota) e o resumo no formato antigo (m.lzLay: {terreo, terreoDesc, emb, pav, cob, miss}, cada item {poly,item,ix});
+   no cálculo rápido (otimizador, cálculo barato) o empacotamento simples de sempre */
+function lazerLayout(st, m, opt){
+  if(!(opt && opt.quick) && typeof comunsCalc==="function" && (st.comuns||{}).on!==false){
+    try{ m.comuns = comunsCalc(st, m); if(m.comuns) return lzDeComuns(st, m, m.comuns) }catch(e){ console.error("[comuns]", e); m.comuns=null }
+  }
+  return lazerPack(st, m);
+}
+function lzDeComuns(st, m, C){
+  const it=(st.produto.lazer&&st.produto.lazer.itens)||[], out={terreo:[],terreoDesc:[],emb:[],pav:[],cob:[],miss:[],missIx:[]};
+  const item=a=> it[a.ix] ? {...it[a.ix]} : {nome:a.nome, area:a.A, local:a.local, desc:a.desc};
+  C.amb.forEach(a=>{ if(a.ix==null || a.k==="copa" || a.k==="apoioPisc") return; const lst= a.local==="terreo"? (a.desc? out.terreoDesc : out.terreo) : out[a.local]; if(!lst) return;
+    if(a.k==="piscina"){ if(a.deck) lst.push({poly:a.poly, item:{...(it[a.deck.ix]||{nome:"Solário"}), desc:true}, ix:a.deck.ix, deck:true}); else lst.push({poly:a.poly, item:{nome:"Solário", area:a.deckA||0, desc:true}, ix:null, deck:true}); lst.push({poly:a.lamina||a.poly, item:item(a), ix:a.ix}) }
+    else lst.push({poly:a.poly, item:item(a), ix:a.ix}) });
+  // não coube: itens do lazer (pelo índice) e, para o hall crescer, o apoio coberto do térreo
+  C.falta.forEach(a=>{ if(a.ix!=null){ if(!out.missIx.includes(a.ix) && it[a.ix] && !(a.k==="deck" && C.amb.some(x=>x.deck && x.deck.ix===a.ix))){ out.missIx.push(a.ix); out.miss.push(it[a.ix]) } }
+    else if(a.local==="terreo" && !a.desc && a.nivel!=="warn" && CMN_CAT[a.k] && CMN_CAT[a.k].onde!=="recuo") out.miss.push({nome:a.nome, area:a.A, local:"terreo", apoio:true}) });
+  return out;
+}
+function lazerPack(st, m){
+  const it=(st.produto.lazer&&st.produto.lazer.itens)||[], T=m.ter||{}, out={terreo:[],terreoDesc:[],emb:[],pav:[],cob:[],miss:[],missIx:[]};
   if(!it.length) return out;
   const by=(l,d)=>it.filter(x=>(LZ_LOCAIS[x.local]?x.local:"terreo")===l && (d==null || !!x.desc===d));
   const ax=T.fd? [T.lat,T.fd] : [[1,0],[0,1]];
@@ -126,5 +148,6 @@ function lazerLayout(st, m){
     let r=packItems([t0.plate], ob, by("pav"), ax0); out.pav=r.placed; out.miss.push(...r.miss);
     r=packItems([t0.plate], c0? [c0.core] : [], by("cob"), ax0); out.cob=r.placed; out.miss.push(...r.miss) }
   else out.miss.push(...by("pav"),...by("cob"));
+  out.missIx=out.miss.map(x=>it.indexOf(x)).filter(i=>i>=0);
   return out;
 }

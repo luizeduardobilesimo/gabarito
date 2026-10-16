@@ -11,7 +11,7 @@
    O otimizador tem um caminho só: otimRodar (src/ui/calcworker.js), no Worker ou na página. ACT.aprovar = "Guardar como alternativa"
    (salva um cenário; o botão sai do corpo e vai para o menu "…" do topo e para Entrega › Estudos). */
 let OTRUN=false;
-const PR = { mix:-1, lz:-1, hall:false, menu:false, arm:null, armT:0 };
+const PR = { mix:-1, lz:-1, hall:false, apoio:false, menu:false, arm:null, armT:0 };
 (function(){ const s=document.createElement("style"); s.textContent=`
 .pr-lh{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:0 0 0 12px;font-family:var(--f-display);font-variation-settings:"wdth" 118;font-size:9.5px;font-weight:650;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .pr-lh .c{flex:none;width:120px;text-align:center}
@@ -200,11 +200,13 @@ function prMixLive(m){
   setSum("pr-mix", `${m.mixUn} un · ${m2(m.mixPriv)} → ${m2(m.mixPriv/P.efic)}/andar`);
 }
 function prLazerLive(m){
-  const P=S.produto, LZ=m.lzLay||{miss:[]}, miss=new Set(LZ.miss), it=(P.lazer&&P.lazer.itens)||[], lz=m.lz, nT=P.torres.length;
+  const P=S.produto, LZ=m.lzLay||{miss:[]}, miss=new Set(LZ.miss), missIx=new Set(LZ.missIx||[]), it=(P.lazer&&P.lazer.itens)||[], lz=m.lz, nT=P.torres.length;
   const hAuto=!(+P.lazer.hall>0), hall=hallSocial(S,m.T.length);
   const hallRow = `<div class="pr-row${PR.hall?" on":""}" data-row="hall:0"><div class="pr-rh"><button type="button" class="pr-tx" data-act="prTog" data-k="hall" data-i="0" aria-expanded="${PR.hall}"><b>Hall social</b><span>${m2(hall)} · ${hAuto?"automático":"definido"} · Térreo</span></button>${prChev("hall",0,PR.hall,"Hall social")}</div>
     ${PR.hall? `<div class="pr-rb">${KV(NUM("produto.lazer.hall","Área do hall","m²",{step:5,min:0,ph:String(prHallAuto(nT)),zero:true,sub:"vazio = automático",help:"Hall de entrada do térreo. Vazio: 40 m² + 20 m² por torre."}))}</div>` : ""}</div>`;
-  setHTML("lzList", hallRow + it.map((x,i)=>{ const open=PR.lz===i, falta=miss.has(x), nome=x.nome||"Ambiente";
+  // apoio do condomínio (portaria, clausura, sanitários, funcionários, DML, bicicletário, lixo, gás, medidores): automático, src/ui/comuns.js
+  const apoioRow = typeof cmnApoioRow==="function"? cmnApoioRow(m, PR.apoio) : "";
+  setHTML("lzList", hallRow + apoioRow + it.map((x,i)=>{ const open=PR.lz===i, falta=miss.has(x)||missIx.has(i), nome=x.nome||"Ambiente";
     return `<div class="pr-row${open?" on":""}${falta?" bad":""}" data-row="lz:${i}"><div class="pr-rh"><button type="button" class="pr-tx" data-act="prTog" data-k="lz" data-i="${i}" aria-expanded="${open}"><b>${esc(nome)}</b><span>${m2(+x.area||0)} · ${LZ_LOCAIS[x.local]||LZ_LOCAIS.terreo}${x.desc?" · descoberto":""}</span>${falta?`<span class="b">não coube — reduza a área ou mude o local</span>`:""}</button>${prChev("lz",i,open,nome)}</div>
       ${open? `<div class="pr-rb">${KV(TXT(`produto.lazer.itens.${i}.nome`,"Nome",{fx:"upd"})+NUM(`produto.lazer.itens.${i}.area`,"Área","m²",{step:5,min:1})+
         `<div class="fld wide"><label class="fl" for="lzl-${i}">Onde fica</label><select class="sel" id="lzl-${i}" data-p="produto.lazer.itens.${i}.local" data-t="s">${Object.entries(LZ_LOCAIS).map(([k,l])=>`<option value="${k}" ${x.local===k?"selected":""}>${l}</option>`).join("")}</select></div>`)}
@@ -214,14 +216,15 @@ function prLazerLive(m){
   const used=new Set(it.map(x=>x.nome));
   setHTML("lzMenu", Object.entries(LZ_LOCAIS).map(([k,l])=>{ const ps=LZ_PRESETS.map((p,i)=>[p,i]).filter(([p])=>p.local===k && !used.has(p.nome)); return ps.length? GRP(l)+ps.map(([p,i])=>`<button type="button" class="pr-mi" role="menuitem" data-act="lzAdd" data-i="${i}">${p.nome}<span>${m2(p.area)}${p.desc?" · descoberto":""}</span></button>`).join("") : "" }).join("")
     + GRP("Outro") + `<button type="button" class="pr-mi" role="menuitem" data-act="lzAdd" data-i="-1">Ambiente em branco<span>30 m² · Térreo</span></button>`);
-  const tot=hall+lz.c+lz.d;
-  setHTML("lzMets", `<div class="met"><div class="l">Total do programa</div><div class="v">${m2(tot)}</div><div class="s">com hall de ${m2(hall)}</div></div>
+  const apoioA=m.comuns? m.comuns.prog.filter(a=>a.ix==null && a.k!=="hall").reduce((s,a)=>s+a.A,0) : 0, tot=hall+lz.c+lz.d+apoioA;
+  setHTML("lzMets", `<div class="met"><div class="l">Total do programa</div><div class="v">${m2(tot)}</div><div class="s">com hall de ${m2(hall)}${apoioA? ` e apoio de ${m2(apoioA)}` : ""}</div></div>
     <div class="met"><div class="l">Equipamentos</div><div class="v">≈ ${mi(m.lzCusto)}</div><div class="s">acabamento e mobiliário</div></div>`);
   const T=m.ter||{}, roofFree=Math.max(1,m.embA-m.T.reduce((s,t)=>s+t.A,0)), plate=m.T[0]?m.T[0].A:1;
   const cap=[["Térreo", T.HT||0, P.garTerOn? (T.HT||0)+m.gTer : T.hallDisp||1], ["Laje do emb.", lz.emb.c+lz.emb.d, roofFree], ["Pav. de lazer", lz.pav.c+lz.pav.d, plate*0.8], ["Rooftop", lz.cob.c+lz.cob.d, plate*0.85]].filter(r=>r[1]>0);
   setHTML("lzCap", cap.map(([l,a,c])=>useRow(l, a/Math.max(1,c), `${m2(a)}`, a>c?"bad":"ok")).join("") + (m.lzExtraA>0? `<p class="note">Fora do térreo: ${m2(m.lzExtraA)} construídos${S.regras.ncTerreo?" (não computáveis)":""}</p>` : ""));
   const s2=document.getElementById("lzSum2"); if(s2) s2.textContent=`${it.length} ambiente${it.length!==1?"s":""} · ${m2(lz.c+lz.d)}`;
-  setSum("pr-lz", `${it.length} ambiente${it.length!==1?"s":""} · ${m2(tot)}${miss.size? ` · <span class="pr-bad">${miss.size} não coube${miss.size>1?"ram":""}</span>` : ""}`);
+  const nMiss=Math.max(miss.size, missIx.size);
+  setSum("pr-lz", `${it.length} ambiente${it.length!==1?"s":""} · ${m2(tot)}${nMiss? ` · <span class="pr-bad">${nMiss} não coube${nMiss>1?"ram":""}</span>` : ""}`);
 }
 /* conformidade com as regras: rgConformidade(m) (pacote P2, src/ui/etapa-terreno.js) quando existe — linhas [rótulo, fração, texto, estado]
    ou objetos {l|nome|rot, v|frac, txt|t, st|estado}; senão as mesmas linhas a partir de status() */
@@ -283,7 +286,7 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape" && PR.menu){ prMen
 /* ---------------- ações ---------------- */
 Object.assign(ACT,{
   prTog: b=>{ const k=b.dataset.k, i=+b.dataset.i;
-    if(k==="hall") PR.hall=!PR.hall; else PR[k] = PR[k]===i? -1 : i;
+    if(k==="hall"||k==="apoio") PR[k]=!PR[k]; else PR[k] = PR[k]===i? -1 : i;
     prRelista(k, i) },
   prArm: b=>{ const k=b.dataset.do+":"+b.dataset.i;
     if(PR.arm===k){ clearTimeout(PR.armT); PR.arm=null; const f=ACT[b.dataset.do]; if(f) f(b); return }
