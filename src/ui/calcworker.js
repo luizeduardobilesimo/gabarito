@@ -21,6 +21,7 @@ const _calcFn = {
   },
   acessoAvalia(st, c, full){ S = st; return acessoAvalia(st, c, full) },
   otimizar(st, mLite, opts, prog){ S = st; window._last = {m: mLite}; return otimizar(opts, p=>prog(p), null, {st, m: mLite}) },
+  ciclo(st, mLite, opts, prog){ S = st; return cicloEstudo(st, opts, p=>prog(p), {m: mLite}) },
   ping(){ return true }
 };
 function _calcPost(msg){ try{ self.postMessage(msg) }catch(e){ msg.val = serialLimpa(msg.val); self.postMessage(msg) } }
@@ -174,6 +175,30 @@ async function otimRodar(opts, onProg, ctx){
 }
 /** cancela a análise do otimizador em andamento (da tela ou do assistente); true se havia uma */
 function otimCancelar(){ const a=CALC.jobAtivo; if(!a || a.tipo!=="otim") return false; calcCancelar(); return true }
+
+/* ===== "o que fecha a conta" (src/calc/ciclo.js, cicloEstudo): mesmo caminho do otimizador =====
+   cicloRodar(opts, onProg) → Promise do resultado de cicloEstudo para o estudo da tela (espera o cálculo completo: a calibração das
+   vagas e o lazer que não coube vêm dele). Worker "job" quando existe; senão a página. Uma análise por vez (Error("ocupado")); cancelar
+   (calcCancelar) rejeita com Error("cancelado"). */
+async function cicloRodar(opts, onProg){
+  if(CALC.jobAtivo) throw new Error("ocupado");
+  const prog=typeof onProg==="function"? onProg : ()=>{};
+  const a = CALC.jobAtivo = {tipo:"ciclo", prog:0}, pr=p=>{ a.prog=p; if(!a.cancelado) prog(p) };
+  try{
+    await calcPronto();
+    if(a.cancelado) throw new Error("cancelado");
+    const st=clone(S), m=(window._last && window._last.m) || null, mL={...otimMLite(m), lzLay: m && m.lzLay? {miss:m.lzLay.miss||[], missIx:m.lzLay.missIx||[]} : undefined};
+    let r=null;
+    if(calcOn()){
+      a.job = calcJob();
+      try{ r = await a.job.call("ciclo", [st, mL, clone(opts||{})], pr) }
+      catch(e){ if(a.cancelado || calcCancelado(e)) throw new Error("cancelado"); console.error("[calc] ciclo no Worker falhou — rodando na página:", e && e.message); r=null }
+    }
+    if(!r) r = await cicloEstudo(st, clone(opts||{}), pr, {m: mL, cancelado:()=>!!a.cancelado});
+    if(a.cancelado) throw new Error("cancelado");
+    return r;
+  } finally { if(CALC.jobAtivo===a) CALC.jobAtivo=null }
+}
 
 /* instalado por main.js depois que todos os arquivos carregaram (assim pega a versão final de ACT.acessoStudy) */
 function calcInstalar(){
