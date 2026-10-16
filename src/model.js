@@ -135,7 +135,7 @@ function compute(st, opt={}){
   m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; (t.faixas.some(f=>f.lay)? t.faixas.map(f=>[f.lay||l, f.nTipo]) : [[l, t.tipoFloors]]).forEach(([ly,fl])=>ly.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } })) });
   m.coreSets = m.tipo.map((l,i)=>l && l.core && l.core.length? {i, core:l.core, lobby:l.lobby, lay:l} : null).filter(Boolean);
   m.cores = m.coreSets.map(c=>c.core); m.lobbies = m.coreSets.map(c=>c.lobby).filter(p=>p&&p.length);
-  m.obst = [...m.cores, ...m.lobbies, ...m.coreSets.flatMap(c=>c.lay.coreExtra||[])];   // C3: a segunda escada desce até o térreo
+  m.obst = [...m.cores, ...m.lobbies, ...m.coreSets.flatMap(c=>c.lay.coreExtra||[]), ...m.coreSets.flatMap(c=>c.lay.coreFundo||[])];   // C3: a segunda escada desce até o térreo
   // térreo definitivo, com o hall chegando aos núcleos
   m.ter = terreoZones(st, m, m.lz); areasFin(st, m);
   if(m.sacBal){ m.constr+=m.sacBal; m.privRes+=m.sacBal; m.priv+=m.sacBal }
