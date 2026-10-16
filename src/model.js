@@ -120,7 +120,7 @@ function tipoLayouts(st, m, opt){
     const list=[]; P.mix.forEach(u=>{ for(let q=0;q<u.qtd;q++) list.push({nome:u.nome, alvo:u.area*t.r, sac:+u.sac||0}) });
     const nAuto=(t.units>60||t.H>45)?3:(t.H>12?2:1);
     return (typeof alasTipoLayout==="function" ? alasTipoLayout : tipoLayout)(t.plate, list, {corr:E.corrTipo, profMin:E.profMin, nElev: +E.elevadores||nAuto, pos:E.nucleoPos, lado:E.nucleoLado, escada:E.escadaLado, planta:E.tipoPlanta,
-      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st, _rap:!!(opt && opt.quick), _areaFixa:!!(t.desenhada || m.torOcupa)}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
+      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st, _pav:t.pav, _H:t.H, _nElevAuto:!(+E.elevadores), _rap:!!(opt && opt.quick), _areaFixa:!!(t.desenhada || m.torOcupa)}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
   });
   if(typeof blcLayFaixas==="function") blcLayFaixas(st, m);   // C2: blocos fora da referência → mesmo núcleo, unidades por área (f.lay)
 }

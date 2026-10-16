@@ -10,7 +10,9 @@ const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? proces
 const ESTUDOS = {
   exemplo: {},
   baixo: { produto: { torres: [{ pav: 4 }], subsolos: 1 }, estudo: { escTipo: 'ep', emerg: false } },
-  alto: { regras: { hMax: 120, caMax: 8 }, produto: { torres: [{ pav: 24 }] }, estudo: { emerg: true } },
+  alto: { regras: { hMax: 120, caMax: 8 }, produto: { torres: [{ pav: 28 }] }, estudo: { emerg: true } },
+  u: { estudo: { elevadores: 3 } },
+  l: { nucleo: { partido: 'l' } },
   duas: { produto: { torres: [{ pav: 16 }] }, estudo: { nEsc: 2 } },
   press: { estudo: { escTipo: 'pf_press' } },
   balcao: { estudo: { escTipo: 'pf_balcao' } },
