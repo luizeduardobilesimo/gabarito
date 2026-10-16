@@ -84,6 +84,16 @@ describe('adjacências e acessos', () => {
   });
 });
 
+describe('núcleo novo (lay.nucleo.portas, docs/COMUNS.md §0)', () => {
+  it('com as portas do núcleo publicadas, a rota do hall termina na porta do elevador', T, () => {
+    const st = estado(A, {}), m = A.compute(st), cs = m.coreSets[0], lob = cs.lobby, c = G.centroid(lob);
+    cs.lay = { ...(cs.lay || {}), nucleo: { portas: [{ p: c, dir: [0, 1], larg: 0.9, tipo: 'elev' }, { p: [c[0] + 50, c[1]], dir: [0, 1], larg: 0.9, tipo: 'escada' }] } };
+    const C = A.comunsCalc(st, m), r = C.rota.find(x => x.torre === cs.i && x.local === 'terreo');
+    expect(r && r.pts.length > 1).toBe(true);
+    const fim = r.pts[r.pts.length - 1]; expect(Math.hypot(fim[0] - c[0], fim[1] - c[1])).toBeLessThan(0.01);
+  });
+});
+
 describe('gás, lixo e carro × pedestre', () => {
   it('abrigo de resíduos no recuo, junto ao alinhamento; central de gás fora do prédio', T, () => {
     for (const k of ['exemplo', 'grande']) { const { m } = calc(k), C = m.comuns;

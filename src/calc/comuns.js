@@ -291,6 +291,27 @@ function cmnIlhadas(g, fol, r){
   // alcançada = a até rm células de uma célula de passagem
   const SV=cmnPS(g, k=>vis[k]&&g.c[k]===CL?1:0);
   let c=0; for(let k=0;k<n;k++){ if(g.c[k]!==CL || vis[k]) continue; const i=k%g.nx, j=(k/g.nx)|0; if(!cmnQ(SV,g,i-rm,j-rm,2*rm+1,2*rm+1)) c++ } return c }
+/* teste rápido (local) do mesmo critério: cada célula livre encostada em r ainda chega à circulação por uma passagem de
+   1,20 m sem dar a volta grande? 1 = certamente não ilhou nada; 0 = fechou um bolsão > 6 m²; −1 = não sei (teste completo) */
+function cmnIlhaLocal(g, fol, r, lim=4000){
+  const rm=Math.max(1,Math.ceil((1.2/g.res-1)/2)), nx=g.nx, n=g.nx*g.ny;
+  if(!g._vis || g._vis.length!==n){ g._vis=new Int32Array(n); g._st=0; g._Q=new Int32Array(n) }
+  const vis=g._vis, Q=g._Q;
+  const dR=(i,j)=>{ const dx=i<r.i? r.i-i : i>=r.i+r.w? i-r.i-r.w+1 : 0, dy=j<r.j? r.j-j : j>=r.j+r.h? j-r.j-r.h+1 : 0; return Math.max(dx,dy) };
+  const junto=(i,j)=> cmnCirc(g.at(i+1,j)) || cmnCirc(g.at(i-1,j)) || cmnCirc(g.at(i,j+1)) || cmnCirc(g.at(i,j-1));
+  const entra=(i,j)=> g.at(i,j)===CL && ((fol[j*nx+i]>rm && dR(i,j)>rm) || junto(i,j));
+  const st0=g._st+1, bom=new Set();   // marcas de buscas desta chamada que chegaram à circulação (as células delas estão ligadas)
+  for(const d of [0,1,2,3]){ const [i0,j0,w,h]=cmnLadoFora(r,d);
+    for(let t=0;t<Math.max(w,h);t++){ const ci=i0+(w>1?t:0), cj=j0+(h>1?t:0); if(g.at(ci,cj)!==CL || junto(ci,cj)) continue;
+      const st=++g._st; let nq=0, achou=false;
+      for(let dj=-rm;dj<=rm && !achou;dj++) for(let di=-rm;di<=rm;di++){ const i=ci+di, j=cj+dj; if(!entra(i,j)) continue; const k=j*nx+i; if(vis[k]>=st0 && bom.has(vis[k])){ achou=true; break } if(vis[k]!==st){ vis[k]=st; Q[nq++]=k } }
+      let q=0;
+      for(;q<nq && q<lim && !achou;q++){ const k=Q[q], i=k%nx, j=(k/nx)|0; if(junto(i,j)){ achou=true; break }
+        for(const [a,b] of cmnDI){ const ii=i+a, jj=j+b; if(!entra(ii,jj)) continue; const kk=jj*nx+ii, v=vis[kk]; if(v===st) continue; if(v>=st0 && bom.has(v)){ achou=true; break } vis[kk]=st; Q[nq++]=kk } }
+      if(!achou) return q>=nq && nq*g.res*g.res>6? 0 : -1;   // bolsão fechado e grande: ilhou com certeza
+      bom.add(st) } }
+  return 1;
+}
 function cmnMarca(g, r, val){ for(let j=r.j;j<r.j+r.h;j++) for(let i=r.i;i<r.i+r.w;i++) g.c[j*g.nx+i]=val }
 
 /* ---------- corredores ---------- */
@@ -456,8 +477,10 @@ function cmnPlaneja(g, lista, o){
     // não ilhar área livre: o ambiente não pode fechar o acesso a um vão livre (> 4 m²) atrás dele
     let ilh0=null, fol0=null; const cod=id++, lim=Math.round(4/(g.res*g.res)); let r=null;
     for(const cd of cands){ if(!cd.frT){ cmnMarca(g, cd, cod); r=cd; break }   // encostado em tudo: não ilha nada
-      if(ilh0==null){ fol0=cmnFolga(g, v=>v===CL||cmnCirc(v)); ilh0=cmnIlhadas(g, fol0, null) }
-      cmnMarca(g, cd, cod); if(cmnIlhadas(g, fol0, cd)-ilh0<=lim){ r=cd; break } cmnMarca(g, cd, CL) }
+      if(fol0==null) fol0=cmnFolga(g, v=>v===CL||cmnCirc(v));
+      cmnMarca(g, cd, cod); const lc=cmnIlhaLocal(g, fol0, cd); if(lc===1){ r=cd; break } if(lc===0){ cmnMarca(g, cd, CL); continue }
+      if(ilh0==null){ cmnMarca(g, cd, CL); ilh0=cmnIlhadas(g, fol0, null); cmnMarca(g, cd, cod) }
+      if(cmnIlhadas(g, fol0, cd)-ilh0<=lim){ r=cd; break } cmnMarca(g, cd, CL) }
     if(!r){ id--; return null }
     const f={...a, cod, r, ct:r.ct, poly:cmnRetPoly(g,r), area:r.w*r.h*g.res*g.res, reduzido:r.f<0.9, nomeCat:c.nome}; feitos.push(f); return f };
   const pend=lista.slice();
@@ -706,7 +729,11 @@ function comunsTerreo(st, m, prog){
   // rota acessível: do portão ao hall e do hall a cada hall de elevadores e a cada porta
   const rota=[], passa=k=>cmnCirc(g.c[k]) || (fCl && g.c[k]===fCl.cod);
   const fonteHall=k=> fHall? g.c[k]===CH : fCl? g.c[k]===fCl.cod : false;
-  ligacoes.forEach(l=>{ const al=l.al, p=cmnCaminho(g, fonteHall, k=>al.set.has(k), passa, null); l.ok=!!p; if(p) rota.push({para: al.torre!=null? `Torre ${al.torre+1}` : "garagem", pts:cmnPolilinha(g,p), torre:al.torre}); else rota.push({para: al.torre!=null? `Torre ${al.torre+1}` : "garagem", pts:[], sem:true, torre:al.torre}) });
+  // (com o núcleo novo, lay.nucleo.portas: a rota termina na porta do elevador mais perto, atravessando o hall dos elevadores)
+  const portaElev=(torre, P)=>{ const cs=cores.find(c=>c.i===torre), ps=((cs&&cs.lay&&cs.lay.nucleo&&cs.lay.nucleo.portas)||[]).filter(q=>q.tipo==="elev" && q.p);
+    return ps.length? ps.slice().sort((a,b)=>Math.hypot(a.p[0]-P[0],a.p[1]-P[1])-Math.hypot(b.p[0]-P[0],b.p[1]-P[1]))[0].p : null };
+  ligacoes.forEach(l=>{ const al=l.al, p=cmnCaminho(g, fonteHall, k=>al.set.has(k), passa, null); l.ok=!!p;
+    if(p){ const pts=cmnPolilinha(g,p), pe=al.torre!=null? portaElev(al.torre, pts[pts.length-1]) : null; if(pe) pts.push(pe); rota.push({para: al.torre!=null? `Torre ${al.torre+1}` : "garagem", pts, torre:al.torre}) } else rota.push({para: al.torre!=null? `Torre ${al.torre+1}` : "garagem", pts:[], sem:true, torre:al.torre}) });
   amb.forEach(f=>{ if(f.k==="hall"||f.k==="clausura"||!f.portas||!f.portas.length) return; const pd=f.portas[f.portas.length>1&&f.k==="copa"? 1 : 0]; if(!pd) return;
     const pm=[(pd.p0[0]+pd.p1[0])/2-pd.n[0]*0.3, (pd.p0[1]+pd.p1[1])/2-pd.n[1]*0.3], q=g.U(pm), ti=Math.floor((q[0]-g.u0)/res), tj=Math.floor((q[1]-g.v0)/res), kt=tj*g.nx+ti;
     const p=cmnCaminho(g, fonteHall, k=>k===kt, passa, null); f.rotaOk=!!p || fonteHall(kt); if(p && CMN_CAT[f.k].grupo==="lazer") rota.push({para:f.nome, pts:cmnPolilinha(g,p), amb:f.id}) });
@@ -782,7 +809,7 @@ function comunsRecuo(st, m, prog, TR){ const TT0=TR;
    longe dos dois; caminhos acessíveis (1,20 m) do acesso a cada item; o resto é jardim, com árvores esparsas em jardineira. */
 function comunsLaje(st, m, prog){
   const itens=prog.filter(a=>a.local==="emb"); if(!itens.length || !m.emb.length) return null;
-  const T=m.ter||{}, ux=T.lat||[1,0], vy=T.fd||[0,1], g=cmnGrade(ux, vy, [m.emb]), res=g.res, n=g.nx*g.ny;
+  const T=m.ter||{}, ux=T.lat||[1,0], vy=T.fd||[0,1], g=cmnGrade(ux, vy, [m.emb], G.area(m.emb)>1500? 0.3 : CMN_RES), res=g.res, n=g.nx*g.ny;   // laje grande: malha de 0,30 m (rápido)
   cmnPinta(g, m.emb, CL);
   m.T.forEach(t=>{ if(t.oco){ cmnPinta(g, t.oco.pts, CO); (t.oco.vazios||[]).forEach(v=>cmnPinta(g, v, CL)) } else cmnPinta(g, t.plate, CO) });
   // jardineira junto ao guarda-corpo (0,6 m da borda): nada de ambiente encostado na beira da laje
@@ -817,7 +844,7 @@ function comunsLaje(st, m, prog){
         const r={i,j,w:W,h:H}, cc=centro(r), dA=dist(cc,anc); let sc=t.f*60 - 3*(Math.max(t.w,t.h)/Math.min(t.w,t.h)-1);
         let co=0; for(let d=0;d<4;d++) co+=cmnQ(SCo,g,...cmnLadoFora(r,d));
         if(a.k==="piscina"){ const dT=Math.min(...tc.map(p=>dist(cc,p)),40); sc+= -0.5*dA + 0.15*Math.min(dT,25) + 0.4*((cc[0]-anc[0])*sunUV[0]+(cc[1]-anc[1])*sunUV[1]) - (co? 25 : 0) }
-        else if(a.k==="apoioPisc"){ sc+= 40*Math.min(1, co*res/2.5) - 0.8*dA; if(pool) sc-= 0.8*dist(cc, centro(pool.r)) }
+        else if(a.k==="apoioPisc"){ sc+= (co*res>=1.5? 70 : 40*Math.min(1, co*res/2.5)) - 0.8*dA; if(pool) sc-= 0.8*dist(cc, centro(pool.r)) }
         else if(a.k==="playground"){ sc-= 0.35*dA; if(pool){ const d=dist(cc, centro(pool.R)); sc+= Math.min(d,20)*0.6 - (d<9? 40 : 0) } }
         else if(a.k==="pet"){ sc-= 0.1*dA; amb.forEach(x=>{ if(x.k==="piscina"||x.k==="playground") sc+= Math.min(dist(cc,centro(x.r)),25)*0.8 }) }
         else if(!a.desc){ sc+= 30*Math.min(1, co*res/3) - 0.5*dA }
