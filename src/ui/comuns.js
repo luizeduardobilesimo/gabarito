@@ -89,7 +89,8 @@ function cmnDraw(g, m, local, K){
   const CURTO={lixo:"Lixo",medidores:"Med.",gas:"Gás",clausura:"Claus.",portaria:"Port.",dml:"DML",wc:"WC PCD",vest:"Vest.",copaf:"Copa f.",apoioPisc:"Apoio",bici:"Bicic.",
     gourmet:"Gourmet",salao:"Salão",academia:"Academia",brinq:"Brinq.",cowork:"Cowork",lavand:"Lavand.",jogos:"Jogos",cinema:"Cinema",sauna:"Sauna",copa:"Copa",playground:"Play",pet:"Pet",quadra:"Quadra",deck:"Solário",hall:"Hall"};
   if(s>3) lst.forEach(a=>{ const p=a.lamina||a.poly, xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]), bw=Math.max(...xs)-Math.min(...xs), bh=Math.max(...ys)-Math.min(...ys), c=w2s(G.centroid(p));
-    const nomes=[a.nome, CURTO[a.k]||a.nome].filter((x,i,v)=>v.indexOf(x)===i), tam=s>14? [10.5,9.5,8.5] : [9.5,8.5,7.5];
+    const MINI={wc:"WC",apoioPisc:"WC",vest:"Vest",copaf:"Copa",copa:"Copa",bici:"Bici",lavand:"Lav.",clausura:"Cl.",portaria:"Port",lixo:"Lixo",gas:"Gás",medidores:"Med"};
+    const nomes=[a.nome, CURTO[a.k]||a.nome, MINI[a.k]||CURTO[a.k]||a.nome].filter((x,i,v)=>v.indexOf(x)===i), tam=s>14? [10.5,9.5,8.5] : [9.5,8.5,7.5];
     const area=`${nf(a.area,0)} m²${a.k==="piscina"&&a.deckA? ` · deck ${nf(a.deckA,0)} m²` : ""}`;
     let esc0=null;
     for(const vert of [false,true]){ const W_=vert? bh : bw, H_=vert? bw : bh;

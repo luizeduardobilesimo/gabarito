@@ -1107,7 +1107,7 @@ function comunsValida(C, st, m){
   const hl=por("hall")[0]; if(hl){ const gal=((C.circ||{}).terreo||[]).reduce((s,p)=>s+G.area(p),0); if(hl.area < hl.A*0.3 || hl.area+gal < hl.A*0.8) add("area","warn",`Hall social com ${cmnNf(hl.area,0)} m² e ${cmnNf(gal,0)} m² de galerias (o programa pede ${cmnNf(hl.A,0)} m²).`, hl.id) }
   // gás e lixo
   por("gas").forEach(gs=>{ if(!gs.recuo) add("gas","bad","Central de gás dentro do prédio: precisa de área externa ventilada.", gs.id);
-    else { const cl=por("clausura")[0]; const d=cl? cmnDistPolys(gs.poly, cl.poly) : 99; if(d<3) add("gas","warn",`Central de gás a ${cmnNf(d,1)} m da entrada de pedestres (afaste ≥ 3 m).`, gs.id);
+    else { const cl=por("clausura")[0]; const d=cl? cmnDistPolys(gs.poly, cl.poly) : 99; if(d<3) add("gas","warn",`Central de gás a ${cmnNf(d,1)} m da entrada de pedestres (afaste ≥ 3 m ou use gás de rua).`, gs.id);
       const jan=todos.filter(x=>x.local==="terreo"&&!x.recuo).flatMap(x=>(x.janelas||[]).map(j=>[j.p0,j.p1])); const dj=Math.min(99,...jan.map(([a,b])=>cmnDistPolys(gs.poly,[a,b,b]))); if(dj<1.5) add("gas","warn",`Central de gás a ${cmnNf(dj,1)} m de uma janela (afaste ≥ 1,5 m).`, gs.id) } });
   por("lixo").forEach(lx=>{ if(!lx.recuo) add("lixo","warn","Abrigo de resíduos dentro do prédio: precisa de porta para a rua e ventilação.", lx.id); else if(lx.dAl>1.0) add("lixo","warn",`Abrigo de resíduos a ${cmnNf(lx.dAl,1)} m do alinhamento (a coleta é pela rua).`, lx.id) });
   // carro × pedestre: a rota não pode cruzar a faixa de veículos
