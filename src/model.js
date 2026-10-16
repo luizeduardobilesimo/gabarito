@@ -149,13 +149,13 @@ function compute(st, opt={}){
     else m.vagas = m.vagasEst + m.vf.count;
   };
   garSec(); m.vagasEst += m.vf.count;
-  m.lzLay = lazerLayout(st, m);
+  m.lzLay = lazerLayout(st, m, opt);
   // se o lazer do térreo não coube, o hall cresce (a garagem do térreo recua) e tenta de novo
   for(let k=0; k<3 && P.garTerOn && m.lzLay.miss.some(x=>(x.local||"terreo")==="terreo" && !x.desc); k++){
     const falta=m.lzLay.miss.filter(x=>(x.local||"terreo")==="terreo" && !x.desc).reduce((s,x)=>s+(+x.area||0),0);
     m.ter=terreoZones(st, m, m.lz, falta*1.6*(k+1)); areasFin(st, m); if(m.sacBal){ m.constr+=m.sacBal; m.privRes+=m.sacBal; m.priv+=m.sacBal }
     garSec(); m.vagasEst += m.vf.count;
-    m.lzLay = lazerLayout(st, m);
+    m.lzLay = lazerLayout(st, m, opt);
   }
   // avisos do térreo e da circulação de veículos
   const T=m.ter; m.avisos=[...(T.warn||[]), ...m.vert.warn, ...(typeof torOcupaAvisos==="function"? torOcupaAvisos(st, m) : [])];
