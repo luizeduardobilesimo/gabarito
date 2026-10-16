@@ -38,7 +38,7 @@ function garRegras(E, GX){
     nM:Math.max(1,Math.round(n(E.porModulo,3))), PIL:Math.max(0,n(E.pilar,0.4)),
     acrP:Math.max(0,n(GX.acrParede,0.25)), acrPil:Math.max(0,n(GX.acrPilar,0.10)),
     Ro:n(GX.raioExt,6.0), Ri:n(GX.raioInt,3.0), beco:n(GX.becoMax,25), ped:Math.max(0.9,n(GX.faixaPed,1.2)),
-    pcdF:1.2, pcdModo:GX.pcdModo||"auto", inset:1.0, partido:GX.partido||"auto",
+    pcdF:1.2, pcdModo:GX.pcdModo||"auto", inset:1.0, partido:GX.partido||"auto", zonas:GX.zonas||"auto",
   };
 }
 /* geometria das fileiras para um ângulo: corredor A, profundidade da fileira rd, passo ao longo do corredor Wp */
@@ -105,11 +105,11 @@ function gmFrame(ux, poly, obst, pisos, lobbies, zonas){
    referencial principal; os corredores (e transversais) que chegam a ela se ligam ao corredor inclinado por uma junção
    (o triângulo entre a ponta reta e o corredor inclinado), e a rede inteira — reta e inclinada — é uma só. */
 const GM_Z={Lmin:12, graus:3, cunha:2.5, angJ:35};
-function gmParedesZ(poly, ux){
+function gmParedesZ(poly, ux, Lmin){
   const out=[], ccw=G.sArea(poly)>0, vy=[-ux[1],ux[0]];
-  for(let i=0;i<poly.length;i++){ const a=poly[i], b=poly[(i+1)%poly.length], L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<GM_Z.Lmin) continue;
+  for(let i=0;i<poly.length;i++){ const a=poly[i], b=poly[(i+1)%poly.length], L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<(Lmin||GM_Z.Lmin)) continue;
     const d=[(b[0]-a[0])/L,(b[1]-a[1])/L], dg=Math.min(Math.acos(Math.min(1,Math.abs(G.dot(d,ux)))), Math.acos(Math.min(1,Math.abs(G.dot(d,vy)))));
-    if(dg*180/Math.PI<GM_Z.graus || L*Math.tan(dg)<GM_Z.cunha) continue;
+    if(dg*180/Math.PI<GM_Z.graus || (!Lmin && L*Math.tan(dg)<GM_Z.cunha)) continue;
     out.push({i, a, b, L, graus:dg*180/Math.PI, uz: ccw? d : [-d[0],-d[1]]}) }   // uz com o interior à esquerda (vy da zona para dentro)
   return out.sort((p,q)=>q.L-p.L);
 }
@@ -176,7 +176,7 @@ function gmZFila(FR, R, g, zp, fi, opt){
     gmFila(z.FRz.H, R, g, pc, -1, cx, o); if(z.tipo==="d") gmFila(z.FRz.H, R, g, pc, 1, cx, o);
     const Wz=q=>z.FRz.Wd(q[0],q[1]), outros=FR.Z.map((oz,ok)=>ok===zp.zk? null : {ok, pol: oz.pcs.map(pc=> ok<zp.zk? pc.reg : pc.pw)}).filter(Boolean);
     const livre=pg=>{ const b=gmBox(pg); return !outros.some(x=>x.pol.some(q=>gmHit(b, gmBox(q), 0.01) && garAreaInter(pg, q)>0.05)) };
-    const st=o.stalls.map(s=>{ const w=s.loc.map(Wz); return {...s, zf:z.FRz, zk:zp.zk, w, wb:gmBox(w)} }).filter(s=>livre(s.w));
+    const st=o.stalls.map(s=>{ const w=s.loc.map(Wz); return {...s, zf:z.FRz, zk:zp.zk, zw:z.w.i, w, wb:gmBox(w)} }).filter(s=>livre(s.w));
     const pl=(o.pil||[]).map(p=>[[p.r[0],p.r[1]],[p.r[2],p.r[1]],[p.r[2],p.r[3]],[p.r[0],p.r[3]]].map(Wz)).filter(livre);
     C={st, pl}; FR._zc.set(k, C) }
   return C;
@@ -494,17 +494,17 @@ function garModBusca(poly, obst, E, o, pisos){
   const t0=Date.now(), lim= o.lim || (quick? 400 : 3000), all=[];
   // tarefas: orientação × ângulo × conjunto de zonas inclinadas (nenhuma; todas; e cada uma sozinha quando há 2 ou 3)
   const zc=new Map(), zonasDe=(zv,g)=>zv.map(([w,t])=>{ const k=w.i+":"+t+":"+g.ang; if(!zc.has(k)) zc.set(k, gmZona(w, poly, obst, pisos, lobbies, R, g, t)); return zc.get(k) }).filter(z=>z.pcs.length);
-  // (combinações completas no eixo principal — as duas primeiras orientações; nas outras, só todas simples ou todas duplas)
-  const t0s=[], tzs=[]; dirs.forEach((ux,di)=>{ const ws= E.garZonas===false? [] : gmParedesZ(poly, ux).slice(0,3), vars=[];
+  // (combinações completas na orientação principal; nas outras, só todas simples ou todas duplas)
+  const t0s=[], tzs=[]; dirs.forEach((ux,di)=>{ const ws= R.zonas==="nunca"? [] : gmParedesZ(poly, ux).slice(0,3), vars=[];
     if(ws.length){ ["s","d"].forEach(t=>vars.push(ws.map(w=>[w,t])));
-      if(!quick && di<2 && ws.length>1) ws.forEach(w=>["s","d"].forEach(t=>vars.push([[w,t]])));
-      if(!quick && di<2 && ws.length===2) vars.push([[ws[0],"s"],[ws[1],"d"]], [[ws[0],"d"],[ws[1],"s"]]) }
+      if(!quick && di<1 && ws.length>1) ws.forEach(w=>["s","d"].forEach(t=>vars.push([[w,t]])));
+      if(!quick && di<1 && ws.length===2) vars.push([[ws[0],"s"],[ws[1],"d"]], [[ws[0],"d"],[ws[1],"s"]]) }
     angs.forEach(ang=>{ t0s.push({ux, ang, zv:[]}); vars.forEach(zv=>tzs.push({ux, ang, zv})) }) });
-  // sem zonas, como antes (limite total); com elas, as tarefas sem zona usam até metade do tempo e as com zona repartem o resto
-  const comZ=tzs.length>0, tarefas=[...t0s, ...tzs]; let dl=t0+lim*(comZ? 0.5 : 1), feitas=0;
+  // sem zonas, como antes (limite total); as tarefas com zona repartem o que sobrar (até 40% do limite; no mínimo 3% cada)
+  const comZ=tzs.length>0, tarefas=[...t0s, ...tzs]; let dl=t0+lim, feitas=0, tz0=0;
   const semZ=new Map();   // melhores estruturas sem zona (por orientação e ângulo): ponto de partida das variantes com zona
   tarefas.forEach(({ux, ang, zv})=>{
-    if(zv.length){ const ag=Date.now(); dl=ag+Math.max(lim*0.03, t0+lim-ag)/(tzs.length-feitas); feitas++ }
+    if(zv.length){ const ag=Date.now(); if(!feitas) tz0=Math.min(t0+lim, ag+lim*0.4); dl=ag+Math.max(lim*0.03, tz0-ag)/(tzs.length-feitas); feitas++ }
     { const g=garGeo(R, ang), zonas=zonasDe(zv, g); if(zv.length && !zonas.length) return;
       const FR=gmFrame(ux, poly, obst, pisos, lobbies, zonas);
       const chave=ux.map(v=>v.toFixed(3))+":"+ang, seqs=gmCorredores(FR, R, g, quick? 2 : 5);
@@ -576,7 +576,7 @@ function gmMundo(FR, R, L, P){
     const axL= s.ang===90? [0,s.side] : [s.t*Math.cos(L.g.th), s.side*Math.sin(L.g.th)], out=toF([-axL[0], -axL[1]]);
     const r= V_? gmRectSw(s.r) : s.r;
     const v={poly:loc.map(Wv), c:Wv(c), fm:Wv(fm), out:dv(out), u:s.u, uc:s.uc, row:s.piece*2+(s.side>0?1:0), grp:s.grp, j:s.j, aisle:s.piece, tipo:"n", W:s.W, ang:s.ang, _f:{...s, r, rd: V_? R.C : L.g.rd, Wd: zf? Wv : null}};
-    if(zf) v.zona=s.zk; return v });
+    if(zf) v.zona=s.zw; return v });   // zona = índice da parede
   const aisles=P.net.map(p=>{
     if(p.o==="Z"){ const zf=p.z.FRz, m_=(p.y0+p.y1)/2; return {poly:p.pw, o:"Z", conn:false, pass:false, dir:0, w:p.w, i:p.i, a:zf.Wd(p.a,m_), b:zf.Wd(p.b,m_), zona:p.zk} }
     if(p.jz) return {poly:p.pw, o:"J", conn:true, pass:false, dir:0, w:p.w, i:p.i, a:p.aW, b:p.bW};
@@ -750,14 +750,17 @@ function garModGrupo(poly, obst, E, o, pisos){
   if(!poly || poly.length<3) return null;
   const M=garModBusca(poly, obst, E, o, pisos), R=M.R; if(!M.cands.length) return null;
   // refina as 5 melhores sem ramal e as 2 melhores com ramal (a avaliação aproximada favorece os ramais)
-  const T=o.quick? 1 : 5, Tr=o.quick? 0 : 2, vistos=new Set(); let best=null, nS=0, nR=0;
-  for(const {FR, L} of M.cands){ if(nS>=T && nR>=Tr) break; if(L.pisos.some(P=>!P.ok)) continue;
-    const ram=L.rs.length>0; if(ram? nR>=Tr : nS>=T) continue;
-    const sig=L.tot+":"+L.ys.map(y=>y.toFixed(1))+":"+L.xs.map(x=>x.toFixed(1))+":"+L.rs.map(x=>x.toFixed(1))+":"+FR.ux.map(v=>v.toFixed(3))+":"+(FR.Z||[]).map(z=>z.w.i+z.tipo).join("."); if(vistos.has(sig)) continue; vistos.add(sig); if(ram) nR++; else nS++;
+  // (e, à parte, as 3 melhores com zonas inclinadas, uma de cada conjunto de zonas — que só ficam se não perderem vagas para a melhor sem zona)
+  const T=o.quick? 1 : 5, Tr=o.quick? 0 : 2, Tz=o.quick? 1 : 3, vistos=new Set(); let best=null, bestZ=null, nS=0, nR=0, nZ=0;
+  const totNZ=Math.max(0, ...M.cands.filter(c=>!c.FR.Z && c.L.pisos.every(P=>P.ok)).map(c=>c.L.tot));
+  for(const {FR, L} of M.cands){ if(nS>=T && nR>=Tr && nZ>=Tz) break; if(L.pisos.some(P=>!P.ok)) continue;
+    const ram=L.rs.length>0, zz=!!FR.Z; if(zz? nZ>=Tz || (L.tot<totNZ-L.pisos.length && R.zonas!=="sempre") : ram? nR>=Tr : nS>=T) continue;   // zona só se a estimativa já vier perto
+    if(zz){ const zk="Z"+FR.ux.map(v=>v.toFixed(3))+(FR.Z||[]).map(z=>z.w.i+z.tipo).join("."); if(vistos.has(zk)) continue; vistos.add(zk) }   // uma de cada conjunto de zonas
+    const sig=L.tot+":"+L.ys.map(y=>y.toFixed(1))+":"+L.xs.map(x=>x.toFixed(1))+":"+L.rs.map(x=>x.toFixed(1))+":"+FR.ux.map(v=>v.toFixed(3))+":"+(FR.Z||[]).map(z=>z.w.i+z.tipo).join("."); if(vistos.has(sig)) continue; vistos.add(sig); if(zz) nZ++; else if(ram) nR++; else nS++;
     const L2=o.quick? gmAvalia(FR, R, L.g, L.ys, L.xs, {gu:FR.fb[0]+R.acrP-R.PIL/2-R.acrPil, gv:FR.fb[1]+R.acrP-R.PIL/2-R.acrPil, pil:true, rs:L.rs}) : gmRefina(FR, R, L);
-    const out=gmMonta(poly, obst, E, o, pisos, M, FR, L2);
-    const sc=Object.values(out).reduce((s,l)=>s+l.count,0)-L2.pen;
-    if(!best || sc>best.sc) best={sc, out} }
+    const out=gmMonta(poly, obst, E, o, pisos, M, FR, L2), n=Object.values(out).reduce((s,l)=>s+l.count,0), sc=n-L2.pen;
+    if(zz){ if(!bestZ || sc>bestZ.sc) bestZ={sc, n, out} } else if(!best || sc>best.sc) best={sc, n, out} }
+  if(bestZ && (!best || R.zonas==="sempre" || bestZ.n>best.n || (bestZ.n===best.n && bestZ.sc>=best.sc-0.5))) best=bestZ;   // S.garagem.zonas: "sempre" | "nunca" | "auto"
   return best? best.out : null;
 }
 /* monta os layouts de cada pavimento a partir da estrutura escolhida */
@@ -772,9 +775,13 @@ function gmMonta(poly, obst, E, o, pisos, M, FR, L){
     const aislePolys=W.aisles.map(a=>a.poly), pedPolys=W.peds.filter(p=>p.poly).map(p=>p.poly);
     if(!o.quick){
       // malha de 0,5 m: o carro sai do portal e chega à frente de cada vaga, com manobra livre
-      const rv=vagas.filter(v=>v.tipo!=="faixa"); Rc=rasterCheck(poly, blocks, rv, pillarsW, portals, L.g.A);
-      const ok=new Set(Rc.okV); semRota=rv.filter(v=>!ok.has(v)).length;
-      vagas=vagas.filter(v=>v.tipo==="faixa"? vagas.some(p=>p.tipo==="pcd" && ok.has(p) && garToca(p.poly,v.poly)) : ok.has(v));
+      // cunhas junto às paredes inclinadas: vagas com as costas na parede, de frente para a circulação que já existe
+      const cun=gmCunhas(poly, FR, R, vagas, pillarsW, W.aisles, W.peds, W.retornos, blocks, keep, Math.max(3.0, L.g.A-0.4));
+      let rv=[...vagas.filter(v=>v.tipo!=="faixa"), ...cun]; Rc=rasterCheck(poly, blocks, rv, pillarsW, portals, L.g.A);
+      let ok=new Set(Rc.okV); semRota=rv.filter(v=>!ok.has(v) && !v.cunha).length;
+      if(semRota && cun.length){ const R0=rasterCheck(poly, blocks, rv.filter(v=>!v.cunha), pillarsW, portals, L.g.A), ok0=new Set(R0.okV), s0=rv.filter(v=>!v.cunha && !ok0.has(v)).length;
+        if(s0<semRota){ Rc=R0; ok=ok0; semRota=s0 } }   // as da cunha não podem tirar o acesso de nenhuma outra
+      vagas=[...vagas, ...cun].filter(v=>v.tipo==="faixa"? vagas.some(p=>p.tipo==="pcd" && ok.has(p) && garToca(p.poly,v.poly)) : ok.has(v));
       // sobras: vagas extras de frente para a circulação, sem cortar corredores, faixas e bolsões
       const faixas=vagas.filter(v=>v.tipo==="faixa");
       let Lx={vagas:vagas.filter(v=>v.tipo!=="faixa"), pillars:pillarsW, aisles:[], acc:{}, crosses:[], AI:L.g.A, ux:FR.ux, vy:FR.vy, corr:[...aislePolys, ...pedPolys, ...W.retornos, ...faixas.map(v=>v.poly)]};
@@ -797,7 +804,7 @@ function gmMonta(poly, obst, E, o, pisos, M, FR, L){
     const count=vagas.filter(v=>garCar(v.tipo)).length;
     const sobras=gmSobras(FR, R, L, P, vagas, pil, W.aisles);
     // zonas inclinadas usadas neste pavimento: parede, ângulo em relação ao referencial e vagas
-    const zonas=(FR.Z||[]).map((z,zk)=>({parede:z.w.i, graus:+z.graus.toFixed(1), ux:z.uz, vagas:vagas.filter(v=>v.zona===zk && garCar(v.tipo)).length})).filter(z=>z.vagas>0);
+    const zonas=(FR.Z||[]).map(z=>({parede:z.w.i, graus:+z.graus.toFixed(1), ux:z.uz, vagas:vagas.filter(v=>v.zona===z.w.i && garCar(v.tipo)).length})).filter(z=>z.vagas>0);
     const lay2={sobras,vagas, pillars:pillarsW, path, routes, ux:FR.ux, vy:FR.vy, ang:L.g.ang, pitch:L.g.Wp, aisle:L.g.A, ok:true, count,
       grid:Rc? Rc.grid : null, reach:Rc? Rc.reach : null,
       aisles:W.aisles.map(a=>({poly:a.poly, a:a.a, b:a.b, dir:a.dir, w:a.w, conn:a.conn, o:a.o, pass:a.pass})), peds:W.peds, retornos:W.retornos, passagens,
@@ -806,6 +813,28 @@ function gmMonta(poly, obst, E, o, pisos, M, FR, L){
     const V=garValida({...lay2, blocks:f.blocks||[], landings:keep}, {poly, obst, E, gx:o.gx, lobbies:M.lobbies, terreo:f.terreo});
     lay2.nota=V.nota; lay2.problemas=V.problemas; lay2.met=V.met;
     out[f.key]=lay2 });
+  return out;
+}
+/* cunhas: entre a malha e uma parede inclinada sobra uma faixa em cunha; onde ela encosta na circulação, vagas a 90° da
+   parede (costas nela) de frente para o corredor, a transversal ou a junção, com a manobra livre diante delas (a malha de
+   0,5 m confere depois o caminho até cada uma). Não mexe em nada do que já está desenhado. */
+function gmCunhas(poly, FR, R, vagas, pillars, aisles, peds, retornos, blocks, keep, need){
+  const ws=gmParedesZ(poly, FR.ux, 6), W=R.W+R.acrP*0, C=R.C, out=[]; if(!ws.length) return out;
+  const L_=ps=>ps.filter(p=>p && p.length>2).map(p=>({p, b:gmBox(p)}));
+  const solido=L_([...vagas.map(v=>v.poly), ...pillars, ...blocks, ...keep]), circ=L_([...aisles.map(a=>a.poly), ...peds.map(p=>p.poly), ...peds.map(p=>p.cross), ...(retornos||[])]);
+  const frentes=L_(vagas.filter(v=>v.fm && v.out && !v.presa && v.tipo!=="faixa").map(v=>frontRect(v.fm, v.out, Math.max(1.8,(v.W||R.W)-0.6), need)));
+  const bate=(lst, pg, t)=>{ const b=gmBox(pg); return lst.some(o=>gmHit(o.b, b, 0.01) && garAreaInter(o.p, pg)>t) };
+  const dentro=pg=>{ const c=G.centroid(pg); return G.polyInPoly(pg.map(q=>[q[0]+(c[0]-q[0])*0.01, q[1]+(c[1]-q[1])*0.01]), poly) };
+  ws.forEach(w=>{ const uz=w.uz, n=[-uz[1],uz[0]], A0= G.dot(w.b,uz)>G.dot(w.a,uz)? w.a : w.b, Lw=w.L;
+    for(let t=0.15; t+W<=Lw-0.15; ){
+      const P0=[A0[0]+uz[0]*t+n[0]*0.02, A0[1]+uz[1]*t+n[1]*0.02], P1=[P0[0]+uz[0]*W, P0[1]+uz[1]*W], pg=[P0, P1, [P1[0]+n[0]*C, P1[1]+n[1]*C], [P0[0]+n[0]*C, P0[1]+n[1]*C]];
+      const fm=[(pg[2][0]+pg[3][0])/2, (pg[2][1]+pg[3][1])/2], fr=frontRect(fm, n, W-0.6, need);
+      const ok= dentro(pg) && !bate(solido, pg, 0.005) && !bate(circ, pg, 0.05) && !bate(frentes, pg, 0.05) && !bate(solido, fr, 0.3)
+        && [0.6, need/2, need-0.2].every(k=>G.pip([fm[0]+n[0]*k, fm[1]+n[1]*k], poly)) && bate(circ, fr, 0.5);
+      if(!ok){ t+=0.1; continue }
+      const v={poly:pg, c:G.centroid(pg), fm, out:n, u:t, uc:t+W/2, row:-1, grp:-1, j:0, aisle:-1, tipo:"n", W, ang:90, cunha:w.i};
+      out.push(v); solido.push({p:pg, b:gmBox(pg)}); frentes.push({p:fr, b:gmBox(fr)}); t+=W }
+  });
   return out;
 }
 /* sobras: áreas sem vaga nem circulação (junto a núcleos, cantos, recortes) — viram depósito (encostada num corredor)
@@ -838,6 +867,22 @@ function gmSobras(FR, R, L, P, vagas, pil, aisW){
     const aces=fr.some(r=>corr.some(c=>gmToca(r,c,0.6)) || corrPg.some(pg=>gmTocaPg(r,pg,0.6)) || FR.LB.some(l=>gmToca(r,l.b,0.6)));
     const big=fr.reduce((m,r)=>(r[2]-r[0])*(r[3]-r[1])>(m[2]-m[0])*(m[3]-m[1])? r : m, fr[0]);
     out.push({area:ar, tipo: !aces && ar>40? "semAcesso" : aces? "deposito" : "tecnica", polys:fr.map(r=>[[r[0],r[1]],[r[2],r[1]],[r[2],r[3]],[r[0],r[3]]].map(q=>FR.Wd(q[0],q[1]))), c:FR.Wd((big[0]+big[2])/2,(big[1]+big[3])/2)}) }
+  return out;
+}
+/* rótulos das vagas (número, PCD, ID…) SEMPRE na horizontal, como no desenho de projeto — nunca girados com a vaga:
+   no centro dela, com o tamanho que cabe na largura horizontal da vaga naquele ponto (vaga inclinada: a corda horizontal
+   pelo centro, conferida em cima, no meio e embaixo da linha de texto); reduz até `min` px e só some se nem assim couber.
+   s = escala (px por metro); med(texto, px) = largura do texto em px (no canvas, measureText). Puro (testes). */
+function garRotulosVagas(lay, s, med, o={}){
+  const max=o.max||9, min=o.min||6, out=[]; let nCar=0; med=med||((t,px)=>t.length*px*0.6);
+  (lay.vagas||[]).forEach((v,i)=>{ if(garCar(v.tipo)) nCar++;
+    const t= v.tipo==="pcd"?"PCD": v.tipo==="idoso"?"ID": v.tipo==="faixa"?"": v.tipo==="off"?"×": v.tipo==="presa"?"presa": v.tipo==="moto"?"M": v.tipo==="bici"?`${v.bikes||""} bic.` : v.ev?"EV" : String(lay.modelo==="partido"? (v.num||nCar) : i+1);
+    if(!t || !v.poly || v.poly.length<3) return;
+    const c=v.c||G.centroid(v.poly); let w=Infinity;
+    for(const dy of [-0.5,0,0.5]){ const y=c[1]+dy*max/s, iv=gmLineIv(v.poly, y).find(([a,b])=>a<=c[0]+1e-6 && b>=c[0]-1e-6); w=Math.min(w, iv? 2*Math.min(c[0]-iv[0], iv[1]-c[0]) : 0) }
+    const disp=w*s-2, w0=med(t,max), tam= w0>disp? max*disp/w0 : max;
+    if(!(tam>=min)) return;
+    out.push({t, p:c, ang:0, tam:+tam.toFixed(2), i, ev:!!v.ev && v.tipo==="n"}) });
   return out;
 }
 /* um pavimento sozinho (garageSolve): mesmo caminho, grupo de um */

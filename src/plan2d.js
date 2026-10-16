@@ -150,7 +150,10 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       // batente (trava de roda) a 0,8 m do fundo da vaga
       if(partido && car && v.out && v.poly.length===4 && V.s>7){ const bk=[v.c[0]-v.out[0]*1.7, v.c[1]-v.out[1]*1.7], n=[-v.out[1],v.out[0]], h=0.7; const p1=w2s([bk[0]+n[0]*h,bk[1]+n[1]*h]), p2=w2s([bk[0]-n[0]*h,bk[1]-n[1]*h]);
         g.strokeStyle=css("--ink"); g.globalAlpha=0.5; g.lineWidth=Math.max(1.2,V.s*0.12); g.beginPath(); g.moveTo(...p1); g.lineTo(...p2); g.stroke(); g.globalAlpha=1 }
-      if(V.s>9){ const t= v.tipo==="pcd"?"PCD": v.tipo==="idoso"?"ID": v.tipo==="faixa"?"":v.tipo==="off"?"×": v.tipo==="presa"?"presa": v.tipo==="moto"?"M": v.tipo==="bici"?`${v.bikes||""} bic.` : v.ev?"EV":String(partido? (v.num||nCar) : i+1); if(t) label(t, w2s(v.c), {size:9,bg:false, col: v.ev&&v.tipo==="n"? css("--d-acc") : undefined}) } });
+    });
+    // números e textos sempre na horizontal, no centro da vaga e do tamanho que cabe (vaga inclinada também; src/calc/garmod.js)
+    if(V.s>9){ const fm=css("--f-mono"); garRotulosVagas(lay, V.s, (t,px)=>{ g.font="500 "+px+"px "+fm; return g.measureText(t).width })
+      .forEach(r=>label(r.t, w2s(r.p), {size:r.tam, bg:false, col: r.ev? css("--d-acc") : undefined})) }
     if(lay.qe){ const [x,y]=w2s(lay.qe), s_=Math.max(6,Math.min(12,V.s*0.7)); g.fillStyle=css("--c-tec"); g.strokeStyle=css("--ink"); g.lineWidth=1; g.fillRect(x-s_/2,y-s_/2,s_,s_); g.strokeRect(x-s_/2,y-s_/2,s_,s_); if(V.s>4) label("QE", [x, y-s_-6], {size:9}) }
   }
   function garBodyInner(lay){

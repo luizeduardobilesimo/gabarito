@@ -61,8 +61,8 @@ function ctxNomes(g, vias, s, X, Y, ve, C){
     const [a,b]=L.seg, mx=(X(a)+X(b))/2, my=(Y(a)+Y(b))/2;
     if(mx<-50 || my<-20 || mx>g.canvas.width+50 || my>g.canvas.height+20) return;
     if(postos.some(p=>p.n===v.n ? Math.hypot(p.x-mx,p.y-my)<260 : Math.hypot(p.x-mx,p.y-my)<tw*0.6)) return;
-    let ang=Math.atan2(Y(b)-Y(a), X(b)-X(a)); if(ang>Math.PI/2) ang-=Math.PI; if(ang<-Math.PI/2) ang+=Math.PI;
-    g.save(); g.translate(mx,my); g.rotate(ang); g.lineWidth=3; g.strokeStyle=C["--ctx-asf"]; g.strokeText(v.n,0,0.5); g.fillStyle=C["--ink-2"]; g.fillText(v.n,0,0.5); g.restore();
+    // nome da rua na horizontal (textos do desenho nunca giram), sobre o trecho mais longo da via
+    g.save(); g.translate(mx,my); g.lineWidth=3; g.strokeStyle=C["--ctx-asf"]; g.strokeText(v.n,0,0.5); g.fillStyle=C["--ink-2"]; g.fillText(v.n,0,0.5); g.restore();
     postos.push({n:v.n, x:mx, y:my}); n++ });
 }
 

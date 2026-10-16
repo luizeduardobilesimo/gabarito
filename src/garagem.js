@@ -31,7 +31,8 @@ extendDEF("garagem", {
   // partidos de garagem (src/calc/garmod.js) — referência usual, conferir no código de obras: partido auto|simples|estreita|duplo|
   // pente|anel|espinha|inclinado · largura acrescida por lado junto à parede / ao pilar (m) · faixa da PCD auto|compartilhada|lado.
   // Raio de giro (6,0/3,0 m), corredor sem saída (25 m) e faixa de pedestres (1,20 m) ficam fixos em garRegras (link #ver= curto)
-  partido: "auto", acrParede: 0.25, acrPilar: 0.1, pcdModo: "auto"
+  partido: "auto", acrParede: 0.25, acrPilar: 0.1, pcdModo: "auto",
+  zonas: "auto"                                // faixas inclinadas junto às paredes inclinadas: auto (só se não perder vagas) | sempre | nunca
 });
 const garX = st => (st && st.garagem) || DEF.garagem;
 const RAMPA_TIPOS = { reta:"Retas empilhadas", alternada:"Alternadas (tesoura)", helicoidal:"Helicoidal", L:"Em L, com patamar", elevador:"Elevador de carros" };
@@ -576,7 +577,7 @@ const garR2=q=>[+q[0].toFixed(2),+q[1].toFixed(2)];
 function garSig(poly, obst, E, o, pisos){ const r2=garR2;
   return JSON.stringify([poly.map(r2), obst.map(c=>c.map(r2)), pisos.map(f=>[(f.blocks||[]).map(c=>c.map(r2)), (f.portals||[]).map(p=>[r2(p.p),p.heading.map(v=>+v.toFixed(3)),p.tipo||""]), (f.keep||[]).map(k=>k.map(r2)), f.terreo?1:0]),
     E.vagaL,E.vagaC,E.corredor,E.porModulo,E.pilar,E.pcd,E.idoso,E.angulo,E.garDir,E.garDirGraus,!!o.quick, !!o.presas, !!o.motos, o.bici||0, E.rampaL,
-    (o.lobbies||[]).map(l=>[l.poly.map(r2), (l.portas||[]).map(r2)]), o.gx? [o.gx.acrParede,o.gx.acrPilar,o.gx.raioExt,o.gx.raioInt,o.gx.becoMax,o.gx.faixaPed,o.gx.pcdModo,o.gx.partido] : 0]) }
+    (o.lobbies||[]).map(l=>[l.poly.map(r2), (l.portas||[]).map(r2)]), o.gx? [o.gx.acrParede,o.gx.acrPilar,o.gx.raioExt,o.gx.raioInt,o.gx.becoMax,o.gx.faixaPed,o.gx.pcdModo,o.gx.partido,o.gx.zonas] : 0]) }
 function garageLayout(poly, obst, E, key, o){
   const sig=garSig(poly, obst, E, o, [{blocks:o.blocks, portals:o.portals, keep:o.keep, terreo:o.terreo}]);
   let base=_garCache.get(sig);
