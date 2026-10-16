@@ -1,7 +1,7 @@
 /* ================= assistente "Novo estudo", faixa do exemplo e entrada da 1ª visita (UX v3 §3.1 e §3.2) =================
    Parte pura em src/calc/assistente.js (assEstado, assEhExemplo, assPrecoSugerido…). Aqui só a tela:
    - assAbrir(opts?)  → tela cheia por cima do app (criada aqui, listener próprio). opts = {onDone(estudoId), onCancel(), primeira}.
-     Estado local ASS (nada vai para S antes de "Gerar"). 5 passos: Terreno · Regras · Produto (padrão: Econômico/MCMV, Médio, Médio-alto,
+     Estado local ASS (nada vai para S antes de "Gerar"). 5 passos: Terreno · Regras · Produto (padrão: Econômico, Médio, Médio-alto,
      Alto, Luxo — DIR_PADROES de src/calc/diretrizes.js) · Restrições (Livre | Com diretrizes: subsolo, garagem elevada, tipologias) ·
      Gerando (barra, Voltar, Pular).
      Gerar: assEstado → otimizador (otimRodar(opts, onProg, {st, m}) do P3 quando aceitar o 3º argumento; senão o Worker "job" do
@@ -241,11 +241,11 @@ const assNomePadrao = k => ASS_DIR() && DIR_PADROES[k]? DIR_PADROES[k].nome : (M
 function assPadraoDesc(k){
   if(!(ASS_DIR() && DIR_PADROES[k])) return assPresetDesc(k).split(" · ").map(x=>x.replace("–"," a "));
   const P=DIR_PADROES[k], a=P.tips.map(q=>P.areas[q][1]);
-  return [k==="economico"? "MCMV" : P.sub, `${Math.min(...a)} a ${Math.max(...a)} m²`, dirFaixaPreco(P)];
+  return [P.sub, `${Math.min(...a)} a ${Math.max(...a)} m²`, dirFaixaPreco(P)];
 }
 function assP3(){
   const P=ASS.r.produto, sug=assSugPreco(P.padrao), nomeP=assNomePadrao(P.padrao), ks=ASS_DIR()? DIR_ORDEM : ["compacto","familia","alto"];
-  const tile=k=>`<button type="button" class="ass-tile" data-padrao="${k}" aria-pressed="${P.padrao===k}" title="${esc(assNomePadrao(k))}">${assIc(k)}<b>${esc(ASS_DIR()? (DIR_PADROES[k].curto||DIR_PADROES[k].nome) : MIX_PRESETS[k].nome)}</b>${(ASS_DIR()? [k==="economico"? "MCMV" : DIR_PADROES[k].sub, assPadraoDesc(k)[1]] : assPadraoDesc(k)).map(x=>`<span>${esc(x)}</span>`).join("")}</button>`;
+  const tile=k=>`<button type="button" class="ass-tile" data-padrao="${k}" aria-pressed="${P.padrao===k}" title="${esc(assNomePadrao(k))}">${assIc(k)}<b>${esc(ASS_DIR()? (DIR_PADROES[k].curto||DIR_PADROES[k].nome) : MIX_PRESETS[k].nome)}</b>${(ASS_DIR()? [DIR_PADROES[k].sub, assPadraoDesc(k)[1]] : assPadraoDesc(k)).map(x=>`<span>${esc(x)}</span>`).join("")}</button>`;
   return { t:"Que produto e por quanto?", d:"Escolha o padrão e o preço de venda. Ele traz unidades, lazer, custo e vagas típicos — tudo editável depois.",
     body:`<div><span class="ass-l" id="assPL">Padrão do empreendimento</span><div class="ass-tiles ${ks.length>3? "t5" : "t3"}" role="group" aria-labelledby="assPL">${ks.map(tile).join("")}</div></div>
       <div class="ass-g2"><div class="fld"><label class="fl" for="assPr">Preço médio de venda</label><div class="inp"><input id="assPr" data-r="produto.preco" inputmode="decimal" value="${esc(P.preco)}" placeholder="${nf(sug,0)}" autocomplete="off"><em>R$/m²</em></div>

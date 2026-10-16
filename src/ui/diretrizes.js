@@ -2,7 +2,7 @@
    Seção fechada logo abaixo do RES "Uso do potencial", antes de "Sugerir a melhor combinação":
    - Livre | Com diretrizes (S.diretrizes.modo). Livre = o otimizador só olha resultado e aproveitamento, como sempre.
    - Com diretrizes: Padrão (5 botões; escolher APLICA as predefinições — mix, preços, lazer, CUB, vagas, coberturas — num passo de
-     desfazer e mostra o que mudou), faixa do MCMV (no econômico), tipologias permitidas (chips), subsolos e garagem elevada; a linha
+     desfazer e mostra o que mudou), tipologias permitidas (chips), subsolos e garagem elevada; a linha
      de situação diz se o estudo atual atende e oferece "Ajustar o estudo". O resto (térreo, vagas por unidade, elevador de carros,
      torres, pavimentos, unidades por andar, coberturas, lojas, áreas por tipologia, lazer obrigatório e por unidade, margem mínima,
      teto por unidade) fica em "Mais opções".
@@ -50,7 +50,6 @@ function dirSecHTML(){
     const chips = [0,1,2,3,4].map(q=>`<button type="button" class="chip" data-act="dirTip" data-q="${q}" aria-pressed="${D.tips.includes(q)}">${DIR_Q[q]}</button>`).join("");
     body += `<div class="dir-l">Padrão${INFO("Padrão do empreendimento")}</div><div class="seg full dir-pads" role="group" aria-label="Padrão do empreendimento">${pads}</div>
       <div class="dir-pd">${esc(PD.nome)}${INFO(PD.nome)} · ${esc(dirTipsTxt({tips:PD.tips}))} de ${nf(Math.min(...aa),0)} a ${nf(Math.max(...aa),0)} m² · ${dirFaixaPreco(PD)} · ${PD.vagasUn? `${nf(PD.vagasUn, PD.vagasUn%1? 1 : 0)} vaga${PD.vagasUn>1? "s" : ""}/un` : "vagas da lei"}</div>${mud}
-      ${D.k==="economico"? dirSegLinha("Faixa do MCMV", "diretrizes.faixa", Object.entries(DIR_FAIXAS).map(([k,f])=>[k, f.nome]), "MCMV") : ""}
       <div class="dir-l">Tipologias permitidas</div><div class="chips" role="group" aria-label="Tipologias permitidas">${chips}</div>
       <div class="fsub" id="dirAreas">${esc(D.tips.map(q=>{ const a=D.area(q); return `${D.P.nomes[q]} ${nf(a[0],0)}–${nf(a[2],0)} m²` }).join(" · "))}${D.teto>0? ` · teto ${esc(mi(D.teto))}/unidade` : ""}</div>
       ${dirSegLinha("Subsolos", "diretrizes.subMax", DIR_GAR_OPC)}
@@ -78,7 +77,7 @@ function dirMaisHTML(D){
     GRP("Áreas comuns") + KV(n("diretrizes.lazerUn","Lazer por unidade","m²",{step:0.5,ph:"—",help:"Área de lazer aproximada por unidade (salão, academia, piscina…). Abaixo de 70% dela, a sugestão avisa."})) +
     `<div class="dir-l">Obrigatórios no lazer</div><div class="chips" role="group" aria-label="Lazer obrigatório">${lzNomes.map(nm=>`<button type="button" class="chip" data-act="dirLz" data-n="${esc(nm)}" aria-pressed="${D.lazerObrig.includes(nm)}">${esc(nm)}</button>`).join("")}</div>` +
     GRP("Metas") + KV(n("diretrizes.margemMin","Margem mínima","%",{pct:true,step:1,ph:pct(S.fin.margemAlvo,0).replace("%",""),help:"Margem sobre o VGV que a sugestão precisa atingir. Vazio: a meta da Viabilidade."}) +
-      n("diretrizes.tetoUn","Teto por unidade","R$",{step:5000,ph:D.teto>0? nf(D.teto,0) : "—",help:"Preço máximo de venda de cada unidade (no MCMV, o teto da faixa). As tipologias encolhem até caber; se nem a área mínima cabe, a sugestão diz o preço que cabe."}));
+      n("diretrizes.tetoUn","Teto por unidade","R$",{step:5000,ph:D.teto>0? nf(D.teto,0) : "—",help:"Preço máximo de venda de cada unidade. As tipologias encolhem até caber; se nem a área mínima cabe, a sugestão diz o preço que cabe."}));
 }
 /* situação do estudo atual frente às diretrizes (linha viva) */
 function dirLive(m){

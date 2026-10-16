@@ -91,24 +91,22 @@ describe('o otimizador obedece', () => {
   }, 240000);
 });
 
-describe('MCMV × alto padrão no mesmo lote', () => {
+describe('econômico × alto padrão no mesmo lote', () => {
   it('produtos coerentes e diferentes (áreas, lazer, vagas, custo, preço)', async () => {
     const ec = novo(30, 50, 'economico', {}), al = novo(30, 50, 'alto', {});
     const [re, ra] = [await otim(ec), await otim(al)];
     expect(re.res.length).toBeGreaterThan(0); expect(ra.res.length).toBeGreaterThan(0);
     const e = re.res[0], a = ra.res[0];
     // áreas
-    expect(areaMedia(e.mix)).toBeLessThan(50); expect(areaMedia(a.mix)).toBeGreaterThan(120);
+    expect(areaMedia(e.mix)).toBeLessThan(60); expect(areaMedia(a.mix)).toBeGreaterThan(120);
     e.mix.forEach(u => expect([1, 2]).toContain(A.dirTipDe(u))); a.mix.forEach(u => expect([3, 4]).toContain(A.dirTipDe(u)));
-    // teto do MCMV (faixa 3: R$ 350 mil por unidade)
-    e.mix.forEach(u => expect(u.area * u.preco).toBeLessThanOrEqual(350000));
     // lazer, vagas, custo e preço
     const lzA = s => s.produto.lazer.itens.reduce((t, x) => t + x.area, 0);
     expect(lzA(al)).toBeGreaterThan(3 * lzA(ec));
     expect(a.vagas).toBeGreaterThanOrEqual(2 * a.units); expect(e.req).toBeLessThan(1.5 * e.units + 10);
     expect(ec.fin.cub * ec.fin.fator).toBeLessThan(0.7 * al.fin.cub * al.fin.fator);
     expect(A.basePrice(ec)).toBeLessThan(0.5 * A.basePrice(al));
-    expect(nUn(e)).toBeGreaterThan(nUn(a)); expect(ec.fin.eqGar).toBeLessThan(al.fin.eqGar);
+    expect(nUn(e)).toBeGreaterThan(nUn(a));
     expect(ec.orc.padrao).toBe('R8-B'); expect(al.orc.padrao).toBe('R16-A');
     expect(al.produto.cob.on).toBe(true); expect(ec.produto.cob.on).toBe(false);
   }, 300000);
@@ -125,9 +123,9 @@ describe('diretriz impossível: diz qual diretriz impede e quanto falta', () => 
     expect(r.semOpcao.motivo).toMatch(/permitir \d subsolo/); expect(r.semOpcao.motivo).toMatch(/2 por unidade, pela diretriz/);
     expect(r.semOpcao.vagas).toBeLessThan(r.semOpcao.req);
   }, 240000);
-  it('teto do MCMV que nenhuma tipologia comporta: o preço que cabe', async () => {
+  it('teto por unidade que nenhuma tipologia comporta: o preço que cabe', async () => {
     const st = novo(30, 50, 'economico', {}, 9000);
-    st.diretrizes.faixa = 'f12';
+    st.diretrizes.tetoUn = 264000;
     const r = await otim(st);
     expect(r.res).toEqual([]); expect(r.semOpcao.diretriz).toBe('teto');
     expect(r.semOpcao.motivo).toMatch(/teto de R\$ 264 mil/); expect(r.semOpcao.motivo).toMatch(/reduza o preço para até R\$ [\d.]+\/m²/);
@@ -160,10 +158,11 @@ describe('aplicar e desfazer', () => {
     // garagem (depende do lugar) não muda com o padrão
     expect(st.produto.subsolos).toBe(antes.produto.subsolos); expect(st.diretrizes.subMax).toBe(antes.diretrizes.subMax);
   });
-  it('MCMV: área limitada pelo teto e pela menor unidade da lei; texto do resumo', () => {
+  it('econômico: área pela menor unidade da lei, sem teto por unidade (o MCMV vira módulo próprio); texto do resumo', () => {
     const st = A.clone(A.DEF); A.dirAplicaPadrao(st, 'economico'); st.diretrizes.modo = 'diretrizes';
     const D = A.dirEfetivas(st);
-    st.produto.mix.forEach(u => { expect(u.area).toBeGreaterThanOrEqual(st.regras.aptoMin); expect(u.area * u.preco).toBeLessThanOrEqual(D.teto) });
+    expect(D.teto).toBe(0); expect(A.DIR_PADROES.economico.nome).toBe('Econômico');
+    st.produto.mix.forEach(u => expect(u.area).toBeGreaterThanOrEqual(st.regras.aptoMin));
     expect(A.dirResumo(st)).toMatch(/^Econômico · 1 e 2 dorm\./);
     expect(A.dirTipDe({ nome: '3 dorm. (1 suíte)' })).toBe(3); expect(A.dirTipDe({ nome: '2 suítes' })).toBe(2); expect(A.dirTipDe({ nome: 'Studio' })).toBe(0);
   });

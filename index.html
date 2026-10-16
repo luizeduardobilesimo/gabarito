@@ -8681,15 +8681,17 @@ function cubParse(text){
    Pedido do Luiz (16/10/2026): "pode ser um estudo totalmente livre, onde só importam métricas e aproveitamento, ou a opção do
    usuário já limitar alguns critérios que ele precisa atender, como o padrão, a quantidade de quartos, o que ele quer ter de área
    comum aproximada… Afinal, é muito diferente um Minha Casa Minha Vida de um alto padrão."
+   MCMV saiu daqui (Luiz, 17/10/2026): vira um MÓDULO próprio do Gabarito (blocos repetidos, produto mais simples), como galpão logístico
+   e loteamento depois — este módulo é o de empreendimentos verticais. O "Econômico" daqui é o vertical econômico de mercado.
    Cálculo puro (página, Worker e testes; sem DOM). A tela fica em src/ui/diretrizes.js (Produto) e no assistente.
 
    Estado S.diretrizes (extendDEF; modo "livre" por padrão = nada muda, estudos de referência iguais):
-     modo "livre" | "diretrizes" · padrao (chave de DIR_PADROES) · faixa (MCMV: f12 | f3 | f4 → teto por unidade)
+     modo "livre" | "diretrizes" · padrao (chave de DIR_PADROES)
      tips [nº de dormitórios permitidos: 0 = studio … 4] · areas [[mín, máx] por nº de dormitórios; 0 = do padrão] · minPct [mínimo da
      tipologia nas unidades do andar, 0–1] · subMax / gacMax (−1 = livre, 0 = não pode, N = até N) · garTerreo / vagasFrente / cob / lojas
      ("livre" | "sim" | "nao") · cobQtd · vagasUn (0 = as da lei) · elevCarros (permitido) · torres ("livre" | "fixo" | "max") + torresN ·
      pavMin / pavMax / unMin / unMax (0 = livre) · lazerUn (m² de lazer por unidade, aproximado; 0 = sem meta) · lazerObrig [nomes] ·
-     margemMin (0 = a meta da Viabilidade) · tetoUn (R$ por unidade; 0 = o da faixa no econômico, senão sem teto)
+     margemMin (0 = a meta da Viabilidade) · tetoUn (preço máximo de venda por unidade, R$; 0 = sem teto)
 
    API (todas devolvem o comportamento antigo no modo livre):
      dirEfetivas(st) → D (diretrizes com o padrão resolvido) | null no modo livre
@@ -8704,23 +8706,21 @@ function cubParse(text){
      dirConfere(st, m, D?) → {ok, falhas[{k, msg, grave}], n} · dirSemOpcao(DIR, base, cont, cal, mNow) → {k, diretriz, motivo} | null
      dirFechaAjusta(DIR, fecha, mix, base) (preço acima do teto não é saída) · dirAplicaPadrao(st, k, o) → [o que mudou]
      dirResumo(st) · dirTipsTxt(D) · dirGarTxt(D)
-   Valores de referência (áreas, preços, CUB, lazer, tetos do MCMV): genéricos, "conferir" — ⓘ e glossário dizem isso. */
+   Valores de referência (áreas, preços, CUB, lazer): genéricos, "conferir" — ⓘ e glossário dizem isso. */
 
 const DIR_Q = ["Studio","1 dorm.","2 dorm.","3 dorm.","4 dorm."];
 const DIR_QC = ["studio","1","2","3","4"];
 const DIR_PF = [1.12, 1.06, 1, 0.97, 0.95];          // preço por m² relativo ao de 2 dormitórios (unidade menor vende mais caro por m²)
-/* tetos do Minha Casa, Minha Vida (valor máximo do imóvel; os das faixas 1 e 2 variam com a cidade — conferir) */
-const DIR_FAIXAS = { f12:{nome:"Faixas 1 e 2", teto:264000}, f3:{nome:"Faixa 3", teto:350000}, f4:{nome:"Faixa 4", teto:500000} };
 const DIR_LZ = (l)=>l.map(([nome,area,local,desc])=>({nome, area, local, ...(desc? {desc:true} : {})}));
 const DIR_LZ_ALTO = [["Salão de festas",120,"terreo"],["Espaço gourmet",60,"terreo"],["Academia",80,"terreo"],["Brinquedoteca",40,"terreo"],["Coworking",40,"terreo"],
   ["Piscina",90,"emb",1],["Deck / solário",80,"emb",1],["Playground",50,"emb",1],["Pet place",40,"emb",1]];
-/* padrões: áreas [mín, alvo, máx] por nº de dormitórios, peso de cada tipologia no andar (e mínimo: no econômico, ≥ 50% de 2 dorm.), sacada, vagas por unidade (0 = lei), CUB e fator
-   sobre o CUB, garagem equivalente (fração do CUB por m² de garagem; no econômico, vagas no térreo sem estrutura de garagem), faixa de preço R$/m² [mín, referência, máx], coberturas, elevador de carros, unidades por andar [mín, máx] (0 = livre),
+/* padrões: áreas [mín, alvo, máx] por nº de dormitórios, peso de cada tipologia no andar (e mínimo por tipologia), sacada, vagas por unidade (0 = lei), CUB e fator
+   sobre o CUB, garagem equivalente (fração do CUB por m² de garagem), faixa de preço R$/m² [mín, referência, máx], coberturas, elevador de carros, unidades por andar [mín, máx] (0 = livre),
    unidades por andar de partida (assistente), lazer m²/unidade, programa de lazer e itens obrigatórios */
 const DIR_PADROES = {
-  economico:{ nome:"Econômico (MCMV)", curto:"Econômico", sub:"MCMV", nomes:DIR_Q,
-    areas:[[22,27,32],[30,35,42],[38,43,50],[48,55,62],[60,68,76]], tips:[1,2], w:[0,0.3,0.7,0,0], minPct:[0,0,0.5,0,0], sac:[0,0,0,0,0],
-    vagasUn:0, cub:"R8-B", fator:1.05, eqGar:0.5, preco:[5500,7000,8500], cob:"nao", elevCarros:false, un:[4,0], n0:6, lazerUn:1,
+  economico:{ nome:"Econômico", curto:"Econômico", sub:"1 e 2 dorm.", nomes:DIR_Q,
+    areas:[[24,28,34],[33,40,46],[42,50,58],[55,63,72],[68,78,88]], tips:[1,2], w:[0,0.3,0.7,0,0], sac:[0,3,4,5,6],
+    vagasUn:0, cub:"R8-B", fator:1.1, eqGar:0.8, preco:[6500,8000,9500], cob:"nao", elevCarros:false, un:[4,0], n0:6, lazerUn:1.2,
     lazer:[["Salão de festas",50,"terreo"],["Playground",40,"emb",1],["Bicicletário",20,"terreo"]], obrig:["Salão de festas","Playground"] },
   medio:{ nome:"Médio", curto:"Médio", sub:"2 e 3 dorm.", nomes:["Studio","1 dorm.","2 dorm.","3 dorm. (1 suíte)","4 dorm. (1 suíte)"],
     areas:[[26,32,38],[36,44,52],[52,62,72],[70,82,95],[95,110,125]], tips:[2,3], w:[0,0,0.6,0.4,0], sac:[3,4,6,8,10],
@@ -8742,7 +8742,7 @@ const DIR_PADROES = {
 };
 const DIR_ORDEM = ["economico","medio","medioAlto","alto","luxo"];
 
-extendDEF("diretrizes", { modo:"livre", padrao:"medio", faixa:"f3", tips:[2,3], areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:[0,0,0,0,0],
+extendDEF("diretrizes", { modo:"livre", padrao:"medio", tips:[2,3], areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:[0,0,0,0,0],
   subMax:-1, gacMax:-1, garTerreo:"livre", vagasFrente:"livre", cob:"livre", cobQtd:0, lojas:"livre", vagasUn:1, elevCarros:true,
   torres:"livre", torresN:1, pavMin:0, pavMax:0, unMin:0, unMax:0, lazerUn:2, lazerObrig:["Salão de festas","Playground"], margemMin:0, tetoUn:0 });
 
@@ -8763,7 +8763,7 @@ function dirEfetivas(st){
   const am=+(st.regras && st.regras.aptoMin)||0;   // a menor unidade que a lei aceita vale por cima do padrão
   const area=q=>{ const a=P.areas[q], o=(Array.isArray(d.areas) && d.areas[q]) || [], mn=dirN(o[0])>0? dirN(o[0]) : a[0], mx=dirN(o[1])>0? dirN(o[1]) : a[2];
     const lo=Math.max(am, Math.min(mn,mx)), hi=Math.max(lo, mn, mx); return [lo, Math.min(hi, Math.max(lo, a[1])), hi] };
-  const fx=DIR_FAIXAS[d.faixa]||null, teto = dirN(d.tetoUn)>0? dirN(d.tetoUn) : (k==="economico" && fx? fx.teto : 0);
+  const teto = dirN(d.tetoUn)>0? dirN(d.tetoUn) : 0;
   const un=v=>Math.max(0, Math.floor(dirN(v))), opt=v=>["sim","nao"].includes(v)? v : "livre";
   return { k, P, nome:P.nome, tips, area, minPct:[0,1,2,3,4].map(q=>Math.max(0, Math.min(1, dirN((d.minPct||[])[q])))),
     subMax:dirLim(d.subMax), gacMax:dirLim(d.gacMax), garTerreo:opt(d.garTerreo), vagasFrente:opt(d.vagasFrente), cob:opt(d.cob), lojas:opt(d.lojas),
@@ -8771,7 +8771,7 @@ function dirEfetivas(st){
     torres:["fixo","max"].includes(d.torres)? d.torres : "livre", torresN:Math.max(1, un(d.torresN)||1),
     pavMin:un(d.pavMin), pavMax:un(d.pavMax), unMin:un(d.unMin), unMax:un(d.unMax),
     lazerUn:Math.max(0, dirN(d.lazerUn)), lazerObrig:(Array.isArray(d.lazerObrig)? d.lazerObrig : []).filter(Boolean).map(String),
-    margemMin:Math.max(0, dirN(d.margemMin)), teto, faixa: k==="economico" && fx && !(dirN(d.tetoUn)>0)? fx.nome : "" };
+    margemMin:Math.max(0, dirN(d.margemMin)), teto, faixa:"" };
 }
 
 /* nº de dormitórios de uma tipologia do mix */
@@ -8806,7 +8806,7 @@ function presetNome(pk, st){
 /* preço de uma tipologia: o da mesma tipologia no mix; senão o preço médio × fator da tipologia */
 function dirPrecoDe(st, q){ const mx=(st.produto&&st.produto.mix)||[], u=mx.find(x=>dirTipDe(x)===q && +x.preco>0);
   return u? +u.preco : Math.round(basePrice(st)*DIR_PF[q]/50)*50 }
-/* área que a tipologia pode ter: o alvo do padrão, limitado pelo teto por unidade (MCMV); null se nem a área mínima cabe no teto */
+/* área que a tipologia pode ter: o alvo do padrão, limitado pelo teto por unidade; null se nem a área mínima cabe no teto */
 function dirAreaViavel(st, D, q){ const a=D.area(q); let x=a[1]; if(D.teto>0){ const p=dirPrecoDe(st,q); if(p>0) x=Math.min(x, Math.floor(D.teto/p)) } return x>=a[0]-1e-9? x : null }
 
 /* mix das diretrizes: "dir" = todas as tipologias permitidas (pesos do padrão e mínimos), "dir:<q>" = só uma */
@@ -8893,7 +8893,7 @@ function dirPre(st, D){
   if(D.unMin && D.unMax && D.unMin>D.unMax) return r("unidades", `o mínimo de ${D.unMin} unidades por andar passa do máximo de ${D.unMax}`);
   if(!D.tips.some(q=>dirAreaViavel(st, D, q)!=null)){
     const q=D.tips.reduce((b,x)=>D.area(x)[0]*dirPrecoDe(st,x)<D.area(b)[0]*dirPrecoDe(st,b)? x : b, D.tips[0]), a=D.area(q)[0], p=dirPrecoDe(st,q);
-    return r("teto", `o teto de ${mi(D.teto)} por unidade${D.faixa? ` (${D.faixa} do MCMV)` : ""} não comporta ${D.P.nomes[q]} de ${nf(a,0)} m² a ${brl(p)}/m² (${mi(a*p)}) — reduza o preço para até ${brl(Math.floor(D.teto/a/50)*50)}/m² ou a área mínima para ${nf(Math.floor(D.teto/p),0)} m²`) }
+    return r("teto", `o teto de ${mi(D.teto)} por unidade não comporta ${D.P.nomes[q]} de ${nf(a,0)} m² a ${brl(p)}/m² (${mi(a*p)}) — reduza o preço para até ${brl(Math.floor(D.teto/a/50)*50)}/m² ou a área mínima para ${nf(Math.floor(D.teto/p),0)} m²`) }
   return null;
 }
 function dirPrepara(st){
@@ -8993,7 +8993,6 @@ function dirAplicaPadrao(st, k, o={}){
   const d=st.diretrizes || (st.diretrizes=clone(DEF.diretrizes)), out=[];
   Object.assign(d, { padrao:k, tips:P.tips.slice(), areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:(P.minPct||[0,0,0,0,0]).slice(), vagasUn:P.vagasUn, elevCarros:P.elevCarros,
     cob:P.cob, lazerObrig:P.obrig.slice(), lazerUn:P.lazerUn, unMin:P.un[0], unMax:P.un[1], tetoUn:0 });
-  if(k==="economico" && !DIR_FAIXAS[d.faixa]) d.faixa="f3";
   const Pr=st.produto, cur=(Pr.mix||[]).reduce((s,u)=>s+(+u.qtd||0),0);
   let N=Math.round(+o.N||0) || cur || P.n0; if(P.un[0]) N=Math.max(N, P.un[0]); if(P.un[1]) N=Math.min(N, P.un[1]);
   const pm=+o.preco>0? +o.preco : P.preco[1], D=dirEfetivas({...st, diretrizes:{...d, modo:"diretrizes"}});
@@ -9002,7 +9001,7 @@ function dirAplicaPadrao(st, k, o={}){
   Pr.mix=distrib(P.tips.map(q=>({q, w:(P.w[q]||0)/sw})), N, t=>({nome:P.nomes[t.q], area:area(t.q), preco:Math.round(pm*DIR_PF[t.q]/50)*50, sac:P.sac[t.q], tip:t.q}));
   out.push(`Unidades: ${Pr.mix.map(u=>`${u.qtd} × ${u.nome} de ${nf(u.area,0)} m²`).join(" e ")} por andar`);
   out.push(`Preço médio ${brl(Math.round(basePrice(st)/50)*50)}/m² (referência ${dirFaixaPreco(P)} · conferir)`);
-  if(D.teto>0) out.push(`Teto de ${mi(D.teto)} por unidade${D.faixa? ` (${D.faixa})` : ""}`);
+  if(D.teto>0) out.push(`Teto de ${mi(D.teto)} por unidade`);
   Pr.lazer=Pr.lazer||{hall:0, itens:[]}; Pr.lazer.itens=DIR_LZ(P.lazer);
   out.push(`Lazer: ${dirPl(Pr.lazer.itens.length,"ambiente")} · ${m2(Pr.lazer.itens.reduce((s,x)=>s+x.area,0))}`);
   if(P.cob==="sim"){ const big=Math.max(...Pr.mix.map(u=>u.area)); Pr.cob={...Pr.cob, on:true, qtd:Math.max(1, +(Pr.cob&&Pr.cob.qtd)||2), area:Math.round(big*1.8/5)*5, preco:Math.round(pm*1.12/50)*50}; out.push(`Coberturas duplex de ${m2(Pr.cob.area)}`) }
@@ -21403,15 +21402,17 @@ function cubParse(text){
    Pedido do Luiz (16/10/2026): "pode ser um estudo totalmente livre, onde só importam métricas e aproveitamento, ou a opção do
    usuário já limitar alguns critérios que ele precisa atender, como o padrão, a quantidade de quartos, o que ele quer ter de área
    comum aproximada… Afinal, é muito diferente um Minha Casa Minha Vida de um alto padrão."
+   MCMV saiu daqui (Luiz, 17/10/2026): vira um MÓDULO próprio do Gabarito (blocos repetidos, produto mais simples), como galpão logístico
+   e loteamento depois — este módulo é o de empreendimentos verticais. O "Econômico" daqui é o vertical econômico de mercado.
    Cálculo puro (página, Worker e testes; sem DOM). A tela fica em src/ui/diretrizes.js (Produto) e no assistente.
 
    Estado S.diretrizes (extendDEF; modo "livre" por padrão = nada muda, estudos de referência iguais):
-     modo "livre" | "diretrizes" · padrao (chave de DIR_PADROES) · faixa (MCMV: f12 | f3 | f4 → teto por unidade)
+     modo "livre" | "diretrizes" · padrao (chave de DIR_PADROES)
      tips [nº de dormitórios permitidos: 0 = studio … 4] · areas [[mín, máx] por nº de dormitórios; 0 = do padrão] · minPct [mínimo da
      tipologia nas unidades do andar, 0–1] · subMax / gacMax (−1 = livre, 0 = não pode, N = até N) · garTerreo / vagasFrente / cob / lojas
      ("livre" | "sim" | "nao") · cobQtd · vagasUn (0 = as da lei) · elevCarros (permitido) · torres ("livre" | "fixo" | "max") + torresN ·
      pavMin / pavMax / unMin / unMax (0 = livre) · lazerUn (m² de lazer por unidade, aproximado; 0 = sem meta) · lazerObrig [nomes] ·
-     margemMin (0 = a meta da Viabilidade) · tetoUn (R$ por unidade; 0 = o da faixa no econômico, senão sem teto)
+     margemMin (0 = a meta da Viabilidade) · tetoUn (preço máximo de venda por unidade, R$; 0 = sem teto)
 
    API (todas devolvem o comportamento antigo no modo livre):
      dirEfetivas(st) → D (diretrizes com o padrão resolvido) | null no modo livre
@@ -21426,23 +21427,21 @@ function cubParse(text){
      dirConfere(st, m, D?) → {ok, falhas[{k, msg, grave}], n} · dirSemOpcao(DIR, base, cont, cal, mNow) → {k, diretriz, motivo} | null
      dirFechaAjusta(DIR, fecha, mix, base) (preço acima do teto não é saída) · dirAplicaPadrao(st, k, o) → [o que mudou]
      dirResumo(st) · dirTipsTxt(D) · dirGarTxt(D)
-   Valores de referência (áreas, preços, CUB, lazer, tetos do MCMV): genéricos, "conferir" — ⓘ e glossário dizem isso. */
+   Valores de referência (áreas, preços, CUB, lazer): genéricos, "conferir" — ⓘ e glossário dizem isso. */
 
 const DIR_Q = ["Studio","1 dorm.","2 dorm.","3 dorm.","4 dorm."];
 const DIR_QC = ["studio","1","2","3","4"];
 const DIR_PF = [1.12, 1.06, 1, 0.97, 0.95];          // preço por m² relativo ao de 2 dormitórios (unidade menor vende mais caro por m²)
-/* tetos do Minha Casa, Minha Vida (valor máximo do imóvel; os das faixas 1 e 2 variam com a cidade — conferir) */
-const DIR_FAIXAS = { f12:{nome:"Faixas 1 e 2", teto:264000}, f3:{nome:"Faixa 3", teto:350000}, f4:{nome:"Faixa 4", teto:500000} };
 const DIR_LZ = (l)=>l.map(([nome,area,local,desc])=>({nome, area, local, ...(desc? {desc:true} : {})}));
 const DIR_LZ_ALTO = [["Salão de festas",120,"terreo"],["Espaço gourmet",60,"terreo"],["Academia",80,"terreo"],["Brinquedoteca",40,"terreo"],["Coworking",40,"terreo"],
   ["Piscina",90,"emb",1],["Deck / solário",80,"emb",1],["Playground",50,"emb",1],["Pet place",40,"emb",1]];
-/* padrões: áreas [mín, alvo, máx] por nº de dormitórios, peso de cada tipologia no andar (e mínimo: no econômico, ≥ 50% de 2 dorm.), sacada, vagas por unidade (0 = lei), CUB e fator
-   sobre o CUB, garagem equivalente (fração do CUB por m² de garagem; no econômico, vagas no térreo sem estrutura de garagem), faixa de preço R$/m² [mín, referência, máx], coberturas, elevador de carros, unidades por andar [mín, máx] (0 = livre),
+/* padrões: áreas [mín, alvo, máx] por nº de dormitórios, peso de cada tipologia no andar (e mínimo por tipologia), sacada, vagas por unidade (0 = lei), CUB e fator
+   sobre o CUB, garagem equivalente (fração do CUB por m² de garagem), faixa de preço R$/m² [mín, referência, máx], coberturas, elevador de carros, unidades por andar [mín, máx] (0 = livre),
    unidades por andar de partida (assistente), lazer m²/unidade, programa de lazer e itens obrigatórios */
 const DIR_PADROES = {
-  economico:{ nome:"Econômico (MCMV)", curto:"Econômico", sub:"MCMV", nomes:DIR_Q,
-    areas:[[22,27,32],[30,35,42],[38,43,50],[48,55,62],[60,68,76]], tips:[1,2], w:[0,0.3,0.7,0,0], minPct:[0,0,0.5,0,0], sac:[0,0,0,0,0],
-    vagasUn:0, cub:"R8-B", fator:1.05, eqGar:0.5, preco:[5500,7000,8500], cob:"nao", elevCarros:false, un:[4,0], n0:6, lazerUn:1,
+  economico:{ nome:"Econômico", curto:"Econômico", sub:"1 e 2 dorm.", nomes:DIR_Q,
+    areas:[[24,28,34],[33,40,46],[42,50,58],[55,63,72],[68,78,88]], tips:[1,2], w:[0,0.3,0.7,0,0], sac:[0,3,4,5,6],
+    vagasUn:0, cub:"R8-B", fator:1.1, eqGar:0.8, preco:[6500,8000,9500], cob:"nao", elevCarros:false, un:[4,0], n0:6, lazerUn:1.2,
     lazer:[["Salão de festas",50,"terreo"],["Playground",40,"emb",1],["Bicicletário",20,"terreo"]], obrig:["Salão de festas","Playground"] },
   medio:{ nome:"Médio", curto:"Médio", sub:"2 e 3 dorm.", nomes:["Studio","1 dorm.","2 dorm.","3 dorm. (1 suíte)","4 dorm. (1 suíte)"],
     areas:[[26,32,38],[36,44,52],[52,62,72],[70,82,95],[95,110,125]], tips:[2,3], w:[0,0,0.6,0.4,0], sac:[3,4,6,8,10],
@@ -21464,7 +21463,7 @@ const DIR_PADROES = {
 };
 const DIR_ORDEM = ["economico","medio","medioAlto","alto","luxo"];
 
-extendDEF("diretrizes", { modo:"livre", padrao:"medio", faixa:"f3", tips:[2,3], areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:[0,0,0,0,0],
+extendDEF("diretrizes", { modo:"livre", padrao:"medio", tips:[2,3], areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:[0,0,0,0,0],
   subMax:-1, gacMax:-1, garTerreo:"livre", vagasFrente:"livre", cob:"livre", cobQtd:0, lojas:"livre", vagasUn:1, elevCarros:true,
   torres:"livre", torresN:1, pavMin:0, pavMax:0, unMin:0, unMax:0, lazerUn:2, lazerObrig:["Salão de festas","Playground"], margemMin:0, tetoUn:0 });
 
@@ -21485,7 +21484,7 @@ function dirEfetivas(st){
   const am=+(st.regras && st.regras.aptoMin)||0;   // a menor unidade que a lei aceita vale por cima do padrão
   const area=q=>{ const a=P.areas[q], o=(Array.isArray(d.areas) && d.areas[q]) || [], mn=dirN(o[0])>0? dirN(o[0]) : a[0], mx=dirN(o[1])>0? dirN(o[1]) : a[2];
     const lo=Math.max(am, Math.min(mn,mx)), hi=Math.max(lo, mn, mx); return [lo, Math.min(hi, Math.max(lo, a[1])), hi] };
-  const fx=DIR_FAIXAS[d.faixa]||null, teto = dirN(d.tetoUn)>0? dirN(d.tetoUn) : (k==="economico" && fx? fx.teto : 0);
+  const teto = dirN(d.tetoUn)>0? dirN(d.tetoUn) : 0;
   const un=v=>Math.max(0, Math.floor(dirN(v))), opt=v=>["sim","nao"].includes(v)? v : "livre";
   return { k, P, nome:P.nome, tips, area, minPct:[0,1,2,3,4].map(q=>Math.max(0, Math.min(1, dirN((d.minPct||[])[q])))),
     subMax:dirLim(d.subMax), gacMax:dirLim(d.gacMax), garTerreo:opt(d.garTerreo), vagasFrente:opt(d.vagasFrente), cob:opt(d.cob), lojas:opt(d.lojas),
@@ -21493,7 +21492,7 @@ function dirEfetivas(st){
     torres:["fixo","max"].includes(d.torres)? d.torres : "livre", torresN:Math.max(1, un(d.torresN)||1),
     pavMin:un(d.pavMin), pavMax:un(d.pavMax), unMin:un(d.unMin), unMax:un(d.unMax),
     lazerUn:Math.max(0, dirN(d.lazerUn)), lazerObrig:(Array.isArray(d.lazerObrig)? d.lazerObrig : []).filter(Boolean).map(String),
-    margemMin:Math.max(0, dirN(d.margemMin)), teto, faixa: k==="economico" && fx && !(dirN(d.tetoUn)>0)? fx.nome : "" };
+    margemMin:Math.max(0, dirN(d.margemMin)), teto, faixa:"" };
 }
 
 /* nº de dormitórios de uma tipologia do mix */
@@ -21528,7 +21527,7 @@ function presetNome(pk, st){
 /* preço de uma tipologia: o da mesma tipologia no mix; senão o preço médio × fator da tipologia */
 function dirPrecoDe(st, q){ const mx=(st.produto&&st.produto.mix)||[], u=mx.find(x=>dirTipDe(x)===q && +x.preco>0);
   return u? +u.preco : Math.round(basePrice(st)*DIR_PF[q]/50)*50 }
-/* área que a tipologia pode ter: o alvo do padrão, limitado pelo teto por unidade (MCMV); null se nem a área mínima cabe no teto */
+/* área que a tipologia pode ter: o alvo do padrão, limitado pelo teto por unidade; null se nem a área mínima cabe no teto */
 function dirAreaViavel(st, D, q){ const a=D.area(q); let x=a[1]; if(D.teto>0){ const p=dirPrecoDe(st,q); if(p>0) x=Math.min(x, Math.floor(D.teto/p)) } return x>=a[0]-1e-9? x : null }
 
 /* mix das diretrizes: "dir" = todas as tipologias permitidas (pesos do padrão e mínimos), "dir:<q>" = só uma */
@@ -21615,7 +21614,7 @@ function dirPre(st, D){
   if(D.unMin && D.unMax && D.unMin>D.unMax) return r("unidades", `o mínimo de ${D.unMin} unidades por andar passa do máximo de ${D.unMax}`);
   if(!D.tips.some(q=>dirAreaViavel(st, D, q)!=null)){
     const q=D.tips.reduce((b,x)=>D.area(x)[0]*dirPrecoDe(st,x)<D.area(b)[0]*dirPrecoDe(st,b)? x : b, D.tips[0]), a=D.area(q)[0], p=dirPrecoDe(st,q);
-    return r("teto", `o teto de ${mi(D.teto)} por unidade${D.faixa? ` (${D.faixa} do MCMV)` : ""} não comporta ${D.P.nomes[q]} de ${nf(a,0)} m² a ${brl(p)}/m² (${mi(a*p)}) — reduza o preço para até ${brl(Math.floor(D.teto/a/50)*50)}/m² ou a área mínima para ${nf(Math.floor(D.teto/p),0)} m²`) }
+    return r("teto", `o teto de ${mi(D.teto)} por unidade não comporta ${D.P.nomes[q]} de ${nf(a,0)} m² a ${brl(p)}/m² (${mi(a*p)}) — reduza o preço para até ${brl(Math.floor(D.teto/a/50)*50)}/m² ou a área mínima para ${nf(Math.floor(D.teto/p),0)} m²`) }
   return null;
 }
 function dirPrepara(st){
@@ -21715,7 +21714,6 @@ function dirAplicaPadrao(st, k, o={}){
   const d=st.diretrizes || (st.diretrizes=clone(DEF.diretrizes)), out=[];
   Object.assign(d, { padrao:k, tips:P.tips.slice(), areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:(P.minPct||[0,0,0,0,0]).slice(), vagasUn:P.vagasUn, elevCarros:P.elevCarros,
     cob:P.cob, lazerObrig:P.obrig.slice(), lazerUn:P.lazerUn, unMin:P.un[0], unMax:P.un[1], tetoUn:0 });
-  if(k==="economico" && !DIR_FAIXAS[d.faixa]) d.faixa="f3";
   const Pr=st.produto, cur=(Pr.mix||[]).reduce((s,u)=>s+(+u.qtd||0),0);
   let N=Math.round(+o.N||0) || cur || P.n0; if(P.un[0]) N=Math.max(N, P.un[0]); if(P.un[1]) N=Math.min(N, P.un[1]);
   const pm=+o.preco>0? +o.preco : P.preco[1], D=dirEfetivas({...st, diretrizes:{...d, modo:"diretrizes"}});
@@ -21724,7 +21722,7 @@ function dirAplicaPadrao(st, k, o={}){
   Pr.mix=distrib(P.tips.map(q=>({q, w:(P.w[q]||0)/sw})), N, t=>({nome:P.nomes[t.q], area:area(t.q), preco:Math.round(pm*DIR_PF[t.q]/50)*50, sac:P.sac[t.q], tip:t.q}));
   out.push(`Unidades: ${Pr.mix.map(u=>`${u.qtd} × ${u.nome} de ${nf(u.area,0)} m²`).join(" e ")} por andar`);
   out.push(`Preço médio ${brl(Math.round(basePrice(st)/50)*50)}/m² (referência ${dirFaixaPreco(P)} · conferir)`);
-  if(D.teto>0) out.push(`Teto de ${mi(D.teto)} por unidade${D.faixa? ` (${D.faixa})` : ""}`);
+  if(D.teto>0) out.push(`Teto de ${mi(D.teto)} por unidade`);
   Pr.lazer=Pr.lazer||{hall:0, itens:[]}; Pr.lazer.itens=DIR_LZ(P.lazer);
   out.push(`Lazer: ${dirPl(Pr.lazer.itens.length,"ambiente")} · ${m2(Pr.lazer.itens.reduce((s,x)=>s+x.area,0))}`);
   if(P.cob==="sim"){ const big=Math.max(...Pr.mix.map(u=>u.area)); Pr.cob={...Pr.cob, on:true, qtd:Math.max(1, +(Pr.cob&&Pr.cob.qtd)||2), area:Math.round(big*1.8/5)*5, preco:Math.round(pm*1.12/50)*50}; out.push(`Coberturas duplex de ${m2(Pr.cob.area)}`) }
@@ -29680,7 +29678,7 @@ function plaSelect(id, dataAttr, chave, rot, cab, atual, obrig){
 /* ================= assistente "Novo estudo", faixa do exemplo e entrada da 1ª visita (UX v3 §3.1 e §3.2) =================
    Parte pura em src/calc/assistente.js (assEstado, assEhExemplo, assPrecoSugerido…). Aqui só a tela:
    - assAbrir(opts?)  → tela cheia por cima do app (criada aqui, listener próprio). opts = {onDone(estudoId), onCancel(), primeira}.
-     Estado local ASS (nada vai para S antes de "Gerar"). 5 passos: Terreno · Regras · Produto (padrão: Econômico/MCMV, Médio, Médio-alto,
+     Estado local ASS (nada vai para S antes de "Gerar"). 5 passos: Terreno · Regras · Produto (padrão: Econômico, Médio, Médio-alto,
      Alto, Luxo — DIR_PADROES de src/calc/diretrizes.js) · Restrições (Livre | Com diretrizes: subsolo, garagem elevada, tipologias) ·
      Gerando (barra, Voltar, Pular).
      Gerar: assEstado → otimizador (otimRodar(opts, onProg, {st, m}) do P3 quando aceitar o 3º argumento; senão o Worker "job" do
@@ -29920,11 +29918,11 @@ const assNomePadrao = k => ASS_DIR() && DIR_PADROES[k]? DIR_PADROES[k].nome : (M
 function assPadraoDesc(k){
   if(!(ASS_DIR() && DIR_PADROES[k])) return assPresetDesc(k).split(" · ").map(x=>x.replace("–"," a "));
   const P=DIR_PADROES[k], a=P.tips.map(q=>P.areas[q][1]);
-  return [k==="economico"? "MCMV" : P.sub, `${Math.min(...a)} a ${Math.max(...a)} m²`, dirFaixaPreco(P)];
+  return [P.sub, `${Math.min(...a)} a ${Math.max(...a)} m²`, dirFaixaPreco(P)];
 }
 function assP3(){
   const P=ASS.r.produto, sug=assSugPreco(P.padrao), nomeP=assNomePadrao(P.padrao), ks=ASS_DIR()? DIR_ORDEM : ["compacto","familia","alto"];
-  const tile=k=>`<button type="button" class="ass-tile" data-padrao="${k}" aria-pressed="${P.padrao===k}" title="${esc(assNomePadrao(k))}">${assIc(k)}<b>${esc(ASS_DIR()? (DIR_PADROES[k].curto||DIR_PADROES[k].nome) : MIX_PRESETS[k].nome)}</b>${(ASS_DIR()? [k==="economico"? "MCMV" : DIR_PADROES[k].sub, assPadraoDesc(k)[1]] : assPadraoDesc(k)).map(x=>`<span>${esc(x)}</span>`).join("")}</button>`;
+  const tile=k=>`<button type="button" class="ass-tile" data-padrao="${k}" aria-pressed="${P.padrao===k}" title="${esc(assNomePadrao(k))}">${assIc(k)}<b>${esc(ASS_DIR()? (DIR_PADROES[k].curto||DIR_PADROES[k].nome) : MIX_PRESETS[k].nome)}</b>${(ASS_DIR()? [DIR_PADROES[k].sub, assPadraoDesc(k)[1]] : assPadraoDesc(k)).map(x=>`<span>${esc(x)}</span>`).join("")}</button>`;
   return { t:"Que produto e por quanto?", d:"Escolha o padrão e o preço de venda. Ele traz unidades, lazer, custo e vagas típicos — tudo editável depois.",
     body:`<div><span class="ass-l" id="assPL">Padrão do empreendimento</span><div class="ass-tiles ${ks.length>3? "t5" : "t3"}" role="group" aria-labelledby="assPL">${ks.map(tile).join("")}</div></div>
       <div class="ass-g2"><div class="fld"><label class="fl" for="assPr">Preço médio de venda</label><div class="inp"><input id="assPr" data-r="produto.preco" inputmode="decimal" value="${esc(P.preco)}" placeholder="${nf(sug,0)}" autocomplete="off"><em>R$/m²</em></div>
@@ -31732,7 +31730,7 @@ function cxSecHTML(){
 function cxLinhasViab(m, f){
   const meta=S.fin.margemAlvo, L=[], sig=JSON.stringify(S);
   if(CX.prSig!==sig){ CX.prSig=sig; try{ CX.pr=otimPrecoPara(S, m, meta) }catch(e){ CX.pr=null; console.error("[cx] preço", e) }
-    const pt=typeof dirPrecoTetoEstudo==="function"? dirPrecoTetoEstudo(S) : null; if(CX.pr && pt!=null && CX.pr>pt+1) CX.pr=null }   // diretrizes: acima do teto por unidade (MCMV) não é saída
+    const pt=typeof dirPrecoTetoEstudo==="function"? dirPrecoTetoEstudo(S) : null; if(CX.pr && pt!=null && CX.pr>pt+1) CX.pr=null }   // diretrizes: acima do teto por unidade não é saída
   const pm=basePrice(S);
   if(CX.pr && CX.pr>pm) L.push({src:"viab", k:"preco", rot:`Preço médio de ${cxR(CX.pr)}`, desc:`hoje ${cxR(pm)} · leva à meta`, v:`+${pct(CX.pr/pm-1,0)}`});
   if(cxTerrenoOk() && f.maxTerreno>0 && f.maxTerreno<S.fin.terreno) L.push({src:"viab", k:"terreno", rot:`Terreno até ${mi(f.maxTerreno)}`, desc:`hoje ${mi(S.fin.terreno)} · leva à meta`, v:`−${pct(1-f.maxTerreno/S.fin.terreno,0)}`});
@@ -32574,7 +32572,7 @@ Object.assign(ACT,{
    Seção fechada logo abaixo do RES "Uso do potencial", antes de "Sugerir a melhor combinação":
    - Livre | Com diretrizes (S.diretrizes.modo). Livre = o otimizador só olha resultado e aproveitamento, como sempre.
    - Com diretrizes: Padrão (5 botões; escolher APLICA as predefinições — mix, preços, lazer, CUB, vagas, coberturas — num passo de
-     desfazer e mostra o que mudou), faixa do MCMV (no econômico), tipologias permitidas (chips), subsolos e garagem elevada; a linha
+     desfazer e mostra o que mudou), tipologias permitidas (chips), subsolos e garagem elevada; a linha
      de situação diz se o estudo atual atende e oferece "Ajustar o estudo". O resto (térreo, vagas por unidade, elevador de carros,
      torres, pavimentos, unidades por andar, coberturas, lojas, áreas por tipologia, lazer obrigatório e por unidade, margem mínima,
      teto por unidade) fica em "Mais opções".
@@ -32622,7 +32620,6 @@ function dirSecHTML(){
     const chips = [0,1,2,3,4].map(q=>`<button type="button" class="chip" data-act="dirTip" data-q="${q}" aria-pressed="${D.tips.includes(q)}">${DIR_Q[q]}</button>`).join("");
     body += `<div class="dir-l">Padrão${INFO("Padrão do empreendimento")}</div><div class="seg full dir-pads" role="group" aria-label="Padrão do empreendimento">${pads}</div>
       <div class="dir-pd">${esc(PD.nome)}${INFO(PD.nome)} · ${esc(dirTipsTxt({tips:PD.tips}))} de ${nf(Math.min(...aa),0)} a ${nf(Math.max(...aa),0)} m² · ${dirFaixaPreco(PD)} · ${PD.vagasUn? `${nf(PD.vagasUn, PD.vagasUn%1? 1 : 0)} vaga${PD.vagasUn>1? "s" : ""}/un` : "vagas da lei"}</div>${mud}
-      ${D.k==="economico"? dirSegLinha("Faixa do MCMV", "diretrizes.faixa", Object.entries(DIR_FAIXAS).map(([k,f])=>[k, f.nome]), "MCMV") : ""}
       <div class="dir-l">Tipologias permitidas</div><div class="chips" role="group" aria-label="Tipologias permitidas">${chips}</div>
       <div class="fsub" id="dirAreas">${esc(D.tips.map(q=>{ const a=D.area(q); return `${D.P.nomes[q]} ${nf(a[0],0)}–${nf(a[2],0)} m²` }).join(" · "))}${D.teto>0? ` · teto ${esc(mi(D.teto))}/unidade` : ""}</div>
       ${dirSegLinha("Subsolos", "diretrizes.subMax", DIR_GAR_OPC)}
@@ -32650,7 +32647,7 @@ function dirMaisHTML(D){
     GRP("Áreas comuns") + KV(n("diretrizes.lazerUn","Lazer por unidade","m²",{step:0.5,ph:"—",help:"Área de lazer aproximada por unidade (salão, academia, piscina…). Abaixo de 70% dela, a sugestão avisa."})) +
     `<div class="dir-l">Obrigatórios no lazer</div><div class="chips" role="group" aria-label="Lazer obrigatório">${lzNomes.map(nm=>`<button type="button" class="chip" data-act="dirLz" data-n="${esc(nm)}" aria-pressed="${D.lazerObrig.includes(nm)}">${esc(nm)}</button>`).join("")}</div>` +
     GRP("Metas") + KV(n("diretrizes.margemMin","Margem mínima","%",{pct:true,step:1,ph:pct(S.fin.margemAlvo,0).replace("%",""),help:"Margem sobre o VGV que a sugestão precisa atingir. Vazio: a meta da Viabilidade."}) +
-      n("diretrizes.tetoUn","Teto por unidade","R$",{step:5000,ph:D.teto>0? nf(D.teto,0) : "—",help:"Preço máximo de venda de cada unidade (no MCMV, o teto da faixa). As tipologias encolhem até caber; se nem a área mínima cabe, a sugestão diz o preço que cabe."}));
+      n("diretrizes.tetoUn","Teto por unidade","R$",{step:5000,ph:D.teto>0? nf(D.teto,0) : "—",help:"Preço máximo de venda de cada unidade. As tipologias encolhem até caber; se nem a área mínima cabe, a sugestão diz o preço que cabe."}));
 }
 /* situação do estudo atual frente às diretrizes (linha viva) */
 function dirLive(m){
@@ -34968,13 +34965,12 @@ const GLOSS_DATA = {
   "Lazer enxuto": { t:"Lazer enxuto", d:"Variante do programa de lazer sem o que não coube no térreo ou na laje (é pago e não é construído) e sem os complementos (cinema, sauna, jogos, brinquedoteca, coworking, quadra, pet, rooftop). Fica salão de festas, gourmet, academia, piscina, deck, playground e bicicletário. É sempre uma alternativa explícita: nunca é aplicada sem você escolher." },
   /* --- diretrizes do produto (src/calc/diretrizes.js) --- */
   "Diretrizes do produto": { t:"Diretrizes do produto", d:"O que o produto precisa ter, além das regras da prefeitura: padrão, tipologias e áreas, garagem (pode ter subsolo? garagem elevada?), torres, andares, unidades por andar, coberturas, lojas, lazer obrigatório e metas. <b>Livre</b>: a sugestão só olha resultado e aproveitamento. <b>Com diretrizes</b>: ela só propõe combinações que as respeitam, mostra em cada opção se respeita e, quando nada fecha, diz qual diretriz impede e quanto falta.", ex:"Sem subsolo, a garagem comporta 22 das 49 vagas exigidas — permitir 1 subsolo ou reduzir para 30 unidades." },
-  "Padrão do empreendimento": { t:"Padrão do empreendimento", d:"Escolher um padrão aplica valores de referência ao estudo — unidades e áreas, preço de venda, lazer, custo (CUB e fator) e vagas por unidade — num passo só (Ctrl+Z desfaz). Subsolo e garagem elevada não mudam: dependem do lugar. Os valores são genéricos: <b>confira com o seu mercado</b>.", f:"Econômico (MCMV) · Médio · Médio-alto · Alto padrão · Luxo" },
-  "Econômico (MCMV)": { t:"Padrão econômico (MCMV)", d:"1 e 2 dormitórios de 35 a 43 m², vagas da lei, salão de festas e playground, sem coberturas nem elevador de carros. Custo CUB R8-B × 1,05 e garagem a 50% do CUB (vagas no térreo, sem estrutura de garagem); venda de R$ 5,5 a 8,5 mil/m², com o teto por unidade da faixa do MCMV." },
+  "Padrão do empreendimento": { t:"Padrão do empreendimento", d:"Escolher um padrão aplica valores de referência ao estudo — unidades e áreas, preço de venda, lazer, custo (CUB e fator) e vagas por unidade — num passo só (Ctrl+Z desfaz). Subsolo e garagem elevada não mudam: dependem do lugar. Os valores são genéricos: <b>confira com o seu mercado</b>.", f:"Econômico · Médio · Médio-alto · Alto padrão · Luxo" },
+  "Econômico": { t:"Padrão econômico", d:"Vertical econômico de mercado: 1 e 2 dormitórios de 40 a 50 m², vagas da lei, salão de festas e playground, sem coberturas nem elevador de carros. Custo CUB R8-B × 1,1; venda de R$ 6,5 a 9,5 mil/m² (referência — conferir). Habitação de interesse social (Minha Casa, Minha Vida) terá um módulo próprio." },
   "Médio": { t:"Padrão médio", d:"2 e 3 dormitórios (o de 3 com suíte) de 62 a 82 m², 1 vaga por unidade, salão, gourmet, academia e playground. Custo CUB R8-N × 1,25; venda de R$ 8 a 13 mil/m²." },
   "Médio-alto": { t:"Padrão médio-alto", d:"2 suítes e 3 dormitórios (1 suíte) de 76 a 105 m², varanda maior, 1,5 vaga por unidade, até 4 unidades por andar, coberturas duplex e lazer com piscina e brinquedoteca. Custo CUB R8-A × 1,3; venda de R$ 11 a 16 mil/m²." },
   "Alto padrão": { t:"Alto padrão", d:"3 e 4 suítes de 135 a 175 m², 2 vagas por unidade, até 4 unidades por andar, coberturas duplex e lazer completo (piscina, deck, academia, gourmet, brinquedoteca, coworking, pet). Custo CUB R16-A × 1,45; venda de R$ 15 a 22 mil/m²." },
   "Luxo": { t:"Padrão luxo", d:"3 e 4 suítes de 200 a 280 m², 1 a 2 unidades por andar, 3 vagas por unidade, coberturas duplex e o lazer do alto padrão mais sauna, cinema e rooftop. Custo CUB R16-A × 1,8; venda de R$ 22 a 35 mil/m²." },
-  "MCMV": { t:"Minha Casa, Minha Vida", d:"Programa federal de habitação. O valor do imóvel tem teto por faixa de renda: faixas 1 e 2 até R$ 264 mil (varia com a cidade), faixa 3 até R$ 350 mil, faixa 4 até R$ 500 mil. Com o teto, as tipologias encolhem até caber; se nem a área mínima cabe, a sugestão diz o preço que cabe. Valores de referência — confira as regras vigentes e o teto da sua cidade." },
   "Alavancas": { t:"Alavancas do negócio", d:"Quanto o resultado muda se uma só coisa melhorar um pouco: mais eficiência, preço maior, terreno mais barato, obra mais barata ou um andar a mais. Mostra onde vale a pena concentrar o esforço. Cada linha muda apenas aquilo e recalcula o fluxo de caixa; as outras premissas ficam como estão.", ex:"No estudo exemplo, +5% no preço de venda rende cerca de +R$ 4,5 mi de lucro e +3,7 p.p. de margem. Os passos (5%, 10%…) ficam em Mais opções." },
   "Potencial do terreno": { t:"Potencial do terreno", d:"O quanto o lote comporta dentro do CA e do gabarito. O privativo possível usa a eficiência global do estudo (privativa ÷ área total construída), que já carrega garagem, térreo e lazer. A conta só pela eficiência do andar (privativa ÷ pavimento tipo) ignora tudo isso e superestima.", f:"área construída possível × eficiência global" },
   "Plano ajustado": { t:"Plano ajustado", d:"Superfície reta que melhor representa o terreno em volta do lote. É calculada por mínimos quadrados, descartando pontos muito fora (prédios, árvores). Dá a inclinação e a direção da descida." },

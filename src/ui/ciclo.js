@@ -65,7 +65,7 @@ function cxSecHTML(){
 function cxLinhasViab(m, f){
   const meta=S.fin.margemAlvo, L=[], sig=JSON.stringify(S);
   if(CX.prSig!==sig){ CX.prSig=sig; try{ CX.pr=otimPrecoPara(S, m, meta) }catch(e){ CX.pr=null; console.error("[cx] preço", e) }
-    const pt=typeof dirPrecoTetoEstudo==="function"? dirPrecoTetoEstudo(S) : null; if(CX.pr && pt!=null && CX.pr>pt+1) CX.pr=null }   // diretrizes: acima do teto por unidade (MCMV) não é saída
+    const pt=typeof dirPrecoTetoEstudo==="function"? dirPrecoTetoEstudo(S) : null; if(CX.pr && pt!=null && CX.pr>pt+1) CX.pr=null }   // diretrizes: acima do teto por unidade não é saída
   const pm=basePrice(S);
   if(CX.pr && CX.pr>pm) L.push({src:"viab", k:"preco", rot:`Preço médio de ${cxR(CX.pr)}`, desc:`hoje ${cxR(pm)} · leva à meta`, v:`+${pct(CX.pr/pm-1,0)}`});
   if(cxTerrenoOk() && f.maxTerreno>0 && f.maxTerreno<S.fin.terreno) L.push({src:"viab", k:"terreno", rot:`Terreno até ${mi(f.maxTerreno)}`, desc:`hoje ${mi(S.fin.terreno)} · leva à meta`, v:`−${pct(1-f.maxTerreno/S.fin.terreno,0)}`});
