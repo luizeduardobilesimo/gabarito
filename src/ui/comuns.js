@@ -90,14 +90,14 @@ function cmnDraw(g, m, local, K){
     gourmet:"Gourmet",salao:"Salão",academia:"Academia",brinq:"Brinq.",cowork:"Cowork",lavand:"Lavand.",jogos:"Jogos",cinema:"Cinema",sauna:"Sauna",copa:"Copa",playground:"Play",pet:"Pet",quadra:"Quadra",deck:"Solário",hall:"Hall"};
   if(s>3) lst.forEach(a=>{ const p=a.lamina||a.poly, xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]), bw=Math.max(...xs)-Math.min(...xs), bh=Math.max(...ys)-Math.min(...ys), c=w2s(G.centroid(p));
     const MINI={wc:"WC",apoioPisc:"WC",vest:"Vest",copaf:"Copa",copa:"Copa",bici:"Bici",lavand:"Lav.",clausura:"Cl.",portaria:"Port",lixo:"Lixo",gas:"Gás",medidores:"Med"};
-    const nomes=[a.nome, CURTO[a.k]||a.nome, MINI[a.k]||CURTO[a.k]||a.nome].filter((x,i,v)=>v.indexOf(x)===i), tam=s>14? [10.5,9.5,8.5] : [9.5,8.5,7.5];
+    const nomes=[a.nome, CURTO[a.k]||a.nome, MINI[a.k]||CURTO[a.k]||a.nome].filter((x,i,v)=>v.indexOf(x)===i), tam=s>14? [10.5,9.5,8.5,7.5] : [9.5,8.5,7.5,6.5];
     const area=`${nf(a.area,0)} m²${a.k==="piscina"&&a.deckA? ` · deck ${nf(a.deckA,0)} m²` : ""}`;
     let esc0=null;
-    for(const vert of [false,true]){ const W_=vert? bh : bw, H_=vert? bw : bh;
+    for(const vert of [false]){ const W_=bw, H_=bh;   // texto sempre na horizontal (nunca girado): reduz o tamanho ou usa o nome curto
       for(const nm of nomes){ for(const sz of tam){ g.font=`600 ${sz}px ${css("--f-sans")}`; if(g.measureText(nm).width<=W_-4 && H_>=sz+3){ esc0={nm,sz,vert,W_,H_}; break } } if(esc0) break }
       if(esc0) break }
     if(!esc0) return;
-    g.save(); g.translate(c[0], c[1]); if(esc0.vert) g.rotate(-Math.PI/2);
+    g.save(); g.translate(c[0], c[1]);
     const two=esc0.H_>esc0.sz*2+10 && s>6; lbl(esc0.nm, [0, two? -6 : 0], esc0.sz, 600);
     if(two){ g.font=`500 ${Math.min(9,esc0.sz)}px ${css("--f-sans")}`; let t=area; if(g.measureText(t).width>esc0.W_-4) t=`${nf(a.area,0)} m²`; if(g.measureText(t).width<=esc0.W_-4) lbl(t, [0, 6], Math.min(9,esc0.sz), 500, ink2) }
     g.restore() });

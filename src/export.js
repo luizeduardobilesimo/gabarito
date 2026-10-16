@@ -128,7 +128,7 @@ function DXF(){
   const fx=v=>(+v).toFixed(4);
   return {
     poly(layer, pts, color=7, aberta=false){ if(!pts||pts.length<2) return; layers[layer]=color; ents.push(`0\nPOLYLINE\n8\n${layer}\n66\n1\n70\n${pts.length>2&&!aberta?1:0}\n10\n0\n20\n0\n30\n0\n`+pts.map(q=>`0\nVERTEX\n8\n${layer}\n10\n${fx(q[0])}\n20\n${fx(q[1])}\n30\n0\n`).join("")+`0\nSEQEND\n8\n${layer}\n`) },
-    text(layer, [x,y], h, s, color=7){ layers[layer]=color; ents.push(`0\nTEXT\n8\n${layer}\n10\n${fx(x)}\n20\n${fx(y)}\n30\n0\n40\n${h}\n1\n${ascii(s)}\n72\n1\n11\n${fx(x)}\n21\n${fx(y)}\n31\n0\n`) },
+    text(layer, [x,y], h, s, color=7){ layers[layer]=color; ents.push(`0\nTEXT\n8\n${layer}\n10\n${fx(x)}\n20\n${fx(y)}\n30\n0\n40\n${h}\n1\n${ascii(s)}\n50\n0\n72\n1\n11\n${fx(x)}\n21\n${fx(y)}\n31\n0\n`) },
     out(){ const lt=Object.entries(layers); return `0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n${lt.length}\n`+lt.map(([n,c])=>`0\nLAYER\n2\n${n}\n70\n0\n62\n${c}\n6\nCONTINUOUS\n`).join("")+`0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n`+ents.join("")+`0\nENDSEC\n0\nEOF\n` }
   };
 }
