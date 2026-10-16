@@ -123,11 +123,24 @@ function cmnLive(m){
   const C=m&&m.comuns, res=document.getElementById("cmnRes"); if(!res) return;
   if(!C){ res.innerHTML=`<p class="note">${S.comuns&&S.comuns.on===false? "Planta simplificada: o lazer entra como blocos no térreo." : "Sem embasamento para planejar."}</p>`; setHTML("cmnPb",""); setHTML("cmnProg",""); return }
   const nv=cmnNivel(C.nota), nb=C.problemas.filter(p=>p.nivel==="bad").length, nw=C.problemas.length-nb;
-  res.innerHTML=`<div class="row sb"><span><b>Nota ${C.nota}</b> · ${C.amb.length} ambientes${C.falta.length? ` · <span style="color:var(--bad)">${C.falta.length} não coube${C.falta.length>1?"ram":""}</span>` : ""}</span><span class="pill ${nv}">${nb? `${nb} grave${nb>1?"s":""}` : nw? `${nw} atenção` : "sem problemas"}</span></div>`;
-  setHTML("cmnPb", C.problemas.slice(0,6).map(p=>`<div class="note" style="display:flex;gap:8px;align-items:flex-start;margin:4px 0"><span class="dot ${p.nivel==="bad"?"bad":"warn"}" style="margin-top:6px"></span><span>${esc(p.msg)}</span></div>`).join("") + (C.problemas.length>6? `<p class="note">e mais ${C.problemas.length-6}…</p>` : ""));
+  const PART={perimetro:"ambientes nas paredes", galeria:"galeria central", neutro:"galerias", centro:"galerias", fachada:"galeria junto à fachada"};
+  res.innerHTML=`<div class="row sb" style="flex-wrap:nowrap"><b>Nota ${C.nota}</b><span class="pill ${nv}">${nb? `${nb} grave${nb>1?"s":""}` : nw? `${nw} atenção` : "sem problemas"}</span></div>
+    <div class="cmn-sub">${C.amb.length} ambientes${C.partido&&PART[C.partido]? ` · ${PART[C.partido]}` : ""}${C.falta.length? ` · <span style="color:var(--bad)">${C.falta.length} não coube${C.falta.length>1?"ram":""}</span>` : ""}</div>`;
+  const MX=4;
+  setHTML("cmnPb", C.problemas.slice(0,MX).map(p=>`<div class="cmn-pb"><span class="dot ${p.nivel==="bad"?"bad":"warn"}"></span><span>${esc(p.msg)}</span></div>`).join("") + (C.problemas.length>MX? `<div class="cmn-pb mais">e mais ${C.problemas.length-MX}</div>` : ""));
   const por={}; C.amb.forEach(a=>{ const c=CMN_CAT[a.k]||{}, gr= a.recuo&&c.onde==="recuo"? "tecnico" : c.grupo==="molhado"? "apoio" : (c.grupo||"lazer"); (por[gr]=por[gr]||[]).push(a) });
-  setHTML("cmnProg", `<table class="tbl">${CMN_GRUPOS.filter(([k])=>por[k]).map(([k,l])=>`<tr><td><b>${l}</b><br><span class="note">${por[k].map(a=>esc(a.nome)+(a.local!=="terreo"? ` (${a.local==="emb"?"laje":a.local==="pav"?"pav. lazer":"rooftop"})` : "")).join(", ")}</span></td><td>${nf(por[k].reduce((s,a)=>s+(a.k==="piscina"? a.area+(a.deckA||0) : a.area),0),0)} m²</td></tr>`).join("")}</table>`);
+  setHTML("cmnProg", `<div class="cmn-prog">${CMN_GRUPOS.filter(([k])=>por[k]).map(([k,l])=>`<div class="cmn-pr"><span><b>${l}</b><i>${por[k].map(a=>esc(a.nome)+(a.local!=="terreo"? ` (${a.local==="emb"?"laje":a.local==="pav"?"pav. lazer":"rooftop"})` : "")).join(" · ")}</i></span><span class="num">${nf(por[k].reduce((s,a)=>s+(a.k==="piscina"? a.area+(a.deckA||0) : a.area),0),0)} m²</span></div>`).join("")}</div>`);
 }
+(function(){ const st=document.createElement("style"); st.textContent=`
+.cmn-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.cmn-pb{display:flex;gap:8px;align-items:flex-start;margin:6px 0 0;font-size:12px;line-height:1.4;color:var(--ink-2)}
+.cmn-pb .dot{flex:none;margin-top:5px}
+.cmn-pb.mais{color:var(--muted);padding-left:16px}
+.cmn-prog{margin-top:10px;border-top:1px solid var(--line)}
+.cmn-pr{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px}
+.cmn-pr>span:first-child{display:flex;flex-direction:column;gap:1px;min-width:0}
+.cmn-pr i{font-style:normal;color:var(--muted);font-size:11px;line-height:1.35}
+.cmn-pr .num{flex:none;font-variant-numeric:tabular-nums;color:var(--ink-2)}`; document.head.appendChild(st) })();
 addCard("projeto", { key:"comuns", order:58, sub:"tipo", html:()=>cmnSecHTML(), live:(m)=>cmnLive(m) });
 
 /* ---------- Produto › Áreas comuns e lazer: apoio do condomínio (automático) ---------- */
@@ -135,8 +148,9 @@ function cmnApoioRow(m, aberta){
   const prog= m && m.comuns? m.comuns.prog : (typeof comunsPrograma==="function"? comunsPrograma(S, m||{}) : []);
   const apoio=prog.filter(a=>a.ix==null && a.k!=="hall"), A=apoio.reduce((s,a)=>s+a.A,0);
   return `<div class="pr-row${aberta?" on":""}" data-row="apoio:0"><div class="pr-rh"><button type="button" class="pr-tx" data-act="prTog" data-k="apoio" data-i="0" aria-expanded="${!!aberta}"><b>Apoio do condomínio</b><span>${m2(A)} · automático · ${apoio.length} ambientes</span></button>${typeof prChev==="function"? prChev("apoio",0,!!aberta,"Apoio do condomínio") : ""}</div>
-    ${aberta? `<div class="pr-rb"><p class="note">${apoio.map(a=>`${esc(a.nome)} ${nf(a.A,0)} m²`).join(" · ")}</p>${SW("comuns.funcionarios","Vestiário e copa de funcionários")}${SW("comuns.bici","Bicicletário no térreo")}</div>` : ""}</div>`;
+    ${aberta? `<div class="pr-rb"><p class="note">${apoio.map(a=>`${esc(a.nome)} ${nf(a.A,0)} m²`).join(" · ")}</p><button type="button" class="btn ghost sm" data-act="cmnVer">Ver no térreo →</button></div>` : ""}</div>`;
 }
+ACT.cmnVer=()=>{ if(typeof irPara==="function") irPara("projeto","tipo","comuns"); else { goStep("projeto","tipo") } if(typeof ANDAR!=="undefined"){ ANDAR="ter"; if(typeof setView==="function") setView("andar") } };
 
 /* ---------- 3D: apoio da piscina e árvores (laje e jardins do térreo); o resto vem de m.lzLay em view3d.js ---------- */
 function cmn3d(m, yLaje){
