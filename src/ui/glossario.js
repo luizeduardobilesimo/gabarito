@@ -39,6 +39,11 @@ const GLOSS_DATA = {
   "Pé-direito": { t:"Pé-direito", d:"Altura de piso a piso de um andar. Define a altura total do prédio." },
   "Lazer": { t:"Áreas comuns e lazer", d:"Salão, academia, piscina etc. Podem ficar no térreo, na laje do embasamento, num andar de lazer ou no rooftop." },
 
+  /* --- térreo e áreas comuns --- */
+  "Térreo e áreas comuns": { t:"Térreo e áreas comuns", d:"O Gabarito monta o térreo como um projetista: clausura e portaria na fachada do acesso de pedestres, hall social atrás delas, galerias até o hall dos elevadores de cada torre e os ambientes encostados nas paredes e nas fachadas, abertos para a circulação. Lixo, gás e medidores ficam no recuo, junto ao alinhamento; o resto do recuo vira jardim. A nota começa em 100 e perde 25 por problema grave e 6 por atenção.", f:"Referência genérica (NBR 9050, NBR 13523, códigos de obras usuais) — conferir na lei." },
+  "Clausura": { t:"Clausura (eclusa de pedestres)", d:"Espaço entre dois portões na entrada de pedestres: o segundo só abre com o primeiro fechado. A portaria fica ao lado, vendo a rua e o portão de veículos." },
+  "Rota acessível": { t:"Rota acessível", d:"Caminho contínuo de pelo menos 1,20 m, sem degraus e sem atravessar outro ambiente, do portão até os elevadores e até cada área comum (NBR 9050). No desenho, a linha azul tracejada; as portas que estão nela ganham um ponto azul." },
+  "Apoio do condomínio": { t:"Apoio do condomínio", d:"Ambientes que todo prédio residencial tem além do lazer: clausura, portaria, sanitários acessíveis, vestiário e copa de funcionários, DML (depósito de material de limpeza), bicicletário, abrigo de resíduos, central de gás e medidores. O tamanho cresce com o número de unidades." },
   /* --- garagem --- */
   "Vaga PCD": { t:"Vaga para pessoa com deficiência", d:"Vaga mais larga, com faixa de circulação, próxima dos acessos (NBR 9050). Percentual mínimo por lei." },
   "Vaga idoso": { t:"Vaga para idoso", d:"Vaga reservada para pessoas idosas, próxima dos acessos. Percentual mínimo por lei." },

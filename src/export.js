@@ -142,6 +142,12 @@ function dxfImpl(m){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("SUBSOLO
 function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (cs.lay.coreParts||[]).forEach(cp=>d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1)) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
   lay.vagas.forEach((v,i)=>{ if(v.tipo==="off") return; const L= v.tipo==="pcd"?"VAGAS-PCD": v.tipo==="idoso"?"VAGAS-IDOSO": v.tipo==="faixa"?"FAIXA-PCD":"VAGAS"; d.poly(L,v.poly, v.tipo==="pcd"?5:v.tipo==="idoso"?3:v.tipo==="faixa"?8:4); if(v.tipo!=="faixa") d.text("NUMERACAO",v.c,0.6,String(i+1)) });
   return d.out() }
+/* térreo e laje do embasamento com as áreas comuns (src/calc/comuns.js): ambientes, portas, janelas, mobiliário, rota acessível, paisagismo */
+function dxfComuns(m, local){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("EMBASAMENTO",m.emb,5);
+  if(local==="terreo"){ (m.ter.lojas||[]).forEach(p=>d.poly("TERREO-LOJAS",p,30)); (m.ter.drive||[]).forEach(p=>d.poly("TERREO-ACESSO-VEICULOS",p,8)); if(m.tGar&&m.tGar.length) d.poly("TERREO-GARAGEM",m.tGar,9) }
+  else m.T.forEach(t=>dxfTorre(d,"TORRES",t,2));
+  (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby && local==="terreo") d.poly("HALL-ELEVADORES",cs.lobby,4) });
+  comunsDxf(d, m, local); return d.out() }
 /* contorno da torre: com pátio (C1), borda e vazios em polilinhas separadas (sem a "ponte" do polígono) */
 function dxfTorre(d, layer, t, col){ if(t.oco){ d.poly(layer,t.oco.pts,col); t.oco.vazios.forEach(v=>d.poly(layer+"-VAZIO",v,col)) } else d.poly(layer,t.plate,col) }
 function dxfTipo(m,i){ const d=DXF(), l=m.tipo[i], t=m.T[i]; dxfTorre(d,"PAVIMENTO",t,7);
@@ -207,6 +213,7 @@ async function exportZIP(){
   z.file("implantacao.dxf", dxfImpl(m));
   if(m.gar) Object.entries(m.gar).forEach(([k,lay])=>{ if(lay) z.file(`garagem-${nomePav(k).replace(/\s+/g,"-")}.dxf`, dxfGar(m,lay,k[0]==="s"?m.sub:k[0]==="g"?m.emb:m.tGar)) });
   m.T.forEach((t,i)=>{ if(t.plate.length) z.file(`pavimento-tipo-torre-${i+1}.dxf`, dxfTipo(m,i)) });
+  if(m.comuns && typeof comunsDxf==="function"){ z.file("terreo-areas-comuns.dxf", dxfComuns(m,"terreo")); if(m.comuns.amb.some(a=>a.local==="emb")) z.file("laje-do-embasamento-lazer.dxf", dxfComuns(m,"emb")) }
   z.file(slug(S.nome)+".ifc", IFC(m));
   z.file("leia-me.txt", ascii(`Gabarito - ${S.nome}\nUnidades em metros. DXF R12 (AC1009) em camadas. IFC4 com pavimentos (IfcBuildingStorey), volumes (IfcBuildingElementProxy), unidades e comodos (IfcSpace), paredes das unidades (IfcWall) com os vaos de porta (IfcOpeningElement) e as portas (IfcDoor).\nEstudo de massa preliminar: nao substitui projeto legal.\n`));
   const blob=await z.generateAsync({type:"blob",compression:"DEFLATE"});

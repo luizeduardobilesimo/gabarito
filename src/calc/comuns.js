@@ -311,6 +311,30 @@ function cmnLiga(g, alvoSet, rb, modo, perto){   // perto: Uint8Array das célul
     if(path){ cmnPincel(g, path, r, CC, v=>v===CL); return {path, estreito: r<rb} } }
   return null;
 }
+/* galeria paralela à fachada com mais luz, a ~7 m dela: a faixa entre a galeria e a fachada é dos ambientes de permanência
+   (salão, academia…), com janela; a galeria se liga à circulação existente */
+function cmnGaleriaFachada(g, luz, rb, prof=7.2){
+  const n=g.nx*g.ny, D=Math.round(prof/g.res), grupos=new Map();
+  for(let k=0;k<n;k++){ if(g.c[k]!==CL) continue; const i=k%g.nx, j=(k/g.nx)|0; for(let d=0;d<4;d++){ if(luz[k*4+d]<1) continue; const key=d+":"+(d>=2? j : i); grupos.set(key,(grupos.get(key)||0)+1) } }
+  const ord=[...grupos.entries()].sort((a,b)=>b[1]-a[1]).filter(x=>x[1]*g.res>=8).slice(0,3);
+  const fol=cmnFolga(g, v=>v===CL||cmnCirc(v)), X=7777;
+  for(const [key] of ord){ const [d,line]=key.split(":").map(Number), [di,dj]=cmnDI[d];
+    const L2=line - (d>=2? dj : di)*(D+rb), cells=[];   // para dentro
+    if(d>=2){ if(L2<0||L2>=g.ny) continue; for(let i=0;i<g.nx;i++){ const k=L2*g.nx+i; if(g.c[k]===CL) cells.push(k) } }
+    else { if(L2<0||L2>=g.nx) continue; for(let j=0;j<g.ny;j++){ const k=j*g.nx+L2; if(g.c[k]===CL) cells.push(k) } }
+    // só o maior trecho contínuo, com folga para a largura da galeria
+    const ok=cells.filter(k=>fol[k]>rb); let run=[], best=[];
+    ok.forEach((k,q)=>{ if(q && Math.abs(d>=2? k-ok[q-1] : (k-ok[q-1])/g.nx)!==1){ if(run.length>best.length) best=run; run=[] } run.push(k) }); if(run.length>best.length) best=run;
+    if(best.length*g.res<6) continue;
+    const salva=g.c.slice();
+    cmnPincel(g, best, rb, X, v=>v===CL);
+    const set=new Set(); for(let k=0;k<n;k++) if(g.c[k]===X) set.add(k);
+    const r=cmnLiga(g, set, rb, "neutro");
+    if(!r){ g.c.set(salva); continue }
+    for(let k=0;k<n;k++) if(g.c[k]===X) g.c[k]=CC;
+    return true }
+  return false;
+}
 /* distância (em células, pelas livres) até a circulação */
 function cmnDistCirc(g){ const n=g.nx*g.ny, dc=new Int32Array(n).fill(1e9), Q=[];
   for(let k=0;k<n;k++) if(cmnCirc(g.c[k])){ dc[k]=0; Q.push(k) }
@@ -407,17 +431,16 @@ function cmnMoveis(g, a, lado, portaLado){
   return out;
 }
 /* piscina: lâmina com raias e prainha, borda/solário em volta e espreguiçadeiras no lado do sol */
-function cmnPiscinaMoveis(g, pool, borda, ladoSol){
-  const out=[], F=cmnQuadro(g, pool, ladoSol), W=F.W, D=F.D;
+function cmnPiscinaMoveis(g, pool, borda, ladoPr){
+  // referencial com y = 0 na ponta da prainha (lado curto): prainha rasa de até 2,4 m, raias de 2,0 m no comprimento, escada na outra ponta
+  const out=[], F=cmnQuadro(g, pool, ladoPr), W=F.W, D=F.D;
   const R=(x,y,w,h,cl)=>out.push({t:"r", cl, pts:[F.G(x,y),F.G(x+w,y),F.G(x+w,y+h),F.G(x,y+h)]});
-  const raia = W>=D? "x" : "y";
-  const comp=Math.max(W,D), larg=Math.min(W,D);
-  const pr=Math.min(2.4, comp*0.22);   // prainha (parte rasa) numa das pontas
-  if(raia==="x"){ R(W-pr, 0, pr, D, "prainha"); const nR=Math.max(1,Math.floor(larg/2.0)); for(let q=1;q<nR;q++) out.push({t:"l", cl:"raia", pts:[F.G(0.5, q*D/nR), F.G(W-pr-0.3, q*D/nR)]}) }
-  else { R(0, D-pr, W, pr, "prainha"); const nR=Math.max(1,Math.floor(larg/2.0)); for(let q=1;q<nR;q++) out.push({t:"l", cl:"raia", pts:[F.G(q*W/nR, 0.5), F.G(q*W/nR, D-pr-0.3)]}) }
+  const pr=Math.min(2.4, D*0.22); R(0, 0, W, pr, "prainha");
+  for(let x=0.3; x<W-0.2; x+=0.6) out.push({t:"l", cl:"degrau", pts:[F.G(x,pr), F.G(Math.min(W,x+0.3),pr)]});
+  const nR=Math.max(1,Math.floor(W/2.0)); for(let q=1;q<nR;q++) out.push({t:"l", cl:"raia", pts:[F.G(q*W/nR, pr+0.6), F.G(q*W/nR, D-0.6)]});
+  R(W-0.9, D-0.35, 0.6, 0.25, "escada");
   return out;
 }
-
 /* ---------- planejador genérico (térreo, pavimento de lazer, rooftop) ---------- */
 function cmnPlaneja(g, lista, o){
   const rb=Math.max(1,Math.ceil(((o.galeria||1.5)/g.res-1)/2)), feitos=[], falta=[], luz=o.luz, SZ=luz? [0,1,2,3].map(d=>cmnPS(g, k=>luz[k*4+d])) : null;
@@ -562,7 +585,10 @@ function comunsTerreo(st, m, prog){
     for(let j=0;j<g.ny;j++){ if(g.cv(j)>dmn+14) break;
       for(let i=0;i+clW<=g.nx;i++){ const r={i,j,w:clW,h:clD}; if(!cabe(r)) continue;
         let fach=0; for(let t=0;t<clW;t++){ const v=g.at(i+t,j-1); if((v===CE||v===CF) && !G.pip(g.W(g.cu(i+t), g.cv(j-1)-res*0.4), m.emb)) fach++ } if(fach<clW) continue;   // fachada de verdade (rua/recuo), não a loja
-        const sc=-Math.abs(g.u0+(i+clW/2)*res-uPed) - 2*(g.v0+j*res-dmn); if(!best||sc>best.sc) best={...r,sc} } }
+        // atrás dela precisa caber o hall (3,6 × 3,0 m livres) e, ao lado, a portaria na fachada
+        const hw=Math.round(3.6/res), hd=Math.round(3.0/res), atras=[0,-Math.round((hw-clW)/2),clW-hw].some(di=>cabe({i:i+di, j:j+clD, w:hw, h:hd}));
+        const pw=Math.round(2.7/res), pd=Math.round(3.3/res), lado=cabe({i:i+clW, j, w:pw, h:pd}) || cabe({i:i-pw, j, w:pw, h:pd});
+        const sc=-Math.abs(g.u0+(i+clW/2)*res-uPed) - 2*(g.v0+j*res-dmn) + (atras? 16 : 0) + (lado? 6 : 0); if(!best||sc>best.sc) best={...r,sc} } }
     if(best){ rCl={i:best.i,j:best.j,w:best.w,h:best.h}; break } }
   let fCl=null, fPt=null, fHall=null;
   if(cl && rCl){ fCl=novo(cl, rCl); ancora=[g.u0+(rCl.i+rCl.w/2)*res, g.v0+(rCl.j+rCl.h)*res] }
@@ -588,7 +614,8 @@ function comunsTerreo(st, m, prog){
             const sc=f*100 + (lob>=need? 30 : 0) + (face===3? 10 : 0) - 3*(Math.max(w,h)/Math.min(w,h)-1) - 0.4*Math.abs((i+w/2)-(cr.i+cr.w/2))*res;
             if(!best || sc>best.sc) best={...r_, sc, f, face} } } }
       if(best) break }
-    if(best){ fHall=novo(hl, best); fCl.faceHall=best.face; g.c.forEach((v,k)=>{ if(v===fHall.cod) g.c[k]=CH }) } }
+    if(best){ fHall=novo(hl, best); fCl.faceHall=best.face; g.c.forEach((v,k)=>{ if(v===fHall.cod) g.c[k]=CH }) }
+    else falta.push({...hl, motivo:"não há 2,4 × 2,4 m livres atrás da clausura (o núcleo ou as lojas fecham a entrada)"}) }
   // a clausura abre para o hall: conta como circulação para quem está atrás dela
   if(fCl && !fHall){ const nr=Math.round(1.5/res); for(let i=fCl.r.i;i<fCl.r.i+fCl.r.w;i++) for(let t=0;t<nr;t++){ const j=fCl.r.j+fCl.r.h+t; if(g.at(i,j)!==CL) break; g.c[j*g.nx+i]=CH } }
   if(fHall) fHall.hallCirc=true;
@@ -607,9 +634,10 @@ function comunsTerreo(st, m, prog){
     for(let q=0;q<Q.length;q++){ const k=Q[q]; perto[k]=1; if(dd[k]>=lim) continue; const i=k%g.nx, j=(k/g.nx)|0; for(const [a,b] of cmnDI){ const kk=(j+b)*g.nx+i+a; if(g.at(i+a,j+b)===CL && dd[kk]>dd[k]+1){ dd[kk]=dd[k]+1; Q.push(kk) } } } }
   const base=g.c.slice(), nBase=amb.length;
   let melhor=null, ligacoes=[];
-  for(const modo of ["neutro","centro","parede"]){
+  for(const modo of ["neutro","centro","fachada"]){
     g.c.set(base); amb.length=nBase;
     const lig=[];
+    if(modo==="fachada" && !cmnGaleriaFachada(g, luz, rb)) continue;
     alvos.forEach(al=>{ const toca=[...al.set].some(k=>{ const i=k%g.nx, j=(k/g.nx)|0; return cmnDI.some(([a,b])=>{ const v=g.at(i+a,j+b); return v===CC||v===CH }) });
       if(toca){ lig.push({al, ok:true}); return }
       const r=cmnLiga(g, al.set, rb, modo, perto); lig.push({al, ok:!!r, estreito: r&&r.estreito}) });
@@ -621,6 +649,7 @@ function comunsTerreo(st, m, prog){
     pl.falta.forEach(a=>nota -= a.A*(a.obrig? 2.5 : 1.6));
     lig.forEach(l=>{ if(!l.ok) nota-=200 });
     let nC=0; for(let k=0;k<g.c.length;k++) if(g.c[k]===CC) nC++; nota -= 0.3*nC*res*res;
+    (typeof CMN_DEBUG!=="undefined") && CMN_DEBUG.push({modo, nota:Math.round(nota), falta:pl.falta.map(a=>a.nome), semLuz:pl.feitos.filter(f=>CMN_CAT[f.k].luz==="sim"&&!(f.ct&&f.ct.luz>0)).map(f=>f.nome)});
     if(!melhor || nota>melhor.nota) melhor={nota, modo, c:g.c.slice(), feitos:pl.feitos, falta:pl.falta, lig};
   }
   g.c.set(melhor.c); amb.length=nBase; ligacoes=melhor.lig;
@@ -716,72 +745,84 @@ function comunsRecuo(st, m, prog, TR){ const TT0=TR;
   return {g, amb, falta, avisos, verde:verdeRets.map(r=>cmnRetPoly(g,r)), arvores, calcada, vAl};
 }
 
-/* ---------- laje do embasamento ---------- */
+/* ---------- laje do embasamento ----------
+   O elevador para na laje: o acesso é a face da torre mais perto do hall dos elevadores. A partir dele: piscina perto do
+   acesso e do lado do sol, com deck de 1,5 m em volta e o solário (espreguiçadeiras) no lado do sol; apoio da piscina
+   (sanitário PCD + ducha) encostado na torre, junto do acesso; playground à vista do acesso e longe da água; pet place
+   longe dos dois; caminhos acessíveis (1,20 m) do acesso a cada item; o resto é jardim, com árvores esparsas em jardineira. */
 function comunsLaje(st, m, prog){
   const itens=prog.filter(a=>a.local==="emb"); if(!itens.length || !m.emb.length) return null;
-  const T=m.ter||{}, ux=T.lat||[1,0], vy=T.fd||[0,1], g=cmnGrade(ux, vy, [m.emb]), res=g.res;
+  const T=m.ter||{}, ux=T.lat||[1,0], vy=T.fd||[0,1], g=cmnGrade(ux, vy, [m.emb]), res=g.res, n=g.nx*g.ny;
   cmnPinta(g, m.emb, CL);
   m.T.forEach(t=>{ if(t.oco){ cmnPinta(g, t.oco.pts, CO); (t.oco.vazios||[]).forEach(v=>cmnPinta(g, v, CL)) } else cmnPinta(g, t.plate, CO) });
+  // jardineira junto ao guarda-corpo (0,6 m da borda): nada de ambiente encostado na beira da laje
+  { const fol=cmnFolga(g, v=>v!==CF), b=Math.round(0.6/res); for(let k=0;k<n;k++) if(g.c[k]===CL && fol[k]<=b) g.c[k]=CE }
   // acesso: na face da torre mais próxima do hall dos elevadores (o elevador para na laje)
   const acessos=[];
-  (m.coreSets||[]).forEach(cs=>{ const t=m.T[cs.i]; if(!t||!t.plate.length) return; const c=G.centroid(cs.lobby&&cs.lobby.length? cs.lobby : cs.core), pc=g.U(c);
-    let best=null; for(let k=0;k<g.nx*g.ny;k++){ if(g.c[k]!==CL) continue; const i=k%g.nx, j=(k/g.nx)|0; if(![[1,0],[-1,0],[0,1],[0,-1]].some(([a,b])=>g.at(i+a,j+b)===CO)) continue; const d=Math.hypot(g.cu(i)-pc[0], g.cv(j)-pc[1]); if(!best||d<best.d) best={k,d} }
-    if(best){ const i=best.k%g.nx, j=(best.k/g.nx)|0; acessos.push({torre:cs.i, k:best.k, c:[g.cu(i),g.cv(j)], P:g.W(g.cu(i),g.cv(j))}); cmnPincel(g,[best.k],2,CC,v=>v===CL) } });
+  (m.coreSets||[]).forEach(cs=>{ const t=m.T[cs.i]; if(!t||!t.plate.length) return; const pc=g.U(G.centroid(cs.lobby&&cs.lobby.length? cs.lobby : cs.core));
+    let best=null; for(let k=0;k<n;k++){ if(g.c[k]!==CL) continue; const i=k%g.nx, j=(k/g.nx)|0; if(!cmnDI.some(([a,b])=>g.at(i+a,j+b)===CO)) continue; const d=Math.hypot(g.cu(i)-pc[0], g.cv(j)-pc[1]); if(!best||d<best.d) best={k,d} }
+    if(best){ const i=best.k%g.nx, j=(best.k/g.nx)|0; acessos.push({torre:cs.i, k:best.k, c:[g.cu(i),g.cv(j)], P:g.W(g.cu(i),g.cv(j))}); cmnPincel(g,[best.k],3,CC,v=>v===CL) } });
   const anc = acessos[0]? acessos[0].c : [g.cu(g.nx>>1), g.cv(g.ny>>1)];
-  // sol: norte (hemisfério sul) — a piscina prefere o lado ensolarado e longe das torres
+  // sol: norte no hemisfério sul — lado da laje voltado para o sol
   const nAng=(st.lote.norte||0)*Math.PI/180, sul=(st.lote.lat==null||st.lote.lat<0)? 1 : -1, sun=[Math.sin(nAng)*sul, Math.cos(nAng)*sul], sunUV=[G.dot(sun,ux), G.dot(sun,vy)];
+  const dsSol=(()=>{ const ds=[[-1,0],[1,0],[0,-1],[0,1]].map(([a,b])=>a*sunUV[0]+b*sunUV[1]); return ds.indexOf(Math.max(...ds)) })();
   const tc=m.T.filter(t=>t.plate.length).map(t=>g.U(G.centroid(t.plate)));
-  const fol=cmnFolga(g, v=>v!==CO && v!==CF);
   const amb=[], falta=[];
-  const ordem=a=> a.k==="piscina"? 0 : a.k==="quadra"? 1 : a.k==="playground"? 2 : a.desc? 3 : a.k==="apoioPisc"? 5 : 4;
+  const ordem=a=> a.k==="piscina"? 0 : a.k==="apoioPisc"? 1 : a.k==="quadra"? 2 : a.k==="playground"? 3 : !a.desc? 4 : a.k==="pet"? 6 : 5;
   const lista=itens.slice().sort((a,b)=>ordem(a)-ordem(b) || b.A-a.A);
-  const deckIt=lista.find(a=>a.k==="deck");
+  const deckIt=lista.find(a=>a.k==="deck"), temPisc=lista.some(a=>a.k==="piscina");
+  const SCo=cmnPS(g, k=>g.c[k]===CO?1:0);
+  const centro=r=>[g.u0+(r.i+r.w/2)*res, g.v0+(r.j+r.h/2)*res], dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
   let pool=null;
-  lista.forEach(a=>{ if(a===deckIt && pool) return;
-    const c=CMN_CAT[a.k], s=cmnSoma(g, v=>v===CL);
-    let A=a.A, margem=0;
-    if(a.k==="piscina"){ const dk=deckIt? deckIt.A : 0; margem = dk>0? cmnClamp((Math.sqrt(a.A*2.2+dk*1.1)-Math.sqrt(a.A*2.2))/2+0.6, 1.5, 4) : 1.5 }
-    let best=null;
-    for(const t of cmnTamanhos(A, c, res, [1,0.92,0.85,0.75])){
-      const mg=Math.round(margem/res), W=t.w+2*mg, H=t.h+2*mg;
-      for(let j=0;j+H<=g.ny;j++) for(let i=0;i+W<=g.nx;i++){ if(cmnRetS(s,g,i,j,W,H)!==W*H) continue;
-        const cu=g.u0+(i+W/2)*res, cv=g.v0+(j+H/2)*res; let sc=t.f*60 - 3*(Math.max(t.w,t.h)/Math.min(t.w,t.h)-1);
-        if(a.k==="piscina"){ const dT=Math.min(...tc.map(p=>Math.hypot(cu-p[0],cv-p[1])),40); const ladoSol=tc.length? (cu-tc[0][0])*sunUV[0]+(cv-tc[0][1])*sunUV[1] : 0; sc+= 0.6*dT + 0.5*ladoSol }
-        else if(a.k==="playground"){ if(pool){ const pu=g.u0+(pool.R.i+pool.R.w/2)*res, pv=g.v0+(pool.R.j+pool.R.h/2)*res, d=Math.hypot(cu-pu,cv-pv); sc+= Math.min(d,25)*0.8 - (d<8? 30 : 0) } sc-=0.15*Math.hypot(cu-anc[0],cv-anc[1]) }
-        else if(a.k==="apoioPisc"){ // encostado numa torre (parede) e perto da piscina
-          const ct=cmnContato(g,{i,j,w:W,h:H},null,null); sc+= 25*ct.parede/ct.per; if(pool){ const pu=g.u0+(pool.R.i+pool.R.w/2)*res, pv=g.v0+(pool.R.j+pool.R.h/2)*res; sc-=1.2*Math.hypot(cu-pu,cv-pv) } }
-        else if(!a.desc){ const ct=cmnContato(g,{i,j,w:W,h:H},null,null); sc+= 30*ct.parede/ct.per - 0.3*Math.hypot(cu-anc[0],cv-anc[1]) }
-        else sc-=0.2*Math.hypot(cu-anc[0],cv-anc[1]);
-        if(!best||sc>best.sc) best={i,j,w:W,h:H,sc,f:t.f,mg} } if(best) break }
-    if(!best){ falta.push({...a, motivo:`a laje livre em volta das torres não tem ${cmnNf(Math.sqrt(a.A/c.prop),1)} m × ${cmnNf(Math.sqrt(a.A*c.prop),1)} m${a.k==="piscina"?" com solário em volta":""}`}); return }
+  lista.forEach(a=>{ if(a===deckIt && temPisc) return;
+    const c=CMN_CAT[a.k], SL=cmnPS(g, k=>g.c[k]===CL?1:0); let best=null;
+    const mg0=a.k==="piscina"? Math.round(1.5/res) : 0;
+    for(const t of cmnTamanhos(a.A, c, res, [1,0.92,0.85,0.75])){
+      // piscina: deck de 1,5 m em volta e o solário (o resto da área do deck) no lado do sol
+      let mL=mg0, mR=mg0, mB=mg0, mT=mg0;
+      if(a.k==="piscina"){ const lado= dsSol<2? t.h : t.w, ext=deckIt? cmnClamp(Math.round(Math.max(0, deckIt.A - 1.5*2*(t.w+t.h)*res - 9)/(lado*res)/res), 0, Math.round(5/res)) : Math.round(1/res);
+        if(dsSol===0) mL+=ext; else if(dsSol===1) mR+=ext; else if(dsSol===2) mB+=ext; else mT+=ext }
+      const W=t.w+mL+mR, H=t.h+mB+mT, passo= n>40000? 2 : 1;
+      for(let j=0;j+H<=g.ny;j+=passo) for(let i=0;i+W<=g.nx;i+=passo){ if(cmnQ(SL,g,i,j,W,H)!==W*H) continue;
+        const r={i,j,w:W,h:H}, cc=centro(r), dA=dist(cc,anc); let sc=t.f*60 - 3*(Math.max(t.w,t.h)/Math.min(t.w,t.h)-1);
+        let co=0; for(let d=0;d<4;d++) co+=cmnQ(SCo,g,...cmnLadoFora(r,d));
+        if(a.k==="piscina"){ const dT=Math.min(...tc.map(p=>dist(cc,p)),40); sc+= -0.5*dA + 0.15*Math.min(dT,25) + 0.4*((cc[0]-anc[0])*sunUV[0]+(cc[1]-anc[1])*sunUV[1]) - (co? 25 : 0) }
+        else if(a.k==="apoioPisc"){ sc+= 40*Math.min(1, co*res/2.5) - 0.8*dA; if(pool) sc-= 0.8*dist(cc, centro(pool.r)) }
+        else if(a.k==="playground"){ sc-= 0.35*dA; if(pool){ const d=dist(cc, centro(pool.R)); sc+= Math.min(d,20)*0.6 - (d<9? 40 : 0) } }
+        else if(a.k==="pet"){ sc-= 0.1*dA; amb.forEach(x=>{ if(x.k==="piscina"||x.k==="playground") sc+= Math.min(dist(cc,centro(x.r)),25)*0.8 }) }
+        else if(!a.desc){ sc+= 30*Math.min(1, co*res/3) - 0.5*dA }
+        else sc-= 0.3*dA;
+        if(!best||sc>best.sc) best={i,j,w:W,h:H,sc,f:t.f,m:[mL,mR,mB,mT]} } if(best) break }
+    if(!best){ falta.push({...a, motivo:`a laje livre em volta das torres não tem ${cmnNf(Math.sqrt(a.A/c.prop),1)} m × ${cmnNf(Math.sqrt(a.A*c.prop),1)} m${a.k==="piscina"?" com deck e solário":""}`}); return }
     const cod=700+amb.length; cmnMarca(g, best, cod);
-    const f={...a, cod, r:best, poly:cmnRetPoly(g,best), area:best.w*best.h*res*res, reduzido:best.f<0.9};
-    if(a.k==="piscina"){ const R={i:best.i+best.mg, j:best.j+best.mg, w:best.w-2*best.mg, h:best.h-2*best.mg}; f.R=R; f.lamina=cmnRetPoly(g,R); f.area=R.w*R.h*res*res; f.deckA=best.w*best.h*res*res-f.area; pool=f;
-      // lado do sol (para as espreguiçadeiras e a prainha)
-      const ds=[[-1,0],[1,0],[0,-1],[0,1]].map(([a1,b])=>a1*sunUV[0]+b*sunUV[1]); const ladoSol=ds.indexOf(Math.max(...ds));
-      f.moveis=[...cmnPiscinaMoveis(g, R, best, ladoSol)];
-      // espreguiçadeiras no solário, do lado do sol
-      const Fq=cmnQuadro(g, best, ladoSol); const nE=Math.max(2,Math.floor((Fq.W-1)/1.0)); for(let q=0;q<nE;q++){ const x=0.5+q*1.0; if(x+0.7>Fq.W-0.3) break; f.moveis.push({t:"r", cl:"mov", pts:[Fq.G(x,0.25),Fq.G(x+0.7,0.25),Fq.G(x+0.7,Math.min(1.95,best.mg*res-0.1)),Fq.G(x,Math.min(1.95,best.mg*res-0.1))]}) }
-      f.ladoSol=ladoSol;
+    const f={...a, cod, r:best, poly:cmnRetPoly(g,best), area:best.w*best.h*res*res, reduzido:best.f<0.9, portas:[]};
+    if(a.k==="piscina"){ const [mL,mR,mB,mT]=best.m, R={i:best.i+mL, j:best.j+mB, w:best.w-mL-mR, h:best.h-mB-mT}; f.R=R; f.lamina=cmnRetPoly(g,R); f.area=R.w*R.h*res*res; f.deckA=best.w*best.h*res*res-f.area; pool=f;
+      // prainha na ponta mais perto do acesso; raias no comprimento
+      const pc=centro(R), ladoPr = R.w>=R.h? (anc[0]<pc[0]? 0 : 1) : (anc[1]<pc[1]? 2 : 3);
+      f.moveis=cmnPiscinaMoveis(g, R, best, ladoPr);
+      // espreguiçadeiras no solário (lado do sol)
+      const Fq=cmnQuadro(g, best, dsSol), prof=[mL,mR,mB,mT][dsSol]*res; if(prof>=2.2){ const nE=Math.floor((Fq.W-0.6)/1.0); for(let q=0;q<nE;q++){ const x=0.45+q*1.0; f.moveis.push({t:"r", cl:"mov", pts:[Fq.G(x,0.35),Fq.G(x+0.7,0.35),Fq.G(x+0.7,Math.min(2.25,prof-0.3)),Fq.G(x,Math.min(2.25,prof-0.3))]}); if(q%2===1 && q<nE-1) f.moveis.push({t:"c", cl:"mov", c:Fq.G(x+0.85, 1.1), r:0.35}) } }
+      f.ladoSol=dsSol; f.solario=prof;
       if(deckIt) f.deck={nome:deckIt.nome, ix:deckIt.ix, A:f.deckA} }
-    else { const lz=null; f.moveis=cmnMoveis(g, f, 2, 3) }
-    f.portas=[]; amb.push(f) });
-  // ducha junto da entrada da piscina (no solário, do lado do acesso)
-  if(pool){ const R=pool.R, pu=g.u0+(R.i+R.w/2)*res, pv=g.v0+(R.j+R.h/2)*res, du=anc[0]-pu, dv=anc[1]-pv, lado= Math.abs(du)*R.h>Math.abs(dv)*R.w? (du<0?0:1) : (dv<0?2:3);
-    const P = lado===0? [g.u0+R.i*res-0.75, pv] : lado===1? [g.u0+(R.i+R.w)*res+0.75, pv] : lado===2? [pu, g.v0+R.j*res-0.75] : [pu, g.v0+(R.j+R.h)*res+0.75];
+    else f.moveis=cmnMoveis(g, f, a.k==="apoioPisc"? cmnLadoCO(g,best) : 2, 3);
+    amb.push(f) });
+  // ducha no deck, do lado do acesso
+  if(pool){ const R=pool.R, pc=centro(R), du=anc[0]-pc[0], dv=anc[1]-pc[1], lado= Math.abs(du)*R.h>Math.abs(dv)*R.w? (du<0?0:1) : (dv<0?2:3);
+    const P = lado===0? [g.u0+R.i*res-0.75, pc[1]] : lado===1? [g.u0+(R.i+R.w)*res+0.75, pc[1]] : lado===2? [pc[0], g.v0+R.j*res-0.75] : [pc[0], g.v0+(R.j+R.h)*res+0.75];
     pool.ducha=g.W(P[0],P[1]) }
-  // caminhos (rota acessível) do acesso até cada item; o resto é jardim
-  const rota=[];
-  const passa=k=>g.c[k]===CL||g.c[k]===CC;
+  // caminhos (rota acessível, 1,20 m) do acesso até cada item; o resto é jardim
+  const rota=[], rb=Math.max(1,Math.ceil((1.2/res-1)/2));
   amb.forEach(f=>{ const set=new Set(); for(let j=f.r.j;j<f.r.j+f.r.h;j++) for(let i=f.r.i;i<f.r.i+f.r.w;i++) set.add(j*g.nx+i);
-    const p=cmnCaminho(g, k=>g.c[k]===CC, k=>set.has(k), passa, k=>g.c[k]===CC? 0.3 : 1);
-    f.rotaOk=!!p; if(p){ cmnPincel(g, p, 2, CC, v=>v===CL); rota.push({para:f.nome, pts:cmnPolilinha(g,p), amb:f.id}) } });
+    const p=cmnCaminho(g, k=>g.c[k]===CC, k=>set.has(k), k=>g.c[k]===CL||g.c[k]===CC, k=>g.c[k]===CC? 0.25 : 1);
+    f.rotaOk=!!p; if(p){ cmnPincel(g, p, rb, CC, v=>v===CL); rota.push({para:f.nome, pts:cmnPolilinha(g,p), amb:f.id}) } });
   const caminhos=cmnRetangulos(g, v=>v===CC).map(r=>cmnRetPoly(g,r));
-  const verde=cmnRetangulos(g, v=>v===CL).filter(r=>Math.min(r.w,r.h)*res>=0.6).map(r=>cmnRetPoly(g,r));
-  const fol2=cmnFolga(g, v=>v===CL), arvores=[];
-  for(let j=0;j<g.ny;j++) for(let i=0;i<g.nx;i++){ const k=j*g.nx+i; if(g.c[k]!==CL||fol2[k]<Math.round(1.4/res)) continue; const P=g.W(g.cu(i),g.cv(j)); if(arvores.some(a=>Math.hypot(a.c[0]-P[0],a.c[1]-P[1])<5)) continue; arvores.push({c:P, r:Math.min(1.6,fol2[k]*res*0.8)}) }
+  const verde=cmnRetangulos(g, v=>v===CL||v===CE).filter(r=>Math.min(r.w,r.h)*res>=0.5).map(r=>cmnRetPoly(g,r));
+  // árvores em jardineira: esparsas (a cada ~9 m), onde o jardim tem folga
+  const fol2=cmnFolga(g, v=>v===CL||v===CE), arvores=[];
+  for(let j=0;j<g.ny;j++) for(let i=0;i<g.nx;i++){ const k=j*g.nx+i; if((g.c[k]!==CL&&g.c[k]!==CE)||fol2[k]<Math.round(1.5/res)) continue; const P=g.W(g.cu(i),g.cv(j)); if(arvores.some(a=>Math.hypot(a.c[0]-P[0],a.c[1]-P[1])<9)) continue; arvores.push({c:P, r:Math.min(1.5,fol2[k]*res*0.7)}) }
   return {g, amb, falta, rota, caminhos, verde, arvores, acessos:acessos.map(a=>a.P), pool};
 }
+const cmnLadoCO=(g,r)=>{ let b=-1, d=2; [0,1,2,3].forEach(q=>{ const [i0,j0,w,h]=cmnLadoFora(r,q); let c=0; for(let t=0;t<Math.max(w,h);t++) if(g.at(i0+(w>1?t:0), j0+(h>1?t:0))===CO) c++; if(c>b){ b=c; d=q } }); return [1,0,3,2][d] };
 
 /* ---------- pavimento de lazer e rooftop (na torre 1) ---------- */
 function comunsPlaca(st, m, prog, local){
@@ -836,6 +877,8 @@ function comunsValida(C, st, m){
   por("piscina").forEach(p=>{ const ap=todos.find(x=>x.par===p.id); if(!ap) add("adjacencia","warn","Piscina sem sanitário e ducha por perto.", p.id); else { const d=Math.hypot(...[0,1].map(t=>G.centroid(p.poly)[t]-G.centroid(ap.poly)[t])); if(d>25) add("adjacencia","warn",`Apoio da piscina a ${cmnNf(d,0)} m dela.`, p.id) } });
   const pg=por("playground")[0], pi=por("piscina")[0];
   if(pg && pi && pg.local===pi.local){ const d=cmnDistPolys(pg.poly, pi.lamina||pi.poly); if(d<4) add("seguranca","warn",`Playground a ${cmnNf(d,1)} m da água — afaste ou cerque a piscina.`, pg.id) }
+  // entrada deslocada do acesso de pedestres escolhido (o núcleo ou as lojas fecham a frente ali)
+  const cl0=por("clausura")[0]; if(cl0 && C.TT){ const du=Math.abs(G.dot(G.centroid(cl0.poly), C.gT.ux) - C.TT.uPed); if(du>3) add("entrada","warn",`A clausura ficou a ${cmnNf(du,0)} m do acesso de pedestres marcado: ali não cabe o hall. Ajuste o acesso em Terreno.`, cl0.id) }
   // portaria vê os acessos
   const pt=por("portaria")[0];
   if(pt && C.TT){ const pc=G.centroid(pt.poly), ped=m.acesso.ped, vei=(m.ter&&m.ter.veiReal)||m.acesso.vei;
@@ -891,7 +934,8 @@ function comunsCalc(st, m){
     verde:{ terreo:TR? TR.verde : [], emb:LJ? LJ.verde : [] }, arvores:{ terreo:TR? TR.arvores : [], emb:LJ? LJ.arvores : [] },
     calcada:TR? TR.calcada : [], acessosLaje:LJ? LJ.acessos : [], ducha:LJ&&LJ.pool? LJ.pool.ducha : null,
     entrada: TT&&TT.fCl? {portao:TT.fCl.portas&&TT.fCl.portas[0]} : null,
-    servico: TT? TT.ancServ && TT.g.W(...TT.ancServ) : null };
+    servico: TT? TT.ancServ && TT.g.W(...TT.ancServ) : null,
+    eixos: Object.fromEntries([["terreo",TT],["emb",LJ],["pav",PV],["cob",CB]].filter(([,x])=>x&&x.g).map(([k,x])=>[k,[x.g.ux,x.g.vy]])) };
   // motivo da falta de luz (para a mensagem): divisa perto
   out.motivoLuz = TT && TT.amb.some(a=>CMN_CAT[a.k].luz==="sim" && !(a.janelas||[]).length) ? cmnMotivoLuz(st, m) : "";
   const val=comunsValida({...out, TT, gT:TT&&TT.g, gR:TR&&TR.g, gL:LJ&&LJ.g, gP:(PV||CB)&&(PV||CB).g}, st, m);
