@@ -622,6 +622,27 @@ function cmnCresce(g, lst){
       const d=best.d, t=best.t; if(d===0){ r.i-=t; r.w+=t } else if(d===1) r.w+=t; else if(d===2){ r.j-=t; r.h+=t } else r.h+=t }
     f.poly=cmnRetPoly(g,f.r); f.area=f.r.w*f.r.h*res*res; f.reduzido = f.area < f.A*0.9 });
 }
+/* bolsões fechados (sem acesso pela circulação) encostados num ambiente: o ambiente avança sobre ele quando o resultado
+   continua retangular e sem passar de 1,45 × a área pedida (a academia vai até a parede em vez de deixar um vão morto) */
+function cmnAbsorve(g, feitos, livres){
+  const res=g.res;
+  return livres.filter(x=>{ if(x.toca) return true;
+    const set=new Set(x.cells);
+    for(const f of feitos){ const c=CMN_CAT[f.k]; if(!c || !f.r) continue; const r=f.r;
+      for(const d of [0,1,2,3]){ let t=0;
+        for(;;t++){ const s= d===0? {i:r.i-t-1,j:r.j,w:1,h:r.h} : d===1? {i:r.i+r.w+t,j:r.j,w:1,h:r.h} : d===2? {i:r.i,j:r.j-t-1,w:r.w,h:1} : {i:r.i,j:r.j+r.h+t,w:r.w,h:1};
+          let ok=true; for(let j=s.j;j<s.j+s.h&&ok;j++) for(let i=s.i;i<s.i+s.w;i++) if(!set.has(j*g.nx+i)){ ok=false; break }
+          if(!ok) break }
+        if(!t) continue;
+        const w=r.w+(d<2?t:0), h=r.h+(d>=2?t:0), resto=x.cells.length - t*(d<2? r.h : r.w);
+        if(w*h*res*res > f.A*1.45 || resto*res*res > 2) continue;
+        const s= d===0? {i:r.i-t,j:r.j,w:t,h:r.h} : d===1? {i:r.i+r.w,j:r.j,w:t,h:r.h} : d===2? {i:r.i,j:r.j-t,w:r.w,h:t} : {i:r.i,j:r.j+r.h,w:r.w,h:t};
+        cmnMarca(g, s, f.cod); if(d===0){ r.i-=t; r.w+=t } else if(d===1) r.w+=t; else if(d===2){ r.j-=t; r.h+=t } else r.h+=t;
+        f.poly=cmnRetPoly(g,r); f.area=r.w*r.h*res*res; f.reduzido=f.area<f.A*0.9;
+        x.cells.forEach(k=>{ if(g.c[k]===CL) g.c[k]=CC });   // o que restou (≤ 2 m²) vira parte do vizinho de circulação
+        return false } }
+    return true });
+}
 /* componentes de células livres: ligadas à circulação viram circulação (se pequenas) ou área livre */
 function cmnLivres(g, maxCirc){
   const n=g.nx*g.ny, vis=new Uint8Array(n), out=[];
@@ -793,7 +814,7 @@ function comunsTerreo(st, m, prog){
         return sc } });
     cmnSobras(g, pl.feitos);
     cmnCresce(g, pl.feitos.filter(f=>f.area<f.A*0.97));
-    const livres=cmnLivres(g, per? 1e9 : 15);
+    const livres=cmnAbsorve(g, pl.feitos, cmnLivres(g, per? 1e9 : 15));
     if(modo==="perimetro"){ const ok=cmnAlcanca(g, alvos); alvos.forEach((al,q)=>lig.push({al, ok:ok[q]})) }
     let nota=0; pl.feitos.forEach(f=>{ const c=CMN_CAT[f.k], ct=cmnContato(g, f.r, null, null);
       nota += f.A*(c.luz==="sim"? (f.ct&&f.ct.luz>0? 1.5 : 0.75) : 1) * Math.min(1, f.area/f.A) + 20*ct.parede/Math.max(1,ct.per) });
@@ -801,7 +822,7 @@ function comunsTerreo(st, m, prog){
     lig.forEach(l=>{ if(!l.ok) nota-=200 });
     let nC=0; for(let k=0;k<g.c.length;k++) if(g.c[k]===CC) nC++; nota -= 0.3*nC*res*res;
     livres.forEach(x=>{ if(x.A>=4) nota -= x.A*(x.toca? 0.6 : 1.0) });
-    (typeof CMN_DEBUG!=="undefined") && CMN_DEBUG.push({modo, nota:Math.round(nota), falta:pl.falta.map(a=>a.nome), circ:Math.round(nC*res*res), sobra:Math.round(livres.reduce((s,x)=>s+x.A,0)), semLuz:pl.feitos.filter(f=>CMN_CAT[f.k].luz==="sim"&&!(f.ct&&f.ct.luz>0)).map(f=>f.nome)});
+    (typeof CMN_DEBUG!=="undefined") && CMN_DEBUG.push({modo, nota:Math.round(nota), falta:pl.falta.map(a=>a.nome), circ:Math.round(nC*res*res), sobra:Math.round(livres.reduce((s,x)=>s+x.A,0)), pockets:livres.map(x=>Math.round(x.A)+(x.toca?"t":"f")), semLuz:pl.feitos.filter(f=>CMN_CAT[f.k].luz==="sim"&&!(f.ct&&f.ct.luz>0)).map(f=>f.nome)});
     if(!melhor || nota>melhor.nota) melhor={nota, modo, c:g.c.slice(), feitos:pl.feitos, falta:pl.falta, lig, livres};
   }
   g.c.set(melhor.c); amb.length=nBase; ligacoes=melhor.lig;
@@ -810,9 +831,12 @@ function comunsTerreo(st, m, prog){
   const livres=melhor.livres, partido=melhor.modo;
   // sobras grandes: abertas para a circulação viram estar (até ~40 m²) ou área livre coberta (pilotis), com bancos e
   // jardineiras; fechadas (sem acesso pela circulação) ficam como reserva técnica
-  const sobra=livres.filter(x=>x.A>=4).map(x=>({A:x.A, rets:cmnRetangulosDe(g, x.cells), toca:x.toca}));
+  // bolsão fechado junto à faixa de veículos: depósito com porta para a garagem; os outros: área técnica (bombas, gerador)
+  const faixasV=[...(T.drive||[]), ...(T.driveRua||[]), ...(m.tGar&&m.tGar.length? [m.tGar] : [])];
+  const tocaVei=cells=>cells.some(k=>{ const i=k%g.nx, j=(k/g.nx)|0; return cmnDI.some(([a,b])=>{ if(g.at(i+a,j+b)!==CO && g.at(i+a,j+b)!==CF) return false; const P=g.W(g.cu(i+a),g.cv(j+b)); return faixasV.some(p=>G.pip(P,p)) }) });
+  const sobra=livres.filter(x=>x.A>=4).map(x=>({A:x.A, rets:cmnRetangulosDe(g, x.cells), toca:x.toca, vei:!x.toca && tocaVei(x.cells)}));
   const estar=sobra.map(x=>{ const r=x.rets.slice().sort((a,b)=>b.w*b.h-a.w*a.h)[0]; if(!r) return null;
-    const k= !x.toca? "reserva" : x.A>=40? "pilotis" : "estar", nome= k==="reserva"? "Reserva técnica" : k==="pilotis"? "Área livre coberta" : "Estar";
+    const k= !x.toca? "reserva" : x.A>=40? "pilotis" : "estar", nome= k==="reserva"? (x.vei? "Depósito (pela garagem)" : "Área técnica") : k==="pilotis"? "Área livre coberta" : "Estar";
     const e={k, nome, area:x.A, poly:cmnRetPoly(g,r), r, toca:x.toca}; const cl=cmnContato(g, r, null, null).circLado, ld= r.w>=r.h? (cl[2]<=cl[3]? 2 : 3) : (cl[0]<=cl[1]? 0 : 1);   // bancos no lado comprido, longe da passagem
     e.moveis= k==="reserva"? [] : cmnMoveis(g, {k, r}, k==="estar"? cmnOposto(cmnLadoCirc(g,{r})) : ld, 3); return e }).filter(Boolean);
   // vãos largos da circulação (partido perimetral): estar com sofás no meio do hall, 1,20 m livres em volta (portas e passagem);
