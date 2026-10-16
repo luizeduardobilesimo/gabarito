@@ -20,6 +20,8 @@ const CASOS = {
   paralelogramo: { nome: 'Paralelogramo', lote: lote([[0, 0], [40, 0], [55, 45], [15, 45]]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
   losango: { nome: 'Losango', lote: lote([[0, 0], [40, -25], [80, 0], [40, 25]]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
   canto: { nome: 'Canto cortado a 45°', lote: lote([[0, 0], [40, 0], [40, 35], [25, 50], [0, 50]]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
+  quadrilatero: { nome: 'Quadrilátero irregular', lote: lote([[0, 0], [42, 0], [48, 40], [2, 46]]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
+  pentagono: { nome: 'Pentágono irregular', lote: lote([[0, 0], [36, -6], [50, 30], [20, 50], [-6, 30]]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
 };
 (async () => {
   const html = path.resolve(arg('--html', path.join(ROOT, 'test.html'))), out = path.resolve(arg('--out', path.join(ROOT, 'shots-garagem')));

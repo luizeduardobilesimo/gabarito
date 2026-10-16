@@ -821,7 +821,7 @@ function gmMonta(poly, obst, E, o, pisos, M, FR, L){
 function gmCunhas(poly, FR, R, vagas, pillars, aisles, peds, retornos, blocks, keep, need){
   const ws=gmParedesZ(poly, FR.ux, 6), W=R.W+R.acrP*0, C=R.C, out=[]; if(!ws.length) return out;
   const L_=ps=>ps.filter(p=>p && p.length>2).map(p=>({p, b:gmBox(p)}));
-  const solido=L_([...vagas.map(v=>v.poly), ...pillars, ...blocks, ...keep]), circ=L_([...aisles.map(a=>a.poly), ...peds.map(p=>p.poly), ...peds.map(p=>p.cross), ...(retornos||[])]);
+  const pil=L_(pillars), solido=L_([...vagas.map(v=>v.poly), ...pillars, ...blocks, ...keep]), circ=L_([...aisles.map(a=>a.poly), ...peds.map(p=>p.poly), ...peds.map(p=>p.cross), ...(retornos||[])]);
   const frentes=L_(vagas.filter(v=>v.fm && v.out && !v.presa && v.tipo!=="faixa").map(v=>frontRect(v.fm, v.out, Math.max(1.8,(v.W||R.W)-0.6), need)));
   const bate=(lst, pg, t)=>{ const b=gmBox(pg); return lst.some(o=>gmHit(o.b, b, 0.01) && garAreaInter(o.p, pg)>t) };
   const dentro=pg=>{ const c=G.centroid(pg); return G.polyInPoly(pg.map(q=>[q[0]+(c[0]-q[0])*0.01, q[1]+(c[1]-q[1])*0.01]), poly) };
@@ -829,7 +829,7 @@ function gmCunhas(poly, FR, R, vagas, pillars, aisles, peds, retornos, blocks, k
     for(let t=0.15; t+W<=Lw-0.15; ){
       const P0=[A0[0]+uz[0]*t+n[0]*0.02, A0[1]+uz[1]*t+n[1]*0.02], P1=[P0[0]+uz[0]*W, P0[1]+uz[1]*W], pg=[P0, P1, [P1[0]+n[0]*C, P1[1]+n[1]*C], [P0[0]+n[0]*C, P0[1]+n[1]*C]];
       const fm=[(pg[2][0]+pg[3][0])/2, (pg[2][1]+pg[3][1])/2], fr=frontRect(fm, n, W-0.6, need);
-      const ok= dentro(pg) && !bate(solido, pg, 0.005) && !bate(circ, pg, 0.05) && !bate(frentes, pg, 0.05) && !bate(solido, fr, 0.3)
+      const ok= dentro(pg) && !bate(solido, pg, 0.005) && !bate(circ, pg, 0.05) && !bate(frentes, pg, 0.05) && !bate(solido, fr, 0.3) && !bate(pil, fr, 0.01)
         && [0.6, need/2, need-0.2].every(k=>G.pip([fm[0]+n[0]*k, fm[1]+n[1]*k], poly)) && bate(circ, fr, 0.5);
       if(!ok){ t+=0.1; continue }
       const v={poly:pg, c:G.centroid(pg), fm, out:n, u:t, uc:t+W/2, row:-1, grp:-1, j:0, aisle:-1, tipo:"n", W, ang:90, cunha:w.i};

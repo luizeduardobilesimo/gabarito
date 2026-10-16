@@ -15,6 +15,7 @@ const CASOS = {
   trapezio: { lote: lote([[0, 0], [40, 0], [50, 45], [-5, 45]]), produto: P },
   paralelogramo: { lote: lote([[0, 0], [40, 0], [55, 45], [15, 45]]), produto: P },
   canto: { lote: lote([[0, 0], [40, 0], [40, 35], [25, 50], [0, 50]]), produto: P },
+  quadrilatero: { lote: lote([[0, 0], [42, 0], [48, 40], [2, 46]]), produto: P },
 };
 const calc = parcial => { const st = estado(A, parcial); return { st, m: A.compute(st) } };
 const RES = Object.fromEntries(Object.entries(CASOS).map(([k, p]) => [k, calc(p)]));
@@ -50,7 +51,7 @@ describe('referencial do lote girado e paredes inclinadas', () => {
     expect(A.gmParedesZ([[0, 0], [34, 0], [36, 52], [-1.5, 54]], [1, 0]).length).toBe(0);   // desvio de 2° (estudo exemplo): não
   });
   it('lotes inclinados: vagas, área por vaga e nota boas (sem perder para a malha reta)', T, () => {
-    const meta = { trapezio: [50, 38.5], paralelogramo: [29, 56.5], canto: [40, 42.5] };
+    const meta = { trapezio: [50, 38.5], paralelogramo: [29, 56.5], canto: [40, 42.5], quadrilatero: [41, 42] };   // (antes das zonas: 52/51, 29/28, 41/41, 41/41)
     for (const [k, [nMin, m2Max]] of Object.entries(meta)) for (const [, l] of subs(RES[k].m)) {
       expect(l.modelo).toBe('partido');
       expect(l.count).toBeGreaterThanOrEqual(nMin - 1);
@@ -93,7 +94,14 @@ describe('regras mantidas nos lotes inclinados e girados', () => {
 describe('zonas inclinadas (faixa no referencial da parede)', () => {
   // forçadas (S.garagem.zonas "sempre") para conferir a geometria mesmo quando a malha reta rende mais
   const Z = {};
-  for (const k of ['trapezio', 'paralelogramo']) Z[k] = calc({ ...CASOS[k], garagem: { zonas: 'sempre' } });
+  for (const k of ['trapezio', 'paralelogramo', 'quadrilatero']) Z[k] = calc({ ...CASOS[k], garagem: { zonas: 'sempre' } });
+  it('parede inclinada longa: a faixa dupla segue a parede e rende mais que a malha reta (quadrilátero: 41 → 45+)', T, () => {
+    for (const [, l] of subs(Z.quadrilatero.m)) {
+      expect(l.zonas.length).toBeGreaterThan(0);
+      expect(l.count).toBeGreaterThanOrEqual(44);
+      expect(l.met.m2v).toBeLessThan(39);
+    }
+  });
   it('vagas da zona a 90° da parede, com as costas nela, e corredor paralelo a ela, ligado à rede', T, () => {
     let nZona = 0;
     for (const { m } of Object.values(Z)) for (const [k, l] of subs(m)) {
