@@ -41,10 +41,11 @@ function terreoZones(st, m, lz, extra=0){
       out.veiReal=W2((dv[0]+dv[1])/2, G.dot(m.acesso.vei,fd)); out.veiShift=dl.shift||0;
       const RX=rampExt(st, m, fd); out.rx=RX;
       dEnd = hasRamp && !E.rampa ? Math.min(dmx, RX.s0 + Math.max(P.subsolos? RX.LD:0, P.garAcima? RX.LU:0)) : dmn+PATAMAR } }
-  // profundidade do hall: o que o programa pede (hall social + lazer coberto do térreo). O apoio do condomínio (src/calc/comuns.js)
-  // cabe nas galerias e nas sobras; se não couber, o compute cresce o hall (lazerLayout → miss) e tenta de novo
-  const HT = hallSocial(st, (m.T||[]).length) + (lz? lz.terreo.c : 0);
-  const HTe = hallSocial(st, (m.T||[]).length) + (lz? lz.terreo.c*1.35 : 0) + extra; // folga para circulação entre os ambientes
+  // profundidade do hall: o que o programa pede (hall social + lazer coberto do térreo + apoio do condomínio de src/calc/comuns.js:
+  // portaria, sanitários, funcionários, DML, bicicletário). Se mesmo assim não couber, o compute cresce o hall (lazerLayout → miss)
+  const apoio = typeof comunsApoioTerreo==="function" && (st.comuns||{}).on!==false ? comunsApoioTerreo(st, m) : 0;
+  const HT = hallSocial(st, (m.T||[]).length) + (lz? lz.terreo.c : 0) + apoio;
+  const HTe = hallSocial(st, (m.T||[]).length) + (lz? lz.terreo.c*1.35 : 0) + apoio*1.25 + extra; // folga para circulação entre os ambientes
   const coreIn=d=>(m.coreSets||[]).reduce((s,cs)=>s + G.area(G.band(cs.core,fd,d1,d)) + G.area(G.band(scaleBy(cs.lobby||[],1.25),fd,d1,d)),0) + (lz&&lz.terreo.c>0? 2.6*(lmx-lmn) : 0);
   const hallArea=d=>{ const b=box(d1,d,lmn,lmx); let a=G.area(b); if(dv) a-=G.area(box(d1,d,dv[0],dv[1])); return a };
   let d2=dmx;
