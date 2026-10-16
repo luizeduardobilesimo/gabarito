@@ -3,14 +3,14 @@
  "S": {},
  "esperado": {
   "units": 76,
-  "vagas": 97,
+  "vagas": 103,
   "vagasReq": 78,
   "CA": 3.7227,
   "H": 40.5,
   "priv": 6380,
   "vagasPorPav": {
-   "s2": 42,
-   "s1": 40,
+   "s2": 45,
+   "s1": 43,
    "ter": 9
   },
   "vgv": 91826458,

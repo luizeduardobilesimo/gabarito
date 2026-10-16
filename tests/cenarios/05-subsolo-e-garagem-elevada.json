@@ -8,14 +8,14 @@
  },
  "esperado": {
   "units": 76,
-  "vagas": 76,
+  "vagas": 80,
   "vagasReq": 78,
   "CA": 3.7226,
   "H": 43.5,
   "priv": 6380,
   "vagasPorPav": {
-   "s1": 42,
-   "g1": 28
+   "s1": 45,
+   "g1": 29
   },
   "vgv": 91825988,
   "custo": 81277436,

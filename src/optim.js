@@ -170,7 +170,8 @@ const otimKey=r=>[r.nT,r.pk,r.N,r.pav,r.sub,r.gac].join("|");
 function otimMLite(m){   // o que o Worker precisa do modelo da tela (clonável e pequeno)
   if(!m) return {};
   const gar={}; Object.entries(m.gar||{}).forEach(([k,l])=>{ gar[k]={count:l? +l.count||0 : 0} });
-  return {vagasLay:m.vagasLay, vagasEst:m.vagasEst, vf:{count:m.vf? m.vf.count||0 : 0}, subA:m.subA, embA:m.embA, gTer:m.gTer, gar};
+  return {vagasLay:m.vagasLay, vagasEst:m.vagasEst, vf:{count:m.vf? m.vf.count||0 : 0}, subA:m.subA, embA:m.embA, gTer:m.gTer, gar,
+    vert: m.vert? {ok:m.vert.ok!==false} : undefined};   // circulação inválida: a calibração não vale e a busca troca a garagem (otimGarValida)
 }
 function otimVagasCal(st, m){
   const gar=m && m.gar, mv=st.regras.m2Vaga||28; if(!gar || !Object.keys(gar).length) return null;
