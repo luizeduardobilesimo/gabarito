@@ -161,15 +161,15 @@ function prOtAviso(O){
   const fx=O.semLucro || O.fecha; if(!fx || !O.res.length) return "";
   // o que fecha a conta, cada linha com Aplicar (src/ui/ciclo.js): lazer enxuto, preço médio, terreno
   const L=typeof cxLinhasOtim==="function"? cxLinhasOtim(O) : [], k=`<div class="cx">${L.map(cxLinhaHTML).join("")}</div>`;
-  return O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim.${L.length? " Fecha a conta com:" : ""}${L.length? k : ""}</div>`
-    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção.${L.length? " Chega à meta com:" : ""}${L.length? k : ""}</div>`;
+  return O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`
+    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`;
 }
 /* garagem com que a opção foi conferida (tipo de rampa, acesso, ângulo) e pendências do projeto, em uma linha cada */
 function prOtGarHTML(r){
   if(!r.garagem) return "";
   const gi=r.garInfo, troca=typeof cicloGarIgual==="function" && !cicloGarIgual(r.garagem, cicloGarDe(S));
-  const outros=gi && gi.tipos? gi.tipos.filter(x=>x.g.rampaTipo!==r.garagem.rampaTipo && x.ok).slice(0,2).map(x=>`${(CICLO_TIPO_ROT[x.g.rampaTipo]||x.g.rampaTipo)}: ${x.vagas} vg`) : [];
-  return `<div class="note">Garagem: ${esc(cicloGarNome(r.garagem, S))}${troca? ` <span class="pill">muda</span>` : ""}${outros.length? ` · comparada com ${esc(outros.join(", "))}` : ""}</div>`;
+  const n=gi && gi.tipos? gi.tipos.filter(x=>x.ok).length : 0;
+  return `<div class="note">Garagem: ${esc(cicloGarNome(r.garagem, S))}${n>1? ` · a melhor de ${n} tipos de circulação` : ""}${troca? ` <span class="pill">muda</span>` : ""}</div>`;
 }
 function prOtPendHTML(r){ const p=(r.pend||[]).filter(x=>x.grave); return p.length? `<div class="note" style="color:var(--warn-t)">${esc(p.slice(0,2).map(x=>x.msg).join(" · "))}</div>` : "" }
 function otimHTML(){

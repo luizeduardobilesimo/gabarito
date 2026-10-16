@@ -35,7 +35,8 @@ const todas = r => [...r.res, ...(r.pareto ? r.pareto.pts : []), ...(r.pts || []
 /** confere uma opção aplicada a uma cópia do estudo: gabarito, CA, tamanho das unidades e aptoMin */
 function confere(st0, r, tol) {
   const s2 = A.clone(st0); A.aplicarOtim(r, s2);
-  const m = A.compute(s2, { quick: true }), f = A.finance(s2, m);
+  // a 1ª opção vem do cálculo completo (fase "ciclo" do otimizar: os números dela são os do Projeto); as outras, do rápido
+  const m = A.compute(s2, r.completo ? {} : { quick: true }), f = A.finance(s2, m);
   expect(s2.blocos).toEqual(st0.blocos);                                        // a forma não muda
   expect(s2.produto.torres.length).toBe(st0.produto.torres.length);             // nem o número de torres
   expect(m.H).toBeLessThanOrEqual((m.hLim ?? s2.regras.hMax) + 1e-6);
@@ -137,10 +138,11 @@ describe('otimizar para a forma desenhada', () => {
 describe('modo automático inalterado', () => {
   it('blocos guardados mas modo "auto": o otimizador varia torres como sempre e não marca forma', async () => {
     const B = carregar(); const st = estado(B, {}), m = B.compute(st);
-    const ref = await B.otimizar({ obj: 'lucro', torres: true, tipologias: false, unidades: true, mc: false }, null, null, { st, m });
+    // sem a fase "ciclo" (tem orçamento de tempo: duas rodadas podem conferir garagens diferentes); aqui só importa que os blocos guardados não mudam nada
+    const ref = await B.otimizar({ obj: 'lucro', torres: true, tipologias: false, unidades: true, mc: false, ciclo: false }, null, null, { st, m });
     const s2 = B.clone(st); B.blcPersonaliza(s2, 0); s2.blocos.modo = 'auto';
     expect(B.otimFormaAtiva(s2)).toBe(false);
-    const r = await B.otimizar({ obj: 'lucro', torres: true, tipologias: false, unidades: true, mc: false }, null, null, { st: s2, m: B.compute(s2) });
+    const r = await B.otimizar({ obj: 'lucro', torres: true, tipologias: false, unidades: true, mc: false, ciclo: false }, null, null, { st: s2, m: B.compute(s2) });
     const key = x => [x.nT, x.pk, x.N, x.pav, x.sub, x.gac, Math.round(x.lucro)].join(',');
     expect(r.forma).toBeUndefined();
     expect(r.res.map(key)).toEqual(ref.res.map(key));

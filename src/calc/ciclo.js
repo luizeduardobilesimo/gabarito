@@ -114,9 +114,9 @@ const cicloGet=(o,p)=>p.split(".").reduce((a,k)=>a==null? a : a[k], o);
 function cicloPatch(a, b){ return CICLO_PATHS.filter(p=>JSON.stringify(cicloGet(a,p))!==JSON.stringify(cicloGet(b,p))).map(p=>[p, clone(cicloGet(b,p)===undefined? null : cicloGet(b,p))]) }
 function cicloAplica(st, patch){ (patch||[]).forEach(([p,v])=>{ const ks=p.split("."), last=ks.pop(); let o=st; for(const k of ks){ if(o[k]==null) o[k]={}; o=o[k] } o[last]=clone(v) }); return st }
 /* o que mudou, em linguagem simples: "elevador de carros · +9 vagas · 3 → 2 subsolos · 14 → 16 andares" */
-function cicloMudouTxt(a, b){
+function cicloMudouTxt(a, b, o={}){
   const A=a.st, B=b.st, ga=cicloGarDe(A), gb=cicloGarDe(B), r=[];
-  if(ga.rampaTipo!==gb.rampaTipo) r.push(CICLO_TIPO_ROT[gb.rampaTipo]||gb.rampaTipo);
+  if(ga.rampaTipo!==gb.rampaTipo && !o.semTipo) r.push(CICLO_TIPO_ROT[gb.rampaTipo]||gb.rampaTipo);
   if(Math.abs(ga.acessoVei-gb.acessoVei)>=0.02 || (ga.ladoVei??null)!==(gb.ladoVei??null)) r.push((B.lote.front||[]).length>1 && (ga.ladoVei??null)!==(gb.ladoVei??null)? `acesso pela L${(gb.ladoVei ?? acPrincipal(B))+1}` : `acesso a ${pct(gb.acessoVei,0)} da frente`);
   if(String(ga.angulo)!==String(gb.angulo)) r.push(`vagas a ${gb.angulo}°`);
   const dv=b.m.vagas-a.m.vagas; if(dv) r.push(`${dv>0?"+":"−"}${Math.abs(dv)} vaga${Math.abs(dv)>1?"s":""}`);
@@ -140,7 +140,7 @@ async function cicloEstudo(st0, opts={}, onProg, ctx={}){
   const M=otimMotor(base, {cal, fin:(s,m)=>finance(s,m), score:f=>f.lucro, forma, rTol:Math.max(0.01, +(base.otim&&base.otim.rTol)||0.10), pavMinF:forma? otimPavMinForma(base) : 1});
   const c0=M.avalia(clone(base)); prog(0.06); await pausa(); chk();
   const L=[], add=(k, rot, c, extra={})=>{ if(!c || c===c0) return;
-    L.push({k, rot, desc:cicloMudouTxt(c0, c), lucro:c.f.lucro, margem:c.f.margemVGV, d:{lucro:c.f.lucro-c0.f.lucro, margem:c.f.margemVGV-c0.f.margemVGV},
+    L.push({k, rot, desc:cicloMudouTxt(c0, c, {semTipo:k==="garagem"}), lucro:c.f.lucro, margem:c.f.margemVGV, d:{lucro:c.f.lucro-c0.f.lucro, margem:c.f.margemVGV-c0.f.margemVGV},
       vagas:c.m.vagas, req:c.m.vagasReq, ok:M.nivelOk(c), patch:cicloPatch(base, c.st), ...extra}) };
   const fase=(a,b)=>p=>prog(a+(b-a)*Math.min(1,p));
   // 1) garagem: tipo de rampa, lado/posição do acesso e ângulo das vagas, com o reparo que mais vagas permitem

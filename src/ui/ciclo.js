@@ -13,14 +13,14 @@
 const CX = { sig:null, res:null, run:false, prog:0, prSig:null, pr:null };
 { const s=document.createElement("style"); s.id="cxCSS"; s.textContent=`
 .cx{display:grid}
-.cx-l{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:2px 10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.cx-l{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:2px 10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)}
 .cx-l:last-child{border-bottom:0}
 .cx-t{display:grid;gap:1px;min-width:0}
 .cx-t b{font-weight:550;font-size:12.5px;line-height:1.3}
 .cx-t span{font-size:11px;color:var(--muted);line-height:1.35}
 .cx-v{font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
 .cx-v.ok{color:var(--ok-t)}.cx-v.bad{color:var(--bad)}
-.cx-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
+.cx-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px}
 .cx-acts .prog{flex:1 1 120px;min-width:80px}
 .cx-acts .flink{margin-left:auto}
 .cx-nada{font-size:11.5px;color:var(--muted);padding:6px 0 2px}
@@ -34,8 +34,9 @@ const CX = { sig:null, res:null, run:false, prog:0, prSig:null, pr:null };
 const cxR = v=>`R$ ${nf(Math.ceil(v/50)*50,0)}/m²`;
 const cxGanho = v=>`${v<0?"−":"+"}${mi(Math.abs(v))}`;
 /* uma linha: título, o que muda, o valor (ganho ou meta) e Aplicar */
+const cxNb = t=>esc(t).replace(/R\$ /g,"R$\u00a0");   // "R$ 15.600" não quebra
 function cxLinhaHTML(l){
-  return `<div class="cx-l"><div class="cx-t"><b>${esc(l.rot)}</b>${l.desc? `<span>${esc(l.desc)}</span>` : ""}</div>${l.v!=null? `<span class="cx-v${l.cls? " "+l.cls : ""}">${l.v}</span>` : "<span></span>"}<button type="button" class="btn sm" data-act="cxAplica" data-src="${l.src}" data-k="${l.k}" ${l.i!=null? `data-i="${l.i}"` : ""} aria-label="Aplicar: ${esc(l.rot)}">Aplicar</button></div>`;
+  return `<div class="cx-l"><div class="cx-t"><b>${cxNb(l.rot)}</b>${l.desc? `<span>${cxNb(l.desc)}</span>` : ""}</div>${l.v!=null? `<span class="cx-v${l.cls? " "+l.cls : ""}">${cxNb(l.v)}</span>` : "<span></span>"}<button type="button" class="btn sm" data-act="cxAplica" data-src="${l.src}" data-k="${l.k}" ${l.i!=null? `data-i="${l.i}"` : ""} aria-label="Aplicar: ${esc(l.rot)}">Aplicar</button></div>`;
 }
 /* preço: todas as tipologias, coberturas e lojas na mesma proporção (a conta de otimPrecoPara/finance dp), arredondado para cima a R$ 50 */
 function cxPrecoAplica(st, preco){
@@ -48,24 +49,25 @@ function cxLinhasOtim(O){
   if(!O || !O.res || !O.res.length) return [];
   const L=[], r0=O.res[0], fx=O.semLucro || O.fecha, q=i=>i? ` · na opção ${i+1}` : "";
   if(r0.enxuto && r0.enxuto.dLucro>0) L.push({src:"otim", k:"enxuto", rot:`Lazer enxuto (sem ${cicloLista(r0.enxuto.tira)})`, desc:`margem ${pct(r0.enxuto.margem,1)}${r0.enxuto.vagas!==r0.vagas? ` · ${r0.enxuto.vagas} vagas` : ""}`, v:cxGanho(r0.enxuto.dLucro), cls:"ok"});
-  if(fx && fx.precoMeta) L.push({src:"otim", k:"preco", rot:`Preço médio de ${cxR(fx.precoMeta)}`, desc:`hoje ${cxR(fx.precoAtual)} · +${pct(fx.precoMeta/Math.max(1,fx.precoAtual)-1,0)}${q(fx.opcaoMeta)}`, v:`margem ${pct(fx.meta,0)}`});
-  else if(fx && fx.precoZero) L.push({src:"otim", k:"precoZero", rot:`Preço médio de ${cxR(fx.precoZero)}`, desc:`hoje ${cxR(fx.precoAtual)} · +${pct(fx.precoZero/Math.max(1,fx.precoAtual)-1,0)}${q(fx.opcaoZero)}`, v:"margem 0"});
+  const destino=O.semLucro? "ao lucro zero" : `à meta de ${pct(fx? fx.meta : 0,0)}`;
+  if(fx && fx.precoMeta) L.push({src:"otim", k:"preco", rot:`Preço médio de ${cxR(fx.precoMeta)}`, desc:`hoje ${cxR(fx.precoAtual)} · leva à meta de ${pct(fx.meta,0)}${q(fx.opcaoMeta)}`, v:`+${pct(fx.precoMeta/Math.max(1,fx.precoAtual)-1,0)}`});
+  else if(fx && fx.precoZero) L.push({src:"otim", k:"precoZero", rot:`Preço médio de ${cxR(fx.precoZero)}`, desc:`hoje ${cxR(fx.precoAtual)} · leva ao lucro zero${q(fx.opcaoZero)}`, v:`+${pct(fx.precoZero/Math.max(1,fx.precoAtual)-1,0)}`});
   const tz= fx && (O.semLucro? fx.terrenoZero : fx.terrenoMeta);
-  if(fx && tz>0 && (fx.terrenoAtual>0 || fx.terrenoPct) && tz<(fx.terrenoAtual||Infinity)) L.push({src:"otim", k:"terreno", rot:`Terreno até ${mi(tz)}`, desc:fx.terrenoAtual>0? `hoje ${mi(fx.terrenoAtual)}${fx.terrenoPct? " (estimado)" : ""}` : "", v:O.semLucro? "margem 0" : `margem ${pct(fx.meta,0)}`});
+  if(fx && tz>0 && (fx.terrenoAtual>0 || fx.terrenoPct) && tz<(fx.terrenoAtual||Infinity)) L.push({src:"otim", k:"terreno", rot:`Terreno até ${mi(tz)}`, desc:`${fx.terrenoAtual>0? `hoje ${mi(fx.terrenoAtual)}${fx.terrenoPct? " (estimado)" : ""} · ` : ""}leva ${destino}`, v:fx.terrenoAtual>0? `−${pct(1-tz/fx.terrenoAtual,0)}` : null});
   return L.slice(0,4);
 }
 
 /* ---------------- Viabilidade › Resultado ---------------- */
 function cxSecHTML(){
   return SEC("O que fecha a conta", `<div class="cx" id="cxList"></div><div class="cx-acts" id="cxActs"></div>`,
-    {key:"fecha", open:true, hidden:true, sum:"", info:"Quando a margem fica abaixo da meta, aqui aparece o que a leva até lá, já calculado para este estudo. Preço e terreno: o valor que fecha a meta. “Procurar no projeto” testa, uma mudança por vez e com o projeto real (garagem com rotas, térreo e vagas exigidas): o tipo de rampa ou elevador de carros, a posição do acesso e o ângulo das vagas (com os subsolos e andares que isso permite), o lazer enxuto, uma unidade a mais ou a menos por andar e o ajuste de andares e garagens. “Aplicar” troca no estudo — Ctrl+Z desfaz."});
+    {key:"fecha", open:true, hidden:true, sum:"", info:"O que fecha a conta"});
 }
 function cxLinhasViab(m, f){
   const meta=S.fin.margemAlvo, L=[], sig=JSON.stringify(S);
   if(CX.prSig!==sig){ CX.prSig=sig; try{ CX.pr=otimPrecoPara(S, m, meta) }catch(e){ CX.pr=null; console.error("[cx] preço", e) } }
   const pm=basePrice(S);
-  if(CX.pr && CX.pr>pm) L.push({src:"viab", k:"preco", rot:`Preço médio de ${cxR(CX.pr)}`, desc:`hoje ${cxR(pm)} · +${pct(CX.pr/pm-1,0)} em todas as tipologias`, v:`margem ${pct(meta,0)}`});
-  if(cxTerrenoOk() && f.maxTerreno>0 && f.maxTerreno<S.fin.terreno) L.push({src:"viab", k:"terreno", rot:`Terreno até ${mi(f.maxTerreno)}`, desc:`hoje ${mi(S.fin.terreno)} · −${pct(1-f.maxTerreno/S.fin.terreno,0)}`, v:`margem ${pct(meta,0)}`});
+  if(CX.pr && CX.pr>pm) L.push({src:"viab", k:"preco", rot:`Preço médio de ${cxR(CX.pr)}`, desc:`hoje ${cxR(pm)} · leva à meta`, v:`+${pct(CX.pr/pm-1,0)}`});
+  if(cxTerrenoOk() && f.maxTerreno>0 && f.maxTerreno<S.fin.terreno) L.push({src:"viab", k:"terreno", rot:`Terreno até ${mi(f.maxTerreno)}`, desc:`hoje ${mi(S.fin.terreno)} · leva à meta`, v:`−${pct(1-f.maxTerreno/S.fin.terreno,0)}`});
   const R=CX.res && CX.res.sig===sig? CX.res : null;
   if(R) R.linhas.forEach((l,i)=>L.push({src:"viab", k:"proj", i, rot:l.rot, desc:`${l.desc}${l.desc? " · " : ""}margem ${pct(l.margem,1)}`, v:cxGanho(l.d.lucro), cls:"ok"}));
   return {L, R};

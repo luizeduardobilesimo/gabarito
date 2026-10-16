@@ -287,7 +287,8 @@ let OTIM=null;
    vento=false, malha=false, efic=false, vc=false} (efic/vc acrescentam eficiência global e V/C aos critérios da fronteira de Pareto).
    terrenoPct (assistente, terreno sem preço): cada combinação é avaliada com terreno = terrenoPct × o seu VGV — o mesmo que o assistente
    lança depois (antes ele otimizava com terreno 0 e cobrava 12% do VGV só no fim, e a ordem não era a do resultado mostrado).
-   opts.cal (testes): calibração das vagas {s, g, t, vf} fixa.
+   opts.cal (testes): calibração das vagas {s, g, t, vf} fixa. Fase "ciclo" (garagem real, térreo, cálculo completo da 1ª, lazer enxuto —
+   ver `ciclo` abaixo): opts.ciclo=false desliga, opts.completo=false pula o completo, opts.tempoCiclo (padrão até 8 s), opts.cicloN (3).
    Busca (UX v3 P3): unidades por andar 2…8 (e 1 em lote pequeno); para cada garagem, alturas até o MENOR entre o gabarito/CA e o que
    cabe (a planta estreita com a altura) e também 70% e 50% disso; vagas estimadas pela calibração por pavimento; ordem = nível
    (lucro > 0 e margem s/ VGV ≥ S.fin.margemAlvo › lucro > 0 › prejuízo) e depois o objetivo. As 14 melhores vão à conferência com o layout
@@ -296,7 +297,10 @@ let OTIM=null;
    garagem elevada, vagas já cumpridas) não são recalculadas; o sol (que não depende dos subsolos) é guardado por assinatura.
    Resultado serializável (contrato para a interface e o assistente):
      res        até 5 opções conferidas, em ordem (nível, objetivo); cada uma {nT, pk, N, pav, sub, gac, mix, units, vagas, req, lucro,
-                margem (s/ VGV), tir, vpl, vgv, efic, nivel, semLucro?, terreno? (com terrenoPct)}
+                margem (s/ VGV), tir, vpl, vgv, efic, nivel, semLucro?, terreno? (com terrenoPct), garagem {rampaTipo, acessoVei, ladoVei,
+                angulo} (a com que foi conferida — aplicarOtim grava), garInfo? {base, tipos[]} (melhor de cada tipo de circulação), pend
+                [{k, grave, msg}] (o que o projeto não resolve), completo? (a 1ª: números do cálculo COMPLETO, os do Projeto), vagasFalta?,
+                enxuto? (alternativa "lazer enxuto" da 1ª: opção inteira + lazer, tira, dLucro, dMargem — só aplicada se escolhida)}
      fecha      quando a 1ª está abaixo da meta: {k, motivo, meta, lucro, margem, precoAtual, precoZero, precoMeta (R$/m² médio; os
                 menores entre as opções, opcaoZero/opcaoMeta = índice em res quando não é a 1ª), terrenoAtual, terrenoZero, terrenoMeta, terrenoPct}
      semLucro   = fecha, quando nem a 1ª dá lucro (res[0].semLucro = true): a menos ruim + motivo + o que fecharia a conta
