@@ -26890,9 +26890,24 @@ function pdfCabecalhoRixel(doc,t,PW,M,T){
   doc.setFontSize(6.5); doc.setTextColor(161,161,166); doc.text("BY RIXEL",x+w+3.2,10.3,{charSpace:0.45});
   doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(255); doc.text(T(t),PW-M,10.4,{align:"right"}) }
 async function dlNS(){ return useCap("downloads") }
-async function dlCheck(){ const n=document.getElementById("dlNote"); if(!n) return; const d=await dlNS(); if(!d) n.textContent="Os downloads não estão disponíveis nesta visualização. Abra o Gabarito pelo link do claude.ai para baixar arquivos."; }
+async function dlCheck(){ const n=document.getElementById("dlNote"); if(!n) return; const d=await dlNS(); if(!d && !dlNavegadorOk()) n.textContent="Os downloads não estão disponíveis nesta visualização. Abra o Gabarito pelo link do claude.ai para baixar arquivos."; }
+/* fora do claude.ai (app web gabarito.rixel.com.br, npm run dev, arquivo local) não há window.claude: baixa pelo navegador */
+const DL_TIPOS={json:"application/json", csv:"text/csv;charset=utf-8", pdf:"application/pdf", zip:"application/zip", xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", txt:"text/plain;charset=utf-8"};
+function dlNavegadorOk(){ try{ return typeof document!=="undefined" && "download" in document.createElement("a") && typeof URL!=="undefined" && !!URL.createObjectURL }catch(e){ return false } }
+function dlNavegador(filename, data){
+  const ext=(String(filename).split(".").pop()||"").toLowerCase(), tipo=DL_TIPOS[ext]||"application/octet-stream";
+  const blob= data instanceof Blob? data : new Blob([data], {type:tipo});
+  const url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=filename; a.rel="noopener"; a.style.display="none"; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove() }, 4000);
+}
 async function saveFile(filename, data){
-  const d=await dlNS(); if(!d){ toast("Download indisponível nesta visualização"); return false }
+  const d=await dlNS();
+  if(!d){
+    if(!dlNavegadorOk()){ toast("Download indisponível nesta visualização"); return false }
+    try{ dlNavegador(filename, data); toast("Arquivo pronto: "+filename); return true }
+    catch(e){ toast("Não foi possível baixar o arquivo"); return false }
+  }
   try{ await d.save({filename, data}); toast("Arquivo pronto: "+filename); return true }
   catch(e){ if(e&&e.code==="declined") toast("Download cancelado"); else if(e&&e.code==="rate_limited") toast("Já há um download aguardando confirmação"); else toast("Não foi possível baixar: "+(e&&e.code||"erro")); return false }
 }
