@@ -65,6 +65,8 @@ const ok = (c, msg) => { console.log((c ? '  ok   ' : '  FALHA ') + msg); if (!c
       await p.click('[data-a="seguir"]'); await p.waitForTimeout(300);
       await p.fill('#assPr', '12000');
       await p.click('[data-a="seguir"]');
+      // passo Restrições (diretrizes do produto): segue no modo livre
+      await p.waitForTimeout(300); if (await p.evaluate(() => !document.getElementById('assWiz').hidden && !!document.querySelector('#assWiz [data-a="seguir"]'))) await p.click('[data-a="seguir"]');
       await p.waitForFunction(() => document.getElementById('assWiz').hidden, null, { timeout: 180000 });
       ok(!(await aberta()), 'estudo gerado: a tela inicial fecha');
       await p.evaluate(() => calcPronto()); await p.waitForTimeout(600); await p.evaluate(() => estGrava());
