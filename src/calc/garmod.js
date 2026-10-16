@@ -788,7 +788,7 @@ function gmMonta(poly, obst, E, o, pisos, M, FR, L){
       vagas=[...Lx.vagas, ...faixas];
     }
     // numeração: fileira por fileira (de cima para baixo e da esquerda para a direita, no referencial), na ordem ao longo do corredor
-    { const rows=new Map(); vagas.forEach(v=>{ if(!garCar(v.tipo) || !v._f) return; const k=v._f.o+":"+v.row; if(!rows.has(k)) rows.set(k,[]); rows.get(k).push(v) });
+    { const rows=new Map(); vagas.forEach(v=>{ if(!garCar(v.tipo)) return; const k= v._f? v._f.o+":"+v.row : v.cunha!=null? "C:"+v.cunha : null; if(!k) return; if(!rows.has(k)) rows.set(k,[]); rows.get(k).push(v) });
       const ord=[...rows.values()].map(l=>{ const xs=l.map(v=>v.c[0]), ys=l.map(v=>v.c[1]); return {l, x:Math.min(...xs), y:Math.max(...ys), hor: Math.max(...xs)-Math.min(...xs) >= Math.max(...ys)-Math.min(...ys)} });
       ord.sort((a,b)=>Math.abs(a.y-b.y)>3? b.y-a.y : a.x-b.x); let n=0;   // de cima para baixo, da esquerda para a direita (no desenho)
       ord.forEach(o=>o.l.sort((a,b)=> o.hor? a.c[0]-b.c[0] : b.c[1]-a.c[1]).forEach(v=>v.num=++n));
