@@ -47,6 +47,11 @@ describe('programa realista do térreo', () => {
       terreo(C).filter(a => !['clausura', 'hall'].includes(a.k)).forEach(a => expect((a.moveis || []).length, a.nome).toBeGreaterThan(0));
       C.falta.forEach(a => { expect(a.motivo).toBeTruthy(); expect(C.problemas.some(p => p.msg.startsWith(a.nome))).toBe(true) }) }
   });
+  it('o que sobra vira estar ou área livre coberta (aberta para a circulação, com bancos) ou reserva técnica; ambiente reduzido cresce para o vão ao lado', T, () => {
+    for (const k of ['exemplo', 'pequeno']) { const C = calc(k).m.comuns;
+      (C.estar || []).forEach(e => { expect(['estar', 'pilotis', 'reserva']).toContain(e.k); expect(e.area).toBeGreaterThanOrEqual(4); if (e.k !== 'reserva') expect(e.moveis.length, `${k}: ${e.nome}`).toBeGreaterThan(0) }) }
+    const gm = calc('exemplo').m.comuns.amb.find(a => a.k === 'gourmet'); expect(gm.area).toBeGreaterThan(gm.A * 0.9);
+  });
   it('cálculo rápido (otimizador) não roda o planejador', T, () => {
     const st = estado(A, {}), m = A.compute(st, { quick: true, layouts: false });
     expect(m.comuns == null).toBe(true); expect(Array.isArray(m.lzLay.terreo)).toBe(true);
@@ -70,9 +75,10 @@ describe('adjacências e acessos', () => {
       terreo(C).forEach(a => { if (a.rotaOk === false) expect(a.par && C.amb.find(x => x.id === a.par && x.rotaOk !== false), `${k}: ${a.nome}`).toBeTruthy() });
       expect(C.problemas.filter(p => p.k === 'rota' && p.nivel === 'bad')).toEqual([]) }
   });
-  it('nenhum ambiente solto no meio: cada um tem ao menos dois lados encostados em parede, núcleo ou outro ambiente', T, () => {
+  it('nenhum ambiente solto no meio: cada um tem ao menos dois lados encostados em parede, núcleo, outro ambiente ou estar', T, () => {
+    // (o estar / área livre coberta é um lugar de ficar, como um terraço: encostar nele não é "solto na circulação")
     for (const k of ['exemplo', 'grande', 'pequeno']) { const { m } = calc(k), C = m.comuns, [ux, vy] = C.eixos.terreo;
-      const circ = [...(C.circ.terreo || []), ...(C.circ.hall || []), ...(C.sobra || [])];
+      const circ = [...(C.circ.terreo || []), ...(C.circ.hall || [])];
       terreo(C).filter(a => a.k !== 'hall').forEach(a => { const livres = ladosFora(a, ux, vy).filter(p => circ.some(c => G.pip(p, c))).length;
         expect(livres, `${k}: ${a.nome}`).toBeLessThanOrEqual(2) }) }
   });

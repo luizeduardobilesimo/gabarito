@@ -26,6 +26,7 @@ function cmnDraw(g, m, local, K){
   const hatchP=(p,col,a=0.4,step=0.5,ang=1)=>{ if(!p||p.length<3) return; path(p); g.save(); g.clip(); g.strokeStyle=col; g.globalAlpha=a; g.lineWidth=0.8; const P=p.map(U), u0=Math.min(...P.map(q=>q[0])), u1=Math.max(...P.map(q=>q[0])), v0=Math.min(...P.map(q=>q[1])), v1=Math.max(...P.map(q=>q[1])), L=(u1-u0)+(v1-v0);
     for(let t=-L; t<L; t+=Math.max(step, 4/s)){ g.beginPath(); const A=w2s(W(u0+t, v0)), B=w2s(W(u0+t+ang*(v1-v0), v1)); g.moveTo(...A); g.lineTo(...B); g.stroke() } g.restore(); g.globalAlpha=1 };
   const lst=(C.amb||[]).filter(a=>a.local===local);
+  const estar= local==="terreo"? (C.estar||[]) : [];   // sobras abertas: estar / área livre coberta / reserva técnica (só piso, sem parede)
   const ext=a=> a.desc || a.recuo || a.local==="emb" && a.k!=="apoioPisc";
   const wallW=Math.max(1, Math.min(4, s*0.15));
   // 1. paisagismo, calçada e caminhos
@@ -34,7 +35,7 @@ function cmnDraw(g, m, local, K){
   if(local==="emb") ((C.circ||{}).emb||[]).forEach(p=>fill(p, css("--c-circ"), 1));
   // 2. piso do hall e das galerias (o hall social em branco; galerias e sobras num cinza claro)
   if(local!=="emb"){ ((C.circ||{})[local]||[]).forEach(p=>fill(p, css("--c-hall"), 1)); if(local==="terreo") ((C.circ||{}).hall||[]).forEach(p=>fill(p, css("--c-hall"), 1));
-    if(local==="terreo") (C.sobra||[]).forEach(p=>{ fill(p, css("--c-circ"), 1); if(s>4) hatchP(p, ink, 0.12, 0.6) }) }
+    if(local==="terreo"){ (C.sobra||[]).forEach(p=>fill(p, css("--c-hall"), 1)); (C.reserva||[]).forEach(p=>{ fill(p, css("--c-circ"), 1); if(s>4) hatchP(p, ink, 0.12, 0.6) }) } }
   // 3. ambientes: parede (poché) e piso na cor do uso
   lst.forEach(a=>{ const c=CMN_CAT[a.k]||{}, col=css(CMN_COR[c.cor]||"--surface");
     if(a.k==="piscina"){ fill(a.poly, css("--lz-deck"), 1); hatchP(a.poly, ink, 0.1, 0.45, 0); stroke(a.poly, ink, 0.8, [4,3], 0.6);
@@ -53,10 +54,11 @@ function cmnDraw(g, m, local, K){
     (a.janelas||[]).forEach(j=>{ const nIn=[-j.n[0],-j.n[1]], t=0.15; fill(quad(j.p0,j.p1,nIn,-0.02,t), surf, 1);
       [t*0.35,t*0.65].forEach(o=>line(add(j.p0,nIn,o), add(j.p1,nIn,o), j.fraca? ink2 : acc, Math.max(0.8,Math.min(1.3,s*0.05)))) }) });
   // 5. mobiliário e equipamentos
-  if(s>5.5){ lst.forEach(a=>(a.moveis||[]).forEach(f=>{
+  if(s>5.5){ [...lst, ...estar].forEach(a=>(a.moveis||[]).forEach(f=>{
       if(f.t==="c"){ const [x,y]=w2s(f.c), r=f.r*s; g.beginPath(); g.arc(x,y,r,0,7);
         if(f.cl==="giro"){ g.strokeStyle=acc; g.lineWidth=0.8; g.setLineDash([3,2]); g.globalAlpha=0.7; g.stroke(); g.setLineDash([]); g.globalAlpha=1; return }
         if(f.cl==="linhac"){ g.strokeStyle=surf; g.lineWidth=1.2; g.stroke(); return }
+        if(f.cl==="planta"){ g.fillStyle=css("--lz-c"); g.fill(); g.strokeStyle=css("--ok"); g.lineWidth=0.8; g.globalAlpha=0.6; g.stroke(); g.globalAlpha=1; return }
         g.fillStyle= f.cl==="gasc"? css("--c-duto") : surf; g.globalAlpha=0.95; g.fill(); g.globalAlpha=1; g.strokeStyle=ink2; g.lineWidth=0.75; g.globalAlpha=0.7; g.stroke(); g.globalAlpha=1; return }
       if(f.t==="l"){ const c= f.cl==="raia"? surf : f.cl==="linha"? surf : f.cl==="espelho"? acc : ink2; line(f.pts[0], f.pts[1], c, f.cl==="raia"? 1.4 : f.cl==="div"? 1.2 : 0.8, f.cl==="raia"? [6,4] : null, f.cl==="div"? 0.9 : 0.7); return }
       const P=f.pts;
@@ -81,6 +83,8 @@ function cmnDraw(g, m, local, K){
   if(s>3) lst.forEach(a=>{ if(!a.nivel) return; const p=inset(a.lamina||a.poly, 0.12); if(p.length<3) return; stroke(p, css(a.nivel==="bad"?"--bad":"--warn"), a.nivel==="bad"? 2 : 1.4, a.nivel==="bad"? null : [5,3], 0.9) });
   // 8. nomes e áreas
   function lbl(t, P, size, w, col){ g.font=`${w} ${size}px ${css("--f-sans")}`; g.textAlign="center"; g.textBaseline="middle"; g.lineWidth=3; g.strokeStyle=surf; g.globalAlpha=0.85; g.strokeText(t,P[0],P[1]); g.globalAlpha=1; g.fillStyle=col||ink; g.fillText(t,P[0],P[1]) }
+  if(s>6) estar.forEach(a=>{ const p=a.poly, xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]), bw=Math.max(...xs)-Math.min(...xs), bh=Math.max(...ys)-Math.min(...ys), c=w2s(G.centroid(p));
+    g.font=`500 9px ${css("--f-sans")}`; if(g.measureText(a.nome).width>bw-6 || bh<26) return; lbl(a.nome, [c[0], c[1]-5], 9, 500, ink2); lbl(`${nf(a.area,0)} m²`, [c[0], c[1]+6], 8.5, 500, ink2) });
   if(s>3) lst.forEach(a=>{ const p=a.lamina||a.poly, xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]), bw=Math.max(...xs)-Math.min(...xs), bh=Math.max(...ys)-Math.min(...ys), c=w2s(G.centroid(p));
     const size= s>14? 10.5 : 9.5; g.font=`600 ${size}px ${css("--f-sans")}`; let nome=a.nome; if(g.measureText(nome).width>bw-6){ const cur={lixo:"Lixo",medidores:"Med.",gas:"Gás",clausura:"Claus.",portaria:"Port.",dml:"DML",wc:"WC PCD",vest:"Vest.",copaf:"Copa f.",apoioPisc:"Apoio",bici:"Bicic."}[a.k]; if(cur) nome=cur }
     if(g.measureText(nome).width>bw-4 || bh<12) return;

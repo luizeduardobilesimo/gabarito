@@ -427,6 +427,9 @@ function cmnMoveis(g, a, lado, portaLado){
   else if(k==="pet"){ C(W*0.3, D*0.4, 0.35, "equip"); C(W*0.65, D*0.55, 0.35, "equip"); R(W*0.45, D*0.15, 1.2, 0.3, "equip"); R(0.3, D-0.7, 1.2, 0.45) }
   else if(k==="quadra"){ const qw=Math.min(W-1, D*0.55), qd=Math.min(D-1, qw*1.8), x0=(W-qw)/2, y0=(D-qd)/2; out.push({t:"r", cl:"linha", pts:[F.G(x0,y0),F.G(x0+qw,y0),F.G(x0+qw,y0+qd),F.G(x0,y0+qd)]}); Ln(x0, y0+qd/2, x0+qw, y0+qd/2, "linha"); C(x0+qw/2, y0+qd/2, Math.min(1.5,qw*0.2), "linhac") }
   else if(k==="deck"||k==="externo"){ for(let x=0.6;x+0.7<W-0.3;x+=1.2) R(x, 0.4, 0.7, 1.9) }
+  else if(k==="estar" && W>=2.4 && D>=2.4){ const sw=Math.min(2.2, W-0.6), x0=(W-sw)/2; R(x0, 0.15, sw, 0.85, "equip"); R(W/2-0.55, 1.35, 1.1, 0.6);   // sofá na parede, mesa de centro
+    if(D>=3.4){ R(x0, 2.3, 0.8, 0.8); R(x0+sw-0.8, 2.3, 0.8, 0.8) } if(W>=4) C(W-0.5, 0.55, 0.35, "planta") }
+  else if(k==="pilotis"){ for(let x=0.6; x+1.8<=W-0.4; x+=4.2){ R(x, 0.25, 1.8, 0.5, "equip"); if(x+2.6<W-0.5) C(x+2.6, 0.6, 0.45, "planta") } }
   else if(k==="outro"){ R(W/2-0.9, D/2-0.5, 1.8, 1.0); [0,1].forEach(q=>{ cad(W/2-0.5+q, D/2-0.75); cad(W/2-0.5+q, D/2+0.75) }) }
   return out;
 }
@@ -480,6 +483,27 @@ function cmnSobras(g, feitos){
         let preso=true; if(lado<2){ for(let j=s.j;j<s.j+s.h;j++){ const v=g.at(alem[0],j); if(v===CL||cmnCirc(v)){ preso=false; break } } } else { for(let i=s.i;i<s.i+s.w;i++){ const v=g.at(i,alem[1]); if(v===CL||cmnCirc(v)){ preso=false; break } } }
         if(preso && (r.w*r.h + s.w*s.h)*g.res*g.res <= f.A*1.3){ cmnMarca(g, s, f.cod); if(lado===0){ r.i-=t; r.w+=t } else if(lado===1) r.w+=t; else if(lado===2){ r.j-=t; r.h+=t } else r.h+=t; break } } } });
   feitos.forEach(f=>{ f.poly=cmnRetPoly(g,f.r); f.area=f.r.w*f.r.h*g.res*g.res });
+}
+/* ambientes que ficaram menores que o programa crescem para o vão livre ao lado (faixa inteira de um lado, sem passar da
+   área pedida + 8%, sem ficar comprido demais e sem fechar o acesso a outro vão) */
+function cmnCresce(g, lst){
+  const res=g.res, lim=Math.round(4/(res*res));
+  lst.forEach(f=>{ const c=CMN_CAT[f.k]; if(!c) return;
+    for(let volta=0; volta<6; volta++){ const r=f.r, a0=r.w*r.h*res*res; if(a0>=f.A*0.97) break;
+      let best=null;
+      for(const d of [0,1,2,3]){
+        for(let t=1;;t++){ const s= d===0? {i:r.i-t,j:r.j,w:t,h:r.h} : d===1? {i:r.i+r.w,j:r.j,w:t,h:r.h} : d===2? {i:r.i,j:r.j-t,w:r.w,h:t} : {i:r.i,j:r.j+r.h,w:r.w,h:t};
+          let ok=true; const so= d===0? {i:s.i,j:s.j,w:1,h:s.h} : d===1? {i:s.i+s.w-1,j:s.j,w:1,h:s.h} : d===2? {i:s.i,j:s.j,w:s.w,h:1} : {i:s.i,j:s.j+s.h-1,w:s.w,h:1};
+          for(let j=so.j;j<so.j+so.h&&ok;j++) for(let i=so.i;i<so.i+so.w;i++) if(g.at(i,j)!==CL){ ok=false; break }
+          if(!ok) break;
+          const w=r.w+(d<2?t:0), h=r.h+(d>=2?t:0), A=w*h*res*res; if(A>f.A*1.08) break;
+          if(Math.max(w,h)/Math.min(w,h) > c.prop+0.2) continue;
+          const sc=-Math.abs(f.A-A); if(!best || sc>best.sc) best={d,t,s,sc} } }
+      if(!best) break;
+      const fol=cmnFolga(g, v=>v===CL||cmnCirc(v)), il0=cmnIlhadas(g, fol, null);
+      cmnMarca(g, best.s, f.cod); if(cmnIlhadas(g, fol, best.s)-il0>lim){ cmnMarca(g, best.s, CL); break }
+      const d=best.d, t=best.t; if(d===0){ r.i-=t; r.w+=t } else if(d===1) r.w+=t; else if(d===2){ r.j-=t; r.h+=t } else r.h+=t }
+    f.poly=cmnRetPoly(g,f.r); f.area=f.r.w*f.r.h*res*res; f.reduzido = f.area < f.A*0.9 });
 }
 /* componentes de células livres: ligadas à circulação viram circulação (se pequenas) ou área livre */
 function cmnLivres(g, maxCirc){
@@ -656,9 +680,15 @@ function comunsTerreo(st, m, prog){
   melhor.feitos.forEach(f=>amb.push(f));
   melhor.falta.forEach(a=>falta.push({...a, motivo: cmnMotivoFalta(a, g)}));
   cmnSobras(g, amb.filter(f=>!["clausura","portaria"].includes(f.k)));
-  const livres=cmnLivres(g, 60);
-  // sobras grandes: área livre coberta (pilotis) — sem garagem no térreo, o que não é programa fica aberto
+  cmnCresce(g, amb.filter(f=>!["clausura","portaria","hall"].includes(f.k) && f.area<f.A*0.97));
+  const livres=cmnLivres(g, 15);
+  // sobras grandes: abertas para a circulação viram estar (até ~40 m²) ou área livre coberta (pilotis), com bancos e
+  // jardineiras; fechadas (sem acesso pela circulação) ficam como reserva técnica
   const sobra=livres.filter(x=>x.A>=4).map(x=>({A:x.A, rets:cmnRetangulosDe(g, x.cells), toca:x.toca}));
+  const estar=sobra.map(x=>{ const r=x.rets.slice().sort((a,b)=>b.w*b.h-a.w*a.h)[0]; if(!r) return null;
+    const k= !x.toca? "reserva" : x.A>=40? "pilotis" : "estar", nome= k==="reserva"? "Reserva técnica" : k==="pilotis"? "Área livre coberta" : "Estar";
+    const e={k, nome, area:x.A, poly:cmnRetPoly(g,r), r, toca:x.toca}; const cl=cmnContato(g, r, null, null).circLado, ld= r.w>=r.h? (cl[2]<=cl[3]? 2 : 3) : (cl[0]<=cl[1]? 0 : 1);   // bancos no lado comprido, longe da passagem
+    e.moveis= k==="reserva"? [] : cmnMoveis(g, {k, r}, k==="estar"? cmnOposto(cmnLadoCirc(g,{r})) : ld, 3); return e }).filter(Boolean);
   // portas, janelas e mobiliário
   amb.forEach(f=>{
     if(f.k==="hall"){ f.portas=[]; }
@@ -683,7 +713,7 @@ function comunsTerreo(st, m, prog){
   // circulação desenhada
   const circ=cmnRetangulos(g, v=>v===CC).map(r=>cmnRetPoly(g,r));
   const hallExt=cmnRetangulos(g, v=>v===CH).map(r=>cmnRetPoly(g,r));
-  return {g, amb, falta, avisos, circ, hallExt, rota, luz, ligacoes, ent, ancora, ancServ, sobra:sobra.flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), sobraA:sobra.reduce((s,x)=>s+x.A,0), fCl, fPt, fHall, uPed, uVei, veiFrente};
+  return {g, amb, falta, avisos, circ, hallExt, rota, luz, ligacoes, ent, ancora, ancServ, estar, sobra:sobra.filter(x=>x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), reserva:sobra.filter(x=>!x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), sobraA:sobra.reduce((s,x)=>s+x.A,0), fCl, fPt, fHall, uPed, uVei, veiFrente};
 }
 function cmnRetangulosDe(g, cells){ const c=new Int16Array(g.nx*g.ny); cells.forEach(k=>c[k]=1); return cmnRetangulos({nx:g.nx, ny:g.ny, c}, v=>v===1) }
 function cmnMotivoFalta(a, g){ const c=CMN_CAT[a.k]; return `pede ${cmnNf(a.A,0)} m² com ${cmnNf(c.d,1)} m de largura mínima e porta para a circulação` }
@@ -932,7 +962,7 @@ function comunsCalc(st, m){
   const rota=[...((TT&&TT.rota)||[]).map(r=>({...r, local:"terreo"})), ...((LJ&&LJ.rota)||[]).map(r=>({...r, local:"emb"}))];
   const out={ amb, falta, rota, prog,
     circ:{ terreo:TT? TT.circ : [], hall:TT? TT.hallExt : [], emb:LJ? LJ.caminhos : [], pav:PV? PV.circ : [], cob:CB? CB.circ : [] },
-    sobra:TT? TT.sobra : [], sobraA:TT? TT.sobraA : 0,
+    sobra:TT? TT.sobra : [], reserva:TT? TT.reserva : [], sobraA:TT? TT.sobraA : 0, estar:TT? TT.estar.map(e=>({k:e.k, nome:e.nome, area:e.area, poly:e.poly, moveis:e.moveis})) : [],
     verde:{ terreo:TR? TR.verde : [], emb:LJ? LJ.verde : [] }, arvores:{ terreo:TR? TR.arvores : [], emb:LJ? LJ.arvores : [] },
     calcada:TR? TR.calcada : [], acessosLaje:LJ? LJ.acessos : [], ducha:LJ&&LJ.pool? LJ.pool.ducha : null,
     entrada: TT&&TT.fCl? {portao:TT.fCl.portas&&TT.fCl.portas[0]} : null,
@@ -964,7 +994,8 @@ function comunsDxf(d, m, local){
     (a.janelas||[]).forEach(j=>d.poly("COMUNS-JANELAS", [j.p0, j.p1], 5, true));
     (a.moveis||[]).forEach(f=>{ if(f.t==="c"){ const n=16, pts=[]; for(let q=0;q<n;q++) pts.push([f.c[0]+Math.cos(q/n*6.283)*f.r, f.c[1]+Math.sin(q/n*6.283)*f.r]); d.poly("COMUNS-MOBILIARIO", pts, 8) } else d.poly("COMUNS-MOBILIARIO", f.pts, 8, f.t==="l") }) });
   ((C.circ||{})[local]||[]).forEach(p=>d.poly("COMUNS-CIRCULACAO", p, 9));
-  if(local==="terreo") ((C.circ||{}).hall||[]).forEach(p=>d.poly("COMUNS-CIRCULACAO", p, 9));
+  if(local==="terreo"){ ((C.circ||{}).hall||[]).forEach(p=>d.poly("COMUNS-CIRCULACAO", p, 9));
+    (C.estar||[]).forEach(e=>{ d.text("COMUNS-TEXTOS", G.centroid(e.poly), 0.45, `${e.nome} ${nf(e.area,1)} m2`); (e.moveis||[]).forEach(f=>{ if(f.t==="r") d.poly("COMUNS-MOBILIARIO", f.pts, 8) }) }) }
   (C.rota||[]).filter(r=>r.local===local).forEach(r=>{ if(r.pts.length>1) d.poly("COMUNS-ROTA-ACESSIVEL", r.pts, 5, true) });
   ((C.verde||{})[local]||[]).forEach(p=>d.poly("COMUNS-PAISAGISMO", p, 3));
 }
