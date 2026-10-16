@@ -192,9 +192,9 @@ if(_acessoPagina) ACT.acessoStudy = async b=>{
   try{
     if(a.cancelado) throw new Error("cancelado");
     for(let i=0;i<list.length;i++){ stat(`analisando ${i+1}/${list.length}…`); const r=await a.job.call("acessoAvalia",[base,list[i],false]); RS.list.push({...list[i], ...r}) }
-    RS.list.sort((x,y)=>(y.ok-x.ok)||(y.vagas-x.vagas));
-    for(let k=0;k<Math.min(4,RS.list.length);k++){ stat(`confirmando a opção ${k+1} com o cálculo completo…`); const c=RS.list[k]; Object.assign(c, await a.job.call("acessoAvalia",[base,c,true]), {fino:true}) }
-    RS.list.sort((x,y)=>(y.fino?1:0)-(x.fino?1:0) || (y.ok-x.ok) || (y.vagas-x.vagas));
+    const top=acessoTopoPorTipo(RS.list,1);   // a melhor de cada tipo de rampa vai para o cálculo completo
+    for(let k=0;k<top.length;k++){ stat(`confirmando ${k+1}/${top.length} com o cálculo completo…`); const c=top[k]; Object.assign(c, await a.job.call("acessoAvalia",[base,c,true]), {fino:true}) }
+    RS.list=acessoMelhorPorTipo(RS.list);     // e a lista final traz o melhor de cada tipo
     CALC.jobAtivo=null; calcJobUI(); stat(`${list.length} combinações analisadas`);
     const el=document.getElementById("rsList"); if(el) el.innerHTML=rsHTML();
   }catch(e){

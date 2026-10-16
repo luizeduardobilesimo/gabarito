@@ -1938,15 +1938,27 @@ function garPos(m, st, opt){
 HOOK.compute.push(garPos);
 /* estudo do acesso: posições do acesso de veículos × tipo de rampa */
 function acessoCandidatos(st){
-  const pos=[0.1,0.25,0.4,0.6,0.75,0.9], tipos=st.produto.subsolos>1||st.produto.garAcima>1? ["reta","alternada"] : ["reta"], out=[];
+  // todos os tipos de rampa entram: cada um é avaliado por si e o resultado mostra o melhor de cada tipo (acessoMelhorPorTipo)
+  const pos=[0.1,0.25,0.4,0.6,0.75,0.9], tipos=st.produto.subsolos>1||st.produto.garAcima>1? ["reta","alternada","helicoidal","L"] : ["reta","helicoidal","L"], out=[];
   // todos os lados na rua (a frente principal primeiro; ladoVei null = frente principal) — src/calc/acesso.js
   const pr=acPrincipal(st), cur=ladoVeiIdx(st);
   acLadosRua(st).forEach(i=>{ const lv = i===pr? null : i;
     pos.forEach(p=>tipos.forEach(t=>out.push({acessoVei:p, rampaTipo:t, ladoVei:lv, lado:i})));
     // elevador de carros como alternativa (lotes estreitos): na frente, no meio e no fim da testada
     if(st.produto.subsolos||st.produto.garAcima) [0.1,0.5,0.9].forEach(p=>out.push({acessoVei:p, rampaTipo:"elevador", ladoVei:lv, lado:i})) });
-  if(!out.some(c=>c.lado===cur && Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo)) out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, ladoVei:cur===pr? null : cur, lado:cur, atual:true});
+  const igual=out.find(c=>c.lado===cur && Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo);
+  if(igual) igual.atual=true; else out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, ladoVei:cur===pr? null : cur, lado:cur, atual:true});
   return out;
+}
+/* ordem das opções: sem pendências primeiro, depois mais vagas */
+function acessoOrdena(list){ return list.slice().sort((x,y)=>(y.ok-x.ok)||(y.vagas-x.vagas)) }
+/* as n melhores de CADA tipo de rampa (para confirmar com o cálculo completo) */
+function acessoTopoPorTipo(list, n){ const cont={}; return acessoOrdena(list).filter(c=>(cont[c.rampaTipo]=(cont[c.rampaTipo]||0)+1)<=n) }
+/* o melhor de cada tipo de rampa, do melhor para o pior: o elevador de carros não ganha só por não ter rampa — cada tipo é avaliado por si.
+   Onde já há opções confirmadas (fino) de um tipo, só elas competem naquele tipo. */
+function acessoMelhorPorTipo(list){
+  const por={}; list.forEach(c=>{ (por[c.rampaTipo]=por[c.rampaTipo]||[]).push(c) });
+  return acessoOrdena(Object.values(por).map(l=>acessoOrdena(l.some(c=>c.fino)? l.filter(c=>c.fino) : l)[0]));
 }
 function acessoAvalia(st, c, full){
   const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null; if(c.ladoVei!==undefined) s.lote.ladoVei=c.ladoVei;
@@ -13791,15 +13803,27 @@ function garPos(m, st, opt){
 HOOK.compute.push(garPos);
 /* estudo do acesso: posições do acesso de veículos × tipo de rampa */
 function acessoCandidatos(st){
-  const pos=[0.1,0.25,0.4,0.6,0.75,0.9], tipos=st.produto.subsolos>1||st.produto.garAcima>1? ["reta","alternada"] : ["reta"], out=[];
+  // todos os tipos de rampa entram: cada um é avaliado por si e o resultado mostra o melhor de cada tipo (acessoMelhorPorTipo)
+  const pos=[0.1,0.25,0.4,0.6,0.75,0.9], tipos=st.produto.subsolos>1||st.produto.garAcima>1? ["reta","alternada","helicoidal","L"] : ["reta","helicoidal","L"], out=[];
   // todos os lados na rua (a frente principal primeiro; ladoVei null = frente principal) — src/calc/acesso.js
   const pr=acPrincipal(st), cur=ladoVeiIdx(st);
   acLadosRua(st).forEach(i=>{ const lv = i===pr? null : i;
     pos.forEach(p=>tipos.forEach(t=>out.push({acessoVei:p, rampaTipo:t, ladoVei:lv, lado:i})));
     // elevador de carros como alternativa (lotes estreitos): na frente, no meio e no fim da testada
     if(st.produto.subsolos||st.produto.garAcima) [0.1,0.5,0.9].forEach(p=>out.push({acessoVei:p, rampaTipo:"elevador", ladoVei:lv, lado:i})) });
-  if(!out.some(c=>c.lado===cur && Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo)) out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, ladoVei:cur===pr? null : cur, lado:cur, atual:true});
+  const igual=out.find(c=>c.lado===cur && Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo);
+  if(igual) igual.atual=true; else out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, ladoVei:cur===pr? null : cur, lado:cur, atual:true});
   return out;
+}
+/* ordem das opções: sem pendências primeiro, depois mais vagas */
+function acessoOrdena(list){ return list.slice().sort((x,y)=>(y.ok-x.ok)||(y.vagas-x.vagas)) }
+/* as n melhores de CADA tipo de rampa (para confirmar com o cálculo completo) */
+function acessoTopoPorTipo(list, n){ const cont={}; return acessoOrdena(list).filter(c=>(cont[c.rampaTipo]=(cont[c.rampaTipo]||0)+1)<=n) }
+/* o melhor de cada tipo de rampa, do melhor para o pior: o elevador de carros não ganha só por não ter rampa — cada tipo é avaliado por si.
+   Onde já há opções confirmadas (fino) de um tipo, só elas competem naquele tipo. */
+function acessoMelhorPorTipo(list){
+  const por={}; list.forEach(c=>{ (por[c.rampaTipo]=por[c.rampaTipo]||[]).push(c) });
+  return acessoOrdena(Object.values(por).map(l=>acessoOrdena(l.some(c=>c.fino)? l.filter(c=>c.fino) : l)[0]));
 }
 function acessoAvalia(st, c, full){
   const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null; if(c.ladoVei!==undefined) s.lote.ladoVei=c.ladoVei;
@@ -29456,9 +29480,9 @@ if(_acessoPagina) ACT.acessoStudy = async b=>{
   try{
     if(a.cancelado) throw new Error("cancelado");
     for(let i=0;i<list.length;i++){ stat(`analisando ${i+1}/${list.length}…`); const r=await a.job.call("acessoAvalia",[base,list[i],false]); RS.list.push({...list[i], ...r}) }
-    RS.list.sort((x,y)=>(y.ok-x.ok)||(y.vagas-x.vagas));
-    for(let k=0;k<Math.min(4,RS.list.length);k++){ stat(`confirmando a opção ${k+1} com o cálculo completo…`); const c=RS.list[k]; Object.assign(c, await a.job.call("acessoAvalia",[base,c,true]), {fino:true}) }
-    RS.list.sort((x,y)=>(y.fino?1:0)-(x.fino?1:0) || (y.ok-x.ok) || (y.vagas-x.vagas));
+    const top=acessoTopoPorTipo(RS.list,1);   // a melhor de cada tipo de rampa vai para o cálculo completo
+    for(let k=0;k<top.length;k++){ stat(`confirmando ${k+1}/${top.length} com o cálculo completo…`); const c=top[k]; Object.assign(c, await a.job.call("acessoAvalia",[base,c,true]), {fino:true}) }
+    RS.list=acessoMelhorPorTipo(RS.list);     // e a lista final traz o melhor de cada tipo
     CALC.jobAtivo=null; calcJobUI(); stat(`${list.length} combinações analisadas`);
     const el=document.getElementById("rsList"); if(el) el.innerHTML=rsHTML();
   }catch(e){
@@ -31638,8 +31662,10 @@ function garLegExtra(sw){ const m=window._last&&window._last.m, q=m&&m.quadroVag
   return h }
 let RS=null;
 function rsHTML(){ const base=RS.cur? RS.cur.vagas : 0;
-  return RS.list.slice(0,4).map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${c.atual?"Atual":k===0?"Melhor acesso":"Opção "+(k+1)} · ${c.lado!=null && S.lote.front.length>1? `L${c.lado+1}${c.lado===acPrincipal(S)?" (principal)":""} · ${pct(c.acessoVei,0)} do lado` : `${pct(c.acessoVei,0)} da frente`}</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">${c.rampaTipo==="elevador"? `Elevador de carros${c.cap?` · ${c.cap} carros/h`:""}${c.fila!=null&&isFinite(c.fila)?` · fila ${c.fila}`:""}` : c.rampaTipo==="alternada"? "Rampas alternadas" : c.rampaTipo==="reta"? "Rampas retas empilhadas" : (RAMPA_TIPOS[c.rampaTipo]||"")}${c.ok?"":" · com pendências"}</div>${c.atual?"":`<button class="btn sm${k===0?"":" ghost"}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
-    + `<div class="row sb"><span class="note">Atual: ${base} vagas ${INFO("Cada opção refaz todos os pavimentos com rotas verificadas (análise rápida); as quatro melhores são confirmadas com o cálculo completo.","o estudo de acesso")}</span><button class="btn sm ghost" data-act="rsClose">Fechar</button></div>` }
+  // uma opção por tipo de rampa (o melhor acesso de cada tipo), da que rende mais para a que rende menos
+  const onde=c=> c.lado!=null && S.lote.front.length>1? `L${c.lado+1}${c.lado===acPrincipal(S)?" (principal)":""} · ${pct(c.acessoVei,0)} do lado` : `${pct(c.acessoVei,0)} da frente`;
+  return RS.list.map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${esc(RAMPA_TIPOS[c.rampaTipo]||c.rampaTipo)}</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">${k===0?"Mais vagas · ":""}${c.atual?"em uso · ":""}acesso ${onde(c)}${c.rampaTipo==="elevador"&&c.cap? ` · ${c.cap} carros/h`:""}${c.rampaTipo==="elevador"&&c.fila!=null&&isFinite(c.fila)? ` · fila ${c.fila}`:""}${c.ok?"":" · não cabe sem pendências"}</div>${c.atual?"":`<button class="btn sm${k===0?"":" ghost"}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
+    + `<div class="row sb"><span class="note">Atual: ${base} vagas ${INFO("Cada tipo de rampa é avaliado por si: a lista mostra a melhor posição do acesso para cada tipo (retas, alternadas, helicoidal, em L e elevador de carros). Todas as combinações refazem os pavimentos com rotas verificadas (análise rápida); a melhor de cada tipo é confirmada com o cálculo completo.","o estudo de acesso")}</span><button class="btn sm ghost" data-act="rsClose">Fechar</button></div>` }
 Object.assign(ACT,{
   garFl: b=>{ FLOOR=b.dataset.k; if(VIEW!=="gar") setView("gar"); else { viewbarSegs(window._last.m); fit2d() } STEP_LIVE.projeto(window._last.m) },
   rampAuto: ()=>{ S.estudo.rampa=null; RAMPMOVE=false; renderTab(); toast("Rampa no automático (junto ao acesso de veículos)") },
@@ -31651,10 +31677,10 @@ Object.assign(ACT,{
   acessoStudy: ()=>{ const list=acessoCandidatos(S), st=document.getElementById("rsStat"); RS={list:[], cur:{vagas:window._last.m.vagasLay||0}}; let i=0;
     const step=()=>{ const t0=performance.now(); while(i<list.length && performance.now()-t0<120){ const c=list[i++]; RS.list.push({...c, ...acessoAvalia(S,c)}) }
       const s_=document.getElementById("rsStat"); if(s_) s_.textContent=`analisando ${i}/${list.length}…`;
-      if(i<list.length) setTimeout(step,0); else { RS.list.sort((a,b)=>(b.ok-a.ok)||(b.vagas-a.vagas)); fino(0) } };
-    // as melhores são refeitas com o cálculo completo (o mesmo do projeto)
-    const fino=k=>{ const s_=document.getElementById("rsStat"); if(k<Math.min(4,RS.list.length)){ if(s_) s_.textContent=`confirmando a opção ${k+1} com o cálculo completo…`; setTimeout(()=>{ const c=RS.list[k]; Object.assign(c, acessoAvalia(S,c,true), {fino:true}); fino(k+1) },0); return }
-      RS.list.sort((a,b)=>(b.fino?1:0)-(a.fino?1:0) || (b.ok-a.ok) || (b.vagas-a.vagas)); if(s_) s_.textContent=`${list.length} combinações analisadas`; const el=document.getElementById("rsList"); if(el) el.innerHTML=rsHTML() };
+      if(i<list.length) setTimeout(step,0); else { const top=acessoTopoPorTipo(RS.list,1); fino(top,0) } };
+    // a melhor de cada tipo de rampa é refeita com o cálculo completo (o mesmo do projeto); a lista final traz o melhor de cada tipo
+    const fino=(top,k)=>{ const s_=document.getElementById("rsStat"); if(k<top.length){ if(s_) s_.textContent=`confirmando ${k+1}/${top.length} com o cálculo completo…`; setTimeout(()=>{ const c=top[k]; Object.assign(c, acessoAvalia(S,c,true), {fino:true}); fino(top,k+1) },0); return }
+      const n=list.length; RS.list=acessoMelhorPorTipo(RS.list); if(s_) s_.textContent=`${n} combinações analisadas`; const el=document.getElementById("rsList"); if(el) el.innerHTML=rsHTML() };
     step() },
   rsApply: b=>{ const c=RS.list[+b.dataset.i]; S.lote.acessoVei=c.acessoVei; S.estudo.rampaTipo=c.rampaTipo; S.estudo.rampa=null; if(c.ladoVei!==undefined) S.lote.ladoVei=c.ladoVei; RS=null; renderTab(); setView("gar"); toast(c.lado!=null && S.lote.front.length>1? `Acesso pela L${c.lado+1} e rampas aplicados` : "Acesso e rampas aplicados") },
   andar: b=>{ ANDAR=b.dataset.k; if(VIEW!=="andar") setView("andar"); else { viewbarSegs(window._last.m); redraw2d(); planLegend() } STEP_LIVE.projeto(window._last.m) },

@@ -748,15 +748,27 @@ function garPos(m, st, opt){
 HOOK.compute.push(garPos);
 /* estudo do acesso: posições do acesso de veículos × tipo de rampa */
 function acessoCandidatos(st){
-  const pos=[0.1,0.25,0.4,0.6,0.75,0.9], tipos=st.produto.subsolos>1||st.produto.garAcima>1? ["reta","alternada"] : ["reta"], out=[];
+  // todos os tipos de rampa entram: cada um é avaliado por si e o resultado mostra o melhor de cada tipo (acessoMelhorPorTipo)
+  const pos=[0.1,0.25,0.4,0.6,0.75,0.9], tipos=st.produto.subsolos>1||st.produto.garAcima>1? ["reta","alternada","helicoidal","L"] : ["reta","helicoidal","L"], out=[];
   // todos os lados na rua (a frente principal primeiro; ladoVei null = frente principal) — src/calc/acesso.js
   const pr=acPrincipal(st), cur=ladoVeiIdx(st);
   acLadosRua(st).forEach(i=>{ const lv = i===pr? null : i;
     pos.forEach(p=>tipos.forEach(t=>out.push({acessoVei:p, rampaTipo:t, ladoVei:lv, lado:i})));
     // elevador de carros como alternativa (lotes estreitos): na frente, no meio e no fim da testada
     if(st.produto.subsolos||st.produto.garAcima) [0.1,0.5,0.9].forEach(p=>out.push({acessoVei:p, rampaTipo:"elevador", ladoVei:lv, lado:i})) });
-  if(!out.some(c=>c.lado===cur && Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo)) out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, ladoVei:cur===pr? null : cur, lado:cur, atual:true});
+  const igual=out.find(c=>c.lado===cur && Math.abs(c.acessoVei-st.lote.acessoVei)<0.02 && c.rampaTipo===st.estudo.rampaTipo);
+  if(igual) igual.atual=true; else out.unshift({acessoVei:st.lote.acessoVei, rampaTipo:st.estudo.rampaTipo, ladoVei:cur===pr? null : cur, lado:cur, atual:true});
   return out;
+}
+/* ordem das opções: sem pendências primeiro, depois mais vagas */
+function acessoOrdena(list){ return list.slice().sort((x,y)=>(y.ok-x.ok)||(y.vagas-x.vagas)) }
+/* as n melhores de CADA tipo de rampa (para confirmar com o cálculo completo) */
+function acessoTopoPorTipo(list, n){ const cont={}; return acessoOrdena(list).filter(c=>(cont[c.rampaTipo]=(cont[c.rampaTipo]||0)+1)<=n) }
+/* o melhor de cada tipo de rampa, do melhor para o pior: o elevador de carros não ganha só por não ter rampa — cada tipo é avaliado por si.
+   Onde já há opções confirmadas (fino) de um tipo, só elas competem naquele tipo. */
+function acessoMelhorPorTipo(list){
+  const por={}; list.forEach(c=>{ (por[c.rampaTipo]=por[c.rampaTipo]||[]).push(c) });
+  return acessoOrdena(Object.values(por).map(l=>acessoOrdena(l.some(c=>c.fino)? l.filter(c=>c.fino) : l)[0]));
 }
 function acessoAvalia(st, c, full){
   const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null; if(c.ladoVei!==undefined) s.lote.ladoVei=c.ladoVei;

@@ -123,10 +123,10 @@ describe('Encontrar o melhor acesso', () => {
     const st1 = estado(A, { lote: lote(45, 45, [0]), produto: { torres: [{ pav: 12 }], subsolos: 2 } });
     const c1 = A.acessoCandidatos(st1);
     expect(c1.every(c => c.lado === 0 && c.ladoVei === null)).toBe(true);
-    expect(c1.filter(c => !c.atual).length).toBe(6 * 2 + 3);            // um lado só: igual a antes (posições × tipos + elevador)
+    expect(c1.filter(c => !c.atual).length).toBe(6 * 4 + 3);            // um lado só: posições × 4 tipos de rampa (reta, alternada, helicoidal, L) + elevador
     const st2 = estado(A, { lote: lote(45, 45, [0, 1]), produto: { torres: [{ pav: 12 }], subsolos: 2 } });
     const c2 = A.acessoCandidatos(st2);
-    expect(c2.filter(c => c.lado === 1).length).toBe(6 * 2 + 3);
+    expect(c2.filter(c => c.lado === 1).length).toBe(6 * 4 + 3);
     expect(c2.filter(c => c.lado === 1).every(c => c.ladoVei === 1)).toBe(true);
     const lat = c2.find(c => c.lado === 1 && c.rampaTipo === 'reta' && c.acessoVei === 0.9);
     const r = A.acessoAvalia(st2, lat);
@@ -137,6 +137,30 @@ describe('Encontrar o melhor acesso', () => {
     const st = estado(A, { lote: lote(45, 45, [0, 1], { ladoVei: 1, acessoVei: 0.33 }), produto: { torres: [{ pav: 12 }], subsolos: 2 } });
     const at = A.acessoCandidatos(st).find(c => c.atual);
     expect(at).toMatchObject({ lado: 1, ladoVei: 1, acessoVei: 0.33 });
+  });
+});
+
+describe('o melhor acesso de cada tipo de rampa', () => {
+  const C = (rampaTipo, vagas, ok = true, extra = {}) => ({ rampaTipo, vagas, ok, acessoVei: 0.5, lado: 0, ...extra });
+  it('todos os tipos de rampa entram como candidatos (elevador, retas, alternadas, helicoidal e em L)', T, () => {
+    const st = estado(A, { lote: lote(45, 45, [0]), produto: { torres: [{ pav: 12 }], subsolos: 2 } });
+    expect([...new Set(A.acessoCandidatos(st).map(c => c.rampaTipo))].sort()).toEqual(['L', 'alternada', 'elevador', 'helicoidal', 'reta']);
+    const st1 = estado(A, { lote: lote(45, 45, [0]), produto: { torres: [{ pav: 12 }], subsolos: 1 } });
+    expect(A.acessoCandidatos(st1).some(c => c.rampaTipo === 'alternada')).toBe(false); // com um só pavimento a tesoura não muda nada
+  });
+  it('a lista final traz o melhor de cada tipo, e o elevador não leva tudo só por existir', () => {
+    const l = [C('elevador', 90), C('elevador', 80), C('reta', 70), C('reta', 60), C('alternada', 65), C('helicoidal', 50, false), C('L', 40, false)];
+    const r = A.acessoMelhorPorTipo(l);
+    expect(r.map(c => [c.rampaTipo, c.vagas])).toEqual([['elevador', 90], ['reta', 70], ['alternada', 65], ['helicoidal', 50], ['L', 40]].map(([t, v]) => [t, v]));
+    expect(r).toHaveLength(5);                                               // uma por tipo
+    // sem pendências vence quem tem mais vagas com pendências
+    expect(A.acessoMelhorPorTipo([C('reta', 99, false), C('reta', 50, true)])[0].vagas).toBe(50);
+  });
+  it('onde há opções confirmadas (cálculo completo) só elas competem naquele tipo; as melhores de cada tipo vão para a confirmação', () => {
+    const l = [C('reta', 80), C('reta', 70, true, { fino: true }), C('elevador', 90)];
+    expect(A.acessoMelhorPorTipo(l).find(c => c.rampaTipo === 'reta').vagas).toBe(70);
+    const top = A.acessoTopoPorTipo([C('reta', 80), C('reta', 70), C('reta', 60), C('elevador', 90), C('elevador', 85), C('L', 10)], 2);
+    expect(top.map(c => [c.rampaTipo, c.vagas])).toEqual([['elevador', 90], ['elevador', 85], ['reta', 80], ['reta', 70], ['L', 10]]);
   });
 });
 
