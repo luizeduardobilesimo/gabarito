@@ -47,6 +47,8 @@ function garGeo(R, ang){
   const A= ang===90? R.AI90 : ang===60? R.AI60 : R.AI45, rd= ang===90? R.C : R.C*sn+R.W*cs, Wp=R.W/sn;
   return {ang, th, sn, cot: ang===90? 0 : cs/sn, A, rd, Wp, AV:R.AI90, Pt:R.nM*Wp+R.PIL+2*R.acrPil, PtV:R.nM*R.W+R.PIL+2*R.acrPil};
 }
+/* passagem de desvio mais estreita que o corredor (mão única, sem vagas); com a largura cheia é um corredor comum */
+const gmEstreita=(p,g)=>!!p.pass && !p.junta && p.w<g.A-0.05;
 /* curva possível? giro de 90° entre corredores de larguras w1 e w2 (externo Ro, interno Ri) */
 function garGiroOk(w1, w2, R){ const a=Math.max(0,R.Ro-w1), b=Math.max(0,R.Ro-w2); return a*a+b*b <= R.Ri*R.Ri+1e-9 }
 
@@ -256,7 +258,7 @@ function gmAvalia(FR, R, g, ys, xs, opt={}){
     becos.filter(b=>b.longo).forEach(b=>{ const p=net.find(x=>x.i===b.p), w=R.W+1.0, x0= b.sg>0? b.e-w : b.e, x1= b.sg>0? b.e : b.e+w;
       const r= p.o==="H"? [x0, p.y1, x1, p.y1+g.rd] : [p.y1, x0, p.y1+R.C, x1]; soft.push(r); b.r=r });
     const out={stalls:[], pil: opt.pil? [] : null}, ctxH={V:false, soft, stalls:out.stalls, KP:f.KP, gu:opt.gu, gv:opt.gv, aprox:!!opt.aprox}, ctxV={V:true, soft:soft.map(gmRectSw), stalls:[], KP:f.KPv, gu:opt.gu, gv:opt.gv, aprox:!!opt.aprox};
-    const fillH=()=>{ net.filter(p=>p.o==="H" && !p.pass).forEach(p=>{ gmFila(FR.H, R, g, p, -1, ctxH, out); gmFila(FR.H, R, g, p, 1, ctxH, out) }) };
+    const fillH=()=>{ net.filter(p=>p.o==="H" && (!p.pass || !gmEstreita(p,g) && !p.junta)).forEach(p=>{ gmFila(FR.H, R, g, p, -1, ctxH, out); gmFila(FR.H, R, g, p, 1, ctxH, out) }) };
     const fillV=()=>{ const st=out.stalls.map(s=>s.o==="H"? {r:gmRectSw(s.r)} : s), o2={stalls:[], pil:out.pil}; ctxV.stalls=st;
       net.filter(p=>p.o==="V" && !p.pass).forEach(p=>[-1,1].forEach(sd=>{ const n0=o2.stalls.length; gmFila(FR.V, R, g, p, sd, ctxV, o2); for(let k=n0;k<o2.stalls.length;k++) st.push(o2.stalls[k]) }));
       out.stalls.push(...o2.stalls) };
@@ -266,7 +268,7 @@ function gmAvalia(FR, R, g, ys, xs, opt={}){
     res.pisos.push({f, fi, pcs, net, att, ok:AL.ok, becos, stalls:out.stalls, pil:out.pil, conns:L.conns});
     res.tot+=out.stalls.length; res.pen+=pen });
   res.peds=peds; res.pen+=peds.reduce((s,p)=>s+(p.falta? 4 : p.L/8),0)*FR.fl.length + 0.2*Vs.length;
-  res.pen+=2.0*base.filter(p=>p.pass && !p.junta).length*FR.fl.length;   // passagem estreita: só quando não há outro jeito
+  res.pen+=2.0*base.filter(p=>gmEstreita(p,g)).length*FR.fl.length;   // passagem estreita: só quando não há outro jeito
   res.sc=res.tot-res.pen; res.ys=ys; res.xs=xs; res.g=g;
   return res;
 }
@@ -414,7 +416,7 @@ function gmMundo(FR, R, L, P){
     const axL= s.ang===90? [0,s.side] : [s.t*Math.cos(L.g.th), s.side*Math.sin(L.g.th)], out=toF([-axL[0], -axL[1]]);
     const r= V_? gmRectSw(s.r) : s.r;
     return {poly:loc.map(Wd), c:Wd(c), fm:Wd(fm), out:dirW(out), u:s.u, uc:s.uc, row:s.piece*2+(s.side>0?1:0), grp:s.grp, j:s.j, aisle:s.piece, tipo:"n", W:s.W, ang:s.ang, _f:{...s, r, rd: V_? R.C : L.g.rd}} });
-  const aisles=P.net.map(p=>{ const r=gmRect(p); return {poly:rectW(r), o:p.o, conn:!!p.conn, pass:!!p.pass && !p.junta, dir:p.dir||0, w:p.w, i:p.i, r,
+  const aisles=P.net.map(p=>{ const r=gmRect(p); return {poly:rectW(r), o:p.o, conn:!!p.conn, pass:gmEstreita(p,L.g), dir:p.dir||0, w:p.w, i:p.i, r,
     a:Wd(p.o==="H"? [p.a,(p.y0+p.y1)/2] : [(p.y0+p.y1)/2,p.a]), b:Wd(p.o==="H"? [p.b,(p.y0+p.y1)/2] : [(p.y0+p.y1)/2,p.b])} });
   const peds=L.peds.filter(p=>!p.falta).map(p=>({poly: p.r? rectW(p.r) : null, cross: p.cross? rectW(p.cross) : null, a:Wd(p.s), b:Wd(p.e), L:p.L, lobby:p.li, d:dirW(p.d)}));
   const retornos=P.becos.filter(b=>b.longo && b.r).map(b=>rectW(b.r));
@@ -610,7 +612,7 @@ function gmMonta(poly, obst, E, o, pisos, M, FR, L){
     const path=W.aisles.map(a=>({pts:[a.a, a.b], dir:a.dir||0, conn:a.conn}));
     // raio de giro nas junções (corredor × transversal) e na saída dos patamares
     let giroFalha=0; P.net.forEach(p=>{ if(p.pass) return; P.net.filter(q=>q.i>p.i && !q.pass && !q.conn && !p.conn && q.o!==p.o && gmToca(gmRect(p),gmRect(q),0.05)).forEach(q=>{ if(!garGiroOk(p.w,q.w,R)) giroFalha++ }) });
-    const passagens=P.net.filter(p=>p.pass && !p.junta).map(p=>+p.w.toFixed(2));
+    const passagens=P.net.filter(p=>gmEstreita(p,L.g)).map(p=>+p.w.toFixed(2));
     const lw=(+E.rampaL||3.6)+0.9; P.att.forEach((l,pi)=>{ const p=P.net.find(x=>l.includes(x.i)); const pt=P.f.PT[pi]; if(p && pt){ const par= p.o==="H"? Math.abs(pt.h[0])>0.7 : Math.abs(pt.h[1])>0.7; if(!par && !garGiroOk(lw,p.w,R)) giroFalha++ } });
     const count=vagas.filter(v=>garCar(v.tipo)).length;
     const sobras=gmSobras(FR, R, L, P, vagas, pil);
