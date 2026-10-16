@@ -140,7 +140,12 @@ function dxfImpl(m){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("SUBSOLO
   S.lote.pts.forEach((q,i)=>{ const b=S.lote.pts[(i+1)%S.lote.pts.length]; d.text("COTAS",[(q[0]+b[0])/2,(q[1]+b[1])/2],0.8,`L${i+1} ${nf(G.edgeLen(S.lote.pts,i),2)} m`) });
   return d.out() }
 function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (cs.lay.coreFundo||[]).forEach(p=>{ d.poly("DEPOSITO",p,8); d.text("NUCLEO-TEXTOS",G.centroid(p),0.25,"DEPOSITO") }); dxfNucleo(d, cs.lay) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
-  lay.vagas.forEach((v,i)=>{ if(v.tipo==="off") return; const L= v.tipo==="pcd"?"VAGAS-PCD": v.tipo==="idoso"?"VAGAS-IDOSO": v.tipo==="faixa"?"FAIXA-PCD":"VAGAS"; d.poly(L,v.poly, v.tipo==="pcd"?5:v.tipo==="idoso"?3:v.tipo==="faixa"?8:4); if(v.tipo!=="faixa") d.text("NUMERACAO",v.c,0.6,String(i+1)) });
+  // garagem por partidos: corredores, faixa de pedestres, sobras (depósito / área técnica) e inclinações das rampas
+  (lay.aisles||[]).forEach(a=>d.poly(a.pass? "PASSAGEM-MAO-UNICA" : "CORREDOR",a.poly,8)); (lay.retornos||[]).forEach(p=>d.poly("BOLSAO-RETORNO",p,8));
+  (lay.peds||[]).forEach(p=>{ if(p.poly) d.poly("FAIXA-PEDESTRES",p.poly,5); if(p.cross) d.poly("FAIXA-PEDESTRES",p.cross,5) });
+  (lay.sobras||[]).forEach(o=>{ o.polys.forEach(p=>d.poly(o.tipo==="deposito"? "DEPOSITO" : "AREA-TECNICA",p,8)); d.text("TEXTOS",o.c,0.5,`${o.tipo==="deposito"?"DEPOSITO":o.tipo==="semAcesso"?"SEM ACESSO DE VEICULOS":"AREA TECNICA"} ${nf(o.area,0)} m2`) });
+  (lay.ramps||[]).forEach(r=>{ if(!r.a||!r.b||r.path||r.elev) return; d.text("TEXTOS",[(r.a[0]+r.b[0])/2,(r.a[1]+r.b[1])/2],0.5,`RAMPA ${nf(S.estudo.rampaInc*100,0)}% - TRANSICOES 10%`) });
+  lay.vagas.forEach((v,i)=>{ if(v.tipo==="off") return; const L= v.tipo==="pcd"?"VAGAS-PCD": v.tipo==="idoso"?"VAGAS-IDOSO": v.tipo==="faixa"?"FAIXA-PCD":"VAGAS"; d.poly(L,v.poly, v.tipo==="pcd"?5:v.tipo==="idoso"?3:v.tipo==="faixa"?8:4); if(v.tipo!=="faixa") d.text("NUMERACAO",v.c,0.6, v.tipo==="pcd"? "PCD" : String(v.num||i+1)) });
   return d.out() }
 /* contorno da torre: com pátio (C1), borda e vazios em polilinhas separadas (sem a "ponte" do polígono) */
 function dxfTorre(d, layer, t, col){ if(t.oco){ d.poly(layer,t.oco.pts,col); t.oco.vazios.forEach(v=>d.poly(layer+"-VAZIO",v,col)) } else d.poly(layer,t.plate,col) }

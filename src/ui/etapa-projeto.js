@@ -77,12 +77,15 @@ STEP_R.projeto = ()=>{
     SEC("Vagas",
       ROW(`Ângulo${INFO("90°: corredor de mão dupla. 60° e 45°: mão única, corredores mais estreitos ligados em circuito. “Melhor” testa os três e fica com o que dá mais vagas.","o ângulo das vagas")}`, SEG("estudo.angulo",[["90","90°"],["60","60°"],["45","45°"],["melhor","melhor"]],{rr:false}))+
       ROW("Fileiras",SEG("estudo.garDir",[["auto","automáticas"],["man","manual"]]))+(E.garDir==="auto"?"":SLD("estudo.garDirGraus","Rotação das fileiras",0,179,1,"°"))+
-      SW("estudo.usarLayout","Usar as vagas do layout nas contas"),
-      {open:true, key:"gLay", sum:garSum("lay")}) +
-    SEC("PCD e idoso", KV(NUM("estudo.pcd","Vagas PCD","%",{pct:true,step:1,help:"Vaga PCD"})+NUM("estudo.idoso","Vagas idoso","%",{pct:true,step:1,help:"Vaga idoso"})),
+      SW("estudo.usarLayout","Usar as vagas do layout nas contas")+
+      ADV(`<div class="fld wide"><label class="fl" for="garPartSel">Partido${INFO("Automático: o gerador testa corredores, transversais e orientações e fica com o arranjo de mais vagas e menos becos. Fixar um partido mantém só os arranjos daquela família, quando couberem.","o partido da garagem")}</label><select class="sel" id="garPartSel" data-p="garagem.partido" data-t="s" data-rr="1"><option value="auto" ${X.partido==="auto"||!X.partido?"selected":""}>Automático</option>${Object.entries(typeof GAR_PARTIDOS!=="undefined"? GAR_PARTIDOS : {}).map(([k,o])=>`<option value="${k}" ${X.partido===k?"selected":""}>${esc(o.nome)}</option>`).join("")}</select></div>`, {key:"gPart"}),
+      {open:true, key:"gLay", sum:garSum("lay"), info:"Como um projetista de garagem: módulo de 5,0 + 5,5 + 5,0 m (fileira, corredor de mão dupla, fileira), fileiras encostadas nas paredes, corredores ligados numa rede contínua (anel ou espinha), pilares numa malha única a cada 3 vagas e iguais em todos os subsolos, faixa de pedestres até o hall dos elevadores e PCD com faixa de transferência perto do hall. Referências fixas: raio de giro de 6,0 m por fora e 3,0 m por dentro, corredor sem saída de até 25 m (acima disso, bolsão de retorno) e faixa de pedestres de 1,20 m. A nota cai com vagas sem manobra, becos longos, curvas apertadas e área por vaga acima de 32 m²."}) +
+    SEC("PCD e idoso", KV(NUM("estudo.pcd","Vagas PCD","%",{pct:true,step:1,help:"Vaga PCD"})+NUM("estudo.idoso","Vagas idoso","%",{pct:true,step:1,help:"Vaga idoso"}))+
+      ROW(`Faixa da PCD${INFO("Faixa de transferência de 1,20 m ao lado da vaga PCD: compartilhada entre duas vagas PCD ou de um lado de cada uma. Automático escolhe a que perde menos vagas.","a faixa da vaga PCD")}`, SEG("garagem.pcdModo",[["auto","auto"],["compartilhada","compartilhada"],["lado","de um lado"]],{rr:false})),
       {key:"gPcd", sum:garSum("pcd"), info:"Percentuais das vagas reservadas. Ficam nas vagas mais perto dos núcleos. Para não ter vagas automáticas, zere os percentuais."}) +
     SEC("Medidas da vaga", KV(NUM("estudo.vagaL","Largura","m",{step:0.05})+NUM("estudo.vagaC","Comprimento","m",{step:0.05})+NUM("estudo.corredor","Corredor 90°","m",{step:0.1})+NUM("estudo.porModulo","Entre pilares","vg",{int:true,step:1,help:"Quantas vagas cabem entre dois pilares."})+NUM("estudo.pilar","Pilar","m",{step:0.05}))+
-      (naMedida? GRP("Rampa")+KV(NUM("estudo.rampaL","Largura da rampa","m",{step:0.05,help:"Mínimo de 2,75 m em mão única e 5 m em mão dupla."})+NUM("estudo.rampaInc","Inclinação da rampa","%",{pct:true,step:1,help:"Em garagens residenciais, até 20%."})) : ""),
+      (naMedida? GRP("Rampa")+KV(NUM("estudo.rampaL","Largura da rampa","m",{step:0.05,help:"Mínimo de 2,75 m em mão única e 5 m em mão dupla."})+NUM("estudo.rampaInc","Inclinação da rampa","%",{pct:true,step:1,help:"Em garagens residenciais, até 20%."})) : "")+
+      ADV(GRP("Largura acrescida")+KV(NUM("garagem.acrParede","Junto à parede","+ m",{step:0.05,min:0,help:"Largura acrescida"})+NUM("garagem.acrPilar","Junto ao pilar","+ m",{step:0.05,min:0,help:"Largura acrescida"})), {key:"gDim"}),
       {key:"gDim", sum:garSum("dim")}) +
     SEC("Vagas extras",
       SW("garagem.presas","Vagas presas (tandem)",{rr:true})+
@@ -129,12 +132,23 @@ const GAR_RAMPA_INFO = { reta:"Todas na mesma projeção: em cada pavimento o ca
 function garSum(k, m){
   const E=S.estudo, X=S.garagem||DEF.garagem;
   if(k==="rampa") return `veículos ${pct(S.lote.acessoVei,0)} · ${esc(RAMPA_TIPOS[E.rampaTipo]||"")}${E.rampa?" · desenhada":""}`;
-  if(k==="lay") return `${E.angulo==="melhor"?"melhor ângulo":E.angulo+"°"} · fileiras ${E.garDir==="auto"?"automáticas":"manuais"}`;
+  if(k==="lay"){ const ls=m&&m.gar? Object.entries(m.gar).filter(([kk,l])=>l&&l.modelo==="partido"&&kk!=="ter").map(([,l])=>l) : [], ang=E.angulo==="melhor"?"melhor ângulo":E.angulo+"°";
+    if(!ls.length) return `${ang} · fileiras ${E.garDir==="auto"?"automáticas":"manuais"}`;
+    return `${ang} · ${esc((GAR_PARTIDOS[ls[0].partido]||{}).nome||ls[0].partido||"")} · nota <b>${Math.min(...ls.map(x=>x.nota??100))}</b>` }
   if(k==="pcd"){ if(m && m.gar){ let p=0,i=0; Object.values(m.gar).forEach(l=>{ if(l&&l.vagas) l.vagas.forEach(v=>{ if(v.tipo==="pcd") p++; else if(v.tipo==="idoso") i++ }) }); return `<b>${p}</b> PCD · <b>${i}</b> idoso` } return `PCD ${pct(E.pcd,0)} · idoso ${pct(E.idoso,0)}` }
   if(k==="dim") return `${nf(E.vagaL,2)} × ${nf(E.vagaC,2)} m · corredor ${nf(E.corredor,1)} m`;
   if(k==="ext"){ const q=m&&m.quadroVagas, l=[]; if(X.presas) l.push(q&&q.presa!=null? `${q.presa} presas` : "presas"); if(X.motos) l.push(q&&q.moto!=null? `${q.moto} motos` : "motos"); if(X.bici!=="off") l.push(q&&q.bici? `${q.bici} bicicletas` : "bicicletário"); if(X.ev>0) l.push(m&&m.evN!=null? `${m.evN} EV` : `EV ${pct(X.ev,0)}`); return l.length? l.join(" · ") : "nenhuma" }
   if(k==="man"){ const n=Object.keys(E.off||{}).length+Object.keys(E.vtipo||{}).length; return n? `<b>${n}</b> marcaç${n>1?"ões":"ão"}` : "nenhuma" }
   return "";
+}
+/* RES da garagem: área bruta por vaga nos subsolos/garagens (meta 25–32 m²) e a nota do partido */
+function garResMet(m){
+  const ls=Object.entries(m.gar||{}).filter(([k,l])=>l && k!=="ter" && l.met && l.count);
+  if(!ls.length) return "";
+  const A=ls.reduce((s,[,l])=>s+l.met.area,0), n=ls.reduce((s,[,l])=>s+l.count,0), m2v=A/Math.max(1,n), nota=Math.min(...ls.map(([,l])=>l.nota??100));
+  const cls=m2v<=GAR_META[1]+0.5? "ok" : m2v<=GAR_META[1]+8? "warn" : "bad", ncls= nota>=85? "ok" : nota>=65? "warn" : "bad";
+  return `<div class="met"><div class="l">Área por vaga${INFO(`Área bruta do pavimento ÷ vagas, nos subsolos e garagens. Referência de mercado: ${GAR_META[0]}–${GAR_META[1]} m² por vaga num subsolo retangular regular. Núcleos, rampas e lotes estreitos pesam.`,"a área por vaga")}</div><div class="v">${nf(m2v,1)} <span style="font-size:.6em;color:var(--muted);font-weight:400">m²</span></div><div class="s"><span class="pill ${cls}">meta ${GAR_META[0]}–${GAR_META[1]}</span></div></div>
+    <div class="met"><div class="l">Nota da garagem</div><div class="v">${nota}</div><div class="s"><span class="pill ${ncls}">${nota>=85? "boa" : nota>=65? "atenção" : "ruim"}</span></div></div>`;
 }
 function tipoSum(k, m){
   const E=S.estudo;
@@ -153,9 +167,11 @@ STEP_LIVE.projeto = (m, f, fast)=>{
     const ok=m.vagas>=m.vagasReq, gs=document.getElementById("garStat"); if(gs) gs.innerHTML = `<span class="pill ${ok?"ok":"bad"}">${ok?"atende":"faltam "+(m.vagasReq-m.vagas)}</span>`;
     const q=m.quadroVagas, quadro = q? garQuadroRows(m).filter(([l])=>!/^Total/.test(l)) : [], simples=quadro.every(([l])=>/^(Comuns|PCD|Idosos|Na frente \(lojas\))$/.test(l));
     const tipos = q? [q.comum!=null?`${q.comum} comuns`:"", q.pcd?`${q.pcd} PCD`:"", q.idoso?`${q.idoso} idosos`:"", q.frente?`${q.frente} na frente`:""].filter(Boolean).join(" · ") : "";
-    setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${tipos? tipos+" · " : ""}${nf(m.vagas/Math.max(1,m.units),2)} por unidade${S.estudo.usarLayout? "" : ` · estimativa ${m.vagasEst}`}</div></div></div>
+    setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${tipos? tipos+" · " : ""}${nf(m.vagas/Math.max(1,m.units),2)} por unidade${S.estudo.usarLayout? "" : ` · estimativa ${m.vagasEst}`}</div></div>${garResMet(m)}</div>
       ${quadro.length>1 && !simples? `<table class="tbl">${quadro.map(([l,v])=>`<tr><td>${esc(l)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
-      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="Ver este pavimento"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).filter(a=>!/^Não couberam/.test(a)).map(a=>`<p class="note" style="color:var(--warn-t)">${esc(a)}</p>`).join("")}`);
+      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}${l.met&&l.count&&k!=="ter"? ` · ${nf(l.met.m2v,1)} m²/vg` : ""}`;
+        const pr= k===FLOOR? (l.problemas||[]).filter(p=>p.nivel!=="info") : [], inf=(l.problemas||[]).find(p=>p.nivel==="info"), P=l.modelo==="partido"&&typeof GAR_PARTIDOS!=="undefined"? (GAR_PARTIDOS[l.partido]||{}).nome||"" : "";
+        return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="${esc(inf? inf.msg : "Ver este pavimento")}"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}${P&&k===FLOOR? `<div class="fsub">${esc(P)} · nota ${l.nota??"—"}</div>` : ""}${pr.map(p=>`<div class="fsub" style="color:var(--${p.nivel==="bad"?"bad":"warn-t"})">${esc(p.msg)}</div>`).join("")}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).filter(a=>!/^Não couberam/.test(a)).map(a=>`<p class="note" style="color:var(--warn-t)">${esc(a)}</p>`).join("")}`);
     const ri=document.getElementById("rampInfo"); if(ri && m.vert){ const V_=m.vert, s0=V_.strips[0], pend=V_.ok?"":" · verifique os avisos";
       ri.textContent = !s0? "" : V_.helix? `helicoidal Ø ${nf(2*V_.helix.Re,1)} m · faixa ${nf(V_.helix.faixa,2)} m · ${nf(V_.helix.incl*100,1)}% no eixo${pend}`
         : V_.elev? `${V_.elev.n} poço${V_.elev.n>1?"s":""} de ${nf(EC_CAB[0]+2*EC_PAREDE,1)} × ${nf(EC_CAB[1]+2*EC_PAREDE,1)} m · ${V_.elev.espera.length} vaga${V_.elev.espera.length>1?"s":""} de espera · saída ${V_.elev.porta==="frente"?"pela frente (de ré)":"pelo fundo"}${pend}`

@@ -52,6 +52,14 @@ const GLOSS_DATA = {
   "Rampa helicoidal": { t:"Rampa helicoidal (caracol)", d:"Rampa circular que dá uma volta por pavimento. Ocupa menos comprimento; exige raios mínimos." },
   "Elevador de carros": { t:"Elevador de carros", d:"Alternativa à rampa em lotes estreitos. Tem fila nos horários de pico: o sistema estima o tempo de espera." },
   "Patamar": { t:"Patamar", d:"Trecho plano no começo e no fim da rampa, sem vagas, para o carro acomodar antes de entrar ou sair." },
+  "Espera de veículos": { t:"Espera e portão", d:"Trecho plano de 5 m entre o alinhamento e o portão: o carro aguarda o portão abrir dentro do lote, sem parar na calçada nem na rua. A rampa só começa depois do portão." },
+  "Partido da garagem": { t:"Partido da garagem", d:"O arranjo de corredores e fileiras do pavimento: módulo simples (um corredor com fileiras dos dois lados), garagem estreita (uma fileira), módulo duplo, pente, anel (corredores ligados nas duas pontas, sem becos) e espinha (transversal no meio). O Gabarito testa os partidos e fica com o de mais vagas e menos becos; os subsolos de mesmo contorno usam o mesmo arranjo e os mesmos pilares.", f:"módulo 90° = 5,0 + 5,5 + 5,0 = 15,5 m" },
+  "Área por vaga": { t:"Área por vaga", d:"Área bruta do pavimento de garagem dividida pelas vagas. Num subsolo retangular regular fica entre 25 e 32 m²; núcleos, rampas, lotes estreitos e recortes aumentam o número.", f:"área do pavimento ÷ vagas", ex:"1.700 m² com 42 vagas → 40,5 m² por vaga" },
+  "Faixa de transferência": { t:"Faixa de transferência (vaga PCD)", d:"Faixa zebrada de 1,20 m ao lado da vaga PCD, para a cadeira de rodas sair do carro. Pode ser compartilhada por duas vagas PCD vizinhas (NBR 9050, conferir na lei)." },
+  "Largura acrescida": { t:"Largura acrescida da vaga", d:"A vaga encostada em parede ou pilar ganha alguns centímetros de largura por lado (a porta não abre contra a parede). Valores usuais: +0,25 m junto à parede e +0,10 m junto ao pilar — conferir no código de obras." },
+  "Raio de giro": { t:"Raio de giro", d:"Raio da curva que o carro faz nas esquinas dos corredores e na saída dos patamares. Referência: 5,5 a 6,0 m no lado de fora da curva e 3,0 m no de dentro." },
+  "Beco": { t:"Corredor sem saída (beco)", d:"Trecho de corredor além da última ligação com a rede: o carro volta de ré ou manobra numa vaga livre. Acima do limite (25 m, configurável) o corredor ganha um bolsão de retorno." },
+  "Transição de rampa": { t:"Transição de rampa", d:"Trecho de 3 m com a metade da inclinação (10%) em cada ponta da rampa, para o carro não raspar o para-choque nem o fundo na mudança de inclinação." },
   "EV": { t:"Recarga de carro elétrico", d:"Vagas com ponto de recarga, posicionadas perto do quadro elétrico. Custo por ponto entra no orçamento." },
 
   /* --- estrutura, terreno --- */
