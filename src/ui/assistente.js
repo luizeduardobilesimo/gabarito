@@ -241,7 +241,7 @@ const assNomePadrao = k => ASS_DIR() && DIR_PADROES[k]? DIR_PADROES[k].nome : (M
 function assPadraoDesc(k){
   if(!(ASS_DIR() && DIR_PADROES[k])) return assPresetDesc(k).split(" · ").map(x=>x.replace("–"," a "));
   const P=DIR_PADROES[k], a=P.tips.map(q=>P.areas[q][1]);
-  return [k==="economico"? "MCMV" : P.sub, `${Math.min(...a)} a ${Math.max(...a)} m²`, `R$ ${nf(P.preco[0]/1000,0)} a ${nf(P.preco[2]/1000,0)} mil/m²`];
+  return [k==="economico"? "MCMV" : P.sub, `${Math.min(...a)} a ${Math.max(...a)} m²`, dirFaixaPreco(P)];
 }
 function assP3(){
   const P=ASS.r.produto, sug=assSugPreco(P.padrao), nomeP=assNomePadrao(P.padrao), ks=ASS_DIR()? DIR_ORDEM : ["compacto","familia","alto"];

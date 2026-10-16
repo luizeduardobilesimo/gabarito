@@ -178,7 +178,7 @@ function prOtGarHTML(r){
   const n=gi && gi.tipos? gi.tipos.filter(x=>x.ok).length : 0;
   return `<div class="note">Garagem: ${esc(cicloGarNome(r.garagem, S))}${n>1? ` · a melhor de ${n} tipos de circulação` : ""}${troca? ` <span class="pill">muda</span>` : ""}</div>`;
 }
-function prOtPendHTML(r){ const p=(r.pend||[]).filter(x=>x.grave && !(x.k==="lazer" && r.dir && r.dir.falhas.some(f=>f.k==="lazer")));   // o lazer obrigatório que não coube já aparece na linha das diretrizes return p.length? `<div class="note" style="color:var(--warn-t)">${esc(p.slice(0,2).map(x=>x.msg).join(" · "))}</div>` : "" }
+function prOtPendHTML(r){ const p=(r.pend||[]).filter(x=>x.grave && !(x.k==="lazer" && r.dir && r.dir.falhas.some(f=>f.k==="lazer")));   /* o lazer obrigatório que não coube já aparece na linha das diretrizes */ return p.length? `<div class="note" style="color:var(--warn-t)">${esc(p.slice(0,2).map(x=>x.msg).join(" · "))}</div>` : "" }
 function otimHTML(){
   const O=OTIM; if(!O.res.length) return prOtAviso(O) || `<p class="note">${O.forma? "Nenhuma combinação preenche a forma desenhada dentro das regras e das vagas. Ajuste a forma ou o mix." : "Nenhuma combinação atende às regras e às vagas exigidas."}</p>`;
   const cur=window._last.f, ob=OBJ[O.obj][2];

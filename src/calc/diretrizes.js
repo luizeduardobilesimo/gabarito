@@ -35,12 +35,12 @@ const DIR_FAIXAS = { f12:{nome:"Faixas 1 e 2", teto:264000}, f3:{nome:"Faixa 3",
 const DIR_LZ = (l)=>l.map(([nome,area,local,desc])=>({nome, area, local, ...(desc? {desc:true} : {})}));
 const DIR_LZ_ALTO = [["Salão de festas",120,"terreo"],["Espaço gourmet",60,"terreo"],["Academia",80,"terreo"],["Brinquedoteca",40,"terreo"],["Coworking",40,"terreo"],
   ["Piscina",90,"emb",1],["Deck / solário",80,"emb",1],["Playground",50,"emb",1],["Pet place",40,"emb",1]];
-/* padrões: áreas [mín, alvo, máx] por nº de dormitórios, peso de cada tipologia no andar, sacada, vagas por unidade (0 = lei), CUB e fator
+/* padrões: áreas [mín, alvo, máx] por nº de dormitórios, peso de cada tipologia no andar (e mínimo: no econômico, ≥ 50% de 2 dorm.), sacada, vagas por unidade (0 = lei), CUB e fator
    sobre o CUB, garagem equivalente (fração do CUB por m² de garagem; no econômico, vagas no térreo sem estrutura de garagem), faixa de preço R$/m² [mín, referência, máx], coberturas, elevador de carros, unidades por andar [mín, máx] (0 = livre),
    unidades por andar de partida (assistente), lazer m²/unidade, programa de lazer e itens obrigatórios */
 const DIR_PADROES = {
   economico:{ nome:"Econômico (MCMV)", curto:"Econômico", sub:"MCMV", nomes:DIR_Q,
-    areas:[[22,27,32],[30,35,42],[38,43,50],[48,55,62],[60,68,76]], tips:[1,2], w:[0,0.3,0.7,0,0], sac:[0,0,0,0,0],
+    areas:[[22,27,32],[30,35,42],[38,43,50],[48,55,62],[60,68,76]], tips:[1,2], w:[0,0.3,0.7,0,0], minPct:[0,0,0.5,0,0], sac:[0,0,0,0,0],
     vagasUn:0, cub:"R8-B", fator:1.05, eqGar:0.5, preco:[5500,7000,8500], cob:"nao", elevCarros:false, un:[4,0], n0:6, lazerUn:1,
     lazer:[["Salão de festas",50,"terreo"],["Playground",40,"emb",1],["Bicicletário",20,"terreo"]], obrig:["Salão de festas","Playground"] },
   medio:{ nome:"Médio", curto:"Médio", sub:"2 e 3 dorm.", nomes:["Studio","1 dorm.","2 dorm.","3 dorm. (1 suíte)","4 dorm. (1 suíte)"],
@@ -72,6 +72,9 @@ const dirLim = v => v==null || v==="" || !isFinite(+v) || +v<0 ? -1 : Math.floor
 const dirGet = (o,p)=>p.split(".").reduce((a,k)=>a==null? a : a[k], o);
 const dirSet = (o,p,v)=>{ const ks=p.split("."), l=ks.pop(); const t=ks.reduce((a,k)=>a[k]==null? (a[k]={}) : a[k], o); t[l]=v };
 const dirPl = (n, s, p)=>`${n} ${n===1? s : (p||s+"s")}`;
+/* faixa de preço em mil R$/m²: "5,5 a 8,5 mil" */
+const dirMil = v => nf(v/1000, v%1000? 1 : 0);
+function dirFaixaPreco(P){ return `R$ ${dirMil(P.preco[0])} a ${dirMil(P.preco[2])} mil/m²` }
 
 function dirAtiva(st){ return !!(st && st.diretrizes && st.diretrizes.modo==="diretrizes") }
 function dirEfetivas(st){
@@ -106,6 +109,7 @@ const dirQRot = q => DIR_Q[q] || "";
 function dirTipsTxt(D){ const l=(D && D.tips)||[]; if(!l.length) return "nenhuma tipologia";
   const s=l.filter(q=>q===0).map(()=>"studio"), n=l.filter(q=>q>0);
   const j=a=>a.length<2? (a[0]||"") : a.slice(0,-1).join(", ")+" e "+a[a.length-1];
+  if(!s.length && D.P && n.every(q=>/^\d su[ií]tes?$/.test(D.P.nomes[q]||""))) return j(n.map(String))+(n.length>1 || n[0]>1? " suítes" : " suíte");
   return n.length? j([...s, ...n.map(String)])+" dorm." : "studio" }
 function dirGarTxt(D){ if(!D) return ""; const r=[];
   if(D.subMax===0) r.push("sem subsolo"); else if(D.subMax>0) r.push(`até ${dirPl(D.subMax,"subsolo")}`);
@@ -288,11 +292,14 @@ function dirSemOpcao(DIR, base, cont, cal, mNow){
   return {k:"vagas", diretriz: restrSub||restrGac? "garagem" : "vagas", motivo:`${sem? sem+", a" : "a"} garagem comporta ${q.vg} das ${q.req} vagas exigidas${vuTxt} — ${ops.join(" ou ")}`,
     vagas:q.vg, req:q.req, unidades:U, titulo:cap(sem||"as diretrizes")};
 }
+/* preço médio (R$/m²) máximo pelo teto por unidade: todas as tipologias sobem na mesma proporção (como em otimPrecoPara) */
+function dirPrecoTeto(teto, mix){ const L=(mix||[]).filter(u=>+u.qtd>0 && +u.area>0 && +u.preco>0); if(!(teto>0) || !L.length) return null;
+  return basePrice({produto:{mix:L}})*Math.min(...L.map(u=>teto/(u.area*u.preco))) }
+function dirPrecoTetoEstudo(st){ const D=dirEfetivas(st); return D && D.teto>0? dirPrecoTeto(D.teto, st.produto.mix) : null }
 /* preço que leva à meta acima do teto por unidade não é saída: tira do "o que fecha a conta" e diz o preço máximo */
 function dirFechaAjusta(DIR, fx, mix, base){
   if(!DIR || !fx || !(DIR.D.teto>0)) return fx;
-  const L=(mix||[]).filter(u=>+u.qtd>0 && +u.area>0 && +u.preco>0); if(!L.length) return fx;
-  const dpMax=Math.min(...L.map(u=>DIR.D.teto/(u.area*u.preco)))-1, lim=basePrice({produto:{mix:L}})*(1+dpMax);
+  const lim=dirPrecoTeto(DIR.D.teto, mix); if(lim==null) return fx;
   fx.precoTeto=lim;
   if(fx.precoMeta && fx.precoMeta>lim+1){ fx.precoMeta=null; fx.metaAcimaTeto=true }
   if(fx.precoZero && fx.precoZero>lim+1){ fx.precoZero=null; fx.zeroAcimaTeto=true }
@@ -305,7 +312,7 @@ function dirFechaAjusta(DIR, fx, mix, base){
 function dirAplicaPadrao(st, k, o={}){
   const P=DIR_PADROES[k]; if(!P) return [];
   const d=st.diretrizes || (st.diretrizes=clone(DEF.diretrizes)), out=[];
-  Object.assign(d, { padrao:k, tips:P.tips.slice(), areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:[0,0,0,0,0], vagasUn:P.vagasUn, elevCarros:P.elevCarros,
+  Object.assign(d, { padrao:k, tips:P.tips.slice(), areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:(P.minPct||[0,0,0,0,0]).slice(), vagasUn:P.vagasUn, elevCarros:P.elevCarros,
     cob:P.cob, lazerObrig:P.obrig.slice(), lazerUn:P.lazerUn, unMin:P.un[0], unMax:P.un[1], tetoUn:0 });
   if(k==="economico" && !DIR_FAIXAS[d.faixa]) d.faixa="f3";
   const Pr=st.produto, cur=(Pr.mix||[]).reduce((s,u)=>s+(+u.qtd||0),0);
@@ -315,7 +322,7 @@ function dirAplicaPadrao(st, k, o={}){
   const area=q=>{ const r=D.area(q); let a=r[1]; const pr=Math.round(pm*DIR_PF[q]/50)*50; if(D.teto>0) a=Math.max(r[0], Math.min(a, Math.floor(D.teto/pr))); return a };
   Pr.mix=distrib(P.tips.map(q=>({q, w:(P.w[q]||0)/sw})), N, t=>({nome:P.nomes[t.q], area:area(t.q), preco:Math.round(pm*DIR_PF[t.q]/50)*50, sac:P.sac[t.q], tip:t.q}));
   out.push(`Unidades: ${Pr.mix.map(u=>`${u.qtd} × ${u.nome} de ${nf(u.area,0)} m²`).join(" e ")} por andar`);
-  out.push(`Preço médio ${brl(Math.round(basePrice(st)/50)*50)}/m² (faixa ${nf(P.preco[0]/1000,0)} a ${nf(P.preco[2]/1000,0)} mil · conferir)`);
+  out.push(`Preço médio ${brl(Math.round(basePrice(st)/50)*50)}/m² (referência ${dirFaixaPreco(P)} · conferir)`);
   if(D.teto>0) out.push(`Teto de ${mi(D.teto)} por unidade${D.faixa? ` (${D.faixa})` : ""}`);
   Pr.lazer=Pr.lazer||{hall:0, itens:[]}; Pr.lazer.itens=DIR_LZ(P.lazer);
   out.push(`Lazer: ${dirPl(Pr.lazer.itens.length,"ambiente")} · ${m2(Pr.lazer.itens.reduce((s,x)=>s+x.area,0))}`);

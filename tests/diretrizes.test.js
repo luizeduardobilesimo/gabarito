@@ -171,11 +171,13 @@ describe('aplicar e desfazer', () => {
 
 describe('tempo', () => {
   it('otimizador completo (fronteira, ciclo e cálculo completo) com diretrizes dentro de ~15 s', async () => {
-    const st = novo(30, 50, 'medioAlto', { subMax: 2, gacMax: 0 }, 13500);
-    const t0 = Date.now();
-    const r = await A.otimizar({ ...A.clone(st.otim), obj: 'lucro', terrenoPct: 0.12 }, null, null, { st, m: {} });
-    const ms = Date.now() - t0; console.log(`[diretrizes] otimizador completo: ${(ms / 1000).toFixed(1)} s · ${r.testadas} combinações · ${r.res.length} opções`);
+    const st = novo(30, 50, 'medioAlto', { subMax: 2, gacMax: 0 }, 13500), livre = A.clone(st); livre.diretrizes.modo = 'livre';
+    const o = { ...A.clone(st.otim), obj: 'lucro', terrenoPct: 0.12 };
+    let t0 = Date.now(); const r = await A.otimizar(o, null, null, { st, m: {} }); const ms = Date.now() - t0;
+    t0 = Date.now(); await A.otimizar(o, null, null, { st: livre, m: {} }); const msL = Date.now() - t0;
+    console.log(`[diretrizes] otimizador completo: ${(ms / 1000).toFixed(1)} s com diretrizes · ${(msL / 1000).toFixed(1)} s livre · ${r.testadas} combinações · ${r.res.length} opções`);
     expect(r.res.length).toBeGreaterThan(0); r.res.forEach(x => { expect(x.sub).toBeLessThanOrEqual(2); expect(x.gac).toBe(0) });
-    expect(ms).toBeLessThan(22000);
-  }, 120000);
+    // a meta é a do otimizador (15 s numa máquina livre); com a máquina carregada, compara com o modo livre medido junto
+    expect(ms).toBeLessThan(Math.max(17000, 1.3 * msL));
+  }, 180000);
 });

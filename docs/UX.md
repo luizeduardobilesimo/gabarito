@@ -23,7 +23,7 @@ A especificação completa da reforma (diagnóstico, destino de cada campo, paco
 ## Entrada: tela inicial, assistente, exemplo e checklist
 
 - **Tela inicial "Meus estudos"** (`src/ui/inicio.js`): pastas com miniatura, status (rascunho · em andamento · confiável, "6/9") e 3 números. Abre na 1ª visita e quando há mais de 1 estudo; volta pela marca do topo e pelo menu do estudo. Sem estudo próprio: "Novo estudo" e "Explorar o exemplo"; com estudos e sem o exemplo: "Ver o exemplo".
-- **Assistente "Novo estudo"** (`src/ui/assistente.js`): 3 perguntas curtas (terreno · cidade e zona · produto e preço) e "Gerar". Cai em Viabilidade com o cartão "Estudo pronto" (some ao trocar de etapa). Tudo é um passo de desfazer.
+- **Assistente "Novo estudo"** (`src/ui/assistente.js`): 4 perguntas curtas (terreno · cidade e zona · padrão e preço · restrições: livre ou com diretrizes — pode ter subsolo? garagem elevada? tipologias) e "Gerar". Cai em Viabilidade com o cartão "Estudo pronto" (some ao trocar de etapa). Tudo é um passo de desfazer.
 - **Estudo de exemplo**: faixa fina "Estudo de exemplo · Começar o meu · Usar como base" acima do cabeçalho.
 - **Checklist** (`src/calc/progresso.js`): 9 itens; anel "6/9" no topo e linha no Resultado da Viabilidade; cada pendência tem "Resolver".
 

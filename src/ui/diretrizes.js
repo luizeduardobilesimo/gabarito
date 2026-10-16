@@ -45,11 +45,11 @@ function dirSecHTML(){
   if(!on) body += `<p class="note">O otimizador escolhe tudo dentro das regras da prefeitura.</p>`;
   else {
     const pads = DIR_ORDEM.map(k=>{ const P=DIR_PADROES[k]; return `<button type="button" data-act="dirPadrao" data-k="${k}" aria-pressed="${D.k===k}" title="${esc(P.nome)} — aplica unidades, preços, lazer, custo e vagas do padrão (Ctrl+Z desfaz)">${esc(P.curto||P.nome)}</button>` }).join("");
-    const PD=D.P, aa=PD.tips.map(q=>PD.areas[q][1]);
+    const PD=D.P, aa=PD.tips.map(q=>D.area(q)[1]);
     const mud = DIRUI.mudou && DIRUI.mudou.k===D.k ? `<div class="dir-mud" role="status"><div class="h">${esc(DIR_PADROES[D.k].nome)} aplicado<button type="button" data-act="dirMudFecha" aria-label="Fechar" title="Fechar">×</button></div><ul>${DIRUI.mudou.l.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
     const chips = [0,1,2,3,4].map(q=>`<button type="button" class="chip" data-act="dirTip" data-q="${q}" aria-pressed="${D.tips.includes(q)}">${DIR_Q[q]}</button>`).join("");
     body += `<div class="dir-l">Padrão${INFO("Padrão do empreendimento")}</div><div class="seg full dir-pads" role="group" aria-label="Padrão do empreendimento">${pads}</div>
-      <div class="dir-pd">${esc(PD.nome)}${INFO(PD.nome)} · ${esc(dirTipsTxt({tips:PD.tips}))} de ${nf(Math.min(...aa),0)} a ${nf(Math.max(...aa),0)} m² · R$ ${nf(PD.preco[0]/1000,0)} a ${nf(PD.preco[2]/1000,0)} mil/m² · ${PD.vagasUn? `${nf(PD.vagasUn, PD.vagasUn%1? 1 : 0)} vaga${PD.vagasUn>1? "s" : ""}/un` : "vagas da lei"}</div>${mud}
+      <div class="dir-pd">${esc(PD.nome)}${INFO(PD.nome)} · ${esc(dirTipsTxt({tips:PD.tips}))} de ${nf(Math.min(...aa),0)} a ${nf(Math.max(...aa),0)} m² · ${dirFaixaPreco(PD)} · ${PD.vagasUn? `${nf(PD.vagasUn, PD.vagasUn%1? 1 : 0)} vaga${PD.vagasUn>1? "s" : ""}/un` : "vagas da lei"}</div>${mud}
       ${D.k==="economico"? dirSegLinha("Faixa do MCMV", "diretrizes.faixa", Object.entries(DIR_FAIXAS).map(([k,f])=>[k, f.nome]), "MCMV") : ""}
       <div class="dir-l">Tipologias permitidas</div><div class="chips" role="group" aria-label="Tipologias permitidas">${chips}</div>
       <div class="fsub" id="dirAreas">${esc(D.tips.map(q=>{ const a=D.area(q); return `${D.P.nomes[q]} ${nf(a[0],0)}–${nf(a[2],0)} m²` }).join(" · "))}${D.teto>0? ` · teto ${esc(mi(D.teto))}/unidade` : ""}</div>
@@ -86,7 +86,8 @@ function dirLive(m){
   const e=document.getElementById("dirSt"); if(!e) return;
   const c=m && dirConfere(S, m); if(!c){ e.innerHTML=""; return }
   const g=c.falhas.filter(x=>x.grave), w=c.falhas.filter(x=>!x.grave);
-  const h = g.length? `<span class="d"></span><span>Fora: ${esc(g.slice(0,2).map(x=>x.msg).join(" · "))}${g.length>2? ` e mais ${g.length-2}` : ""}</span><button type="button" class="btn sm" data-act="dirAjusta">Ajustar o estudo</button>`
+  const ajusta=g.some(x=>!["vagas","lazer"].includes(x.k) || /^sem /.test(x.msg));   // vagas e lazer que não coube: quem resolve é a sugestão
+  const h = g.length? `<span class="d"></span><span>Fora: ${esc(g.slice(0,2).map(x=>x.msg).join(" · "))}${g.length>2? ` e mais ${g.length-2}` : ""}</span>${ajusta? `<button type="button" class="btn sm" data-act="dirAjusta">Ajustar o estudo</button>` : ""}`
     : `<span class="d"></span><span>O estudo atual atende às diretrizes${w.length? ` · ${esc(w[0].msg)}` : ""}</span>`;
   e.className="dir-st"+(g.length? " bad" : w.length? " warn" : "");
   if(e.innerHTML!==h) e.innerHTML=h;
