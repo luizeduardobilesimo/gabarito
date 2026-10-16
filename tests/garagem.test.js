@@ -121,7 +121,9 @@ describe('vagas presas, motos, bicicletário, recarga e quadro por tipo', () => 
     expect(q.presa).toBeGreaterThan(0);
     expect(q.presa).toBeLessThanOrEqual(Math.floor(m.units * 0.05));      // limite de unidades que aceitam vaga presa
     expect(q.moto).toBeGreaterThan(0); expect(q.moto).toBeLessThanOrEqual(Math.ceil(m.units * 0.05));
-    expect(q.bici).toBeGreaterThan(0); expect(q.biciReq).toBe(Math.ceil(m.units * 0.3));
+    // bicicletário só nas sobras (o núcleo compacto deixa a garagem mais aproveitada): o que não cabe vira aviso
+    expect(q.bici).toBe(m.biciLay.ok); expect(q.biciReq).toBe(Math.ceil(m.units * 0.3));
+    if (q.bici < q.biciReq) expect(m.avisos.some(a => /^Bicicletário:/.test(a))).toBe(true);
     expect(q.ev).toBe(m.evN);
     // cada vaga presa tem a sua vaga da frente (mesmo par), e o carro chega à da frente
     Object.values(m.gar).forEach(l => l.vagas.filter(v => v.tipo === 'presa').forEach(v => expect(l.vagas.some(f => f.tandem && f.par === v.par)).toBe(true)));

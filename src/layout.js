@@ -114,8 +114,7 @@ function tipoLayout(plate, units, o){
     const np=notchPoly(Q, ux, vy, [w==="esq"? wu1 : wu0, vEdge], [w==="esq"? wu0 : wu1, vIn]);
     if(np){ sobraA.push(G.area(np)-G.area(r.p)); r.p=np; reserva.push(sb.poly) } else falhas.push(sb.poly) });
   (CB.sobras||[]).forEach(sb=>{ if(!reserva.includes(sb.poly) && !falhas.includes(sb.poly)) falhas.push(sb.poly) });
-  // core = projeção até a fachada (obstáculo nas garagens e no térreo; atrás do núcleo ficam depósitos/área técnica) · coreOut = núcleo real no tipo
-  const core=CB.poly, coreOut = falhas.length ? CB.poly : CB.outline;
+  const coreOut = falhas.length ? CB.poly : CB.outline, core=coreOut;   // o núcleo real (compacto) também nas garagens e no térreo
   const cParts=CB.cells.map(c=>({nome:c.nome,kind:c.k,poly:c.poly,area:G.area(c.poly)})).concat(falhas.map(p=>({nome:"reserva técnica",kind:"tec",poly:p,area:G.area(p)})));
   const R=reg.filter(r=>r.p.length && G.area(r.p)>4).map(r=>({...r, A:G.area(r.p), list:[], used:0}));
   const us=units.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo);
@@ -141,6 +140,6 @@ function tipoLayout(plate, units, o){
       prev=cut; out.push(un) });
   });
   const kinds={}; cParts.forEach(c=>kinds[c.kind]=(kinds[c.kind]||0)+c.area);
-  return {ux,vy,units:out,rep:rep? {custo:rep.custo, antigo:rep.antigo} : null,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:0,nucleo:CB.nucleo};
+  return {ux,vy,units:out,rep:rep? {custo:rep.custo, antigo:rep.antigo} : null,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:[],escSobra:0,nucleo:CB.nucleo};
 }
 

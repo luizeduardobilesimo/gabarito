@@ -50,6 +50,11 @@ function estrPontosTorre(t, lay, sec, vaoMax){
     add(a); for(let k=1;k<n;k++) add([a[0]+(b[0]-a[0])*k/n, a[1]+(b[1]-a[1])*k/n]) }));
   const ux=lay.ux, vy=lay.vy, h=sec/2, sq=c=>{ const u=G.dot(c,ux), v=G.dot(c,vy); return G.rect(ux,vy,u-h,v-h,sec,sec) };
   const inside=c=>sq(c).every(q=>G.pip(q,t.plate));
+  // pilares do núcleo ficam dentro das paredes dele (o núcleo é compacto: o fundo não chega à fachada e, nas garagens, o pilar
+  // centrado no canto ficaria meio dentro da vaga de trás)
+  if(lay.core && lay.core.length>2){ const [ku0,ku1]=G.extent(lay.core,ux), [kv0,kv1]=G.extent(lay.core,vy), cl=(x,a,b)=>Math.min(Math.max(x,a),b);
+    pts.forEach((p,i)=>{ const u=G.dot(p,ux), v=G.dot(p,vy); if(u<ku0-0.01||u>ku1+0.01||v<kv0-0.01||v>kv1+0.01) return; const uu=cl(u,ku0+h,ku1-h), vv=cl(v,kv0+h,kv1-h);
+      pts[i]=[ux[0]*uu+vy[0]*vv, ux[1]*uu+vy[1]*vv] }) }
   const out=[];
   pts.forEach(p=>{ if(inside(p)){ out.push(p); return }
     let best=null; busca: for(const s of [h, sec, 1.5*sec]) for(const [a,b] of [[1,1],[1,-1],[-1,1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]]){ const c=[p[0]+(ux[0]*a+vy[0]*b)*s, p[1]+(ux[1]*a+vy[1]*b)*s]; if(inside(c)){ best=c; break busca } }
