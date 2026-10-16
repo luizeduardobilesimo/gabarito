@@ -99,12 +99,12 @@ function gmFrame(ux, poly, obst, pisos, lobbies, zonas){
 }
 
 /* ---------- zonas inclinadas: faixas coladas às paredes que não seguem o referencial ----------
-   Parede longa inclinada em relação ao referencial principal (cunha de pelo menos meia vaga ao longo dela) ganha uma
+   Parede longa inclinada em relação ao referencial principal (cunha de 4 m ou mais ao longo dela) ganha uma
    faixa no referencial da própria parede: fileira com as costas na parede (vagas a 90° — ou o ângulo escolhido —
    medidas em relação a ela, com os pilares alinhados à faixa) e corredor paralelo à parede. A faixa é obstáculo para o
    referencial principal; os corredores (e transversais) que chegam a ela se ligam ao corredor inclinado por uma junção
    (o triângulo entre a ponta reta e o corredor inclinado), e a rede inteira — reta e inclinada — é uma só. */
-const GM_Z={Lmin:12, graus:3, cunha:2.5, angJ:35};
+const GM_Z={Lmin:12, graus:3, cunha:4, angJ:35};
 function gmParedesZ(poly, ux, Lmin){
   const out=[], ccw=G.sArea(poly)>0, vy=[-ux[1],ux[0]];
   for(let i=0;i<poly.length;i++){ const a=poly[i], b=poly[(i+1)%poly.length], L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<(Lmin||GM_Z.Lmin)) continue;
@@ -495,7 +495,7 @@ function garModBusca(poly, obst, E, o, pisos){
   // tarefas: orientação × ângulo × conjunto de zonas inclinadas (nenhuma; todas; e cada uma sozinha quando há 2 ou 3)
   const zc=new Map(), zonasDe=(zv,g)=>zv.map(([w,t])=>{ const k=w.i+":"+t+":"+g.ang; if(!zc.has(k)) zc.set(k, gmZona(w, poly, obst, pisos, lobbies, R, g, t)); return zc.get(k) }).filter(z=>z.pcs.length);
   // (combinações completas na orientação principal; nas outras, só todas simples ou todas duplas)
-  const t0s=[], tzs=[]; dirs.forEach((ux,di)=>{ const ws= R.zonas==="nunca"? [] : gmParedesZ(poly, ux).slice(0,3), vars=[];
+  const t0s=[], tzs=[]; dirs.forEach((ux,di)=>{ const ws= R.zonas==="nunca" || (quick && di>0)? [] : gmParedesZ(poly, ux).slice(0,3), vars=[];   // no rápido, só na orientação principal
     if(ws.length){ ["s","d"].forEach(t=>vars.push(ws.map(w=>[w,t])));
       if(!quick && di<1 && ws.length>1) ws.forEach(w=>["s","d"].forEach(t=>vars.push([[w,t]])));
       if(!quick && di<1 && ws.length===2) vars.push([[ws[0],"s"],[ws[1],"d"]], [[ws[0],"d"],[ws[1],"s"]]) }

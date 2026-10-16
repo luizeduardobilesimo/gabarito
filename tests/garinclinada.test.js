@@ -43,7 +43,7 @@ describe('referencial do lote girado e paredes inclinadas', () => {
       }
     }
   });
-  it('paredes inclinadas detectadas pelo referencial (cunha de pelo menos meia vaga)', () => {
+  it('paredes inclinadas detectadas pelo referencial (cunha de 4 m ou mais)', () => {
     const ws = A.gmParedesZ([[0, 0], [40, 0], [50, 45], [-5, 45]], [1, 0]);
     expect(ws.map(w => w.i).sort()).toEqual([1, 3]);
     expect(ws.every(w => w.graus > 3 && w.L >= 12)).toBe(true);
