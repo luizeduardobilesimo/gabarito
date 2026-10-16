@@ -31571,7 +31571,7 @@ function garResMet(m){
 function tipoSum(k, m){
   const E=S.estudo;
   const nu=m && (m.tipo||[]).map(l=>l&&l.nucleo).filter(Boolean);
-  if(k==="nuc" && nu && nu.length) return `${esc(nu[0].partidoNome)} · nota <b>${Math.min(...nu.map(n=>n.nota??100))}</b>`;
+  if(k==="nuc" && nu && nu.length) return `nota <b>${Math.min(...nu.map(n=>n.nota??100))}</b> · ${esc(nu[0].partidoNome)}`;
   if(k==="nuc") return `${E.nEsc} escada${E.nEsc>1?"s":""} · ${+E.elevadores? E.elevadores+" elev." : "elev. auto"}${E.emerg?" · emergência":""}`;
   if(k==="pos") return `${({auto:"planta auto",central:"corredor central",lateral:"lateral"})[E.tipoPlanta]||""} · ${pct(E.nucleoPos,0)}`;
   if(k==="dim") return `corredor ${nf(E.corrTipo,2)} m · prof. ${nf(E.profMin,2)} m`;

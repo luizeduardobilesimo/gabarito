@@ -41,19 +41,19 @@
  },
  "esperado": {
   "units": 46,
-  "vagas": 36,
+  "vagas": 28,
   "vagasReq": 47,
-  "CA": 4.6636,
+  "CA": 4.662,
   "H": 40.5,
-  "priv": 3799,
+  "priv": 3798,
   "vagasPorPav": {
-   "s2": 17,
-   "s1": 13
+   "s2": 11,
+   "s1": 11
   },
-  "vgv": 54621468,
-  "custo": 52103361,
-  "lucro": 8371288,
-  "margem": 0.13843
+  "vgv": 54605592,
+  "custo": 52101009,
+  "lucro": 8356063,
+  "margem": 0.13821
  },
  "tolerancia": {
   "vagas": 0.03,
