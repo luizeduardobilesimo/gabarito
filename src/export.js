@@ -154,7 +154,7 @@ function dxfImpl(m){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("SUBSOLO
   m.T.forEach((t,i)=>{ dxfTorre(d,"TORRES",t,2); if(t.plate.length) d.text("TEXTOS",G.centroid(t.plate),1.2,`T${i+1} - ${t.pav} pav`) });
   S.lote.pts.forEach((q,i)=>{ const b=S.lote.pts[(i+1)%S.lote.pts.length]; d.text("COTAS",[(q[0]+b[0])/2,(q[1]+b[1])/2],0.8,`L${i+1} ${nf(G.edgeLen(S.lote.pts,i),2)} m`) });
   return d.out() }
-function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (cs.lay.coreFundo||[]).forEach(p=>{ d.poly("DEPOSITO",p,8); d.text("NUCLEO-TEXTOS",G.centroid(p),0.25,"DEPOSITO") }); dxfNucleo(d, cs.lay) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
+function dxfGar(m,lay,floor,key){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (key==="ter" || lay.fundoDep? cs.lay.coreFundo||[] : []).forEach(p=>{ d.poly("DEPOSITO",p,8); d.text("NUCLEO-TEXTOS",G.centroid(p),0.25,"DEPOSITO") }); dxfNucleo(d, cs.lay) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
   // garagem por partidos: corredores, faixa de pedestres, sobras (depósito / área técnica) e inclinações das rampas
   (lay.aisles||[]).forEach(a=>d.poly(a.pass? "PASSAGEM-MAO-UNICA" : "CORREDOR",a.poly,8)); (lay.retornos||[]).forEach(p=>d.poly("BOLSAO-RETORNO",p,8));
   (lay.peds||[]).forEach(p=>{ if(p.poly) d.poly("FAIXA-PEDESTRES",p.poly,5); if(p.cross) d.poly("FAIXA-PEDESTRES",p.cross,5) });
@@ -240,7 +240,7 @@ async function exportZIP(){
   try{ await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js") }catch(e){ toast("Não consegui carregar o compactador"); return }
   const m=window._last.m, z=new JSZip();
   z.file("implantacao.dxf", dxfImpl(m));
-  if(m.gar) Object.entries(m.gar).forEach(([k,lay])=>{ if(lay) z.file(`garagem-${nomePav(k).replace(/\s+/g,"-")}.dxf`, dxfGar(m,lay,k[0]==="s"?m.sub:k[0]==="g"?m.emb:m.tGar)) });
+  if(m.gar) Object.entries(m.gar).forEach(([k,lay])=>{ if(lay) z.file(`garagem-${nomePav(k).replace(/\s+/g,"-")}.dxf`, dxfGar(m,lay,k[0]==="s"?m.sub:k[0]==="g"?m.emb:m.tGar,k)) });
   m.T.forEach((t,i)=>{ if(t.plate.length) z.file(`pavimento-tipo-torre-${i+1}.dxf`, dxfTipo(m,i)) });
   if(m.comuns && typeof comunsDxf==="function"){ z.file("terreo-areas-comuns.dxf", dxfComuns(m,"terreo")); if(m.comuns.amb.some(a=>a.local==="emb")) z.file("laje-do-embasamento-lazer.dxf", dxfComuns(m,"emb")) }
   z.file(slug(S.nome)+".ifc", IFC(m));

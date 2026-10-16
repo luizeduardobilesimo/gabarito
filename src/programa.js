@@ -37,7 +37,8 @@ function terreoZones(st, m, lz, extra=0){
     if(dl){ dv=dl.dv; out.lanes=dl.laneIv||null;
       if(dl.semAlt) out.warn.push("As rampas alternadas não cabem ao lado dos núcleos — o estudo usou rampas retas empilhadas.");
       if(dl.semFaixa){ garOn=false; out.semFaixa=true; out.warn.push("Não há largura para a faixa de acesso à garagem do térreo ao lado das rampas sem passar pelos núcleos — a garagem do térreo foi desligada neste estudo."); }
-      if(dl.naoCabe) out.warn.push("As rampas não cabem ao lado dos núcleos das torres. Tente “Encontrar o melhor acesso”, rampas alternadas, menos garagens elevadas ou mude o lado/posição do núcleo (Pavimento tipo).");
+      // não cabe por comprimento (rampa longa para o pavimento): quem explica é vertical(), com os metros; aqui só a que passaria pelo núcleo
+      if(dl.naoCabe && dl.cruza) out.warn.push("As rampas não cabem ao lado dos núcleos das torres. Tente “Encontrar o melhor acesso”, rampas alternadas, menos garagens elevadas ou mude o lado/posição do núcleo (Pavimento tipo).");
       out.veiReal=W2((dv[0]+dv[1])/2, G.dot(m.acesso.vei,fd)); out.veiShift=dl.shift||0;
       const RX=rampExt(st, m, fd); out.rx=RX;
       dEnd = hasRamp && !E.rampa ? Math.min(dmx, RX.s0 + Math.max(P.subsolos? RX.LD:0, P.garAcima? RX.LU:0)) : dmn+PATAMAR } }
@@ -49,7 +50,13 @@ function terreoZones(st, m, lz, extra=0){
   const coreIn=d=>(m.coreSets||[]).reduce((s,cs)=>s + G.area(G.band(cs.core,fd,d1,d)) + G.area(G.band(scaleBy(cs.lobby||[],1.25),fd,d1,d)),0) + (lz&&lz.terreo.c>0? 2.6*(lmx-lmn) : 0);
   const hallArea=d=>{ const b=box(d1,d,lmn,lmx); let a=G.area(b); if(dv) a-=G.area(box(d1,d,dv[0],dv[1])); return a };
   let d2=dmx;
-  if(garOn){ let lo=d1, hi=dmx; for(let k=0;k<30;k++){ const mid=(lo+hi)/2; if(hallArea(mid)-coreIn(mid)>=HTe) hi=mid; else lo=mid } d2=Math.min(dmx, Math.max(hi, d1+6)) }
+  const fundoHall=()=>{ let lo=d1, hi=dmx; for(let k=0;k<30;k++){ const mid=(lo+hi)/2; if(hallArea(mid)-coreIn(mid)>=HTe) hi=mid; else lo=mid } return Math.min(dmx, Math.max(hi, d1+6)) };
+  if(garOn){ d2=fundoHall();
+    // a faixa da garagem do térreo vai da rua até o fim do hall (d2): se nesse trecho ela passaria pelo núcleo, procura outra posição que
+    // a leve livre até lá (a regra dura vale também para a faixa — src/garagem.js verticalCruza)
+    if(dl && dl.laneIv && !dl.naoCabe && !E.rampa && (m.obst||[]).some(c=>G.polysOverlap(G.rect(lat,fd,dl.laneIv[0],dmn,dl.laneIv[1]-dl.laneIv[0],d2-dmn),c))){
+      const dl2=driveLayout(st, lmn, lmx, G.dot(m.acesso.vei,lat), m, fd, lat, {dLane:d2});
+      if(dl2 && !dl2.naoCabe && !dl2.semFaixa){ dl=dl2; out.drive0=dl; dv=dl.dv; out.lanes=dl.laneIv||null; out.veiReal=W2((dv[0]+dv[1])/2, G.dot(m.acesso.vei,fd)); out.veiShift=dl.shift||0; d2=fundoHall() } } }
   out.d1=d1; out.d2=d2; out.HT=HT; out.hallDisp=hallArea(dmx);
   // núcleos das torres: o hall sempre chega até eles (colunas de hall)
   const cols=[];
@@ -88,6 +95,11 @@ function terreoZones(st, m, lz, extra=0){
     if(garOn && out.lanes){ const lc=(out.lanes[0]+out.lanes[1])/2; out.driveEnd=W2(lc, d2-0.2); out.keep.push(G.rect(lat,fd,out.lanes[0],d2,out.lanes[1]-out.lanes[0],6)) } }
   if(garOn && dmx-d2>3){ out.gar=box(d2,dmx,lmn,lmx) }
   if(VD) terreoVeiFecha(out, VD, garOn);
+  // a faixa de veículos desenhada cobre a largura de todas as rampas até a mais longa: o que dela cair sobre núcleo, hall dos elevadores
+  // ou depósito sai (caixa do obstáculo no referencial do acesso). Quem confere se o carro precisaria passar por ali é verticalCruza.
+  if(out.drive.length && typeof acSubRect==="function"){ const vl=out.vlat||lat, vf=out.vfd||fd;
+    (m.obst||[]).filter(c=>c&&c.length>2).forEach(c=>{ const [a,b]=G.extent(c,vl), [d0_,d1_]=G.extent(c,vf);
+      out.drive=out.drive.flatMap(p=> p && p.length>2 && G.polysOverlap(p,c) ? acSubRect(p, vl, vf, a, b, d0_, d1_) : [p]) }) }
   const sa=a=>a.reduce((s,p)=>s+G.area(p),0);
   out.lojaA=sa(out.lojas); out.hallA=sa(out.hall); out.driveA=sa(out.drive); out.gTer=Math.max(0,G.area(out.gar)-sa(out.colsGar)-sa(out.walk)-(VD&&garOn&&out.gar.length? sa(out.drive) : 0));
   if(HT>out.hallDisp+1 && !garOn) out.warn.push("O hall e o lazer do térreo pedem mais área do que o térreo tem.");

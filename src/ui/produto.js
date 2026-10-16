@@ -162,14 +162,16 @@ function prOtSum(){ const O=OTIM; if(!O) return ""; const r=O.res[0];
   return !r? `<span class="pr-bad">nenhuma opção</span>` : r.semLucro? `<span class="pr-bad">sem lucro</span> · ${mi(r.lucro)}` : `${mi(r.lucro)} · margem ${pct(r.margem,0)}` }
 function prOtAviso(O){
   if(!O) return "";
-  if(O.semOpcao && O.semOpcao.diretriz) return `<div class="pr-av bad" role="status"><b>Nenhuma combinação atende às diretrizes</b> — ${esc(O.semOpcao.motivo)}.<div class="k"><button type="button" class="btn sm ghost" data-act="dirAbrir">Rever as diretrizes</button></div></div>`;
-  if(O.semOpcao) return `<div class="pr-av bad" role="status"><b>Nenhuma combinação fecha as regras com as vagas exigidas</b> — ${esc(O.semOpcao.motivo)}.</div>`;
-  const fx=O.semLucro || O.fecha; if(!fx || !O.res.length) return "";
+  // a garagem do estudo não funciona no lote (rampa que não cabe ou passaria pelo núcleo): a busca partiu de outra circulação (src/optim.js otimGarValida)
+  const gt = O.garTroca && typeof CICLO_TIPO_ROT!=="undefined" ? `<div class="note" style="color:var(--warn-t)">Com ${esc(CICLO_TIPO_ROT[O.garTroca.de.rampaTipo]||O.garTroca.de.rampaTipo)} a garagem não funciona neste lote — as opções foram conferidas com ${esc(CICLO_TIPO_ROT[O.garTroca.para.rampaTipo]||O.garTroca.para.rampaTipo)}.</div>` : "";
+  if(O.semOpcao && O.semOpcao.diretriz) return gt+`<div class="pr-av bad" role="status"><b>Nenhuma combinação atende às diretrizes</b> — ${esc(O.semOpcao.motivo)}.<div class="k"><button type="button" class="btn sm ghost" data-act="dirAbrir">Rever as diretrizes</button></div></div>`;
+  if(O.semOpcao) return gt+`<div class="pr-av bad" role="status"><b>Nenhuma combinação fecha as regras com as vagas exigidas</b> — ${esc(O.semOpcao.motivo)}.</div>`;
+  const fx=O.semLucro || O.fecha; if(!fx || !O.res.length) return gt;
   // o que fecha a conta, cada linha com Aplicar (src/ui/ciclo.js): lazer enxuto, preço médio, terreno
   const L=typeof cxLinhasOtim==="function"? cxLinhasOtim(O) : [], k=`<div class="cx">${L.map(cxLinhaHTML).join("")}</div>`
     + (fx.precoTeto && (fx.metaAcimaTeto || fx.zeroAcimaTeto)? `<div class="k"><i>pelo teto por unidade, o preço médio vai até <b>${brl(Math.floor(fx.precoTeto/50)*50)}/m²</b></i></div>` : "");
-  return O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`
-    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`;
+  return gt + (O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`
+    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`);
 }
 /* garagem com que a opção foi conferida (tipo de rampa, acesso, ângulo) e pendências do projeto, em uma linha cada */
 function prOtGarHTML(r){

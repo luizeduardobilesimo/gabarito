@@ -7,11 +7,13 @@ const A = carregar();
 const lote = (w, d) => ({ pts: [[0, 0], [w, 0], [w, d], [0, d]], front: [0], rec: [{}, {}, {}, {}] });
 const L15 = (estudo = {}) => ({ lote: lote(15, 40), produto: { torres: [{ pav: 8 }], subsolos: 2, garTerOn: false }, estudo });
 const BIG = rampaTipo => ({ lote: lote(50, 60), produto: { torres: [{ pav: 12 }], subsolos: 2 }, estudo: { rampaTipo } });
+// obstáculos dos pavimentos de garagem: nos subsolos/elevadas a faixa atrás do núcleo (coreFundo) é piso (m.obstGar)
+const obsDe = (m, k) => k === 'ter' ? m.obst : (m.obstGar || m.obst);
 const calc = parcial => { const st = estado(A, parcial); return { st, m: A.compute(st) } };
 // confere na malha de 0,5 m que o carro sai do portal e chega à frente de todas as vagas de carro do pavimento
 const malhaOk = (m, k, piso) => {
   const l = m.gar[k], vs = l.vagas.filter(v => v.tipo !== 'off' && v.tipo !== 'faixa');
-  const R = A.rasterCheck(piso, [...m.obst, ...l.blocks], vs, l.pillars, l.portals, l.aisle);
+  const R = A.rasterCheck(piso, [...obsDe(m, k), ...l.blocks], vs, l.pillars, l.portals, l.aisle);
   return { conn: R.allConn, todas: R.okV.length === vs.length, n: vs.length };
 };
 
@@ -170,7 +172,7 @@ describe('partidos de garagem: área por vaga, rede contínua e malha', () => {
     for (const { m } of Object.values(RES)) for (const [k, l] of Object.entries(m.gar)) {
       const piso = k === 'ter' ? m.ter.gar : m.vert.floors[k].poly;
       const r = malhaOk(m, k, piso); expect(r.conn).toBe(true); expect(r.todas).toBe(true);
-      const proib = [...m.obst, ...l.blocks, ...l.landings, ...l.aisles.map(a => a.poly), ...l.peds.filter(p => p.poly).map(p => p.poly), ...l.pillars];
+      const proib = [...obsDe(m, k), ...l.blocks, ...l.landings, ...l.aisles.map(a => a.poly), ...l.peds.filter(p => p.poly).map(p => p.poly), ...l.pillars];
       l.vagas.filter(v => v.tipo !== 'off').forEach(v => proib.forEach(p => expect(inter(v.poly, p)).toBeLessThan(0.1)));
       expect(l.problemas.filter(p => p.nivel === 'bad')).toEqual([]);
     }

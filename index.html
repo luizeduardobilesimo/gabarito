@@ -1271,7 +1271,7 @@ function driveLayout(st, lmn, lmx, vc, m, fd, lat, opt={}){
   const U = nA? (hasUB? [["UA","UB"],["UB","UA"]] : [["UA"]]) : [[]];
   const orders=[]; D.forEach(d=>U.forEach(u=>{ orders.push([...d,...u]); if(nS&&nA) orders.push([...u,...d]) }));
   const span=Math.max(1,lmx-lmn), side = (vc-lmn) <= (lmx-vc) ? 1 : -1;
-  const RX = m&&fd? rampExt(st, m, fd) : null, obst=(m&&m.obst)||[];
+  const RX = m&&fd? rampExt(st, m, fd) : null, OB=obList(m&&m.obst);
   const build=(ord, dlt)=>{ const seq=[...ord]; if(lane) seq.push("lane");
     const width=seq.reduce((s_,p)=>s_+(p==="lane"?lane:w),0), k=Math.min(1, span*0.85/width);
     let a = (side>0? clamp(vc-width*k/2, lmn, lmx-width*k) : clamp(vc+width*k/2, lmn+width*k, lmx)) + dlt;
@@ -1282,19 +1282,29 @@ function driveLayout(st, lmn, lmx, vc, m, fd, lat, opt={}){
     const cov=seq.slice(i0,i1+1).map(p=>ext[p]); o.dv=[Math.min(...cov.map(e=>e[0])), Math.max(...cov.map(e=>e[1]))];
     if(lane) o.laneIv=ext.lane;
     return o };
-  const fits=o=>{ if(!RX) return true;
-    const sp=(lc,L)=>stripPoly(lat,fd,lc,o.w,RX.s0,RX.s0+L);
-    const chk=(lc,L,poly)=> lc==null || ((!poly || !poly.length || G.polyInPoly(sp(lc,L),poly)) && !obst.some(c=>G.polysOverlap(sp(lc,L),c)));
-    const laneOk = !o.laneIv || !obst.some(c=>G.polysOverlap(G.rect(lat,fd,o.laneIv[0],RX.lotFront,o.laneIv[1]-o.laneIv[0],RX.s0+RX.LD-RX.lotFront),c));
-    const dvOk = !obst.some(c=>G.polysOverlap(G.rect(lat,fd,o.dv[0],RX.lotFront,o.dv[1]-o.dv[0],RX.s0+2-RX.lotFront),c));
-    return laneOk && dvOk && chk(o.DA,RX.LD,m.sub) && chk(o.DB,RX.LD,m.sub) && chk(o.DA,Math.min(RX.LD,6),m.emb) && chk(o.UA,RX.LU,m.emb) && chk(o.UB,RX.LU,m.emb) };
+  // regra dura: rampa, patamares, faixa da garagem do térreo e a entrada nunca passam pelo núcleo, pelo hall dos elevadores nem pelo depósito
+  // atrás dele (m.obst). `livre` confere isso; `cabe` confere se cada faixa cabe no pavimento que ela liga.
+  const livre=o=>{ if(!RX) return true;
+    const lw=o.w+0.6, fx=(lc,L)=> lc==null || !obHit(OB, G.rect(lat,fd,lc-lw/2,RX.s0-RX.land,lw,L+2*RX.land));   // faixa + patamares das duas pontas
+    if(o.laneIv && obHit(OB, G.rect(lat,fd,o.laneIv[0],RX.lotFront,o.laneIv[1]-o.laneIv[0],Math.max(RX.s0+RX.LD, opt.dLane||0)-RX.lotFront))) return false;   // dLane: até a garagem do térreo (terreoZones)
+    if(obHit(OB, G.rect(lat,fd,o.dv[0],RX.lotFront,o.dv[1]-o.dv[0],RX.s0+2-RX.lotFront))) return false;
+    return fx(o.DA,RX.LD) && fx(o.DB,RX.LD) && fx(o.UA,RX.LU) && fx(o.UB,RX.LU) };
+  const cabe=o=>{ if(!RX) return true;
+    const chk=(lc,L,poly)=> lc==null || !poly || !poly.length || G.polyInPoly(stripPoly(lat,fd,lc,o.w,RX.s0,RX.s0+L),poly);
+    return chk(o.DA,RX.LD,m.sub) && chk(o.DB,RX.LD,m.sub) && chk(o.DA,Math.min(RX.LD,6),m.emb) && chk(o.UA,RX.LU,m.emb) && chk(o.UB,RX.LU,m.emb) };
   if(!orders[0].length && !lane) return null;
   if(E.rampa) return build(orders[0],0);
-  for(const ord of orders){ for(let t=0;t<=14;t+=0.5) for(const sg of (t?[1,-1]:[1])){ const o=build(ord, sg*t); if(fits(o)){ if(t) o.shift=sg*t; if(opt.semAlt) o.semAlt=true; if(opt.semFaixa) o.semFaixa=true; return o } } }
+  const marca=o=>{ if(opt.semAlt) o.semAlt=true; if(opt.semFaixa) o.semFaixa=true; return o };
+  let livre1=null;
+  for(const ord of orders){ for(let t=0;t<=14;t+=0.5) for(const sg of (t?[1,-1]:[1])){ const o=build(ord, sg*t); if(!livre(o)) continue; if(t) o.shift=sg*t;
+    if(cabe(o)) return marca(o); if(!livre1 && o.dv[0]>=lmn-0.05 && o.dv[1]<=lmx+0.05) livre1=o } }   // reserva: só dentro do pavimento na lateral
   // não coube: tenta sem a segunda faixa (rampas retas) e depois sem a faixa da garagem do térreo
-  if(alt && (hasDB||hasUB)) return driveLayout(st, lmn, lmx, vc, m, fd, lat, {...opt, semAlt:true});
-  if(garOn && (nS||nA)) return driveLayout(st, lmn, lmx, vc, m, fd, lat, {...opt, semFaixa:true});
-  const o=build(orders[0],0); o.naoCabe=true; if(opt.semAlt) o.semAlt=true; if(opt.semFaixa) o.semFaixa=true; return o;
+  const r = alt && (hasDB||hasUB)? driveLayout(st, lmn, lmx, vc, m, fd, lat, {...opt, semAlt:true}) : garOn && (nS||nA)? driveLayout(st, lmn, lmx, vc, m, fd, lat, {...opt, semFaixa:true}) : null;
+  if(r && !r.naoCabe) return r;
+  // nenhuma posição cabe nos pavimentos: fica a que não passa pelo núcleo (a pendência é o comprimento); sem ela, a rampa é marcada "cruza"
+  if(livre1){ livre1.naoCabe=true; return marca(livre1) }
+  if(r) return r;   // a versão reduzida (sem a 2ª faixa / sem a faixa do térreo) também cruza: fica ela, como antes
+  const o=build(orders[0],0); o.naoCabe=true; o.cruza=true; return marca(o);
 }
 /* arranjo da entrada para helicoidal, rampa em L e elevador de carros (mesma ideia: elementos lado a lado, deslocados até caber) */
 function driveLayoutX(st, lmn, lmx, vc, m, fd, lat, opt={}){
@@ -1314,20 +1324,28 @@ function driveLayoutX(st, lmn, lmx, vc, m, fd, lat, opt={}){
     const all=Object.values(ext); o.dv=[Math.min(...all.map(e=>e[0])), Math.max(...all.map(e=>e[1]))];
     if(lane) o.laneIv=ext.lane;
     return o };
-  const fits=o=>{ if(!RX) return true;
+  // 0 = passa pelo núcleo/hall/depósito (nunca vale) · 1 = livre, mas não cabe no pavimento · 2 = cabe
+  const fits=o=>{ if(!RX) return 2;
     const g=rampGeoX(st, RX, posX(o, RX, prim), lat, fd), inF=(p,F)=>!F||!F.length||G.polyInPoly(p,F), noC=p=>!obHit(OB,p);
-    if(o.laneIv && obHit(OB, G.rect(lat,fd,o.laneIv[0],RX.lotFront,o.laneIv[1]-o.laneIv[0],RX.s0+RX.LD-RX.lotFront))) return false;
-    if(obHit(OB, G.rect(lat,fd,o.dv[0],RX.lotFront,o.dv[1]-o.dv[0],RX.s0+2-RX.lotFront))) return false;
+    if(o.laneIv && obHit(OB, G.rect(lat,fd,o.laneIv[0],RX.lotFront,o.laneIv[1]-o.laneIv[0],Math.max(RX.s0+RX.LD, opt.dLane||0)-RX.lotFront))) return 0;
+    if(obHit(OB, G.rect(lat,fd,o.dv[0],RX.lotFront,o.dv[1]-o.dv[0],RX.s0+2-RX.lotFront))) return 0;
     const F = nS? m.sub : m.emb;
-    if(tipo==="helicoidal") return inF(g.disk,F) && inF(g.landing,F) && (!nS||!nA||inF(g.disk,m.emb)) && noC(g.disk) && noC(g.landing) && noC(g.lane);
-    if(tipo==="elevador") return inF(g.all,F) && inF(g.landing,F) && (!nS||!nA||inF(g.all,m.emb)) && noC(g.all) && noC(g.landing) && g.espera.every(noC);
-    const okL = inF(g.poly,F) && inF(g.landArr,F) && noC(g.poly) && noC(g.landArr);
-    if(!okL || !pre.length) return okL;
-    const su=stripPoly(lat,fd,o.UA,w,RX.s0,RX.s0+RX.LU); return inF(su,m.emb) && noC(su) };
+    if(tipo==="helicoidal") return !(noC(g.disk) && noC(g.landing) && noC(g.lane))? 0 : inF(g.disk,F) && inF(g.landing,F) && (!nS||!nA||inF(g.disk,m.emb))? 2 : 1;
+    if(tipo==="elevador") return !(noC(g.all) && noC(g.landing) && g.espera.every(noC))? 0 : inF(g.all,F) && inF(g.landing,F) && (!nS||!nA||inF(g.all,m.emb))? 2 : 1;
+    const su = pre.length? stripPoly(lat,fd,o.UA,w,RX.s0,RX.s0+RX.LU) : null;
+    if(!(noC(g.poly) && noC(g.landArr) && noC(g.landDep) && (!su || noC(su)))) return 0;
+    return inF(g.poly,F) && inF(g.landArr,F) && (!su || inF(su,m.emb))? 2 : 1 };
   if(E.rampa) return build(vars[0],0);
-  for(const vr of vars) for(let t=0;t<=14;t+=0.5) for(const sg of (t?[1,-1]:[1])){ const o=build(vr,sg*t); if(fits(o)){ if(t) o.shift=sg*t; if(opt.semFaixa) o.semFaixa=true; return o } }
-  if(garOn) return driveLayoutX(st, lmn, lmx, vc, m, fd, lat, {...opt, semFaixa:true});
-  const o=build(vars[0],0); o.naoCabe=true; if(opt.semFaixa) o.semFaixa=true; return o;
+  const marca=o=>{ if(opt.semFaixa) o.semFaixa=true; return o };
+  let livre1=null;
+  for(const vr of vars) for(let t=0;t<=14;t+=0.5) for(const sg of (t?[1,-1]:[1])){ const o=build(vr,sg*t), f=fits(o); if(!f) continue; if(t) o.shift=sg*t;
+    if(f===2) return marca(o); if(!livre1 && o.dv[0]>=lmn-0.05 && o.dv[1]<=lmx+0.05) livre1=o }   // reserva: só dentro do pavimento na lateral
+  const r = garOn? driveLayoutX(st, lmn, lmx, vc, m, fd, lat, {...opt, semFaixa:true}) : null;
+  if(r && !r.naoCabe) return r;
+  // não cabe no pavimento: fica a posição que não passa pelo núcleo; sem nenhuma, a rampa é marcada "cruza" (vertical() a dá como inválida)
+  if(livre1){ livre1.naoCabe=true; return marca(livre1) }
+  if(r) return r;
+  const o=build(vars[0],0); o.naoCabe=true; o.cruza=true; return marca(o);
 }
 /* posição do elemento principal (centro lateral e profundidade) a partir do arranjo da entrada */
 function posX(o, RX, prim){ return o.tipo==="helicoidal"? {c:o.H, d:RX.dc, sL:o.sL} : o.tipo==="elevador"? {c:o.EL, d:RX.s0, porta:o.porta} : {c:o[prim+"A"], d:RX.s0, sg:o.sg} }
@@ -1403,13 +1421,50 @@ function vertical(st, m){
   // validações geométricas
   const msgFora={D:"A rampa dos subsolos não cabe dentro do subsolo — encurte (inclinação maior) ou mova o acesso.", U:"A rampa das garagens elevadas não cabe no embasamento.",
     H:"A rampa helicoidal não cabe no pavimento de garagem — reduza os raios ou mova o acesso.", EL:"O poço do elevador de carros não cabe no pavimento de garagem — mova o acesso."};
-  V.strips.forEach(s=>{ const fl = s.kind==="D"? m.sub : s.kind==="U"? m.emb : (nS? m.sub : m.emb); if(fl.length && !G.polyInPoly(s.poly, fl)){ V.ok=false; const t=msgFora[s.kind]||msgFora.D; if(!V.warn.includes(t)) V.warn.push(t) } });
+  V.strips.forEach(s=>{ const fl = s.kind==="D"? m.sub : s.kind==="U"? m.emb : (nS? m.sub : m.emb); if(fl.length && !G.polyInPoly(s.poly, fl)){ V.ok=false;
+    // reta/alternada que não cabe: diz quanto ela pede e quanto o pavimento tem a partir do início da rampa
+    let t=msgFora[s.kind]||msgFora.D;
+    if((s.kind==="D"||s.kind==="U") && !s.Lshape){ const disp=G.extent(fl,dir)[1]-Math.min(s.d0,s.d1), pede=s.L+land;
+      if(pede>disp+0.05) t = s.kind==="U"? `A rampa reta que sobe às garagens elevadas precisa de ${nf(s.L,1)} m mais o patamar de ${nf(land,1)} m, e o embasamento tem ${nf(disp,1)} m a partir do início da rampa — use elevador de carros, menos garagens elevadas ou um pé-direito menor no térreo.`
+        : `A rampa reta dos subsolos precisa de ${nf(s.L,1)} m mais o patamar de ${nf(land,1)} m, e o subsolo tem ${nf(disp,1)} m a partir do início da rampa — use rampa mais inclinada, em L, helicoidal ou elevador de carros.` }
+    if(!V.warn.includes(t)) V.warn.push(t) } });
   Object.values(V.floors).forEach(f=>{ f.portals.forEach(pt=>{ if(f.poly.length && !G.pip(pt.p,f.poly)){ V.ok=false; pt.fora=true; const t=`No ${nomePav(f.key)}, o patamar da rampa fica fora do pavimento.`; if(!V.warn.includes(t)) V.warn.push(t) } }) });
+  verticalCruza(st, m, V);
   // compatibilidade: rampa de entrada
   const first=V.strips.find(s=>s.id==="DA")||V.strips.find(s=>s.id==="UA");
   if(first && !V.entry){ const seg=V.segs.find(g=>g.strip===first.id && g.r===1); V.entry={poly:first.poly, c:P2(first.lc,(first.d0+first.d1)/2), dir, len:first.L, w, top:seg.E, foot:seg.X} }
   V.drive=[...new Set([lcDA,lcUA].filter(v=>v!=null))];
   return V;
+}
+/* regra dura: nenhuma rampa, patamar, poço/espera do elevador de carros, faixa de acesso do térreo ou portal passa pelo núcleo, pelo hall
+   dos elevadores ou pelo depósito atrás do núcleo (m.obst), em nenhum pavimento. O que cruza fica marcado (`cruza`: o desenho mostra
+   só o contorno tracejado, por baixo do núcleo) e a circulação vertical deixa de valer (V.ok false), com o motivo. */
+const obArea=(L, p)=>{ if(!p||p.length<3) return 0; const b=bbOf(p); let s=0;
+  L.forEach(o=>{ if(!bbHit(o.b,b)) return; const cb= G.sArea(o.p)>0? o.p : o.p.slice().reverse(); s+=G.area(G.clipToPoly(p, cb)) }); return s };
+function verticalCruza(st, m, V){
+  const OB=obList(m.obst); if(!OB.length) return;
+  const tipo=st.estudo.rampaTipo, T=m.ter||{}, TOL=0.1, cruza=new Set(); let rampa=false, patamar=false, espera=false, faixa=false, portal=false;
+  V.strips.forEach(s=>{ if(obArea(OB, s.poly)>TOL){ s.cruza=true; cruza.add(s.poly); rampa=true } });
+  if(V.elev && V.strips.some(s=>s.kind==="EL" && s.cruza)) V.elev.cruza=true;
+  Object.values(V.floors).forEach(f=>{ f.landings.forEach(p=>{ if(obArea(OB, p)>TOL) patamar=true });
+    f.portals.forEach(pt=>{ if(obPip(OB, pt.p)){ pt.cruza=true; portal=true } });
+    f.ramps.forEach(r=>{ if(cruza.has(r.poly) || (r.poly && obArea(OB, r.poly)>TOL)){ r.cruza=true; rampa=true } }) });
+  V.segs.forEach(sg=>{ const s=V.strips.find(x=>x.id===sg.strip); if(s && s.cruza) sg.cruza=true });
+  if(V.elev) (V.elev.espera||[]).forEach(p=>{ if(obArea(OB, p)>TOL) espera=true });
+  // acesso no térreo: o pátio de entrada (da rua até o início das rampas, com a espera), a faixa até a garagem do térreo e a faixa ao lado
+  // da helicoidal. (T.drive, a faixa desenhada, cobre a largura de todas as rampas até a mais longa: maior do que o carro usa.)
+  const D0=T.drive0, RX=T.rx, vf=T.vfd||T.fd, vl=T.vlat||T.lat, acc=[...(V.acessos||[])];
+  if(D0 && D0.dv && RX && vf && vl && !st.estudo.rampa){ acc.push(G.rect(vl,vf,D0.dv[0],RX.lotFront,D0.dv[1]-D0.dv[0],Math.max(0.5,RX.s0-RX.lotFront)));
+    if(T.lanes && T.driveEnd){ const dE=G.dot(T.driveEnd,vf); if(dE>RX.lotFront+0.5) acc.push(G.rect(vl,vf,T.lanes[0],RX.lotFront,T.lanes[1]-T.lanes[0],dE-RX.lotFront)) } }
+  acc.forEach(p=>{ if(obArea(OB, p)>TOL) faixa=true });
+  if(faixa) T.driveCruza=true;
+  if(T.drive0 && T.drive0.cruza) rampa=true;
+  if(!(rampa||patamar||espera||faixa||portal)) return;
+  V.ok=false; V.cruza=true;
+  const oq = tipo==="helicoidal"? "A rampa helicoidal" : tipo==="elevador"? "O elevador de carros (poço, acomodação ou espera)" : tipo==="L"? "A rampa em L" : "A rampa";
+  const t = (rampa||patamar||espera||portal)? `${oq} não cabe sem passar pelo núcleo (escada, elevadores, hall ou depósito) — mova o acesso, use outro tipo de rampa ou mude a posição do núcleo (Pavimento tipo).`
+    : "A faixa de acesso de veículos no térreo passa pelo núcleo (escada, elevadores, hall ou depósito) — mova o acesso ou use outro tipo de rampa.";
+  if(!V.warn.includes(t)) V.warn.unshift(t);
 }
 /* helicoidal, rampa em L e elevador de carros: faixas, patamares e portais de cada pavimento */
 function verticalX(st, m, V, c){
@@ -1432,7 +1487,7 @@ function verticalX(st, m, V, c){
     if(iMax>E.rampaInc+1e-6) V.warn.push(`A helicoidal fica com ${nf(iMax*100,1)}% de inclinação no eixo — aumente os raios.`);
     if(g.Re-g.Ri<2.75) V.warn.push("A faixa da helicoidal ficou com menos de 2,75 m — afaste os raios.");
     V.entry={poly:g.disk, c:g.c, dir, len:2*g.Re, w, top:g.T, foot:g.T};
-    if(!man) V.entradas=[{a:P2(g.lL,RX.lotFront-2), b:P2(g.lL,g.dc)}];
+    if(!man){ V.entradas=[{a:P2(g.lL,RX.lotFront-2), b:P2(g.lL,g.dc)}]; V.acessos=[g.lane] }
     return;
   }
   if(tipo==="elevador"){
@@ -1821,15 +1876,25 @@ function garagens(st, m, opt){
   ext.gx=GX; ext.lobbies=LB;
   // subsolos e garagens elevadas: cada grupo de mesmo contorno é resolvido junto (mesmos corredores e pilares em todos)
   const grupos={}; Object.values(V.floors).forEach(f=>{ if(f.key==="ter" || !f.poly.length) return; (grupos[f.k<0? "s" : "g"]=grupos[f.k<0? "s" : "g"]||[]).push(f) });
-  const bases={};
+  // a faixa atrás do núcleo até a fachada da torre (coreFundo: unidades no tipo, depósito no térreo) é piso comum nos subsolos e nas
+  // garagens elevadas — lá não existe fachada. O que não vira vaga nem circulação o gerador classifica como sobra (depósito/área técnica).
+  // As rampas continuam proibidas sobre ela (m.obst, verticalCruza).
+  const bases={}, FU=new Set((m.coreSets||[]).flatMap(c=>c.lay.coreFundo||[])), OBG=(m.obst||[]).filter(p=>!FU.has(p)), obsDe={}; m.obstGar=OBG;
   if(typeof garModGrupo==="function" && !E.garVelho) Object.values(grupos).forEach(fs=>{
-    const r=garGrupo(fs[0].poly, m.obst, E, {quick:q, gx:GX, lobbies:LB}, fs.map(f=>({key:f.key, portals:f.portals, blocks:f.blocks, keep:f.landings})));
+    const oo={quick:q, gx:GX, lobbies:LB}, ps=fs.map(f=>({key:f.key, portals:f.portals, blocks:f.blocks, keep:f.landings}));
+    // a busca é heurística: no cálculo completo confere também com a faixa atrás do núcleo fechada (como era) e fica a que rende mais
+    // (as duas buscas repartem o tempo: 2 + 2 s em vez de 3 s)
+    const dois=!q && OBG.length<(m.obst||[]).length;
+    let r=garGrupo(fs[0].poly, OBG, E, dois? {...oo, lim:2000} : oo, ps);
+    if(dois){ const r0=garGrupo(fs[0].poly, m.obst, E, {...oo, lim:2000}, ps), n=x=>x? Object.values(x).reduce((s_,l)=>s_+(l? l.vagas.filter(v=>garCar(v.tipo)).length : 0),0) : -1;
+      if(n(r0)>n(r)){ r=r0; fs.forEach(f=>obsDe[f.key]=m.obst) } }
     if(r) Object.assign(bases, r) });
   Object.values(V.floors).forEach(f=>{
     if(f.key==="ter") return;
     if(!f.poly.length) return;
     const oo={portals:f.portals, blocks:f.blocks, keep:f.landings, ramps:f.ramps, quick:q, ...ext, terreo:false};
-    jobs.push([f.key, f.k, b=> bases[f.key]? garEdita(garExtras(bases[f.key], f.poly, m.obst, E, {...oo, bici:b}), f.key, E, oo) : garageLayout(f.poly, m.obst, E, f.key, {...oo, bici:b})]);
+    const ob=obsDe[f.key]||OBG;
+    jobs.push([f.key, f.k, b=> bases[f.key]? garEdita(garExtras(bases[f.key], f.poly, ob, E, {...oo, bici:b}), f.key, E, oo) : garageLayout(f.poly, ob, E, f.key, {...oo, bici:b})]);
   });
   // térreo: garagem nos fundos, entrada pela faixa ao lado das rampas
   const T=m.ter;
@@ -1855,6 +1920,7 @@ function garagens(st, m, opt){
     m.presasLim=limP; m.motosLim=limM;
   }
   m.biciLay={req:bReq.n, ok:bReq.n-Math.max(0,bici)};
+  Object.keys(obsDe).forEach(k=>{ if(out[k]) out[k].fundoDep=true });   // ficou a busca com o depósito atrás do núcleo: o desenho o mostra
   const res={}; jobs.forEach(([k])=>res[k]=out[k]); // mesma ordem de antes (subsolos, garagens, térreo)
   return res;
 }
@@ -2237,7 +2303,8 @@ function terreoZones(st, m, lz, extra=0){
     if(dl){ dv=dl.dv; out.lanes=dl.laneIv||null;
       if(dl.semAlt) out.warn.push("As rampas alternadas não cabem ao lado dos núcleos — o estudo usou rampas retas empilhadas.");
       if(dl.semFaixa){ garOn=false; out.semFaixa=true; out.warn.push("Não há largura para a faixa de acesso à garagem do térreo ao lado das rampas sem passar pelos núcleos — a garagem do térreo foi desligada neste estudo."); }
-      if(dl.naoCabe) out.warn.push("As rampas não cabem ao lado dos núcleos das torres. Tente “Encontrar o melhor acesso”, rampas alternadas, menos garagens elevadas ou mude o lado/posição do núcleo (Pavimento tipo).");
+      // não cabe por comprimento (rampa longa para o pavimento): quem explica é vertical(), com os metros; aqui só a que passaria pelo núcleo
+      if(dl.naoCabe && dl.cruza) out.warn.push("As rampas não cabem ao lado dos núcleos das torres. Tente “Encontrar o melhor acesso”, rampas alternadas, menos garagens elevadas ou mude o lado/posição do núcleo (Pavimento tipo).");
       out.veiReal=W2((dv[0]+dv[1])/2, G.dot(m.acesso.vei,fd)); out.veiShift=dl.shift||0;
       const RX=rampExt(st, m, fd); out.rx=RX;
       dEnd = hasRamp && !E.rampa ? Math.min(dmx, RX.s0 + Math.max(P.subsolos? RX.LD:0, P.garAcima? RX.LU:0)) : dmn+PATAMAR } }
@@ -2249,7 +2316,13 @@ function terreoZones(st, m, lz, extra=0){
   const coreIn=d=>(m.coreSets||[]).reduce((s,cs)=>s + G.area(G.band(cs.core,fd,d1,d)) + G.area(G.band(scaleBy(cs.lobby||[],1.25),fd,d1,d)),0) + (lz&&lz.terreo.c>0? 2.6*(lmx-lmn) : 0);
   const hallArea=d=>{ const b=box(d1,d,lmn,lmx); let a=G.area(b); if(dv) a-=G.area(box(d1,d,dv[0],dv[1])); return a };
   let d2=dmx;
-  if(garOn){ let lo=d1, hi=dmx; for(let k=0;k<30;k++){ const mid=(lo+hi)/2; if(hallArea(mid)-coreIn(mid)>=HTe) hi=mid; else lo=mid } d2=Math.min(dmx, Math.max(hi, d1+6)) }
+  const fundoHall=()=>{ let lo=d1, hi=dmx; for(let k=0;k<30;k++){ const mid=(lo+hi)/2; if(hallArea(mid)-coreIn(mid)>=HTe) hi=mid; else lo=mid } return Math.min(dmx, Math.max(hi, d1+6)) };
+  if(garOn){ d2=fundoHall();
+    // a faixa da garagem do térreo vai da rua até o fim do hall (d2): se nesse trecho ela passaria pelo núcleo, procura outra posição que
+    // a leve livre até lá (a regra dura vale também para a faixa — src/garagem.js verticalCruza)
+    if(dl && dl.laneIv && !dl.naoCabe && !E.rampa && (m.obst||[]).some(c=>G.polysOverlap(G.rect(lat,fd,dl.laneIv[0],dmn,dl.laneIv[1]-dl.laneIv[0],d2-dmn),c))){
+      const dl2=driveLayout(st, lmn, lmx, G.dot(m.acesso.vei,lat), m, fd, lat, {dLane:d2});
+      if(dl2 && !dl2.naoCabe && !dl2.semFaixa){ dl=dl2; out.drive0=dl; dv=dl.dv; out.lanes=dl.laneIv||null; out.veiReal=W2((dv[0]+dv[1])/2, G.dot(m.acesso.vei,fd)); out.veiShift=dl.shift||0; d2=fundoHall() } } }
   out.d1=d1; out.d2=d2; out.HT=HT; out.hallDisp=hallArea(dmx);
   // núcleos das torres: o hall sempre chega até eles (colunas de hall)
   const cols=[];
@@ -2288,6 +2361,11 @@ function terreoZones(st, m, lz, extra=0){
     if(garOn && out.lanes){ const lc=(out.lanes[0]+out.lanes[1])/2; out.driveEnd=W2(lc, d2-0.2); out.keep.push(G.rect(lat,fd,out.lanes[0],d2,out.lanes[1]-out.lanes[0],6)) } }
   if(garOn && dmx-d2>3){ out.gar=box(d2,dmx,lmn,lmx) }
   if(VD) terreoVeiFecha(out, VD, garOn);
+  // a faixa de veículos desenhada cobre a largura de todas as rampas até a mais longa: o que dela cair sobre núcleo, hall dos elevadores
+  // ou depósito sai (caixa do obstáculo no referencial do acesso). Quem confere se o carro precisaria passar por ali é verticalCruza.
+  if(out.drive.length && typeof acSubRect==="function"){ const vl=out.vlat||lat, vf=out.vfd||fd;
+    (m.obst||[]).filter(c=>c&&c.length>2).forEach(c=>{ const [a,b]=G.extent(c,vl), [d0_,d1_]=G.extent(c,vf);
+      out.drive=out.drive.flatMap(p=> p && p.length>2 && G.polysOverlap(p,c) ? acSubRect(p, vl, vf, a, b, d0_, d1_) : [p]) }) }
   const sa=a=>a.reduce((s,p)=>s+G.area(p),0);
   out.lojaA=sa(out.lojas); out.hallA=sa(out.hall); out.driveA=sa(out.drive); out.gTer=Math.max(0,G.area(out.gar)-sa(out.colsGar)-sa(out.walk)-(VD&&garOn&&out.gar.length? sa(out.drive) : 0));
   if(HT>out.hallDisp+1 && !garOn) out.warn.push("O hall e o lazer do térreo pedem mais área do que o térreo tem.");
@@ -2603,10 +2681,13 @@ const otimKey=r=>[r.nT,r.pk,r.N,r.pav,r.sub,r.gac].join("|");
 function otimMLite(m){   // o que o Worker precisa do modelo da tela (clonável e pequeno)
   if(!m) return {};
   const gar={}; Object.entries(m.gar||{}).forEach(([k,l])=>{ gar[k]={count:l? +l.count||0 : 0} });
-  return {vagasLay:m.vagasLay, vagasEst:m.vagasEst, vf:{count:m.vf? m.vf.count||0 : 0}, subA:m.subA, embA:m.embA, gTer:m.gTer, gar};
+  return {vagasLay:m.vagasLay, vagasEst:m.vagasEst, vf:{count:m.vf? m.vf.count||0 : 0}, subA:m.subA, embA:m.embA, gTer:m.gTer, gar,
+    vert: m.vert? {ok:m.vert.ok!==false} : undefined};   // circulação inválida: a calibração não vale e a busca troca a garagem (otimGarValida)
 }
 function otimVagasCal(st, m){
   const gar=m && m.gar, mv=st.regras.m2Vaga||28; if(!gar || !Object.keys(gar).length) return null;
+  // circulação vertical inválida (rampa que não cabe ou passa pelo núcleo): o layout não mede nada — sem calibração daqui
+  if(m.vert && m.vert.ok===false) return null;
   const ks=re=>Object.keys(gar).filter(k=>re.test(k)), soma=l=>l.reduce((s,k)=>s+(gar[k]? +gar[k].count||0 : 0),0), cl=v=>Math.max(0, Math.min(1, v));
   const kS=ks(/^s\d+$/), kG=ks(/^g\d+$/), eS=kS.length*Math.floor((m.subA||0)/mv), eG=kG.length*Math.floor((m.embA||0)/mv), eT=Math.floor((m.gTer||0)/mv);
   let s = eS>0? cl(soma(kS)/eS) : null, g = eG>0? cl(soma(kG)/eG) : null, t = eT>0 && gar.ter? cl((+gar.ter.count||0)/eT) : null;
@@ -2614,6 +2695,27 @@ function otimVagasCal(st, m){
   if(g==null) g = 0.8*s;
   if(t==null) t = s;
   return {s, g, t, vf:(m.vf && +m.vf.count)||0, fonte:"layout"};
+}
+/* garagem que FUNCIONA no estado de partida (lote pequeno: "o subsolo ficou sem vaga nenhuma"). Se a circulação do estudo é inválida
+   (rampa que não cabe no pavimento ou passaria pelo núcleo), a calibração e a conferência das combinações usariam vagas de um layout
+   impossível. Testa cada tipo de circulação (src/calc/ciclo.js cicloTipos) na posição do acesso e, sem nenhum válido, nas pontas e no
+   meio da frente, com o cálculo rápido e ≥ 1 subsolo; sem garagem elevada se nem assim houver. Devolve {g, m, st, validas:[{g, vagas}]}
+   (a de mais vagas primeiro) ou null quando a do estudo já vale. Puro (Worker). */
+function otimGarValida(base, mNow){
+  const ok=m=>!!m && (!m.vert || m.vert.ok!==false);
+  if(ok(mNow) || typeof cicloGarDe!=="function") return null;
+  const g0=cicloGarDe(base), achados=[];
+  const roda=(st, g)=>{ const s=clone(st); cicloGarPoe(s, g); try{ const m=compute(s, {quick:true}); if(ok(m)) achados.push({g:cicloGarDe(s), m, st:s, vagas:m.vagasLay||0}) }catch(e){} };
+  const s1=clone(base); s1.produto.subsolos=Math.max(1, +s1.produto.subsolos||0);
+  const tentativas=[s1, ...(s1.produto.garAcima>0? [(()=>{ const s=clone(s1); s.produto.garAcima=0; return s })()] : [])];
+  for(const st of tentativas){
+    cicloTipos(st).forEach(t=>roda(st, {...g0, rampaTipo:t}));
+    if(!achados.length) cicloTipos(st).forEach(t=>[0.1,0.5,0.9].forEach(p=>roda(st, {...g0, rampaTipo:t, acessoVei:p})));
+    if(achados.length) break }
+  if(!achados.length) return null;
+  achados.sort((a,b)=>b.vagas-a.vagas);
+  const por=new Map(); achados.forEach(x=>{ if(!por.has(x.g.rampaTipo)) por.set(x.g.rampaTipo, x) });
+  return {...achados[0], de:g0, validas:[...por.values()].map(x=>({g:x.g, vagas:x.vagas}))};
 }
 /** vagas esperadas de uma combinação (massa) com a calibração por pavimento */
 function otimVagasEst(m, st, cal){ const P=st.produto, mv=st.regras.m2Vaga||28;
@@ -2670,7 +2772,8 @@ function otimFechaTxt(fx, semLucro){
 function otimMotor(base, o){
   const {cal, fin, score, forma=false, rTol=0.1, pavMinF=1, memoEf=null}=o, R0=base.regras;
   const cabe=m=>m.T.every(x=>x.fit) && m.H<=(m.hLim ?? R0.hMax)+1e-6 && m.CA<=R0.caMax+1e-6;
-  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m);
+  // vagas só contam com a circulação vertical válida (rampa dentro dos pavimentos e fora do núcleo — src/garagem.js verticalCruza)
+  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m) && (!x.m.vert || x.m.vert.ok!==false);
   const avalia=st=>{ const mm=compute(st,{quick:true}), f=fin(st,mm); return {st, m:mm, f, sc:score(f,mm)} };
   const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
   // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
@@ -2686,6 +2789,7 @@ function otimMotor(base, o){
   const repara=(cur, subir)=>{
     for(let t=0; t<3 && !nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, nT=P.torres.length, pav=P.torres[0].pav;
       const porPav=Math.max(1, nT*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), k=Math.max(1, Math.ceil((m.vagasReq-m.vagas)/porPav));
+      if(m.vert && m.vert.ok===false) break;   // a garagem deste tipo não funciona aqui: quem resolve é a troca de garagem (otimGarValida)
       const nx=melhorDe([
         pav-k>=pMinV ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav-k) }) : null,
         rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++ }),
@@ -2750,8 +2854,11 @@ function otimizar(opts, onProg, onDone, ctx={}){
   // diretrizes do produto (src/calc/diretrizes.js): fixos do produto + vagas por unidade e margem mínima na conta; null no modo livre
   const DIR = typeof dirPrepara==="function"? dirPrepara(base) : null;
   const mNow = ctx.m || (typeof window!=="undefined" && window._last && window._last.m) || compute(base);
+  // garagem do estudo inválida (rampa que não cabe ou passaria pelo núcleo): a busca parte de uma circulação que funciona
+  const garV = opts.cal? null : otimGarValida(base, mNow);
+  if(garV) cicloGarPoe(base, garV.g);
   // vagas: calibração por tipo de pavimento num layout real (o da tela; sem ele, um compute rápido do estado de partida com ≥ 1 subsolo)
-  let cal = opts.cal || otimVagasCal(base, mNow);
+  let cal = opts.cal || otimVagasCal(base, garV? garV.m : mNow);
   if(!cal){ try{ const sc=clone(base); sc.produto.subsolos=Math.max(1, +sc.produto.subsolos||0); cal=otimVagasCal(sc, compute(sc, {quick:true})) }catch(e){} }
   if(!cal) cal={s:0.6, g:0.5, t:0.6, vf:0, fonte:"padrão"};
   const k = cal.s;
@@ -2848,11 +2955,15 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const fechaFim=out=>{ if(parou()) return cancela();
       const o={res:out, obj:opts.obj, k, cal, meta, ms:performance.now()-t0, testadas:res.length, ...(tPct? {terrenoPct:tPct} : {}), ...(formaInfo? {forma:formaInfo} : {})};
       // nenhuma combinação conferida: por quê (lote pequeno para as regras, ou a garagem não comporta as vagas exigidas)
-      if(!out.length){ const mv=base.regras.m2Vaga||28, ys=Math.max(0, Math.round(cal.s*Math.floor((mNow.subA || G.area(base.lote.pts)*(1-base.regras.permeab))/mv)));
+      if(!out.length){ const mv=base.regras.m2Vaga||28, mR=(garV&&garV.m)||mNow, ys=Math.max(0, Math.round(cal.s*Math.floor((mR.subA || G.area(base.lote.pts)*(1-base.regras.permeab))/mv)));
+        const yg=Math.max(0, Math.round(cal.g*Math.floor((mR.embA||0)/mv))), va=+base.regras.vagasApto||0, maxV=Math.round((cal.vf||0)+5*ys+3*yg), gx= typeof cicloGarNome==="function"? cicloGarNome(cicloGarDe(base), base) : "";
+        const semGar = !garV && mNow.vert && mNow.vert.ok===false;
         o.semOpcao = !cont.cabe ? {k:"lote", motivo:"o lote é pequeno demais para as regras: nenhuma torre comporta as unidades dentro dos recuos e da ocupação"}
-          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo neste lote e as regras pedem ${nf(+base.regras.vagasApto||0,1)} por unidade`, porSubsolo:ys};
+          : semGar ? {k:"vagas", motivo:"nenhuma circulação de veículos (rampa reta, alternada, helicoidal, em L ou elevador de carros) cabe neste lote sem passar pelo núcleo — mude a posição do núcleo ou o acesso de veículos", porSubsolo:0}
+          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo${yg? ` e ${yg} por garagem elevada` : ""} neste lote${gx? ` (${gx})` : ""} e as regras pedem ${nf(va,1)} por unidade: mesmo com 5 subsolos e 3 garagens elevadas seriam cerca de ${maxV} vagas${va>0? `, para no máximo ${Math.floor(maxV/va)} unidades` : ""}`, porSubsolo:ys, porElevada:yg, maxVagas:maxV};
         if(DIR){ const so=dirSemOpcao(DIR, base, cont, cal, mNow); if(so) o.semOpcao=so } }
       if(DIR) o.dir={resumo:DIR.resumo, padrao:DIR.D.P.curto||DIR.D.nome};
+      if(garV) o.garTroca={de:garV.de, para:cicloGarDe(base), validas:garV.validas};
       // sem lucro (ou abaixo da meta): o motivo e o que fecharia a conta da melhor (a menos ruim). Os preços que fecham a conta são os
       // MENORES entre as opções conferidas (opcaoZero/opcaoMeta = índice em res quando não é a primeira): com o preço maior, outra
       // combinação pode fechar antes
@@ -2885,10 +2996,19 @@ function otimizar(opts, onProg, onDone, ctx={}){
     return v };
   // confirma as melhores com o layout real da garagem (reparo em otimMotor)
   const conf=new Map();   // chave → {st, m, f, sc} das opções conferidas (para o ciclo e o "o que fecharia a conta" sem recalcular)
+  // a garagem com que a combinação foi conferida não funciona nela (ex.: 2 subsolos com rampa reta num lote curto): outra circulação
+  // válida (as que valeram na partida, senão cada tipo na posição atual), com o reparo — fica a de melhor nota que fecha as vagas
+  let nAlt=0;
+  const garAlt=c=>{ const g0=cicloGarDe(c.st), gs= garV? garV.validas.map(x=>x.g) : cicloTipos(c.st).map(t=>({...g0, rampaTipo:t}));
+    let best=null; for(const g of gs){ if(cicloGarIgual(g, g0)) continue; const s=clone(c.st); cicloGarPoe(s, g); const c2=repara(avalia(s), 0); if(nivelOk(c2) && (!best || c2.sc>best.sc)) best=c2 }
+    return best };
   const validar=(list, done)=>{ let j=0; const out=[];
     const stepV=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++];
-        const c=repara(avalia(stOf(r)), j<=3? 4 : 0), st=c.st, m=c.m;
+        let c=repara(avalia(stOf(r)), j<=3? 4 : 0);
+        // (sem o ciclo, a garagem é a do estudo)
+        if(!nivelOk(c) && c.m.vert && c.m.vert.ok===false && opts.ciclo!==false && typeof cicloTipos==="function" && nAlt<6){ nAlt++; const c2=garAlt(c); if(c2) c=c2 }
+        const st=c.st, m=c.m;
         if(DIR && !nivelOk(c) && c.m.vagas<c.m.vagasReq) dirQuase(DIR, {vg:m.vagas, req:m.vagasReq, units:m.units, sub:st.produto.subsolos, gac:st.produto.garAcima, subA:m.subA, embA:m.embA}, true);
         if(!nivelOk(c) || (forma && otimDesvio(m)>rTol)) continue;   // forma: unidades além da tolerância não entram nas melhores
         const v=opcao(r, c);
@@ -2927,8 +3047,13 @@ function otimizar(opts, onProg, onDone, ctx={}){
     if(completo){
       for(let q=0; q<Math.min(2, out.length); q++){ const r=out[q], c=conf.get(r.key); if(!c) continue;
         if(q && performance.now()-t0>tot-2500){ [out[0], out[1]]=[out[1], out[0]]; break }   // sem tempo para conferir a 2ª: ela sobe sem o completo
-        const st=clone(c.st), m=compute(st), f=fin(st, m), cc={st, m, f, sc:score(f, m)};
-        const v=opcao(r, cc); v.garInfo=r.garInfo; v.completo=true; v.pend=cicloPend(m); v.sc=r.sc+(cc.sc-c.sc);
+        const st=clone(c.st), m=compute(st), f=fin(st, m); let cc={st, m, f, sc:score(f, m)};
+        // faltam poucas vagas no layout completo: um andar a menos (as unidades que as vagas comportam) costuma fechar — confere uma vez
+        if(!nivelOk(cc) && m.vagas<m.vagasReq && (!m.vert || m.vert.ok!==false)){ const P=st.produto, pav=P.torres[0].pav,
+          porPav=Math.max(1, P.torres.length*P.mix.reduce((s,u)=>s+u.qtd,0)*(+st.regras.vagasApto||1)), k=Math.ceil((m.vagasReq-m.vagas)/porPav);
+          if(k<=2 && pav-k>=Math.max(2, pavMinF)){ const s2=clone(st); s2.produto.torres.forEach(x=>x.pav=pav-k); const m2=compute(s2), f2=fin(s2, m2), c2={st:s2, m:m2, f:f2, sc:score(f2, m2)};
+            if(nivelOk(c2)) cc=c2 } }
+        const v=opcao(r, cc); v.garInfo=r.garInfo; v.completo=true; v.pend=cicloPend(cc.m); v.sc=r.sc+(cc.sc-c.sc);
         OTIM_EXTRAS.forEach(k=>{ if(r[k]!==undefined) v[k]=r[k] });
         conf.set(v.key, cc);
         if(nivelOk(cc)){ out.splice(q, 1); out.unshift(v); break }   // a 2ª fecha e a 1ª não: a 2ª passa para o topo
@@ -9119,7 +9244,8 @@ function estrPisos(st, m){
     out.push({k, poly, box: poly.length? estrBox(poly) : null, z:estrZTop(st,k),
       vagas: pack(lay.vagas.filter(v=>v.tipo!=="off").map(v=>v.poly)),
       ramps: pack([...(f.ramps||[]).map(r=>r.poly), ...(f.landings||[])]),
-      pil: (lay.pillars||[]).map(p=>G.centroid(p)), grid: lay.grid||null, reach: lay.reach||null, extra: [] }) });
+      pil: (lay.pillars||[]).map(p=>G.centroid(p)), grid: lay.grid||null, reach: lay.reach||null, extra: [],
+      obst: k==="ter"? null : m.obstGar||null }) });   // subsolos/elevadas: a faixa atrás do núcleo é piso de garagem (src/garagem.js)
   // térreo: o acesso de veículos e a passagem de pedestres também não recebem pilar
   const ex=pack([...(T.drive||[]), ...(T.walk||[])]);
   if(ex.length){ let t=out.find(o=>o.k==="ter"); if(!t){ t={k:"ter", poly:[], box:null, z:estrZTop(st,"ter"), vagas:[], ramps:pack(((V.ter||{}).ramps||[]).map(r=>r.poly)), pil:[], grid:null, reach:null, extra:[]}; out.push(t) } t.extra=ex }
@@ -9130,7 +9256,7 @@ function estrConflito(pi, q, c, h, obst){
   const b=estrBox(q);
   for(const e of pi.extra) if(estrBoxHit(b,e.b) && G.polysOverlap(q,e.p)) return "acesso";
   if(!pi.box || !estrBoxHit(b,pi.box) || !(G.pip(c,pi.poly) || G.polysOverlap(q,pi.poly))) return null;
-  if(obst.some(o=>G.pip(c,o))) return null; // núcleo / hall dos elevadores: estrutura própria
+  if((pi.obst||obst).some(o=>G.pip(c,o))) return null; // núcleo / hall dos elevadores: estrutura própria
   for(const v of pi.vagas) if(estrBoxHit(b,v.b) && G.polysOverlap(q,v.p)) return "vaga";
   for(const r of pi.ramps) if(estrBoxHit(b,r.b) && G.polysOverlap(q,r.p)) return "rampa";
   const g=pi.grid, R=pi.reach;
@@ -14015,7 +14141,7 @@ function driveLayout(st, lmn, lmx, vc, m, fd, lat, opt={}){
   const U = nA? (hasUB? [["UA","UB"],["UB","UA"]] : [["UA"]]) : [[]];
   const orders=[]; D.forEach(d=>U.forEach(u=>{ orders.push([...d,...u]); if(nS&&nA) orders.push([...u,...d]) }));
   const span=Math.max(1,lmx-lmn), side = (vc-lmn) <= (lmx-vc) ? 1 : -1;
-  const RX = m&&fd? rampExt(st, m, fd) : null, obst=(m&&m.obst)||[];
+  const RX = m&&fd? rampExt(st, m, fd) : null, OB=obList(m&&m.obst);
   const build=(ord, dlt)=>{ const seq=[...ord]; if(lane) seq.push("lane");
     const width=seq.reduce((s_,p)=>s_+(p==="lane"?lane:w),0), k=Math.min(1, span*0.85/width);
     let a = (side>0? clamp(vc-width*k/2, lmn, lmx-width*k) : clamp(vc+width*k/2, lmn+width*k, lmx)) + dlt;
@@ -14026,19 +14152,29 @@ function driveLayout(st, lmn, lmx, vc, m, fd, lat, opt={}){
     const cov=seq.slice(i0,i1+1).map(p=>ext[p]); o.dv=[Math.min(...cov.map(e=>e[0])), Math.max(...cov.map(e=>e[1]))];
     if(lane) o.laneIv=ext.lane;
     return o };
-  const fits=o=>{ if(!RX) return true;
-    const sp=(lc,L)=>stripPoly(lat,fd,lc,o.w,RX.s0,RX.s0+L);
-    const chk=(lc,L,poly)=> lc==null || ((!poly || !poly.length || G.polyInPoly(sp(lc,L),poly)) && !obst.some(c=>G.polysOverlap(sp(lc,L),c)));
-    const laneOk = !o.laneIv || !obst.some(c=>G.polysOverlap(G.rect(lat,fd,o.laneIv[0],RX.lotFront,o.laneIv[1]-o.laneIv[0],RX.s0+RX.LD-RX.lotFront),c));
-    const dvOk = !obst.some(c=>G.polysOverlap(G.rect(lat,fd,o.dv[0],RX.lotFront,o.dv[1]-o.dv[0],RX.s0+2-RX.lotFront),c));
-    return laneOk && dvOk && chk(o.DA,RX.LD,m.sub) && chk(o.DB,RX.LD,m.sub) && chk(o.DA,Math.min(RX.LD,6),m.emb) && chk(o.UA,RX.LU,m.emb) && chk(o.UB,RX.LU,m.emb) };
+  // regra dura: rampa, patamares, faixa da garagem do térreo e a entrada nunca passam pelo núcleo, pelo hall dos elevadores nem pelo depósito
+  // atrás dele (m.obst). `livre` confere isso; `cabe` confere se cada faixa cabe no pavimento que ela liga.
+  const livre=o=>{ if(!RX) return true;
+    const lw=o.w+0.6, fx=(lc,L)=> lc==null || !obHit(OB, G.rect(lat,fd,lc-lw/2,RX.s0-RX.land,lw,L+2*RX.land));   // faixa + patamares das duas pontas
+    if(o.laneIv && obHit(OB, G.rect(lat,fd,o.laneIv[0],RX.lotFront,o.laneIv[1]-o.laneIv[0],Math.max(RX.s0+RX.LD, opt.dLane||0)-RX.lotFront))) return false;   // dLane: até a garagem do térreo (terreoZones)
+    if(obHit(OB, G.rect(lat,fd,o.dv[0],RX.lotFront,o.dv[1]-o.dv[0],RX.s0+2-RX.lotFront))) return false;
+    return fx(o.DA,RX.LD) && fx(o.DB,RX.LD) && fx(o.UA,RX.LU) && fx(o.UB,RX.LU) };
+  const cabe=o=>{ if(!RX) return true;
+    const chk=(lc,L,poly)=> lc==null || !poly || !poly.length || G.polyInPoly(stripPoly(lat,fd,lc,o.w,RX.s0,RX.s0+L),poly);
+    return chk(o.DA,RX.LD,m.sub) && chk(o.DB,RX.LD,m.sub) && chk(o.DA,Math.min(RX.LD,6),m.emb) && chk(o.UA,RX.LU,m.emb) && chk(o.UB,RX.LU,m.emb) };
   if(!orders[0].length && !lane) return null;
   if(E.rampa) return build(orders[0],0);
-  for(const ord of orders){ for(let t=0;t<=14;t+=0.5) for(const sg of (t?[1,-1]:[1])){ const o=build(ord, sg*t); if(fits(o)){ if(t) o.shift=sg*t; if(opt.semAlt) o.semAlt=true; if(opt.semFaixa) o.semFaixa=true; return o } } }
+  const marca=o=>{ if(opt.semAlt) o.semAlt=true; if(opt.semFaixa) o.semFaixa=true; return o };
+  let livre1=null;
+  for(const ord of orders){ for(let t=0;t<=14;t+=0.5) for(const sg of (t?[1,-1]:[1])){ const o=build(ord, sg*t); if(!livre(o)) continue; if(t) o.shift=sg*t;
+    if(cabe(o)) return marca(o); if(!livre1 && o.dv[0]>=lmn-0.05 && o.dv[1]<=lmx+0.05) livre1=o } }   // reserva: só dentro do pavimento na lateral
   // não coube: tenta sem a segunda faixa (rampas retas) e depois sem a faixa da garagem do térreo
-  if(alt && (hasDB||hasUB)) return driveLayout(st, lmn, lmx, vc, m, fd, lat, {...opt, semAlt:true});
-  if(garOn && (nS||nA)) return driveLayout(st, lmn, lmx, vc, m, fd, lat, {...opt, semFaixa:true});
-  const o=build(orders[0],0); o.naoCabe=true; if(opt.semAlt) o.semAlt=true; if(opt.semFaixa) o.semFaixa=true; return o;
+  const r = alt && (hasDB||hasUB)? driveLayout(st, lmn, lmx, vc, m, fd, lat, {...opt, semAlt:true}) : garOn && (nS||nA)? driveLayout(st, lmn, lmx, vc, m, fd, lat, {...opt, semFaixa:true}) : null;
+  if(r && !r.naoCabe) return r;
+  // nenhuma posição cabe nos pavimentos: fica a que não passa pelo núcleo (a pendência é o comprimento); sem ela, a rampa é marcada "cruza"
+  if(livre1){ livre1.naoCabe=true; return marca(livre1) }
+  if(r) return r;   // a versão reduzida (sem a 2ª faixa / sem a faixa do térreo) também cruza: fica ela, como antes
+  const o=build(orders[0],0); o.naoCabe=true; o.cruza=true; return marca(o);
 }
 /* arranjo da entrada para helicoidal, rampa em L e elevador de carros (mesma ideia: elementos lado a lado, deslocados até caber) */
 function driveLayoutX(st, lmn, lmx, vc, m, fd, lat, opt={}){
@@ -14058,20 +14194,28 @@ function driveLayoutX(st, lmn, lmx, vc, m, fd, lat, opt={}){
     const all=Object.values(ext); o.dv=[Math.min(...all.map(e=>e[0])), Math.max(...all.map(e=>e[1]))];
     if(lane) o.laneIv=ext.lane;
     return o };
-  const fits=o=>{ if(!RX) return true;
+  // 0 = passa pelo núcleo/hall/depósito (nunca vale) · 1 = livre, mas não cabe no pavimento · 2 = cabe
+  const fits=o=>{ if(!RX) return 2;
     const g=rampGeoX(st, RX, posX(o, RX, prim), lat, fd), inF=(p,F)=>!F||!F.length||G.polyInPoly(p,F), noC=p=>!obHit(OB,p);
-    if(o.laneIv && obHit(OB, G.rect(lat,fd,o.laneIv[0],RX.lotFront,o.laneIv[1]-o.laneIv[0],RX.s0+RX.LD-RX.lotFront))) return false;
-    if(obHit(OB, G.rect(lat,fd,o.dv[0],RX.lotFront,o.dv[1]-o.dv[0],RX.s0+2-RX.lotFront))) return false;
+    if(o.laneIv && obHit(OB, G.rect(lat,fd,o.laneIv[0],RX.lotFront,o.laneIv[1]-o.laneIv[0],Math.max(RX.s0+RX.LD, opt.dLane||0)-RX.lotFront))) return 0;
+    if(obHit(OB, G.rect(lat,fd,o.dv[0],RX.lotFront,o.dv[1]-o.dv[0],RX.s0+2-RX.lotFront))) return 0;
     const F = nS? m.sub : m.emb;
-    if(tipo==="helicoidal") return inF(g.disk,F) && inF(g.landing,F) && (!nS||!nA||inF(g.disk,m.emb)) && noC(g.disk) && noC(g.landing) && noC(g.lane);
-    if(tipo==="elevador") return inF(g.all,F) && inF(g.landing,F) && (!nS||!nA||inF(g.all,m.emb)) && noC(g.all) && noC(g.landing) && g.espera.every(noC);
-    const okL = inF(g.poly,F) && inF(g.landArr,F) && noC(g.poly) && noC(g.landArr);
-    if(!okL || !pre.length) return okL;
-    const su=stripPoly(lat,fd,o.UA,w,RX.s0,RX.s0+RX.LU); return inF(su,m.emb) && noC(su) };
+    if(tipo==="helicoidal") return !(noC(g.disk) && noC(g.landing) && noC(g.lane))? 0 : inF(g.disk,F) && inF(g.landing,F) && (!nS||!nA||inF(g.disk,m.emb))? 2 : 1;
+    if(tipo==="elevador") return !(noC(g.all) && noC(g.landing) && g.espera.every(noC))? 0 : inF(g.all,F) && inF(g.landing,F) && (!nS||!nA||inF(g.all,m.emb))? 2 : 1;
+    const su = pre.length? stripPoly(lat,fd,o.UA,w,RX.s0,RX.s0+RX.LU) : null;
+    if(!(noC(g.poly) && noC(g.landArr) && noC(g.landDep) && (!su || noC(su)))) return 0;
+    return inF(g.poly,F) && inF(g.landArr,F) && (!su || inF(su,m.emb))? 2 : 1 };
   if(E.rampa) return build(vars[0],0);
-  for(const vr of vars) for(let t=0;t<=14;t+=0.5) for(const sg of (t?[1,-1]:[1])){ const o=build(vr,sg*t); if(fits(o)){ if(t) o.shift=sg*t; if(opt.semFaixa) o.semFaixa=true; return o } }
-  if(garOn) return driveLayoutX(st, lmn, lmx, vc, m, fd, lat, {...opt, semFaixa:true});
-  const o=build(vars[0],0); o.naoCabe=true; if(opt.semFaixa) o.semFaixa=true; return o;
+  const marca=o=>{ if(opt.semFaixa) o.semFaixa=true; return o };
+  let livre1=null;
+  for(const vr of vars) for(let t=0;t<=14;t+=0.5) for(const sg of (t?[1,-1]:[1])){ const o=build(vr,sg*t), f=fits(o); if(!f) continue; if(t) o.shift=sg*t;
+    if(f===2) return marca(o); if(!livre1 && o.dv[0]>=lmn-0.05 && o.dv[1]<=lmx+0.05) livre1=o }   // reserva: só dentro do pavimento na lateral
+  const r = garOn? driveLayoutX(st, lmn, lmx, vc, m, fd, lat, {...opt, semFaixa:true}) : null;
+  if(r && !r.naoCabe) return r;
+  // não cabe no pavimento: fica a posição que não passa pelo núcleo; sem nenhuma, a rampa é marcada "cruza" (vertical() a dá como inválida)
+  if(livre1){ livre1.naoCabe=true; return marca(livre1) }
+  if(r) return r;
+  const o=build(vars[0],0); o.naoCabe=true; o.cruza=true; return marca(o);
 }
 /* posição do elemento principal (centro lateral e profundidade) a partir do arranjo da entrada */
 function posX(o, RX, prim){ return o.tipo==="helicoidal"? {c:o.H, d:RX.dc, sL:o.sL} : o.tipo==="elevador"? {c:o.EL, d:RX.s0, porta:o.porta} : {c:o[prim+"A"], d:RX.s0, sg:o.sg} }
@@ -14147,13 +14291,50 @@ function vertical(st, m){
   // validações geométricas
   const msgFora={D:"A rampa dos subsolos não cabe dentro do subsolo — encurte (inclinação maior) ou mova o acesso.", U:"A rampa das garagens elevadas não cabe no embasamento.",
     H:"A rampa helicoidal não cabe no pavimento de garagem — reduza os raios ou mova o acesso.", EL:"O poço do elevador de carros não cabe no pavimento de garagem — mova o acesso."};
-  V.strips.forEach(s=>{ const fl = s.kind==="D"? m.sub : s.kind==="U"? m.emb : (nS? m.sub : m.emb); if(fl.length && !G.polyInPoly(s.poly, fl)){ V.ok=false; const t=msgFora[s.kind]||msgFora.D; if(!V.warn.includes(t)) V.warn.push(t) } });
+  V.strips.forEach(s=>{ const fl = s.kind==="D"? m.sub : s.kind==="U"? m.emb : (nS? m.sub : m.emb); if(fl.length && !G.polyInPoly(s.poly, fl)){ V.ok=false;
+    // reta/alternada que não cabe: diz quanto ela pede e quanto o pavimento tem a partir do início da rampa
+    let t=msgFora[s.kind]||msgFora.D;
+    if((s.kind==="D"||s.kind==="U") && !s.Lshape){ const disp=G.extent(fl,dir)[1]-Math.min(s.d0,s.d1), pede=s.L+land;
+      if(pede>disp+0.05) t = s.kind==="U"? `A rampa reta que sobe às garagens elevadas precisa de ${nf(s.L,1)} m mais o patamar de ${nf(land,1)} m, e o embasamento tem ${nf(disp,1)} m a partir do início da rampa — use elevador de carros, menos garagens elevadas ou um pé-direito menor no térreo.`
+        : `A rampa reta dos subsolos precisa de ${nf(s.L,1)} m mais o patamar de ${nf(land,1)} m, e o subsolo tem ${nf(disp,1)} m a partir do início da rampa — use rampa mais inclinada, em L, helicoidal ou elevador de carros.` }
+    if(!V.warn.includes(t)) V.warn.push(t) } });
   Object.values(V.floors).forEach(f=>{ f.portals.forEach(pt=>{ if(f.poly.length && !G.pip(pt.p,f.poly)){ V.ok=false; pt.fora=true; const t=`No ${nomePav(f.key)}, o patamar da rampa fica fora do pavimento.`; if(!V.warn.includes(t)) V.warn.push(t) } }) });
+  verticalCruza(st, m, V);
   // compatibilidade: rampa de entrada
   const first=V.strips.find(s=>s.id==="DA")||V.strips.find(s=>s.id==="UA");
   if(first && !V.entry){ const seg=V.segs.find(g=>g.strip===first.id && g.r===1); V.entry={poly:first.poly, c:P2(first.lc,(first.d0+first.d1)/2), dir, len:first.L, w, top:seg.E, foot:seg.X} }
   V.drive=[...new Set([lcDA,lcUA].filter(v=>v!=null))];
   return V;
+}
+/* regra dura: nenhuma rampa, patamar, poço/espera do elevador de carros, faixa de acesso do térreo ou portal passa pelo núcleo, pelo hall
+   dos elevadores ou pelo depósito atrás do núcleo (m.obst), em nenhum pavimento. O que cruza fica marcado (`cruza`: o desenho mostra
+   só o contorno tracejado, por baixo do núcleo) e a circulação vertical deixa de valer (V.ok false), com o motivo. */
+const obArea=(L, p)=>{ if(!p||p.length<3) return 0; const b=bbOf(p); let s=0;
+  L.forEach(o=>{ if(!bbHit(o.b,b)) return; const cb= G.sArea(o.p)>0? o.p : o.p.slice().reverse(); s+=G.area(G.clipToPoly(p, cb)) }); return s };
+function verticalCruza(st, m, V){
+  const OB=obList(m.obst); if(!OB.length) return;
+  const tipo=st.estudo.rampaTipo, T=m.ter||{}, TOL=0.1, cruza=new Set(); let rampa=false, patamar=false, espera=false, faixa=false, portal=false;
+  V.strips.forEach(s=>{ if(obArea(OB, s.poly)>TOL){ s.cruza=true; cruza.add(s.poly); rampa=true } });
+  if(V.elev && V.strips.some(s=>s.kind==="EL" && s.cruza)) V.elev.cruza=true;
+  Object.values(V.floors).forEach(f=>{ f.landings.forEach(p=>{ if(obArea(OB, p)>TOL) patamar=true });
+    f.portals.forEach(pt=>{ if(obPip(OB, pt.p)){ pt.cruza=true; portal=true } });
+    f.ramps.forEach(r=>{ if(cruza.has(r.poly) || (r.poly && obArea(OB, r.poly)>TOL)){ r.cruza=true; rampa=true } }) });
+  V.segs.forEach(sg=>{ const s=V.strips.find(x=>x.id===sg.strip); if(s && s.cruza) sg.cruza=true });
+  if(V.elev) (V.elev.espera||[]).forEach(p=>{ if(obArea(OB, p)>TOL) espera=true });
+  // acesso no térreo: o pátio de entrada (da rua até o início das rampas, com a espera), a faixa até a garagem do térreo e a faixa ao lado
+  // da helicoidal. (T.drive, a faixa desenhada, cobre a largura de todas as rampas até a mais longa: maior do que o carro usa.)
+  const D0=T.drive0, RX=T.rx, vf=T.vfd||T.fd, vl=T.vlat||T.lat, acc=[...(V.acessos||[])];
+  if(D0 && D0.dv && RX && vf && vl && !st.estudo.rampa){ acc.push(G.rect(vl,vf,D0.dv[0],RX.lotFront,D0.dv[1]-D0.dv[0],Math.max(0.5,RX.s0-RX.lotFront)));
+    if(T.lanes && T.driveEnd){ const dE=G.dot(T.driveEnd,vf); if(dE>RX.lotFront+0.5) acc.push(G.rect(vl,vf,T.lanes[0],RX.lotFront,T.lanes[1]-T.lanes[0],dE-RX.lotFront)) } }
+  acc.forEach(p=>{ if(obArea(OB, p)>TOL) faixa=true });
+  if(faixa) T.driveCruza=true;
+  if(T.drive0 && T.drive0.cruza) rampa=true;
+  if(!(rampa||patamar||espera||faixa||portal)) return;
+  V.ok=false; V.cruza=true;
+  const oq = tipo==="helicoidal"? "A rampa helicoidal" : tipo==="elevador"? "O elevador de carros (poço, acomodação ou espera)" : tipo==="L"? "A rampa em L" : "A rampa";
+  const t = (rampa||patamar||espera||portal)? `${oq} não cabe sem passar pelo núcleo (escada, elevadores, hall ou depósito) — mova o acesso, use outro tipo de rampa ou mude a posição do núcleo (Pavimento tipo).`
+    : "A faixa de acesso de veículos no térreo passa pelo núcleo (escada, elevadores, hall ou depósito) — mova o acesso ou use outro tipo de rampa.";
+  if(!V.warn.includes(t)) V.warn.unshift(t);
 }
 /* helicoidal, rampa em L e elevador de carros: faixas, patamares e portais de cada pavimento */
 function verticalX(st, m, V, c){
@@ -14176,7 +14357,7 @@ function verticalX(st, m, V, c){
     if(iMax>E.rampaInc+1e-6) V.warn.push(`A helicoidal fica com ${nf(iMax*100,1)}% de inclinação no eixo — aumente os raios.`);
     if(g.Re-g.Ri<2.75) V.warn.push("A faixa da helicoidal ficou com menos de 2,75 m — afaste os raios.");
     V.entry={poly:g.disk, c:g.c, dir, len:2*g.Re, w, top:g.T, foot:g.T};
-    if(!man) V.entradas=[{a:P2(g.lL,RX.lotFront-2), b:P2(g.lL,g.dc)}];
+    if(!man){ V.entradas=[{a:P2(g.lL,RX.lotFront-2), b:P2(g.lL,g.dc)}]; V.acessos=[g.lane] }
     return;
   }
   if(tipo==="elevador"){
@@ -14565,15 +14746,25 @@ function garagens(st, m, opt){
   ext.gx=GX; ext.lobbies=LB;
   // subsolos e garagens elevadas: cada grupo de mesmo contorno é resolvido junto (mesmos corredores e pilares em todos)
   const grupos={}; Object.values(V.floors).forEach(f=>{ if(f.key==="ter" || !f.poly.length) return; (grupos[f.k<0? "s" : "g"]=grupos[f.k<0? "s" : "g"]||[]).push(f) });
-  const bases={};
+  // a faixa atrás do núcleo até a fachada da torre (coreFundo: unidades no tipo, depósito no térreo) é piso comum nos subsolos e nas
+  // garagens elevadas — lá não existe fachada. O que não vira vaga nem circulação o gerador classifica como sobra (depósito/área técnica).
+  // As rampas continuam proibidas sobre ela (m.obst, verticalCruza).
+  const bases={}, FU=new Set((m.coreSets||[]).flatMap(c=>c.lay.coreFundo||[])), OBG=(m.obst||[]).filter(p=>!FU.has(p)), obsDe={}; m.obstGar=OBG;
   if(typeof garModGrupo==="function" && !E.garVelho) Object.values(grupos).forEach(fs=>{
-    const r=garGrupo(fs[0].poly, m.obst, E, {quick:q, gx:GX, lobbies:LB}, fs.map(f=>({key:f.key, portals:f.portals, blocks:f.blocks, keep:f.landings})));
+    const oo={quick:q, gx:GX, lobbies:LB}, ps=fs.map(f=>({key:f.key, portals:f.portals, blocks:f.blocks, keep:f.landings}));
+    // a busca é heurística: no cálculo completo confere também com a faixa atrás do núcleo fechada (como era) e fica a que rende mais
+    // (as duas buscas repartem o tempo: 2 + 2 s em vez de 3 s)
+    const dois=!q && OBG.length<(m.obst||[]).length;
+    let r=garGrupo(fs[0].poly, OBG, E, dois? {...oo, lim:2000} : oo, ps);
+    if(dois){ const r0=garGrupo(fs[0].poly, m.obst, E, {...oo, lim:2000}, ps), n=x=>x? Object.values(x).reduce((s_,l)=>s_+(l? l.vagas.filter(v=>garCar(v.tipo)).length : 0),0) : -1;
+      if(n(r0)>n(r)){ r=r0; fs.forEach(f=>obsDe[f.key]=m.obst) } }
     if(r) Object.assign(bases, r) });
   Object.values(V.floors).forEach(f=>{
     if(f.key==="ter") return;
     if(!f.poly.length) return;
     const oo={portals:f.portals, blocks:f.blocks, keep:f.landings, ramps:f.ramps, quick:q, ...ext, terreo:false};
-    jobs.push([f.key, f.k, b=> bases[f.key]? garEdita(garExtras(bases[f.key], f.poly, m.obst, E, {...oo, bici:b}), f.key, E, oo) : garageLayout(f.poly, m.obst, E, f.key, {...oo, bici:b})]);
+    const ob=obsDe[f.key]||OBG;
+    jobs.push([f.key, f.k, b=> bases[f.key]? garEdita(garExtras(bases[f.key], f.poly, ob, E, {...oo, bici:b}), f.key, E, oo) : garageLayout(f.poly, ob, E, f.key, {...oo, bici:b})]);
   });
   // térreo: garagem nos fundos, entrada pela faixa ao lado das rampas
   const T=m.ter;
@@ -14599,6 +14790,7 @@ function garagens(st, m, opt){
     m.presasLim=limP; m.motosLim=limM;
   }
   m.biciLay={req:bReq.n, ok:bReq.n-Math.max(0,bici)};
+  Object.keys(obsDe).forEach(k=>{ if(out[k]) out[k].fundoDep=true });   // ficou a busca com o depósito atrás do núcleo: o desenho o mostra
   const res={}; jobs.forEach(([k])=>res[k]=out[k]); // mesma ordem de antes (subsolos, garagens, térreo)
   return res;
 }
@@ -14979,7 +15171,8 @@ function terreoZones(st, m, lz, extra=0){
     if(dl){ dv=dl.dv; out.lanes=dl.laneIv||null;
       if(dl.semAlt) out.warn.push("As rampas alternadas não cabem ao lado dos núcleos — o estudo usou rampas retas empilhadas.");
       if(dl.semFaixa){ garOn=false; out.semFaixa=true; out.warn.push("Não há largura para a faixa de acesso à garagem do térreo ao lado das rampas sem passar pelos núcleos — a garagem do térreo foi desligada neste estudo."); }
-      if(dl.naoCabe) out.warn.push("As rampas não cabem ao lado dos núcleos das torres. Tente “Encontrar o melhor acesso”, rampas alternadas, menos garagens elevadas ou mude o lado/posição do núcleo (Pavimento tipo).");
+      // não cabe por comprimento (rampa longa para o pavimento): quem explica é vertical(), com os metros; aqui só a que passaria pelo núcleo
+      if(dl.naoCabe && dl.cruza) out.warn.push("As rampas não cabem ao lado dos núcleos das torres. Tente “Encontrar o melhor acesso”, rampas alternadas, menos garagens elevadas ou mude o lado/posição do núcleo (Pavimento tipo).");
       out.veiReal=W2((dv[0]+dv[1])/2, G.dot(m.acesso.vei,fd)); out.veiShift=dl.shift||0;
       const RX=rampExt(st, m, fd); out.rx=RX;
       dEnd = hasRamp && !E.rampa ? Math.min(dmx, RX.s0 + Math.max(P.subsolos? RX.LD:0, P.garAcima? RX.LU:0)) : dmn+PATAMAR } }
@@ -14991,7 +15184,13 @@ function terreoZones(st, m, lz, extra=0){
   const coreIn=d=>(m.coreSets||[]).reduce((s,cs)=>s + G.area(G.band(cs.core,fd,d1,d)) + G.area(G.band(scaleBy(cs.lobby||[],1.25),fd,d1,d)),0) + (lz&&lz.terreo.c>0? 2.6*(lmx-lmn) : 0);
   const hallArea=d=>{ const b=box(d1,d,lmn,lmx); let a=G.area(b); if(dv) a-=G.area(box(d1,d,dv[0],dv[1])); return a };
   let d2=dmx;
-  if(garOn){ let lo=d1, hi=dmx; for(let k=0;k<30;k++){ const mid=(lo+hi)/2; if(hallArea(mid)-coreIn(mid)>=HTe) hi=mid; else lo=mid } d2=Math.min(dmx, Math.max(hi, d1+6)) }
+  const fundoHall=()=>{ let lo=d1, hi=dmx; for(let k=0;k<30;k++){ const mid=(lo+hi)/2; if(hallArea(mid)-coreIn(mid)>=HTe) hi=mid; else lo=mid } return Math.min(dmx, Math.max(hi, d1+6)) };
+  if(garOn){ d2=fundoHall();
+    // a faixa da garagem do térreo vai da rua até o fim do hall (d2): se nesse trecho ela passaria pelo núcleo, procura outra posição que
+    // a leve livre até lá (a regra dura vale também para a faixa — src/garagem.js verticalCruza)
+    if(dl && dl.laneIv && !dl.naoCabe && !E.rampa && (m.obst||[]).some(c=>G.polysOverlap(G.rect(lat,fd,dl.laneIv[0],dmn,dl.laneIv[1]-dl.laneIv[0],d2-dmn),c))){
+      const dl2=driveLayout(st, lmn, lmx, G.dot(m.acesso.vei,lat), m, fd, lat, {dLane:d2});
+      if(dl2 && !dl2.naoCabe && !dl2.semFaixa){ dl=dl2; out.drive0=dl; dv=dl.dv; out.lanes=dl.laneIv||null; out.veiReal=W2((dv[0]+dv[1])/2, G.dot(m.acesso.vei,fd)); out.veiShift=dl.shift||0; d2=fundoHall() } } }
   out.d1=d1; out.d2=d2; out.HT=HT; out.hallDisp=hallArea(dmx);
   // núcleos das torres: o hall sempre chega até eles (colunas de hall)
   const cols=[];
@@ -15030,6 +15229,11 @@ function terreoZones(st, m, lz, extra=0){
     if(garOn && out.lanes){ const lc=(out.lanes[0]+out.lanes[1])/2; out.driveEnd=W2(lc, d2-0.2); out.keep.push(G.rect(lat,fd,out.lanes[0],d2,out.lanes[1]-out.lanes[0],6)) } }
   if(garOn && dmx-d2>3){ out.gar=box(d2,dmx,lmn,lmx) }
   if(VD) terreoVeiFecha(out, VD, garOn);
+  // a faixa de veículos desenhada cobre a largura de todas as rampas até a mais longa: o que dela cair sobre núcleo, hall dos elevadores
+  // ou depósito sai (caixa do obstáculo no referencial do acesso). Quem confere se o carro precisaria passar por ali é verticalCruza.
+  if(out.drive.length && typeof acSubRect==="function"){ const vl=out.vlat||lat, vf=out.vfd||fd;
+    (m.obst||[]).filter(c=>c&&c.length>2).forEach(c=>{ const [a,b]=G.extent(c,vl), [d0_,d1_]=G.extent(c,vf);
+      out.drive=out.drive.flatMap(p=> p && p.length>2 && G.polysOverlap(p,c) ? acSubRect(p, vl, vf, a, b, d0_, d1_) : [p]) }) }
   const sa=a=>a.reduce((s,p)=>s+G.area(p),0);
   out.lojaA=sa(out.lojas); out.hallA=sa(out.hall); out.driveA=sa(out.drive); out.gTer=Math.max(0,G.area(out.gar)-sa(out.colsGar)-sa(out.walk)-(VD&&garOn&&out.gar.length? sa(out.drive) : 0));
   if(HT>out.hallDisp+1 && !garOn) out.warn.push("O hall e o lazer do térreo pedem mais área do que o térreo tem.");
@@ -15343,10 +15547,13 @@ const otimKey=r=>[r.nT,r.pk,r.N,r.pav,r.sub,r.gac].join("|");
 function otimMLite(m){   // o que o Worker precisa do modelo da tela (clonável e pequeno)
   if(!m) return {};
   const gar={}; Object.entries(m.gar||{}).forEach(([k,l])=>{ gar[k]={count:l? +l.count||0 : 0} });
-  return {vagasLay:m.vagasLay, vagasEst:m.vagasEst, vf:{count:m.vf? m.vf.count||0 : 0}, subA:m.subA, embA:m.embA, gTer:m.gTer, gar};
+  return {vagasLay:m.vagasLay, vagasEst:m.vagasEst, vf:{count:m.vf? m.vf.count||0 : 0}, subA:m.subA, embA:m.embA, gTer:m.gTer, gar,
+    vert: m.vert? {ok:m.vert.ok!==false} : undefined};   // circulação inválida: a calibração não vale e a busca troca a garagem (otimGarValida)
 }
 function otimVagasCal(st, m){
   const gar=m && m.gar, mv=st.regras.m2Vaga||28; if(!gar || !Object.keys(gar).length) return null;
+  // circulação vertical inválida (rampa que não cabe ou passa pelo núcleo): o layout não mede nada — sem calibração daqui
+  if(m.vert && m.vert.ok===false) return null;
   const ks=re=>Object.keys(gar).filter(k=>re.test(k)), soma=l=>l.reduce((s,k)=>s+(gar[k]? +gar[k].count||0 : 0),0), cl=v=>Math.max(0, Math.min(1, v));
   const kS=ks(/^s\d+$/), kG=ks(/^g\d+$/), eS=kS.length*Math.floor((m.subA||0)/mv), eG=kG.length*Math.floor((m.embA||0)/mv), eT=Math.floor((m.gTer||0)/mv);
   let s = eS>0? cl(soma(kS)/eS) : null, g = eG>0? cl(soma(kG)/eG) : null, t = eT>0 && gar.ter? cl((+gar.ter.count||0)/eT) : null;
@@ -15354,6 +15561,27 @@ function otimVagasCal(st, m){
   if(g==null) g = 0.8*s;
   if(t==null) t = s;
   return {s, g, t, vf:(m.vf && +m.vf.count)||0, fonte:"layout"};
+}
+/* garagem que FUNCIONA no estado de partida (lote pequeno: "o subsolo ficou sem vaga nenhuma"). Se a circulação do estudo é inválida
+   (rampa que não cabe no pavimento ou passaria pelo núcleo), a calibração e a conferência das combinações usariam vagas de um layout
+   impossível. Testa cada tipo de circulação (src/calc/ciclo.js cicloTipos) na posição do acesso e, sem nenhum válido, nas pontas e no
+   meio da frente, com o cálculo rápido e ≥ 1 subsolo; sem garagem elevada se nem assim houver. Devolve {g, m, st, validas:[{g, vagas}]}
+   (a de mais vagas primeiro) ou null quando a do estudo já vale. Puro (Worker). */
+function otimGarValida(base, mNow){
+  const ok=m=>!!m && (!m.vert || m.vert.ok!==false);
+  if(ok(mNow) || typeof cicloGarDe!=="function") return null;
+  const g0=cicloGarDe(base), achados=[];
+  const roda=(st, g)=>{ const s=clone(st); cicloGarPoe(s, g); try{ const m=compute(s, {quick:true}); if(ok(m)) achados.push({g:cicloGarDe(s), m, st:s, vagas:m.vagasLay||0}) }catch(e){} };
+  const s1=clone(base); s1.produto.subsolos=Math.max(1, +s1.produto.subsolos||0);
+  const tentativas=[s1, ...(s1.produto.garAcima>0? [(()=>{ const s=clone(s1); s.produto.garAcima=0; return s })()] : [])];
+  for(const st of tentativas){
+    cicloTipos(st).forEach(t=>roda(st, {...g0, rampaTipo:t}));
+    if(!achados.length) cicloTipos(st).forEach(t=>[0.1,0.5,0.9].forEach(p=>roda(st, {...g0, rampaTipo:t, acessoVei:p})));
+    if(achados.length) break }
+  if(!achados.length) return null;
+  achados.sort((a,b)=>b.vagas-a.vagas);
+  const por=new Map(); achados.forEach(x=>{ if(!por.has(x.g.rampaTipo)) por.set(x.g.rampaTipo, x) });
+  return {...achados[0], de:g0, validas:[...por.values()].map(x=>({g:x.g, vagas:x.vagas}))};
 }
 /** vagas esperadas de uma combinação (massa) com a calibração por pavimento */
 function otimVagasEst(m, st, cal){ const P=st.produto, mv=st.regras.m2Vaga||28;
@@ -15410,7 +15638,8 @@ function otimFechaTxt(fx, semLucro){
 function otimMotor(base, o){
   const {cal, fin, score, forma=false, rTol=0.1, pavMinF=1, memoEf=null}=o, R0=base.regras;
   const cabe=m=>m.T.every(x=>x.fit) && m.H<=(m.hLim ?? R0.hMax)+1e-6 && m.CA<=R0.caMax+1e-6;
-  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m);
+  // vagas só contam com a circulação vertical válida (rampa dentro dos pavimentos e fora do núcleo — src/garagem.js verticalCruza)
+  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m) && (!x.m.vert || x.m.vert.ok!==false);
   const avalia=st=>{ const mm=compute(st,{quick:true}), f=fin(st,mm); return {st, m:mm, f, sc:score(f,mm)} };
   const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
   // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
@@ -15426,6 +15655,7 @@ function otimMotor(base, o){
   const repara=(cur, subir)=>{
     for(let t=0; t<3 && !nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, nT=P.torres.length, pav=P.torres[0].pav;
       const porPav=Math.max(1, nT*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), k=Math.max(1, Math.ceil((m.vagasReq-m.vagas)/porPav));
+      if(m.vert && m.vert.ok===false) break;   // a garagem deste tipo não funciona aqui: quem resolve é a troca de garagem (otimGarValida)
       const nx=melhorDe([
         pav-k>=pMinV ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav-k) }) : null,
         rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++ }),
@@ -15490,8 +15720,11 @@ function otimizar(opts, onProg, onDone, ctx={}){
   // diretrizes do produto (src/calc/diretrizes.js): fixos do produto + vagas por unidade e margem mínima na conta; null no modo livre
   const DIR = typeof dirPrepara==="function"? dirPrepara(base) : null;
   const mNow = ctx.m || (typeof window!=="undefined" && window._last && window._last.m) || compute(base);
+  // garagem do estudo inválida (rampa que não cabe ou passaria pelo núcleo): a busca parte de uma circulação que funciona
+  const garV = opts.cal? null : otimGarValida(base, mNow);
+  if(garV) cicloGarPoe(base, garV.g);
   // vagas: calibração por tipo de pavimento num layout real (o da tela; sem ele, um compute rápido do estado de partida com ≥ 1 subsolo)
-  let cal = opts.cal || otimVagasCal(base, mNow);
+  let cal = opts.cal || otimVagasCal(base, garV? garV.m : mNow);
   if(!cal){ try{ const sc=clone(base); sc.produto.subsolos=Math.max(1, +sc.produto.subsolos||0); cal=otimVagasCal(sc, compute(sc, {quick:true})) }catch(e){} }
   if(!cal) cal={s:0.6, g:0.5, t:0.6, vf:0, fonte:"padrão"};
   const k = cal.s;
@@ -15588,11 +15821,15 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const fechaFim=out=>{ if(parou()) return cancela();
       const o={res:out, obj:opts.obj, k, cal, meta, ms:performance.now()-t0, testadas:res.length, ...(tPct? {terrenoPct:tPct} : {}), ...(formaInfo? {forma:formaInfo} : {})};
       // nenhuma combinação conferida: por quê (lote pequeno para as regras, ou a garagem não comporta as vagas exigidas)
-      if(!out.length){ const mv=base.regras.m2Vaga||28, ys=Math.max(0, Math.round(cal.s*Math.floor((mNow.subA || G.area(base.lote.pts)*(1-base.regras.permeab))/mv)));
+      if(!out.length){ const mv=base.regras.m2Vaga||28, mR=(garV&&garV.m)||mNow, ys=Math.max(0, Math.round(cal.s*Math.floor((mR.subA || G.area(base.lote.pts)*(1-base.regras.permeab))/mv)));
+        const yg=Math.max(0, Math.round(cal.g*Math.floor((mR.embA||0)/mv))), va=+base.regras.vagasApto||0, maxV=Math.round((cal.vf||0)+5*ys+3*yg), gx= typeof cicloGarNome==="function"? cicloGarNome(cicloGarDe(base), base) : "";
+        const semGar = !garV && mNow.vert && mNow.vert.ok===false;
         o.semOpcao = !cont.cabe ? {k:"lote", motivo:"o lote é pequeno demais para as regras: nenhuma torre comporta as unidades dentro dos recuos e da ocupação"}
-          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo neste lote e as regras pedem ${nf(+base.regras.vagasApto||0,1)} por unidade`, porSubsolo:ys};
+          : semGar ? {k:"vagas", motivo:"nenhuma circulação de veículos (rampa reta, alternada, helicoidal, em L ou elevador de carros) cabe neste lote sem passar pelo núcleo — mude a posição do núcleo ou o acesso de veículos", porSubsolo:0}
+          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo${yg? ` e ${yg} por garagem elevada` : ""} neste lote${gx? ` (${gx})` : ""} e as regras pedem ${nf(va,1)} por unidade: mesmo com 5 subsolos e 3 garagens elevadas seriam cerca de ${maxV} vagas${va>0? `, para no máximo ${Math.floor(maxV/va)} unidades` : ""}`, porSubsolo:ys, porElevada:yg, maxVagas:maxV};
         if(DIR){ const so=dirSemOpcao(DIR, base, cont, cal, mNow); if(so) o.semOpcao=so } }
       if(DIR) o.dir={resumo:DIR.resumo, padrao:DIR.D.P.curto||DIR.D.nome};
+      if(garV) o.garTroca={de:garV.de, para:cicloGarDe(base), validas:garV.validas};
       // sem lucro (ou abaixo da meta): o motivo e o que fecharia a conta da melhor (a menos ruim). Os preços que fecham a conta são os
       // MENORES entre as opções conferidas (opcaoZero/opcaoMeta = índice em res quando não é a primeira): com o preço maior, outra
       // combinação pode fechar antes
@@ -15625,10 +15862,19 @@ function otimizar(opts, onProg, onDone, ctx={}){
     return v };
   // confirma as melhores com o layout real da garagem (reparo em otimMotor)
   const conf=new Map();   // chave → {st, m, f, sc} das opções conferidas (para o ciclo e o "o que fecharia a conta" sem recalcular)
+  // a garagem com que a combinação foi conferida não funciona nela (ex.: 2 subsolos com rampa reta num lote curto): outra circulação
+  // válida (as que valeram na partida, senão cada tipo na posição atual), com o reparo — fica a de melhor nota que fecha as vagas
+  let nAlt=0;
+  const garAlt=c=>{ const g0=cicloGarDe(c.st), gs= garV? garV.validas.map(x=>x.g) : cicloTipos(c.st).map(t=>({...g0, rampaTipo:t}));
+    let best=null; for(const g of gs){ if(cicloGarIgual(g, g0)) continue; const s=clone(c.st); cicloGarPoe(s, g); const c2=repara(avalia(s), 0); if(nivelOk(c2) && (!best || c2.sc>best.sc)) best=c2 }
+    return best };
   const validar=(list, done)=>{ let j=0; const out=[];
     const stepV=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++];
-        const c=repara(avalia(stOf(r)), j<=3? 4 : 0), st=c.st, m=c.m;
+        let c=repara(avalia(stOf(r)), j<=3? 4 : 0);
+        // (sem o ciclo, a garagem é a do estudo)
+        if(!nivelOk(c) && c.m.vert && c.m.vert.ok===false && opts.ciclo!==false && typeof cicloTipos==="function" && nAlt<6){ nAlt++; const c2=garAlt(c); if(c2) c=c2 }
+        const st=c.st, m=c.m;
         if(DIR && !nivelOk(c) && c.m.vagas<c.m.vagasReq) dirQuase(DIR, {vg:m.vagas, req:m.vagasReq, units:m.units, sub:st.produto.subsolos, gac:st.produto.garAcima, subA:m.subA, embA:m.embA}, true);
         if(!nivelOk(c) || (forma && otimDesvio(m)>rTol)) continue;   // forma: unidades além da tolerância não entram nas melhores
         const v=opcao(r, c);
@@ -15667,8 +15913,13 @@ function otimizar(opts, onProg, onDone, ctx={}){
     if(completo){
       for(let q=0; q<Math.min(2, out.length); q++){ const r=out[q], c=conf.get(r.key); if(!c) continue;
         if(q && performance.now()-t0>tot-2500){ [out[0], out[1]]=[out[1], out[0]]; break }   // sem tempo para conferir a 2ª: ela sobe sem o completo
-        const st=clone(c.st), m=compute(st), f=fin(st, m), cc={st, m, f, sc:score(f, m)};
-        const v=opcao(r, cc); v.garInfo=r.garInfo; v.completo=true; v.pend=cicloPend(m); v.sc=r.sc+(cc.sc-c.sc);
+        const st=clone(c.st), m=compute(st), f=fin(st, m); let cc={st, m, f, sc:score(f, m)};
+        // faltam poucas vagas no layout completo: um andar a menos (as unidades que as vagas comportam) costuma fechar — confere uma vez
+        if(!nivelOk(cc) && m.vagas<m.vagasReq && (!m.vert || m.vert.ok!==false)){ const P=st.produto, pav=P.torres[0].pav,
+          porPav=Math.max(1, P.torres.length*P.mix.reduce((s,u)=>s+u.qtd,0)*(+st.regras.vagasApto||1)), k=Math.ceil((m.vagasReq-m.vagas)/porPav);
+          if(k<=2 && pav-k>=Math.max(2, pavMinF)){ const s2=clone(st); s2.produto.torres.forEach(x=>x.pav=pav-k); const m2=compute(s2), f2=fin(s2, m2), c2={st:s2, m:m2, f:f2, sc:score(f2, m2)};
+            if(nivelOk(c2)) cc=c2 } }
+        const v=opcao(r, cc); v.garInfo=r.garInfo; v.completo=true; v.pend=cicloPend(cc.m); v.sc=r.sc+(cc.sc-c.sc);
         OTIM_EXTRAS.forEach(k=>{ if(r[k]!==undefined) v[k]=r[k] });
         conf.set(v.key, cc);
         if(nivelOk(cc)){ out.splice(q, 1); out.unshift(v); break }   // a 2ª fecha e a 1ª não: a 2ª passa para o topo
@@ -21838,7 +22089,8 @@ function estrPisos(st, m){
     out.push({k, poly, box: poly.length? estrBox(poly) : null, z:estrZTop(st,k),
       vagas: pack(lay.vagas.filter(v=>v.tipo!=="off").map(v=>v.poly)),
       ramps: pack([...(f.ramps||[]).map(r=>r.poly), ...(f.landings||[])]),
-      pil: (lay.pillars||[]).map(p=>G.centroid(p)), grid: lay.grid||null, reach: lay.reach||null, extra: [] }) });
+      pil: (lay.pillars||[]).map(p=>G.centroid(p)), grid: lay.grid||null, reach: lay.reach||null, extra: [],
+      obst: k==="ter"? null : m.obstGar||null }) });   // subsolos/elevadas: a faixa atrás do núcleo é piso de garagem (src/garagem.js)
   // térreo: o acesso de veículos e a passagem de pedestres também não recebem pilar
   const ex=pack([...(T.drive||[]), ...(T.walk||[])]);
   if(ex.length){ let t=out.find(o=>o.k==="ter"); if(!t){ t={k:"ter", poly:[], box:null, z:estrZTop(st,"ter"), vagas:[], ramps:pack(((V.ter||{}).ramps||[]).map(r=>r.poly)), pil:[], grid:null, reach:null, extra:[]}; out.push(t) } t.extra=ex }
@@ -21849,7 +22101,7 @@ function estrConflito(pi, q, c, h, obst){
   const b=estrBox(q);
   for(const e of pi.extra) if(estrBoxHit(b,e.b) && G.polysOverlap(q,e.p)) return "acesso";
   if(!pi.box || !estrBoxHit(b,pi.box) || !(G.pip(c,pi.poly) || G.polysOverlap(q,pi.poly))) return null;
-  if(obst.some(o=>G.pip(c,o))) return null; // núcleo / hall dos elevadores: estrutura própria
+  if((pi.obst||obst).some(o=>G.pip(c,o))) return null; // núcleo / hall dos elevadores: estrutura própria
   for(const v of pi.vagas) if(estrBoxHit(b,v.b) && G.polysOverlap(q,v.p)) return "vaga";
   for(const r of pi.ramps) if(estrBoxHit(b,r.b) && G.polysOverlap(q,r.p)) return "rampa";
   const g=pi.grid, R=pi.reach;
@@ -26375,6 +26627,9 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
   function hatch(p,col,a=0.5){ if(!p||!p.length) return; path(p); g.save(); g.clip(); g.strokeStyle=col; g.globalAlpha=a; g.lineWidth=1; const c=w2s(G.centroid(p)), R=Math.max(...p.map(q=>{ const P_=w2s(q); return Math.hypot(P_[0]-c[0],P_[1]-c[1]) })); const st=Math.max(5,V.s*0.6);
     for(let k=-R;k<R;k+=st){ g.beginPath(); g.moveTo(c[0]+k-R,c[1]+R); g.lineTo(c[0]+k+R,c[1]-R); g.stroke() } g.restore(); g.globalAlpha=1 }
   function rampsDraw(list){ (list||[]).forEach(r=>{
+      // rampa (ou poço) que passaria pelo núcleo: nunca desenhada por cima — só o contorno tracejado, por baixo do núcleo (src/garagem.js verticalCruza)
+      if(r.cruza){ strokeP(r.poly, css("--bad"), 1.4, [6,4]); if(r.hole) strokeP(r.hole, css("--bad"), 1, [6,4]);
+        if(V.s>3){ const pts=r.poly.map(w2s), xs=pts.map(q=>q[0]), ys=pts.map(q=>q[1]); label(r.elev? "elevador de carros não cabe aqui" : "rampa não cabe aqui", [(Math.min(...xs)+Math.max(...xs))/2, Math.min(...ys)+12], {size:9.5, col:css("--bad")}) } return }
       if(r.elev){ // poço do elevador de carros: cabine com as diagonais
         fillP(r.poly,css("--c-elev"),0.6); strokeP(r.poly,css("--ink"),1.6);
         (r.cabs||[]).forEach(cb=>{ strokeP(cb,css("--ink"),0.8); const q=cb.map(w2s); g.strokeStyle=css("--ink"); g.globalAlpha=0.45; g.lineWidth=0.8; g.beginPath(); g.moveTo(...q[0]); g.lineTo(...q[2]); g.moveTo(...q[1]); g.lineTo(...q[3]); g.stroke(); g.globalAlpha=1 });
@@ -26458,17 +26713,17 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     fillP(L,css("--m-lote"),0.22); strokeP(L,css("--muted"),1,[3,3]);
     fillP(floor,css("--surface"),1);
     if(lay) garBodyInner(lay); else { const f=m.vert&&m.vert.floors[key]; if(f){ (f.landings||[]).forEach(p=>hatch(p,css("--mark"))); rampsDraw(f.ramps) } }
-    coresAll(true);
+    coresAll(true, null, !(lay && lay.fundoDep));   // garagens: o depósito atrás do núcleo (térreo) é piso de garagem aqui
     strokeP(floor,css("--ink"),1.6);
   }
   // núcleo em desenho técnico (todos os andares; src/calc/nucleo.js): paredes com espessura, portas com folha e arco no
   // sentido da fuga, lances com degraus, patamares e linha de piso, cabines com contrapeso e portas de correr, dutos e shafts
-  function coreDraw(lay, lobby){
+  function coreDraw(lay, lobby, semFundo){
     if(!lay) return;
     const sc=V.s, ink=css("--ink"), px=t=>Math.max(1, t*sc), parts=lay.coreParts||[];
     if(lobby && lay.lobby){ fillP(lay.lobby,css("--c-hall"),1); strokeP(lay.lobby,css("--ink"),0.8,[3,2]); if(V.s>6) label("hall dos elevadores", w2s(G.centroid(lay.lobby)), {size:9,bg:false,col:css("--muted")}) }
     // garagens e térreo: a faixa atrás do núcleo (unidades no tipo) vira depósito, com porta para a garagem
-    if(lobby) (lay.coreFundo||[]).forEach(p=>{ fillP(p,css("--c-tec"),1); strokeP(p,ink,px(0.12)); if(V.s>6){ const xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]); if(Math.max(...xs)-Math.min(...xs)>44 && Math.max(...ys)-Math.min(...ys)>12) label("depósito", w2s(G.centroid(p)), {size:9,bg:false,col:css("--muted")}) } });
+    if(lobby && !semFundo) (lay.coreFundo||[]).forEach(p=>{ fillP(p,css("--c-tec"),1); strokeP(p,ink,px(0.12)); if(V.s>6){ const xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]); if(Math.max(...xs)-Math.min(...xs)>44 && Math.max(...ys)-Math.min(...ys)>12) label("depósito", w2s(G.centroid(p)), {size:9,bg:false,col:css("--muted")}) } });
     parts.forEach(cp=>fillP(cp.poly, css("--c-"+cp.kind)||css("--surface"), 1));
     // linhas técnicas (só com zoom suficiente para não virar ruído)
     (lay.coreLines||[]).forEach(l=>{
@@ -26500,7 +26755,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     if(V.s>7) parts.forEach(cp=>{ if(["tec","duto","shaft","pass"].includes(cp.kind) || (cp.kind==="esc" && V.s>=10)) return; const xs=cp.poly.map(q=>w2s(q)[0]), ys=cp.poly.map(q=>w2s(q)[1]), w_=Math.max(...xs)-Math.min(...xs), h_=Math.max(...ys)-Math.min(...ys); g.font="500 9px "+css("--f-sans"); const tw=g.measureText(cp.nome).width;
       if(w_>tw+8 && h_>14){ const c=w2s(G.centroid(cp.poly)); label(cp.nome, cp.kind==="esc"||cp.kind==="elev"||cp.kind==="emerg"? [c[0], c[1]] : c, {size:9, bg:true, font:"--f-sans"}) } });
   }
-  function coresAll(lobby, only){ (m.coreSets||[]).forEach(cs=>{ if(only && !only(cs)) return; coreDraw(cs.lay, lobby) }) }
+  function coresAll(lobby, only, semFundo){ (m.coreSets||[]).forEach(cs=>{ if(only && !only(cs)) return; coreDraw(cs.lay, lobby, semFundo) }) }
   // áreas comuns detalhadas (src/calc/comuns.js + src/ui/comuns.js): ambientes com paredes, portas, mobiliário e rota acessível
   const cmnOn = local=> typeof cmnDraw==="function" && m.comuns && (m.comuns.eixos||{})[local];
   const cmnD = local=> cmnDraw(g, m, local, {w2s, V, css});
@@ -26531,7 +26786,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     fillP(m.emb,css("--surface"),1);
     (T.lojas||[]).forEach(p=>{ fillP(p,css("--m-loja"),0.6); strokeP(p,css("--ink"),1.2) });
     (T.hall||[]).forEach(p=>fillP(p, cmnOn("terreo")? css("--c-circ") : css("--m-ter"), cmnOn("terreo")? 1 : 0.32));
-    (T.drive||[]).forEach(p=>{ fillP(p,css("--c-drive"),1); strokeP(p,css("--ink"),0.8) });
+    (T.drive||[]).forEach(p=>{ if(T.driveCruza){ strokeP(p,css("--bad"),1.2,[6,4]); return } fillP(p,css("--c-drive"),1); strokeP(p,css("--ink"),0.8) });   // faixa que passaria pelo núcleo: só tracejada
     (T.driveRua||[]).forEach(p=>{ fillP(p,css("--c-drive"),0.7); strokeP(p,css("--ink"),0.6,[3,3]) });   // carro por outro lado: trecho no recuo, da rua até o prédio
     if(T.gar && T.gar.length){ fillP(T.gar,css("--surface"),1); if(m.gar && m.gar.ter) garBodyInner(m.gar.ter); else fillP(T.gar,css("--m-gar"),0.45) }
     (T.colsGar||[]).forEach(p=>{ fillP(p,css("--m-ter"),0.32); strokeP(p,css("--ink"),0.8) });
@@ -26558,7 +26813,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     if(V.s>2.5){
       (T.lojas||[]).forEach((p,i)=>{ const c=G.centroid(p); label(`loja ${i+1} · ${m2(G.area(p))}`, w2s(c), {size:10}) });
       const hb=!cmnOn("terreo") && (T.hallBand||[]).slice().sort((a,b)=>G.area(b)-G.area(a))[0]; if(hb){ const [l0]=G.extent(hb,T.lat); const c=[T.lat[0]*(l0+1)+T.fd[0]*(T.d1+1.3), T.lat[1]*(l0+1)+T.fd[1]*(T.d1+1.3)]; g.font="500 10px "+css("--f-mono"); const tx=`hall e lazer ${m2(m.hallA)}`, cc=w2s(c); label(tx,[cc[0]+g.measureText(tx).width/2+4,cc[1]],{size:10}) }
-      (T.drive||[]).forEach(p=>{ if(V.s>5 && !(m.vert && (m.vert.elev || m.vert.helix))) label("acesso de veículos", w2s(G.centroid(p)), {size:9}) });
+      { const dp=(T.drive||[]).slice().sort((a,b)=>G.area(b)-G.area(a))[0]; if(dp && V.s>5 && !(m.vert && (m.vert.elev || m.vert.helix))) label("acesso de veículos", w2s(G.centroid(dp)), {size:9}) }
     }
     const fd=frontDir(S), ac=m.acesso; arrow([ac.ped[0]-fd[0]*8,ac.ped[1]-fd[1]*8],[ac.ped[0]+fd[0]*2,ac.ped[1]+fd[1]*2],css("--d-acc"),2.5,8); { const vv=T.veiReal||ac.vei, vd=T.vfd||fd; arrow([vv[0]-vd[0]*8,vv[1]-vd[1]*8],[vv[0]+vd[0]*2,vv[1]+vd[1]*2],css("--bad"),2.5,8) }
   }
@@ -26777,11 +27032,11 @@ function rebuild3d(m, force){
   if(S.forma && S.forma.on && S.forma.aero && m.hLim>0) flat(L, m.hLim, col3("--warn"), 0.14); // plano de proteção do aeródromo
   // rampas inclinadas entre os pavimentos (cada uma na sua faixa)
   if(m.vert){ const zk=k=> k<0? k*P.peGar : k===0? 0 : P.peTerreo+(k-1)*P.peGar;
-    m.vert.segs.forEach(sg=>{ if(sg.elev) return; if(sg.path) rampaPath3d(sg.path, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")); else rampa3d(sg.E, sg.X, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")) });
+    m.vert.segs.forEach(sg=>{ if(sg.elev || sg.cruza) return;   /* rampa que passaria pelo núcleo: fora do 3D */ if(sg.path) rampaPath3d(sg.path, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")); else rampa3d(sg.E, sg.X, sg.w-0.3, zk(sg.fromK)+0.02, zk(sg.toK)+0.02, col3("--mark")) });
     // helicoidal: pilar central · elevador de carros: poço do fundo ao último pavimento servido
     const zTop=k=> zk(k)+(k===0? P.peTerreo : P.peGar), sH=(m.vert.strips||[]).find(s_=>s_.kind==="H");
-    if(sH && sH.hole) slab(sH.hole, zk(-P.subsolos), zTop(P.garAcima)-zk(-P.subsolos)-0.2, col3("--m-gar"), {eop:0.3});
-    if(m.vert.elev){ const E_=m.vert.elev; E_.shafts.forEach(p=>slab(p, zk(E_.kMin), zTop(E_.kMax)-zk(E_.kMin)-0.1, col3("--c-elev"), {op:0.55, eop:0.45})) } }
+    if(sH && sH.hole && !sH.cruza) slab(sH.hole, zk(-P.subsolos), zTop(P.garAcima)-zk(-P.subsolos)-0.2, col3("--m-gar"), {eop:0.3});
+    if(m.vert.elev && !m.vert.elev.cruza){ const E_=m.vert.elev; E_.shafts.forEach(p=>slab(p, zk(E_.kMin), zTop(E_.kMax)-zk(E_.kMin)-0.1, col3("--c-elev"), {op:0.55, eop:0.45})) } }
   if(!ctxA("predios")) (S.entorno||[]).forEach(e=>{ if(e.pts&&e.pts.length>2&&e.h>0) slab(e.pts, 0, e.h, col3("--m-viz"), {eop:0.35, noclip:true, rough:0.95, holes:entVazios(e)}) });
   // andar cortado: planta do pavimento sobre a laje
   if(fl) cutFloor(m, fl);
@@ -27797,7 +28052,7 @@ function dxfImpl(m){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("SUBSOLO
   m.T.forEach((t,i)=>{ dxfTorre(d,"TORRES",t,2); if(t.plate.length) d.text("TEXTOS",G.centroid(t.plate),1.2,`T${i+1} - ${t.pav} pav`) });
   S.lote.pts.forEach((q,i)=>{ const b=S.lote.pts[(i+1)%S.lote.pts.length]; d.text("COTAS",[(q[0]+b[0])/2,(q[1]+b[1])/2],0.8,`L${i+1} ${nf(G.edgeLen(S.lote.pts,i),2)} m`) });
   return d.out() }
-function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (cs.lay.coreFundo||[]).forEach(p=>{ d.poly("DEPOSITO",p,8); d.text("NUCLEO-TEXTOS",G.centroid(p),0.25,"DEPOSITO") }); dxfNucleo(d, cs.lay) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
+function dxfGar(m,lay,floor,key){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (key==="ter" || lay.fundoDep? cs.lay.coreFundo||[] : []).forEach(p=>{ d.poly("DEPOSITO",p,8); d.text("NUCLEO-TEXTOS",G.centroid(p),0.25,"DEPOSITO") }); dxfNucleo(d, cs.lay) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
   // garagem por partidos: corredores, faixa de pedestres, sobras (depósito / área técnica) e inclinações das rampas
   (lay.aisles||[]).forEach(a=>d.poly(a.pass? "PASSAGEM-MAO-UNICA" : "CORREDOR",a.poly,8)); (lay.retornos||[]).forEach(p=>d.poly("BOLSAO-RETORNO",p,8));
   (lay.peds||[]).forEach(p=>{ if(p.poly) d.poly("FAIXA-PEDESTRES",p.poly,5); if(p.cross) d.poly("FAIXA-PEDESTRES",p.cross,5) });
@@ -27883,7 +28138,7 @@ async function exportZIP(){
   try{ await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js") }catch(e){ toast("Não consegui carregar o compactador"); return }
   const m=window._last.m, z=new JSZip();
   z.file("implantacao.dxf", dxfImpl(m));
-  if(m.gar) Object.entries(m.gar).forEach(([k,lay])=>{ if(lay) z.file(`garagem-${nomePav(k).replace(/\s+/g,"-")}.dxf`, dxfGar(m,lay,k[0]==="s"?m.sub:k[0]==="g"?m.emb:m.tGar)) });
+  if(m.gar) Object.entries(m.gar).forEach(([k,lay])=>{ if(lay) z.file(`garagem-${nomePav(k).replace(/\s+/g,"-")}.dxf`, dxfGar(m,lay,k[0]==="s"?m.sub:k[0]==="g"?m.emb:m.tGar,k)) });
   m.T.forEach((t,i)=>{ if(t.plate.length) z.file(`pavimento-tipo-torre-${i+1}.dxf`, dxfTipo(m,i)) });
   if(m.comuns && typeof comunsDxf==="function"){ z.file("terreo-areas-comuns.dxf", dxfComuns(m,"terreo")); if(m.comuns.amb.some(a=>a.local==="emb")) z.file("laje-do-embasamento-lazer.dxf", dxfComuns(m,"emb")) }
   z.file(slug(S.nome)+".ifc", IFC(m));
@@ -36738,14 +36993,16 @@ function prOtSum(){ const O=OTIM; if(!O) return ""; const r=O.res[0];
   return !r? `<span class="pr-bad">nenhuma opção</span>` : r.semLucro? `<span class="pr-bad">sem lucro</span> · ${mi(r.lucro)}` : `${mi(r.lucro)} · margem ${pct(r.margem,0)}` }
 function prOtAviso(O){
   if(!O) return "";
-  if(O.semOpcao && O.semOpcao.diretriz) return `<div class="pr-av bad" role="status"><b>Nenhuma combinação atende às diretrizes</b> — ${esc(O.semOpcao.motivo)}.<div class="k"><button type="button" class="btn sm ghost" data-act="dirAbrir">Rever as diretrizes</button></div></div>`;
-  if(O.semOpcao) return `<div class="pr-av bad" role="status"><b>Nenhuma combinação fecha as regras com as vagas exigidas</b> — ${esc(O.semOpcao.motivo)}.</div>`;
-  const fx=O.semLucro || O.fecha; if(!fx || !O.res.length) return "";
+  // a garagem do estudo não funciona no lote (rampa que não cabe ou passaria pelo núcleo): a busca partiu de outra circulação (src/optim.js otimGarValida)
+  const gt = O.garTroca && typeof CICLO_TIPO_ROT!=="undefined" ? `<div class="note" style="color:var(--warn-t)">Com ${esc(CICLO_TIPO_ROT[O.garTroca.de.rampaTipo]||O.garTroca.de.rampaTipo)} a garagem não funciona neste lote — as opções foram conferidas com ${esc(CICLO_TIPO_ROT[O.garTroca.para.rampaTipo]||O.garTroca.para.rampaTipo)}.</div>` : "";
+  if(O.semOpcao && O.semOpcao.diretriz) return gt+`<div class="pr-av bad" role="status"><b>Nenhuma combinação atende às diretrizes</b> — ${esc(O.semOpcao.motivo)}.<div class="k"><button type="button" class="btn sm ghost" data-act="dirAbrir">Rever as diretrizes</button></div></div>`;
+  if(O.semOpcao) return gt+`<div class="pr-av bad" role="status"><b>Nenhuma combinação fecha as regras com as vagas exigidas</b> — ${esc(O.semOpcao.motivo)}.</div>`;
+  const fx=O.semLucro || O.fecha; if(!fx || !O.res.length) return gt;
   // o que fecha a conta, cada linha com Aplicar (src/ui/ciclo.js): lazer enxuto, preço médio, terreno
   const L=typeof cxLinhasOtim==="function"? cxLinhasOtim(O) : [], k=`<div class="cx">${L.map(cxLinhaHTML).join("")}</div>`
     + (fx.precoTeto && (fx.metaAcimaTeto || fx.zeroAcimaTeto)? `<div class="k"><i>pelo teto por unidade, o preço médio vai até <b>${brl(Math.floor(fx.precoTeto/50)*50)}/m²</b></i></div>` : "");
-  return O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`
-    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`;
+  return gt + (O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`
+    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`);
 }
 /* garagem com que a opção foi conferida (tipo de rampa, acesso, ângulo) e pendências do projeto, em uma linha cada */
 function prOtGarHTML(r){

@@ -54,12 +54,24 @@ describe('otimizador: lucro antes de tudo', () => {
     expect(txt).toMatch(/^Nenhuma combinação dá lucro — /); expect(txt).toMatch(/R\$ [\d.]+\/m²/);
   }, 240000);
 
-  it('lote pequeno demais para as vagas exigidas: nenhuma opção, com o motivo', async () => {
+  it('lote pequeno demais para as vagas exigidas: só o prédio mínimo com elevador de carros (com prejuízo) ou nenhuma opção, com o motivo', async () => {
     const st = assSt(12, 30, 12000);
     const r = await A.otimizar(OPTS(st), null, null, { st, m: {} });
-    expect(r.res).toEqual([]);
-    expect(r.semOpcao && ['lote', 'vagas']).toContain(r.semOpcao.k);
-    expect(r.semOpcao.motivo.length).toBeGreaterThan(10);
+    // com a regra dura (rampa nunca passa pelo núcleo) a rampa reta não vale neste lote; só um prédio mínimo com elevador de carros
+    // fecha as vagas — se aparecer, é a "menos ruim", com prejuízo e circulação válida; senão, nenhuma opção com o motivo
+    if (r.res.length) {
+      expect(r.res.every(x => !(x.lucro > 0))).toBe(true);
+      expect(r.res[0].garagem.rampaTipo).toBe('elevador');
+      expect(r.res[0].units).toBeLessThanOrEqual(6);
+    } else {
+      expect(r.semOpcao && ['lote', 'vagas']).toContain(r.semOpcao.k);
+      expect(r.semOpcao.motivo.length).toBeGreaterThan(10);
+    }
+    // lote menor que a torre mínima: nenhuma opção, com o motivo
+    const s8 = assSt(8, 25, 12000), r8 = await A.otimizar(OPTS(s8), null, null, { st: s8, m: {} });
+    expect(r8.res).toEqual([]);
+    expect(r8.semOpcao && r8.semOpcao.k).toBe('lote');
+    expect(r8.semOpcao.motivo.length).toBeGreaterThan(10);
   }, 240000);
 
   it('calibração das vagas por tipo de pavimento (subsolo, elevada, térreo) a partir de um layout', () => {
