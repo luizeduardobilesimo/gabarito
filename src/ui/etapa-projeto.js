@@ -77,12 +77,15 @@ STEP_R.projeto = ()=>{
     SEC("Vagas",
       ROW(`Ângulo${INFO("90°: corredor de mão dupla. 60° e 45°: mão única, corredores mais estreitos ligados em circuito. “Melhor” testa os três e fica com o que dá mais vagas.","o ângulo das vagas")}`, SEG("estudo.angulo",[["90","90°"],["60","60°"],["45","45°"],["melhor","melhor"]],{rr:false}))+
       ROW("Fileiras",SEG("estudo.garDir",[["auto","automáticas"],["man","manual"]]))+(E.garDir==="auto"?"":SLD("estudo.garDirGraus","Rotação das fileiras",0,179,1,"°"))+
-      SW("estudo.usarLayout","Usar as vagas do layout nas contas"),
-      {open:true, key:"gLay", sum:garSum("lay")}) +
-    SEC("PCD e idoso", KV(NUM("estudo.pcd","Vagas PCD","%",{pct:true,step:1,help:"Vaga PCD"})+NUM("estudo.idoso","Vagas idoso","%",{pct:true,step:1,help:"Vaga idoso"})),
+      SW("estudo.usarLayout","Usar as vagas do layout nas contas")+
+      ADV(`<div class="fld wide"><label class="fl" for="garPartSel">Partido${INFO("Automático: o gerador testa corredores, transversais e orientações e fica com o arranjo de mais vagas e menos becos. Fixar um partido mantém só os arranjos daquela família, quando couberem.","o partido da garagem")}</label><select class="sel" id="garPartSel" data-p="garagem.partido" data-t="s" data-rr="1"><option value="auto" ${X.partido==="auto"||!X.partido?"selected":""}>Automático</option>${Object.entries(typeof GAR_PARTIDOS!=="undefined"? GAR_PARTIDOS : {}).map(([k,o])=>`<option value="${k}" ${X.partido===k?"selected":""}>${esc(o.nome)}</option>`).join("")}</select></div>`, {key:"gPart"}),
+      {open:true, key:"gLay", sum:garSum("lay"), info:"Como um projetista de garagem: módulo de 5,0 + 5,5 + 5,0 m (fileira, corredor de mão dupla, fileira), fileiras encostadas nas paredes, corredores ligados numa rede contínua (anel ou espinha), pilares numa malha única a cada 3 vagas e iguais em todos os subsolos, faixa de pedestres até o hall dos elevadores e PCD com faixa de transferência perto do hall. Referências fixas: raio de giro de 6,0 m por fora e 3,0 m por dentro, corredor sem saída de até 25 m (acima disso, bolsão de retorno) e faixa de pedestres de 1,20 m. A nota cai com vagas sem manobra, becos longos, curvas apertadas e área por vaga acima de 32 m²."}) +
+    SEC("PCD e idoso", KV(NUM("estudo.pcd","Vagas PCD","%",{pct:true,step:1,help:"Vaga PCD"})+NUM("estudo.idoso","Vagas idoso","%",{pct:true,step:1,help:"Vaga idoso"}))+
+      ROW(`Faixa da PCD${INFO("Faixa de transferência de 1,20 m ao lado da vaga PCD: compartilhada entre duas vagas PCD ou de um lado de cada uma. Automático escolhe a que perde menos vagas.","a faixa da vaga PCD")}`, SEG("garagem.pcdModo",[["auto","auto"],["compartilhada","compartilhada"],["lado","de um lado"]],{rr:false})),
       {key:"gPcd", sum:garSum("pcd"), info:"Percentuais das vagas reservadas. Ficam nas vagas mais perto dos núcleos. Para não ter vagas automáticas, zere os percentuais."}) +
     SEC("Medidas da vaga", KV(NUM("estudo.vagaL","Largura","m",{step:0.05})+NUM("estudo.vagaC","Comprimento","m",{step:0.05})+NUM("estudo.corredor","Corredor 90°","m",{step:0.1})+NUM("estudo.porModulo","Entre pilares","vg",{int:true,step:1,help:"Quantas vagas cabem entre dois pilares."})+NUM("estudo.pilar","Pilar","m",{step:0.05}))+
-      (naMedida? GRP("Rampa")+KV(NUM("estudo.rampaL","Largura da rampa","m",{step:0.05,help:"Mínimo de 2,75 m em mão única e 5 m em mão dupla."})+NUM("estudo.rampaInc","Inclinação da rampa","%",{pct:true,step:1,help:"Em garagens residenciais, até 20%."})) : ""),
+      (naMedida? GRP("Rampa")+KV(NUM("estudo.rampaL","Largura da rampa","m",{step:0.05,help:"Mínimo de 2,75 m em mão única e 5 m em mão dupla."})+NUM("estudo.rampaInc","Inclinação da rampa","%",{pct:true,step:1,help:"Em garagens residenciais, até 20%."})) : "")+
+      ADV(GRP("Largura acrescida")+KV(NUM("garagem.acrParede","Junto à parede","+ m",{step:0.05,min:0,help:"Largura acrescida"})+NUM("garagem.acrPilar","Junto ao pilar","+ m",{step:0.05,min:0,help:"Largura acrescida"})), {key:"gDim"}),
       {key:"gDim", sum:garSum("dim")}) +
     SEC("Vagas extras",
       SW("garagem.presas","Vagas presas (tandem)",{rr:true})+
@@ -102,12 +105,14 @@ STEP_R.projeto = ()=>{
     const desc={ep:"Escada enclausurada com portas corta-fogo e hall de acesso. Edifícios baixos e médios.",pf_duto:"Antecâmara ventilada por dutos de entrada e saída de ar. A mais comum em residenciais altos.",pf_balcao:"Acesso pela fachada por um balcão aberto — exige núcleo encostado na fachada.",pf_press:"Escada pressurizada por ventilador; dispensa dutos na antecâmara, pede casa de máquinas."}[E.escTipo];
     body =
     RES("Andar tipo", `<div id="tipoRes"></div>`, {aside:"", asideId:"tipoStat"}) +
-    SEC("Escadas e elevadores", `<div class="fld wide"><label class="fl" for="escSel">Escada${INFO(desc||"Tipo de escada de emergência.","o tipo de escada")}</label><select class="sel" id="escSel" data-p="estudo.escTipo" data-t="s" data-rr="1">${Object.entries(ESC_TIPOS).map(([k,l])=>`<option value="${k}" ${E.escTipo===k?"selected":""}>${l}</option>`).join("")}</select></div>
+    SEC("Núcleo de circulação", `<div id="nucRes" class="nucres"></div><div class="fld wide"><label class="fl" for="escSel">Escada${INFO(desc||"Tipo de escada de emergência.","o tipo de escada")}</label><select class="sel" id="escSel" data-p="estudo.escTipo" data-t="s" data-rr="1">${Object.entries(ESC_TIPOS).map(([k,l])=>`<option value="${k}" ${E.escTipo===k?"selected":""}>${l}</option>`).join("")}</select></div>
       ${ROW("Escadas",SEG("estudo.nEsc",[[1,"1"],[2,"2"]],{rr:false}))}${ROW("Elevadores",SEG("estudo.elevadores",[[0,"auto"],[1,"1"],[2,"2"],[3,"3"],[4,"4"]],{rr:false}))}
       ${SW("estudo.emerg","Elevador de emergência")}${SW("estudo.fachada",bal?"Núcleo na fachada (obrigatório com balcão)":"Núcleo encostado na fachada",{dis:bal})}`+
-      ADV(ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["auto","auto"],["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
-        {key:"tPos", label:"Posição do núcleo", fechar:"Fechar posição do núcleo"}),
-      {open:true, key:"tNuc", sum:tipoSum("nuc"), info:"Núcleo"}) +
+      ADV(`<div class="fld wide"><label class="fl" for="nucPart">Partido do núcleo${INFO("Automático escolhe pelo número de elevadores e pelo tipo de escada. Fixe um partido para comparar: linear (elevadores no corredor e escada atrás), compacto (um elevador), frente a frente (hall dos elevadores perpendicular ao corredor) ou em L (escada no sentido da profundidade e ala rasa de elevadores).","o partido do núcleo")}</label><select class="sel" id="nucPart" data-p="nucleo.partido" data-t="s" data-rr="1">${[["auto","Automático"],...nucleoCatalogo().filter(c=>c.fixavel).map(c=>[c.id,c.nome])].map(([k,l])=>`<option value="${k}" ${(S.nucleo||{}).partido===k?"selected":""}>${l}</option>`).join("")}</select></div>`+
+        ROW(`Elevador${INFO("Capacidade da cabine. 8 pessoas (600 kg, cabine 1,10 × 1,40 m) é o mínimo acessível usual; conferir com o fabricante.","a capacidade do elevador")}`,SEG("nucleo.cap",[[6,"6"],[8,"8"],[10,"10"],[13,"13"]],{rr:false}))+
+        ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["auto","auto"],["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
+        {key:"tPos", label:"Partido e posição do núcleo", fechar:"Fechar partido e posição"}),
+      {open:true, key:"tNuc", sum:tipoSum("nuc"), info:"Núcleo de circulação vertical: escada, antecâmara, dutos, elevadores, hall, shafts e lixo/DML, na mesma posição em todos os pavimentos. A nota parte de 100 e perde 25 por problema grave e 6 por atenção (NBR 9077, IN 09, NBR 9050 — referência, conferir na lei)."}) +
     SEC("Medidas do andar", KV(NUM("estudo.corrTipo","Corredor / hall","m",{step:0.05})+NUM("estudo.profMin","Prof. mín. da unidade","m",{step:0.25})+NUM("produto.sacProf","Prof. da sacada","m",{step:0.1,help:"Sacada"})),
       {key:"tDim", sum:tipoSum("dim"), info:"Medidas de estudo do pavimento tipo. Confirme saídas, tipo de escada e elevador de emergência com a NBR 9077 e a IN do Corpo de Bombeiros."}) +
     SEC("Núcleo e unidades por torre", `<div id="tipoDet"></div>`, {key:"tDet", sum:"áreas do núcleo e das unidades"});
@@ -127,15 +132,28 @@ const GAR_RAMPA_INFO = { reta:"Todas na mesma projeção: em cada pavimento o ca
 function garSum(k, m){
   const E=S.estudo, X=S.garagem||DEF.garagem;
   if(k==="rampa") return `veículos ${pct(S.lote.acessoVei,0)} · ${esc(RAMPA_TIPOS[E.rampaTipo]||"")}${E.rampa?" · desenhada":""}`;
-  if(k==="lay") return `${E.angulo==="melhor"?"melhor ângulo":E.angulo+"°"} · fileiras ${E.garDir==="auto"?"automáticas":"manuais"}`;
+  if(k==="lay"){ const ls=m&&m.gar? Object.entries(m.gar).filter(([kk,l])=>l&&l.modelo==="partido"&&kk!=="ter").map(([,l])=>l) : [], ang=E.angulo==="melhor"?"melhor ângulo":E.angulo+"°";
+    if(!ls.length) return `${ang} · fileiras ${E.garDir==="auto"?"automáticas":"manuais"}`;
+    return `${ang} · ${esc((GAR_PARTIDOS[ls[0].partido]||{}).nome||ls[0].partido||"")} · nota <b>${Math.min(...ls.map(x=>x.nota??100))}</b>` }
   if(k==="pcd"){ if(m && m.gar){ let p=0,i=0; Object.values(m.gar).forEach(l=>{ if(l&&l.vagas) l.vagas.forEach(v=>{ if(v.tipo==="pcd") p++; else if(v.tipo==="idoso") i++ }) }); return `<b>${p}</b> PCD · <b>${i}</b> idoso` } return `PCD ${pct(E.pcd,0)} · idoso ${pct(E.idoso,0)}` }
   if(k==="dim") return `${nf(E.vagaL,2)} × ${nf(E.vagaC,2)} m · corredor ${nf(E.corredor,1)} m`;
   if(k==="ext"){ const q=m&&m.quadroVagas, l=[]; if(X.presas) l.push(q&&q.presa!=null? `${q.presa} presas` : "presas"); if(X.motos) l.push(q&&q.moto!=null? `${q.moto} motos` : "motos"); if(X.bici!=="off") l.push(q&&q.bici? `${q.bici} bicicletas` : "bicicletário"); if(X.ev>0) l.push(m&&m.evN!=null? `${m.evN} EV` : `EV ${pct(X.ev,0)}`); return l.length? l.join(" · ") : "nenhuma" }
   if(k==="man"){ const n=Object.keys(E.off||{}).length+Object.keys(E.vtipo||{}).length; return n? `<b>${n}</b> marcaç${n>1?"ões":"ão"}` : "nenhuma" }
   return "";
 }
-function tipoSum(k){
+/* RES da garagem: área bruta por vaga nos subsolos/garagens (meta 25–32 m²) e a nota do partido */
+function garResMet(m){
+  const ls=Object.entries(m.gar||{}).filter(([k,l])=>l && k!=="ter" && l.met && l.count);
+  if(!ls.length) return "";
+  const A=ls.reduce((s,[,l])=>s+l.met.area,0), n=ls.reduce((s,[,l])=>s+l.count,0), m2v=A/Math.max(1,n), nota=Math.min(...ls.map(([,l])=>l.nota??100));
+  const cls=m2v<=GAR_META[1]+0.5? "ok" : m2v<=GAR_META[1]+8? "warn" : "bad", ncls= nota>=85? "ok" : nota>=65? "warn" : "bad";
+  return `<div class="met"><div class="l">Área por vaga${INFO(`Área bruta do pavimento ÷ vagas, nos subsolos e garagens. Referência de mercado: ${GAR_META[0]}–${GAR_META[1]} m² por vaga num subsolo retangular regular. Núcleos, rampas e lotes estreitos pesam.`,"a área por vaga")}</div><div class="v">${nf(m2v,1)} <span style="font-size:.6em;color:var(--muted);font-weight:400">m²</span></div><div class="s"><span class="pill ${cls}">meta ${GAR_META[0]}–${GAR_META[1]}</span></div></div>
+    <div class="met"><div class="l">Nota da garagem</div><div class="v">${nota}</div><div class="s"><span class="pill ${ncls}">${nota>=85? "boa" : nota>=65? "atenção" : "ruim"}</span></div></div>`;
+}
+function tipoSum(k, m){
   const E=S.estudo;
+  const nu=m && (m.tipo||[]).map(l=>l&&l.nucleo).filter(Boolean);
+  if(k==="nuc" && nu && nu.length) return `${esc(nu[0].partidoNome)} · nota <b>${Math.min(...nu.map(n=>n.nota??100))}</b>`;
   if(k==="nuc") return `${E.nEsc} escada${E.nEsc>1?"s":""} · ${+E.elevadores? E.elevadores+" elev." : "elev. auto"}${E.emerg?" · emergência":""}`;
   if(k==="pos") return `${({auto:"planta auto",central:"corredor central",lateral:"lateral"})[E.tipoPlanta]||""} · ${pct(E.nucleoPos,0)}`;
   if(k==="dim") return `corredor ${nf(E.corrTipo,2)} m · prof. ${nf(E.profMin,2)} m`;
@@ -149,9 +167,11 @@ STEP_LIVE.projeto = (m, f, fast)=>{
     const ok=m.vagas>=m.vagasReq, gs=document.getElementById("garStat"); if(gs) gs.innerHTML = `<span class="pill ${ok?"ok":"bad"}">${ok?"atende":"faltam "+(m.vagasReq-m.vagas)}</span>`;
     const q=m.quadroVagas, quadro = q? garQuadroRows(m).filter(([l])=>!/^Total/.test(l)) : [], simples=quadro.every(([l])=>/^(Comuns|PCD|Idosos|Na frente \(lojas\))$/.test(l));
     const tipos = q? [q.comum!=null?`${q.comum} comuns`:"", q.pcd?`${q.pcd} PCD`:"", q.idoso?`${q.idoso} idosos`:"", q.frente?`${q.frente} na frente`:""].filter(Boolean).join(" · ") : "";
-    setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${tipos? tipos+" · " : ""}${nf(m.vagas/Math.max(1,m.units),2)} por unidade${S.estudo.usarLayout? "" : ` · estimativa ${m.vagasEst}`}</div></div></div>
+    setHTML("garRes", `<div class="mets"><div class="met big"><div class="l">No layout / exigidas</div><div class="v">${m.vagasLay??"—"}<span style="color:var(--muted);font-weight:400"> / ${m.vagasReq}</span></div><div class="s">${tipos? tipos+" · " : ""}${nf(m.vagas/Math.max(1,m.units),2)} por unidade${S.estudo.usarLayout? "" : ` · estimativa ${m.vagasEst}`}</div></div>${garResMet(m)}</div>
       ${quadro.length>1 && !simples? `<table class="tbl">${quadro.map(([l,v])=>`<tr><td>${esc(l)}</td><td>${esc(v)}</td></tr>`).join("")}</table>` : ""}
-      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}`; return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="Ver este pavimento"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).filter(a=>!/^Não couberam/.test(a)).map(a=>`<p class="note" style="color:var(--warn-t)">${esc(a)}</p>`).join("")}`);
+      <table class="tbl">${flo.map(k=>{ const l=m.gar[k]; if(!l) return ""; const np=l.vagas.filter(v=>v.tipo==="pcd").length, ni=l.vagas.filter(v=>v.tipo==="idoso").length; const st=l.ok===false? `<span style="color:var(--bad)">sem rota</span>` : `${l.count} vg${np?` · ${np} PCD`:""}${ni?` · ${ni} id.`:""}${l.met&&l.count&&k!=="ter"? ` · ${nf(l.met.m2v,1)} m²/vg` : ""}`;
+        const pr= k===FLOOR? (l.problemas||[]).filter(p=>p.nivel!=="info") : [], inf=(l.problemas||[]).find(p=>p.nivel==="info"), P=l.modelo==="partido"&&typeof GAR_PARTIDOS!=="undefined"? (GAR_PARTIDOS[l.partido]||{}).nome||"" : "";
+        return `<tr class="${k===FLOOR&&VIEW==="gar"?"pos":""}" data-act="garFl" data-k="${k}" style="cursor:pointer" title="${esc(inf? inf.msg : "Ver este pavimento")}"><td>${nomePav(k).replace(/^./,c=>c.toUpperCase())}${P&&k===FLOOR? `<div class="fsub">${esc(P)} · nota ${l.nota??"—"}</div>` : ""}${pr.map(p=>`<div class="fsub" style="color:var(--${p.nivel==="bad"?"bad":"warn-t"})">${esc(p.msg)}</div>`).join("")}</td><td>${st}</td></tr>` }).join("")}${m.vf&&m.vf.count?`<tr><td>Frente (lojas)</td><td>${m.vf.count} vg</td></tr>`:""}</table>${(m.avisos||[]).filter(a=>!/^Não couberam/.test(a)).map(a=>`<p class="note" style="color:var(--warn-t)">${esc(a)}</p>`).join("")}`);
     const ri=document.getElementById("rampInfo"); if(ri && m.vert){ const V_=m.vert, s0=V_.strips[0], pend=V_.ok?"":" · verifique os avisos";
       ri.textContent = !s0? "" : V_.helix? `helicoidal Ø ${nf(2*V_.helix.Re,1)} m · faixa ${nf(V_.helix.faixa,2)} m · ${nf(V_.helix.incl*100,1)}% no eixo${pend}`
         : V_.elev? `${V_.elev.n} poço${V_.elev.n>1?"s":""} de ${nf(EC_CAB[0]+2*EC_PAREDE,1)} × ${nf(EC_CAB[1]+2*EC_PAREDE,1)} m · ${V_.elev.espera.length} vaga${V_.elev.espera.length>1?"s":""} de espera · saída ${V_.elev.porta==="frente"?"pela frente (de ré)":"pelo fundo"}${pend}`
@@ -165,7 +185,7 @@ STEP_LIVE.projeto = (m, f, fast)=>{
     const mn=document.getElementById("garManN"); if(mn){ const n=Object.keys(S.estudo.off||{}).length+Object.keys(S.estudo.vtipo||{}).length; mn.textContent = n? `${n} marcaç${n>1?"ões":"ão"} manua${n>1?"is":"l"}` : "Sem marcações manuais" }
   }
   if(PSUB==="tipo"){
-    const nomes={esc:"Escada",ant:"Antecâmara / hall",duto:"Dutos",balc:"Balcão",elev:"Elevadores",emerg:"Elev. emergência",shaft:"Shafts",pass:"Acessos",hall:"Hall",tec:"Técnico",lixo:"Lixo / DML",hserv:"Hall de serviço"};
+    const nomes={esc:"Escada",ant:"Antecâmara / hall",hall:"Hall dos elevadores",duto:"Dutos",balc:"Balcão",elev:"Elevadores",emerg:"Elev. emergência",shaft:"Shafts",pass:"Acessos",hall:"Hall",tec:"Técnico",lixo:"Lixo / DML",hserv:"Hall de serviço"};
     const R=m.T.map((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l) return null; const us=l.units.filter(u=>!u.livre); return {i, t, l, us, ef:us.reduce((s,u)=>s+u.area,0)/Math.max(1,t.A), baixo:us.filter(u=>u.area<u.alvo).length} });
     const ok=R.filter(Boolean), baixo=ok.reduce((s,r)=>s+r.baixo,0), ts=document.getElementById("tipoStat");
     if(ts) ts.innerHTML = !ok.length? "" : `<span class="pill ${baixo?"warn":"ok"}">${baixo? baixo+" abaixo do alvo" : "áreas no alvo"}</span>`;
@@ -178,7 +198,7 @@ STEP_LIVE.projeto = (m, f, fast)=>{
         <div class="stack">${Object.entries(K).filter(([k,a])=>a>0.3).map(([k,a])=>`<span title="${nomes[k]||k}" style="width:${a/l.coreA*100}%;background:var(--c-${k})"></span>`).join("")}</div>
         <div class="stackleg">${Object.entries(K).filter(([k,a])=>a>0.3).map(([k,a])=>`<span><i style="background:var(--c-${k})"></i>${nomes[k]||k} ${nf(a,1)} m²</span>`).join("")}</div>
         <table class="tbl">${us.map(u=>`<tr><td>${esc(u.nome)} · alvo ${nf(u.alvo,0)} m²</td><td style="${u.area<u.alvo?"color:var(--bad)":""}">${nf(u.area,1)} m²</td></tr>`).join("")}</table>` }).join(""));
-    setSum("tNuc", tipoSum("nuc")); setSum("tDim", tipoSum("dim"));
+    setSum("tNuc", tipoSum("nuc", m)); setSum("tDim", tipoSum("dim")); nucResLive(m);
     if(ok.length) setSum("tDet", [...new Set(ok.map(r=>`núcleo ${m2(r.l.coreA)}`))].join(" · "));
     projNormasLive(m, fast);
   }
@@ -222,3 +242,22 @@ Object.assign(ACT,{
   andar: b=>{ ANDAR=b.dataset.k; if(VIEW!=="andar") setView("andar"); else { viewbarSegs(window._last.m); redraw2d(); planLegend() } STEP_LIVE.projeto(window._last.m) },
   corte3d: ()=>{ S.corte=ANDAR; save(); setView("3d") },
 });
+
+/* Núcleo de circulação (src/calc/nucleo.js): partido, nota, medidas e problemas em linguagem simples, por torre */
+function nucResLive(m){
+  const el=document.getElementById("nucRes"); if(!el) return;
+  const L=(m.tipo||[]).map((l,i)=>l&&l.nucleo? {i, n:l.nucleo, l} : null).filter(Boolean);
+  if(!L.length){ el.innerHTML=""; return }
+  const nv=n=>n>=85? "ok" : n>=60? "warn" : "bad", mult=L.length>1;
+  el.innerHTML = L.map(({i,n,l})=>{ const d=n.dim||{}, dg=d.degrau||{}, ev=d.elev||{}, pr=n.problemas||[];
+    const med=[`escada ${nf(d.escLarg||1.2,2)} m`, dg.n? `${dg.n} degraus de ${nf(dg.e*100,1)} × ${nf(dg.p*100,0)} cm` : "", d.patamar? `patamar ${nf(d.patamar,2)} m` : "",
+      ev.n? `${ev.n} elevador${ev.n>1?"es":""} de ${ev.cap} pessoas${n.elevNec>ev.n? ` (tráfego pede ${n.elevNec})` : ""}` : "", `${nf(d.L,1)} × ${nf(d.D,1)} m`].filter(Boolean).join(" · ");
+    return `<div class="nr-hd">${mult?`<span class="nr-t">Torre ${i+1}</span>`:""}<b>${esc(n.partidoNome)}</b><span class="pill ${nv(n.nota??100)}">nota ${n.nota??"—"}</span></div>
+      <div class="nr-med">${med}</div>${pr.length? `<ul class="nr-pr">${pr.slice(0,4).map(q=>`<li class="${q.nivel}">${esc(q.msg)}</li>`).join("")}${pr.length>4?`<li class="mais">+ ${pr.length-4}</li>`:""}</ul>` : ""}` }).join("");
+}
+(function nucEstilo(){ if(typeof document==="undefined" || document.getElementById("nucCss")) return; const st=document.createElement("style"); st.id="nucCss";
+  st.textContent=`.nucres{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}.nucres:empty{display:none}.nucres .nr-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.nucres .nr-hd b{font-weight:600}.nucres .nr-hd .pill{margin-left:auto}
+.nucres .nr-t{color:var(--muted);font-size:12px}.nucres .nr-med{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;line-height:1.45}
+.nucres .nr-pr{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:12px}.nucres .nr-pr li{position:relative;padding-left:12px;line-height:1.4}
+.nucres .nr-pr li::before{content:"";position:absolute;left:0;top:.5em;width:6px;height:6px;border-radius:50%;background:var(--warn)}.nucres .nr-pr li.bad::before{background:var(--bad)}.nucres .nr-pr li.mais::before{display:none}`;
+  document.head.appendChild(st) })();

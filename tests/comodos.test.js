@@ -130,27 +130,24 @@ describe('cômodos — funções puras', () => {
   });
 });
 
-describe('escada pelo lance real (núcleo encostado na fachada)', () => {
-  it('a escada fica com 2 lances + parede e a sobra vai para a unidade vizinha', () => {
+describe('núcleo compacto (docs/COMUNS.md §1): a faixa atrás dele até a fachada vai para as unidades', () => {
+  it('escada de 2 lances de 1,20 m e o núcleo retangular; unidades + núcleo + corredor cobrem a laje', () => {
     for (const l of m.tipo) {
-      const esc = l.coreParts.find(c => c.kind === 'esc');
-      expect(esc.area).toBeCloseTo(5.8 * 2.7, 1);      // 5,8 m × (2 × 1,20 + 0,30)
-      expect(l.escSobra).toBeGreaterThan(5);
-      expect(l.coreA).toBeLessThan(A.G.area(l.core) - 5);
-      // unidades + núcleo + corredor cobrem a laje sem sobreposição
+      const esc = l.coreParts.find(c => c.kind === 'esc'), [a, b] = A.G.extent(esc.poly, l.vy);
+      expect(b - a).toBeCloseTo(2 * 1.2 + 0.1 + 0.2, 2);   // 2 lances + bomba + paredes (eixo a eixo)
+      expect(l.core.length).toBe(4);
+      expect(l.coreOut).toBe(l.core);
       const soma = l.units.reduce((s, u) => s + u.area, 0) + A.G.area(l.coreOut) + A.G.area(l.corridor);
       const plate = A.G.area(m.T[m.tipo.indexOf(l)].plate);
       expect(Math.abs(soma - plate) / plate).toBeLessThan(0.01);
     }
   });
-  it('desligado (sem núcleo na fachada) a escada fica igual', () => {
+  it('desligado (sem núcleo na fachada) o contorno é o mesmo do núcleo', () => {
     const B = carregar(); const s = estado(B, { estudo: { fachada: false } }); const mm = B.compute(s);
     for (const l of mm.tipo) { expect(l.escSobra).toBe(0); expect(l.coreOut).toEqual(l.core) }
   });
-  it('a garagem continua com a projeção do núcleo (vagas dos estudos de referência não mudam)', () => {
-    const c = cenarios().find(x => x.arquivo.startsWith('01'));
-    expect(m.vagas).toBe(c.esperado.vagas);
-    for (const l of m.tipo) expect(A.G.area(l.core)).toBeGreaterThan(A.G.area(l.coreOut));
+  it('garagens e térreo usam o mesmo núcleo do tipo (sem reserva atrás da escada)', () => {
+    for (const cs of m.coreSets) { expect(cs.core).toBe(m.tipo[cs.i].core); expect(cs.lay.coreReserva).toEqual([]) }
   });
 });
 

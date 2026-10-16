@@ -139,8 +139,13 @@ function dxfImpl(m){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("SUBSOLO
   m.T.forEach((t,i)=>{ dxfTorre(d,"TORRES",t,2); if(t.plate.length) d.text("TEXTOS",G.centroid(t.plate),1.2,`T${i+1} - ${t.pav} pav`) });
   S.lote.pts.forEach((q,i)=>{ const b=S.lote.pts[(i+1)%S.lote.pts.length]; d.text("COTAS",[(q[0]+b[0])/2,(q[1]+b[1])/2],0.8,`L${i+1} ${nf(G.edgeLen(S.lote.pts,i),2)} m`) });
   return d.out() }
-function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (cs.lay.coreParts||[]).forEach(cp=>d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1)) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
-  lay.vagas.forEach((v,i)=>{ if(v.tipo==="off") return; const L= v.tipo==="pcd"?"VAGAS-PCD": v.tipo==="idoso"?"VAGAS-IDOSO": v.tipo==="faixa"?"FAIXA-PCD":"VAGAS"; d.poly(L,v.poly, v.tipo==="pcd"?5:v.tipo==="idoso"?3:v.tipo==="faixa"?8:4); if(v.tipo!=="faixa") d.text("NUMERACAO",v.c,0.6,String(i+1)) });
+function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (cs.lay.coreFundo||[]).forEach(p=>{ d.poly("DEPOSITO",p,8); d.text("NUCLEO-TEXTOS",G.centroid(p),0.25,"DEPOSITO") }); dxfNucleo(d, cs.lay) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
+  // garagem por partidos: corredores, faixa de pedestres, sobras (depósito / área técnica) e inclinações das rampas
+  (lay.aisles||[]).forEach(a=>d.poly(a.pass? "PASSAGEM-MAO-UNICA" : "CORREDOR",a.poly,8)); (lay.retornos||[]).forEach(p=>d.poly("BOLSAO-RETORNO",p,8));
+  (lay.peds||[]).forEach(p=>{ if(p.poly) d.poly("FAIXA-PEDESTRES",p.poly,5); if(p.cross) d.poly("FAIXA-PEDESTRES",p.cross,5) });
+  (lay.sobras||[]).forEach(o=>{ o.polys.forEach(p=>d.poly(o.tipo==="deposito"? "DEPOSITO" : "AREA-TECNICA",p,8)); d.text("TEXTOS",o.c,0.5,`${o.tipo==="deposito"?"DEPOSITO":o.tipo==="semAcesso"?"SEM ACESSO DE VEICULOS":"AREA TECNICA"} ${nf(o.area,0)} m2`) });
+  (lay.ramps||[]).forEach(r=>{ if(!r.a||!r.b||r.path||r.elev) return; d.text("TEXTOS",[(r.a[0]+r.b[0])/2,(r.a[1]+r.b[1])/2],0.5,`RAMPA ${nf(S.estudo.rampaInc*100,0)}% - TRANSICOES 10%`) });
+  lay.vagas.forEach((v,i)=>{ if(v.tipo==="off") return; const L= v.tipo==="pcd"?"VAGAS-PCD": v.tipo==="idoso"?"VAGAS-IDOSO": v.tipo==="faixa"?"FAIXA-PCD":"VAGAS"; d.poly(L,v.poly, v.tipo==="pcd"?5:v.tipo==="idoso"?3:v.tipo==="faixa"?8:4); if(v.tipo!=="faixa") d.text("NUMERACAO",v.c,0.6, v.tipo==="pcd"? "PCD" : String(v.num||i+1)) });
   return d.out() }
 /* térreo e laje do embasamento com as áreas comuns (src/calc/comuns.js): ambientes, portas, janelas, mobiliário, rota acessível, paisagismo */
 function dxfComuns(m, local){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("EMBASAMENTO",m.emb,5);
@@ -150,9 +155,17 @@ function dxfComuns(m, local){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly
   comunsDxf(d, m, local); return d.out() }
 /* contorno da torre: com pátio (C1), borda e vazios em polilinhas separadas (sem a "ponte" do polígono) */
 function dxfTorre(d, layer, t, col){ if(t.oco){ d.poly(layer,t.oco.pts,col); t.oco.vazios.forEach(v=>d.poly(layer+"-VAZIO",v,col)) } else d.poly(layer,t.plate,col) }
+/* núcleo de circulação no DXF: peças por camada, desenho técnico (lances, degraus, cabines, dutos), portas com folha e arco, nomes */
+function dxfNucleo(d, l){
+  (l.coreParts||[]).forEach(cp=>{ d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1); if(cp.poly.length>2 && !["duto","shaft","tec"].includes(cp.kind)) d.text("NUCLEO-TEXTOS",G.centroid(cp.poly),0.25,cp.nome) });
+  (l.coreLines||[]).forEach(x=>{ if(Array.isArray(x)) d.poly("NUCLEO-DETALHE",x,8,true); else if(x.arrow) d.poly("NUCLEO-DETALHE",x.arrow,8,true); else if(x.txt) d.text("NUCLEO-TEXTOS",x.p,0.2,x.txt) });
+  (l.coreDoors||[]).forEach(dr=>{ if(!dr.sw || !dr.dir) return; const r=Math.hypot(dr.b[0]-dr.a[0],dr.b[1]-dr.a[1]), E=[dr.a[0]+dr.dir[0]*r, dr.a[1]+dr.dir[1]*r];
+    d.poly("NUCLEO-PORTAS",[dr.a,E],2,true); const a0=Math.atan2(dr.b[1]-dr.a[1],dr.b[0]-dr.a[0]), a1=Math.atan2(E[1]-dr.a[1],E[0]-dr.a[0]); let da=a1-a0; while(da>Math.PI) da-=2*Math.PI; while(da<-Math.PI) da+=2*Math.PI;
+    d.poly("NUCLEO-PORTAS",Array.from({length:9},(_,k)=>[dr.a[0]+r*Math.cos(a0+da*k/8), dr.a[1]+r*Math.sin(a0+da*k/8)]),2,true) });
+}
 function dxfTipo(m,i){ const d=DXF(), l=m.tipo[i], t=m.T[i]; dxfTorre(d,"PAVIMENTO",t,7);
   (t.faixas||[]).forEach(f=>{ if(f.plate && f.plate!==t.plate && f.plate.length>2){ const ly=`PAVIMENTO-${t.desenhada?"BLOCO":"RECUADO"}-${f.de}-${f.ate}`; if(f.oco){ d.poly(ly,f.oco.pts,3); f.oco.vazios.forEach(v=>d.poly(ly+"-VAZIO",v,3)) } else d.poly(ly,f.plate,3) } });   // 2.4: andares recuados · C2: blocos da pilha (C3: pátio sem ponte)
-  if(!l) return d.out(); d.poly("NUCLEO",l.coreOut||l.core,1); (l.coreExtra||[]).forEach(p=>d.poly("NUCLEO",p,1)); (l.coreParts||[]).forEach(cp=>d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1)); (l.corrAneis||[l.corridor]).forEach(r=>d.poly("CIRCULACAO",r,8)); (l.hallEnds||[]).forEach(h=>d.poly("CIRCULACAO",h,8));
+  if(!l) return d.out(); d.poly("NUCLEO",l.coreOut||l.core,1); (l.coreExtra||[]).forEach(p=>d.poly("NUCLEO",p,1)); dxfNucleo(d, l); (l.corrAneis||[l.corridor]).forEach(r=>d.poly("CIRCULACAO",r,8)); (l.hallEnds||[]).forEach(h=>d.poly("CIRCULACAO",h,8));
   if(typeof comDxf==="function" && S.comodos && S.comodos.on) comDxf(d, l);   // cômodos: PAREDES, PORTAS, JANELAS, MOBILIARIO, TEXTOS
   l.units.forEach(u=>{ d.poly(u.livre?"LIVRE":"UNIDADES",u.poly,u.livre?8:3); if(u.poly.length){ const c=G.centroid(u.poly); d.text("TEXTOS",c,0.9,u.livre?"livre":u.nome); if(!u.livre) d.text("TEXTOS",[c[0],c[1]-1.3],0.6,`${nf(u.alvo,1)} m2 priv / ${nf(u.area,1)} m2 bruto`) } });
   return d.out() }
@@ -198,7 +211,8 @@ function IFC(m){
             u.com.rooms.forEach((r,k)=>{ if(r.poly.length<3) return; const p=lp(st.p,0); rs.push(add(`IFCSPACE('${ifcGuid()}',$,${str(cod+"-"+String(k+1).padStart(2,"0"))},$,$,${p},${solid(r.poly,2.6)},${str(`${r.longo} - ${nf(r.area,2)} m2`)},.PARTIAL.,.SPACE.,$)`)) });
             if(rs.length) add(`IFCRELAGGREGATES('${ifcGuid()}',$,$,$,${un},(${rs.join(",")}))`);
             comIfcParedes(u,{add,lp,solid,str,guid:ifcGuid,st,cod}) } }) }   // paredes com vãos de porta: IfcOpeningElement + IfcDoor
-      else if(j===t.pav && t.duplexA>1) proxy(st,`Torre ${i+1} - Duplex`,"Cobertura duplex",G.scaleToArea(t.plate,t.duplexA),P.pe);
+      if(j<t.pav){ const ln=m.tipo[i]; if(ln) (ln.coreParts||[]).filter(cp=>cp.poly.length>2 && cp.kind!=="tec").forEach((cp,q)=>space(st,`T${i+1}-${String(j+1).padStart(2,"0")}-N${String(q+1).padStart(2,"0")}`,`Nucleo - ${cp.nome} - ${nf(cp.area,2)} m2`,cp.poly,P.pe-0.2)) }   // núcleo: um IfcSpace por peça
+      if(j>=t.pav && j===t.pav && t.duplexA>1) proxy(st,`Torre ${i+1} - Duplex`,"Cobertura duplex",G.scaleToArea(t.plate,t.duplexA),P.pe);
     });
   }
   add(`IFCRELAGGREGATES('${ifcGuid()}',$,$,$,${bld},(${storeys.map(s=>s.s).join(",")}))`);
