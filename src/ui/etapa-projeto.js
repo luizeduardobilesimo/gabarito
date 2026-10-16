@@ -221,9 +221,10 @@ function garLegExtra(sw){ const m=window._last&&window._last.m, q=m&&m.quadroVag
 let RS=null;
 function rsHTML(){ const base=RS.cur? RS.cur.vagas : 0;
   // uma opção por tipo de rampa (o melhor acesso de cada tipo), da que rende mais para a que rende menos
+  const angTxt=c=>{ const a=c.angulo!==undefined? c.angulo : S.estudo.angulo; return a=="melhor"? "" : ` · vagas a ${a}°` };
   const onde=c=> c.lado!=null && S.lote.front.length>1? `L${c.lado+1}${c.lado===acPrincipal(S)?" (principal)":""} · ${pct(c.acessoVei,0)} do lado` : `${pct(c.acessoVei,0)} da frente`;
-  return RS.list.map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${esc(RAMPA_TIPOS[c.rampaTipo]||c.rampaTipo)}</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">${k===0?"Mais vagas · ":""}${c.atual?"em uso · ":""}acesso ${onde(c)}${c.rampaTipo==="elevador"&&c.cap? ` · ${c.cap} carros/h`:""}${c.rampaTipo==="elevador"&&c.fila!=null&&isFinite(c.fila)? ` · fila ${c.fila}`:""}${c.ok?"":" · não cabe sem pendências"}</div>${c.atual?"":`<button class="btn sm${k===0?"":" ghost"}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
-    + `<div class="row sb"><span class="note">Atual: ${base} vagas ${INFO("Cada tipo de rampa é avaliado por si: a lista mostra a melhor posição do acesso para cada tipo (retas, alternadas, helicoidal, em L e elevador de carros). Todas as combinações refazem os pavimentos com rotas verificadas (análise rápida); a melhor de cada tipo é confirmada com o cálculo completo.","o estudo de acesso")}</span><button class="btn sm ghost" data-act="rsClose">Fechar</button></div>` }
+  return RS.list.map((c,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${esc(RAMPA_TIPOS[c.rampaTipo]||c.rampaTipo)}</b><span class="pill ${c.vagas>base?"ok":""}">${c.vagas} vg (${c.vagas-base>=0?"+":""}${c.vagas-base})</span></div><div class="note">${k===0?"Mais vagas · ":""}${c.atual?"em uso · ":""}acesso ${onde(c)}${angTxt(c)}${c.rampaTipo==="elevador"&&c.cap? ` · ${c.cap} carros/h`:""}${c.rampaTipo==="elevador"&&c.fila!=null&&isFinite(c.fila)? ` · fila ${c.fila}`:""}${c.ok?"":" · não cabe sem pendências"}</div>${c.atual?"":`<button class="btn sm${k===0?"":" ghost"}" data-act="rsApply" data-i="${k}">Aplicar</button>`}</div>`).join("")
+    + `<div class="row sb"><span class="note">Atual: ${base} vagas ${INFO("Cada tipo de rampa é avaliado por si: a lista mostra a melhor posição do acesso para cada tipo (retas, alternadas, helicoidal, em L e elevador de carros). Na melhor posição de cada tipo também é testado o ângulo das vagas (90°, 60° e 45°). Todas as combinações refazem os pavimentos com rotas verificadas (análise rápida); a melhor de cada tipo é confirmada com o cálculo completo.","o estudo de acesso")}</span><button class="btn sm ghost" data-act="rsClose">Fechar</button></div>` }
 Object.assign(ACT,{
   garFl: b=>{ FLOOR=b.dataset.k; if(VIEW!=="gar") setView("gar"); else { viewbarSegs(window._last.m); fit2d() } STEP_LIVE.projeto(window._last.m) },
   rampAuto: ()=>{ S.estudo.rampa=null; RAMPMOVE=false; renderTab(); toast("Rampa no automático (junto ao acesso de veículos)") },
@@ -232,15 +233,16 @@ Object.assign(ACT,{
   rsClose: ()=>{ RS=null; setHTML("rsList",""); const st=document.getElementById("rsStat"); if(st) st.textContent="" },
   resetOff: b=>{ if(b && !b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on"); setTimeout(()=>{ if(b.isConnected){ delete b.dataset.arm; b.textContent="Desfazer marcações"; b.classList.remove("on") } },4000); return }
     S.estudo.off={}; S.estudo.vtipo={}; update(); toast("Marcações manuais desfeitas") },
-  acessoStudy: ()=>{ const list=acessoCandidatos(S), st=document.getElementById("rsStat"); RS={list:[], cur:{vagas:window._last.m.vagasLay||0}}; let i=0;
+  acessoStudy: ()=>{ const list=acessoCandidatos(S), st=document.getElementById("rsStat"); RS={list:[], cur:{vagas:window._last.m.vagasLay||0}}; let i=0, fase2=false;
     const step=()=>{ const t0=performance.now(); while(i<list.length && performance.now()-t0<120){ const c=list[i++]; RS.list.push({...c, ...acessoAvalia(S,c)}) }
       const s_=document.getElementById("rsStat"); if(s_) s_.textContent=`analisando ${i}/${list.length}…`;
+      if(i>=list.length && !fase2){ fase2=true; list.push(...acessoVariantesAngulo(RS.list, S.estudo.angulo)) }   // 2ª fase: ângulo das vagas na melhor posição de cada tipo
       if(i<list.length) setTimeout(step,0); else { const top=acessoTopoPorTipo(RS.list,1); fino(top,0) } };
-    // a melhor de cada tipo de rampa é refeita com o cálculo completo (o mesmo do projeto); a lista final traz o melhor de cada tipo
+    // a melhor de cada tipo de rampa (já com o melhor ângulo das vagas) é refeita com o cálculo completo (o mesmo do projeto); a lista final traz o melhor de cada tipo
     const fino=(top,k)=>{ const s_=document.getElementById("rsStat"); if(k<top.length){ if(s_) s_.textContent=`confirmando ${k+1}/${top.length} com o cálculo completo…`; setTimeout(()=>{ const c=top[k]; Object.assign(c, acessoAvalia(S,c,true), {fino:true}); fino(top,k+1) },0); return }
       const n=list.length; RS.list=acessoMelhorPorTipo(RS.list); if(s_) s_.textContent=`${n} combinações analisadas`; const el=document.getElementById("rsList"); if(el) el.innerHTML=rsHTML() };
     step() },
-  rsApply: b=>{ const c=RS.list[+b.dataset.i]; S.lote.acessoVei=c.acessoVei; S.estudo.rampaTipo=c.rampaTipo; S.estudo.rampa=null; if(c.ladoVei!==undefined) S.lote.ladoVei=c.ladoVei; RS=null; renderTab(); setView("gar"); toast(c.lado!=null && S.lote.front.length>1? `Acesso pela L${c.lado+1} e rampas aplicados` : "Acesso e rampas aplicados") },
+  rsApply: b=>{ const c=RS.list[+b.dataset.i]; S.lote.acessoVei=c.acessoVei; S.estudo.rampaTipo=c.rampaTipo; S.estudo.rampa=null; if(c.angulo!==undefined) S.estudo.angulo=String(c.angulo); if(c.ladoVei!==undefined) S.lote.ladoVei=c.ladoVei; RS=null; renderTab(); setView("gar"); toast(c.lado!=null && S.lote.front.length>1? `Acesso pela L${c.lado+1} e rampas aplicados` : "Acesso e rampas aplicados") },
   andar: b=>{ ANDAR=b.dataset.k; if(VIEW!=="andar") setView("andar"); else { viewbarSegs(window._last.m); redraw2d(); planLegend() } STEP_LIVE.projeto(window._last.m) },
   corte3d: ()=>{ S.corte=ANDAR; save(); setView("3d") },
 });

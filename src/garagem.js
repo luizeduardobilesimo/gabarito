@@ -770,8 +770,15 @@ function acessoMelhorPorTipo(list){
   const por={}; list.forEach(c=>{ (por[c.rampaTipo]=por[c.rampaTipo]||[]).push(c) });
   return acessoOrdena(Object.values(por).map(l=>acessoOrdena(l.some(c=>c.fino)? l.filter(c=>c.fino) : l)[0]));
 }
+/* variantes do ÂNGULO das vagas (90°, 60°, 45°) para a melhor posição de cada tipo de rampa: o ângulo também é avaliado por tipo.
+   `atual` = estudo.angulo em uso (esse já foi avaliado no candidato-base) */
+function acessoVariantesAngulo(list, atual){
+  const out=[]; acessoMelhorPorTipo(list).forEach(c=>[90,60,45].forEach(a=>{ if(String(a)===String(atual)) return;
+    const {vagas,ok,warn,fila,cap,fino,atual:_a,...base}=c; out.push({...base, angulo:a}) }));
+  return out;
+}
 function acessoAvalia(st, c, full){
-  const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null; if(c.ladoVei!==undefined) s.lote.ladoVei=c.ladoVei;
+  const s=clone(st); s.lote.acessoVei=c.acessoVei; s.estudo.rampaTipo=c.rampaTipo; s.estudo.rampa=null; if(c.angulo!==undefined) s.estudo.angulo=String(c.angulo); if(c.ladoVei!==undefined) s.lote.ladoVei=c.ladoVei;
   const m=compute(s, full? {} : {quick:true});
   const ec=m.elevCarros;
   return {vagas:m.vagasLay||0, ok:m.vert.ok && Object.values(m.gar||{}).every(l=>!l||l.ok!==false) && (!ec || ec.ok), warn:m.vert.warn.length+(ec? ec.avisos.length : 0),

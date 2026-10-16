@@ -164,6 +164,22 @@ describe('o melhor acesso de cada tipo de rampa', () => {
   });
 });
 
+describe('vagas da frente × entrada de pedestres', () => {
+  it('nenhuma vaga da frente fica no caminho até a clausura (acessos de pedestres e veículos juntos, na ponta)', T, () => {
+    const st = estado(A, { lote: lote(45, 45, [0], { acessoPed: 0.85, acessoVei: 0.85 }), produto: { torres: [{ pav: 12 }], subsolos: 2, vagasFrente: true } });
+    const m = A.compute(st), C = m.comuns, vf = m.vf.vagas;
+    expect(C.calcada.length).toBeGreaterThan(0);
+    vf.forEach(v => C.calcada.forEach(p => expect(A.garAreaInter(v.poly, p)).toBeLessThan(0.1)));
+    expect(m.vfTodas.length).toBeGreaterThan(vf.length);            // a vaga que invadia o caminho saiu
+    expect(m.vf.count).toBe(vf.length);
+    expect(m.vagasLay).toBe(Object.values(m.gar).reduce((s, l) => s + (l ? l.count : 0), 0) + m.vf.count);   // o total acompanha
+  });
+  it('com o acesso no meio nada muda: as vagas da frente continuam todas', T, () => {
+    const st = estado(A, { lote: lote(45, 45, [0], { acessoPed: 0.3, acessoVei: 0.8 }), produto: { torres: [{ pav: 12 }], subsolos: 2, vagasFrente: true } });
+    const m = A.compute(st); expect(m.vf.count).toBe((m.vfTodas || m.vf.vagas).length);
+  });
+});
+
 describe('funções puras', () => {
   it('acSubRect tira o retângulo e devolve só o que sobra', () => {
     const q = [[0, 0], [10, 0], [10, 10], [0, 10]];

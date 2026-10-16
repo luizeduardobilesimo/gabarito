@@ -192,6 +192,9 @@ if(_acessoPagina) ACT.acessoStudy = async b=>{
   try{
     if(a.cancelado) throw new Error("cancelado");
     for(let i=0;i<list.length;i++){ stat(`analisando ${i+1}/${list.length}…`); const r=await a.job.call("acessoAvalia",[base,list[i],false]); RS.list.push({...list[i], ...r}) }
+    // 2ª fase: ângulo das vagas (90°, 60°, 45°) na melhor posição de cada tipo de rampa
+    const var2=acessoVariantesAngulo(RS.list, base.estudo.angulo);
+    for(let i=0;i<var2.length;i++){ stat(`ângulo das vagas ${i+1}/${var2.length}…`); const r=await a.job.call("acessoAvalia",[base,var2[i],false]); RS.list.push({...var2[i], ...r}) }
     const top=acessoTopoPorTipo(RS.list,1);   // a melhor de cada tipo de rampa vai para o cálculo completo
     for(let k=0;k<top.length;k++){ stat(`confirmando ${k+1}/${top.length} com o cálculo completo…`); const c=top[k]; Object.assign(c, await a.job.call("acessoAvalia",[base,c,true]), {fino:true}) }
     RS.list=acessoMelhorPorTipo(RS.list);     // e a lista final traz o melhor de cada tipo

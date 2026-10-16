@@ -149,13 +149,13 @@ function compute(st, opt={}){
     else m.vagas = m.vagasEst + m.vf.count;
   };
   garSec(); m.vagasEst += m.vf.count;
-  m.lzLay = lazerLayout(st, m, opt);
+  m.lzLay = lazerLayout(st, m, opt); vfAjusta(m);
   // se o lazer do térreo não coube, o hall cresce (a garagem do térreo recua) e tenta de novo
   //  (com o planejador de áreas comuns, passos menores: ele encosta tudo nas galerias e o que sobra vira área livre)
   const lzPasso = m.comuns? 1.0 : 1.6, lzVoltas = m.comuns? 4 : 3;
   const lzMiss=()=>m.lzLay.miss.some(x=>(x.local||"terreo")==="terreo" && !x.desc);
   const lzRefaz=x=>{ m.ter=terreoZones(st, m, m.lz, x); areasFin(st, m); if(m.sacBal){ m.constr+=m.sacBal; m.privRes+=m.sacBal; m.priv+=m.sacBal }
-    garSec(); m.vagasEst += m.vf.count; m.lzLay = lazerLayout(st, m, opt) };
+    garSec(); m.vagasEst += m.vf.count; m.lzLay = lazerLayout(st, m, opt); vfAjusta(m) };
   let lzExtra=0;
   for(let k=0; k<lzVoltas && P.garTerOn && lzMiss(); k++){
     const falta=m.lzLay.miss.filter(x=>(x.local||"terreo")==="terreo" && !x.desc).reduce((s,x)=>s+(+x.area||0),0);
@@ -172,6 +172,20 @@ function compute(st, opt={}){
   m.custosExtra = m.custosExtra || [];
   runHooks("compute", m, st, opt);
   return m;
+}
+/* as vagas da frente (uso comercial) nunca ficam no caminho de pedestres até a clausura nem sobre lixo, medidores e gás do recuo.
+   Elas são lançadas ANTES do planejador de áreas comuns, que é quem decide onde a entrada de pedestres realmente fica (a clausura sai do
+   ponto do acesso quando o acesso de veículos ocupa o lugar); por isso a conferência vem depois, sobre a lista completa guardada em m.vfTodas. */
+function vfAjusta(m){
+  if(!m.vf || !m.vf.vagas) return;
+  if(!m.vfTodas) m.vfTodas=m.vf.vagas;
+  const C=m.comuns; if(!C) return;
+  const cal=(C.calcada||[]).filter(p=>p&&p.length>2), rec=(C.amb||[]).filter(a=>a.recuo && a.poly && a.poly.length>2).map(a=>a.poly);
+  const keep=m.vfTodas.filter(v=>!cal.some(p=>garAreaInter(v.poly,p)>0.1) && !rec.some(p=>garAreaInter(v.poly,p)>0.8)), n=m.vf.count-keep.length;
+  if(!n) return;
+  m.vf={vagas:keep, count:keep.length};
+  if(isFinite(m.vagasLay)) m.vagasLay-=n;
+  m.vagas-=n; m.vagasEst-=n;
 }
 function frontStalls(st, m){ // vagas externas na frente (uso comercial), perpendiculares à rua
   const E=st.estudo, L=st.lote.pts, ac=m.acesso, i=ac.edge, a=L[i], b=L[(i+1)%L.length], len=Math.hypot(b[0]-a[0],b[1]-a[1]); if(len<6) return {vagas:[],count:0};
