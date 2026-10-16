@@ -594,7 +594,7 @@ function comunsTerreo(st, m, prog){
   (m.vf&&m.vf.vagas||[]).forEach(v=>cmnPinta(g, v.poly, CO, x=>x===CE));
   const alvos=[];
   cores.forEach(cs=>{ const lay=cs.lay||{}, nuc=lay.nucleo;
-    cmnPinta(g, cs.core, CO); (lay.coreExtra||[]).forEach(p=>cmnPinta(g,p,CO));
+    cmnPinta(g, cs.core, CO); [...(lay.coreExtra||[]), ...(lay.coreFundo||[])].forEach(p=>cmnPinta(g,p,CO));   // coreFundo: depósito atrás do núcleo (núcleo novo)
     const set=new Set();
     if(cs.lobby && cs.lobby.length) cmnPinta(g, cs.lobby, CA);
     else if(nuc && Array.isArray(nuc.portas)) nuc.portas.filter(p=>p.tipo!=="servico").forEach(p=>{ const c=p.p||p; cmnPinta(g, G.rect(ux,vy,G.dot(c,ux)-0.6,G.dot(c,vy)-0.6,1.2,1.2), CA, v=>v!==CO) });
@@ -737,10 +737,14 @@ function comunsTerreo(st, m, prog){
   amb.forEach(f=>{ if(f.k==="hall"||f.k==="clausura"||!f.portas||!f.portas.length) return; const pd=f.portas[f.portas.length>1&&f.k==="copa"? 1 : 0]; if(!pd) return;
     const pm=[(pd.p0[0]+pd.p1[0])/2-pd.n[0]*0.3, (pd.p0[1]+pd.p1[1])/2-pd.n[1]*0.3], q=g.U(pm), ti=Math.floor((q[0]-g.u0)/res), tj=Math.floor((q[1]-g.v0)/res), kt=tj*g.nx+ti;
     const p=cmnCaminho(g, fonteHall, k=>k===kt, passa, null); f.rotaOk=!!p || fonteHall(kt); if(p && CMN_CAT[f.k].grupo==="lazer") rota.push({para:f.nome, pts:cmnPolilinha(g,p), amb:f.id}) });
+  // fundo do hall sem programa (área que a garagem do térreo pode ter de volta): além do ambiente mais fundo + uma galeria
+  let folgaFundoA=0;
+  if(T.gar && T.gar.length && T.d2!=null && amb.length){ const vMax=Math.max(...amb.map(f=>g.v0+(f.r.j+f.r.h)*res)), v0=vMax+Math.max(1.8, +C.galeria||1.5);
+    if(T.d2-v0>=3) folgaFundoA=(T.hallBand||[]).reduce((s,p)=>s+G.area(G.band(p, vy, v0, T.d2)),0) }
   // circulação desenhada
   const circ=cmnRetangulos(g, v=>v===CC).map(r=>cmnRetPoly(g,r));
   const hallExt=cmnRetangulos(g, v=>v===CH).map(r=>cmnRetPoly(g,r));
-  return {g, amb, falta, avisos, circ, hallExt, rota, luz, ligacoes, ent, ancora, ancServ, estar, sobra:sobra.filter(x=>x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), reserva:sobra.filter(x=>!x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), sobraA:sobra.reduce((s,x)=>s+x.A,0), fCl, fPt, fHall, uPed, uVei, veiFrente};
+  return {g, amb, falta, avisos, circ, hallExt, rota, luz, ligacoes, ent, ancora, ancServ, estar, folgaFundoA, sobra:sobra.filter(x=>x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), reserva:sobra.filter(x=>!x.toca).flatMap(x=>x.rets.map(r=>cmnRetPoly(g,r))), sobraA:sobra.reduce((s,x)=>s+x.A,0), fCl, fPt, fHall, uPed, uVei, veiFrente};
 }
 function cmnRetangulosDe(g, cells){ const c=new Int16Array(g.nx*g.ny); cells.forEach(k=>c[k]=1); return cmnRetangulos({nx:g.nx, ny:g.ny, c}, v=>v===1) }
 function cmnMotivoFalta(a, g){ const c=CMN_CAT[a.k]; return `pede ${cmnNf(a.A,0)} m² com ${cmnNf(c.d,1)} m de largura mínima e porta para a circulação` }
@@ -989,7 +993,7 @@ function comunsCalc(st, m){
   const rota=[...((TT&&TT.rota)||[]).map(r=>({...r, local:"terreo"})), ...((LJ&&LJ.rota)||[]).map(r=>({...r, local:"emb"}))];
   const out={ amb, falta, rota, prog,
     circ:{ terreo:TT? TT.circ : [], hall:TT? TT.hallExt : [], emb:LJ? LJ.caminhos : [], pav:PV? PV.circ : [], cob:CB? CB.circ : [] },
-    sobra:TT? TT.sobra : [], reserva:TT? TT.reserva : [], sobraA:TT? TT.sobraA : 0, estar:TT? TT.estar.map(e=>({k:e.k, nome:e.nome, area:e.area, poly:e.poly, moveis:e.moveis})) : [],
+    folgaFundoA:TT? TT.folgaFundoA : 0, sobra:TT? TT.sobra : [], reserva:TT? TT.reserva : [], sobraA:TT? TT.sobraA : 0, estar:TT? TT.estar.map(e=>({k:e.k, nome:e.nome, area:e.area, poly:e.poly, moveis:e.moveis})) : [],
     verde:{ terreo:TR? TR.verde : [], emb:LJ? LJ.verde : [] }, arvores:{ terreo:TR? TR.arvores : [], emb:LJ? LJ.arvores : [] },
     calcada:TR? TR.calcada : [], acessosLaje:LJ? LJ.acessos : [], ducha:LJ&&LJ.pool? LJ.pool.ducha : null,
     entrada: TT&&TT.fCl? {portao:TT.fCl.portas&&TT.fCl.portas[0]} : null,

@@ -23,6 +23,7 @@ const ESTUDOS = {
   duas: { S: { lote: { pts: [[0, 0], [48, 0], [48, 70], [0, 70]], front: [0], principal: 0, rec: [{}, {}, {}, {}], acessoPed: 0.25, acessoVei: 0.8 },
     produto: { torres: [{ pav: 14 }, { pav: 14 }], subsolos: 2, garAcima: 0, lojaTerreo: 0, garTerOn: true, lazer: { hall: 0, itens: LZ_CHEIO.slice(0, 9) } } } },
   esquina: { S: cen('03-esquina.json') },
+  elevada: { S: { produto: { torres: [{ pav: 13 }, { pav: 13 }], subsolos: 0, garAcima: 3 } } },   // garagens elevadas: rampas que sobem saem do térreo
 };
 (async () => {
   const html = path.resolve(arg('--html', path.join(ROOT, 'test.html'))), out = path.resolve(arg('--out', path.join(ROOT, 'shots', 'comuns')));

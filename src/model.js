@@ -151,12 +151,19 @@ function compute(st, opt={}){
   garSec(); m.vagasEst += m.vf.count;
   m.lzLay = lazerLayout(st, m, opt);
   // se o lazer do térreo não coube, o hall cresce (a garagem do térreo recua) e tenta de novo
-  for(let k=0; k<3 && P.garTerOn && m.lzLay.miss.some(x=>(x.local||"terreo")==="terreo" && !x.desc); k++){
+  //  (com o planejador de áreas comuns, passos menores: ele encosta tudo nas galerias e o que sobra vira área livre)
+  const lzPasso = m.comuns? 1.0 : 1.6, lzVoltas = m.comuns? 4 : 3;
+  const lzMiss=()=>m.lzLay.miss.some(x=>(x.local||"terreo")==="terreo" && !x.desc);
+  const lzRefaz=x=>{ m.ter=terreoZones(st, m, m.lz, x); areasFin(st, m); if(m.sacBal){ m.constr+=m.sacBal; m.privRes+=m.sacBal; m.priv+=m.sacBal }
+    garSec(); m.vagasEst += m.vf.count; m.lzLay = lazerLayout(st, m, opt) };
+  let lzExtra=0;
+  for(let k=0; k<lzVoltas && P.garTerOn && lzMiss(); k++){
     const falta=m.lzLay.miss.filter(x=>(x.local||"terreo")==="terreo" && !x.desc).reduce((s,x)=>s+(+x.area||0),0);
-    m.ter=terreoZones(st, m, m.lz, falta*1.6*(k+1)); areasFin(st, m); if(m.sacBal){ m.constr+=m.sacBal; m.privRes+=m.sacBal; m.priv+=m.sacBal }
-    garSec(); m.vagasEst += m.vf.count;
-    m.lzLay = lazerLayout(st, m, opt);
+    lzExtra=falta*lzPasso*(k+1); lzRefaz(lzExtra);
   }
+  // o planejador deixou vazio o fundo do hall: devolve essa faixa à garagem do térreo (volta atrás se algo deixar de caber)
+  const lzRed=()=>m.comuns? m.comuns.amb.filter(a=>a.reduzido).length : 0;
+  if(m.comuns && P.garTerOn && (m.comuns.folgaFundoA||0)>=40 && !lzMiss()){ const x0=lzExtra, r0=lzRed(); lzRefaz(x0 - m.comuns.folgaFundoA); if(lzMiss() || !m.comuns || lzRed()>r0) lzRefaz(x0) }
   // avisos do térreo e da circulação de veículos
   const T=m.ter; m.avisos=[...(T.warn||[]), ...m.vert.warn, ...(typeof torOcupaAvisos==="function"? torOcupaAvisos(st, m) : [])];
   if(m.gar) Object.entries(m.gar).forEach(([k,l])=>{ if(l && l.ok===false) m.avisos.push(`No ${nomePav(k)}, os carros não conseguem ir da rampa até a circulação — mude o acesso ou o tipo de rampa (use “Encontrar o melhor acesso”).`) });

@@ -124,7 +124,7 @@ function lzDeComuns(st, m, C){
     else lst.push({poly:a.poly, item:item(a), ix:a.ix}) });
   // não coube: itens do lazer (pelo índice) e, para o hall crescer, o apoio coberto do térreo
   C.falta.forEach(a=>{ if(a.ix!=null){ if(!out.missIx.includes(a.ix) && it[a.ix] && !(a.k==="deck" && C.amb.some(x=>x.deck && x.deck.ix===a.ix))){ out.missIx.push(a.ix); out.miss.push(it[a.ix]) } }
-    else if(a.local==="terreo" && !a.desc && CMN_CAT[a.k] && CMN_CAT[a.k].onde!=="recuo") out.miss.push({nome:a.nome, area:a.A, local:"terreo", apoio:true}) });
+    else if(a.local==="terreo" && !a.desc && a.nivel!=="warn" && CMN_CAT[a.k] && CMN_CAT[a.k].onde!=="recuo") out.miss.push({nome:a.nome, area:a.A, local:"terreo", apoio:true}) });
   return out;
 }
 function lazerPack(st, m){
