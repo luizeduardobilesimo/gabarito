@@ -81,7 +81,7 @@ describe('otimizador: margem s/ VGV, hLim, eficiência global e V/C', () => {
   it('objetivo margem ordena pela margem s/ VGV (a convenção da Fase A)', async () => {
     const B = A, st = estado(B, {}), m = B.compute(st);
     expect(B.OBJ.margem[0]).toBe('Margem s/ VGV');
-    const o = await B.otimizar({ ...opts, obj: 'margem', mc: false }, null, null, { st, m });
+    const o = await B.otimizar({ ...opts, obj: 'margem', mc: false, ciclo: false }, null, null, { st, m });   // sem a conferência final (completa): o teste compara com um compute rápido
     expect(o.res.length).toBeGreaterThan(1);
     for (let i = 1; i < o.res.length; i++) expect(o.res[i - 1].margem).toBeGreaterThanOrEqual(o.res[i].margem);
     const r0 = o.res[0], s2 = estado(B, {}); B.aplicarOtim(r0, s2);
