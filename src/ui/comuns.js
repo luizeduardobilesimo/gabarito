@@ -124,7 +124,7 @@ function cmnLive(m){
   if(!C){ res.innerHTML=`<p class="note">${S.comuns&&S.comuns.on===false? "Planta simplificada: o lazer entra como blocos no térreo." : "Sem embasamento para planejar."}</p>`; setHTML("cmnPb",""); setHTML("cmnProg",""); return }
   const nv=cmnNivel(C.nota), nb=C.problemas.filter(p=>p.nivel==="bad").length, nw=C.problemas.length-nb;
   const PART={perimetro:"ambientes nas paredes", galeria:"galeria central", neutro:"galerias", centro:"galerias", fachada:"galeria junto à fachada"};
-  res.innerHTML=`<div class="row sb" style="flex-wrap:nowrap"><b>Nota ${C.nota}</b><span class="pill ${nv}">${nb? `${nb} grave${nb>1?"s":""}` : nw? `${nw} atenção` : "sem problemas"}</span></div>
+  res.innerHTML=`<div class="row sb" style="flex-wrap:nowrap"><b>Nota ${C.nota}</b><span class="pill ${nb? "bad" : nw? "warn" : "ok"}">${nb? `${nb} grave${nb>1?"s":""}` : nw? `${nw} atenção` : "sem problemas"}</span></div>
     <div class="cmn-sub">${C.amb.length} ambientes${C.partido&&PART[C.partido]? ` · ${PART[C.partido]}` : ""}${C.falta.length? ` · <span style="color:var(--bad)">${C.falta.length} não coube${C.falta.length>1?"ram":""}</span>` : ""}</div>`;
   const MX=4;
   setHTML("cmnPb", C.problemas.slice(0,MX).map(p=>`<div class="cmn-pb"><span class="dot ${p.nivel==="bad"?"bad":"warn"}"></span><span>${esc(p.msg)}</span></div>`).join("") + (C.problemas.length>MX? `<div class="cmn-pb mais">e mais ${C.problemas.length-MX}</div>` : ""));

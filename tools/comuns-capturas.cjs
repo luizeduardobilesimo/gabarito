@@ -60,6 +60,10 @@ const ESTUDOS = {
       const tag = `${md}-${th}-${nome}`;
       if (md === 'm') { await p.evaluate(() => { try { folhaSet('espiada') } catch (e) {} }); await p.waitForTimeout(500) }
       await p.screenshot({ path: path.join(out, `${tag}-terreo.png`) });
+      if (md === 'm') {   // celular: a folha cheia com a seção "Térreo e áreas comuns" aberta
+        await p.evaluate(() => { try { folhaSet('cheia') } catch (e) {} const d = document.querySelector('#tabbody details[data-key="comuns"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'start' }) } });
+        await p.waitForTimeout(500); await p.screenshot({ path: path.join(out, `${tag}-secao.png`) });
+        await p.evaluate(() => { try { folhaSet('espiada') } catch (e) {} }); await p.waitForTimeout(300) }
       if (zoom && md === 'd') {
         // recorte ampliado: a planta do embasamento enche o palco
         await p.evaluate(() => { const m = window._last.m, r = c2.getBoundingClientRect(); VS.andar = fitView([m.emb], r.width, r.height, 1.04); redraw2d() });

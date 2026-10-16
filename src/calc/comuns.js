@@ -858,7 +858,7 @@ function comunsTerreo(st, m, prog){
     // fora o retângulo do estar, o resto deste vão não entra de novo na busca
     for(let j=R0.j;j<R0.j+R0.h;j++) for(let i=R0.i;i<R0.i+R0.w;i++){ const k=j*g.nx+i; if(g.c[k]===CC) g.c[k]=CZ+1 }
     const A_=R0.w*R0.h*res*res, ld= cego.findIndex(x=>x)>=0? cego.findIndex(x=>x) : (r.w>=r.h? 2 : 0);
-    estar.push({k:"estar", nome: A_>=60? "Área livre coberta" : "Estar", area:A_, poly:cmnRetPoly(g,R0), r, toca:true, noHall:true, moveis:cmnMoveis(g, {k:"estar", r}, ld, 3)}) }
+    estar.push({k:"estar", nome: A_>=60? "Estar e convivência" : "Estar", area:A_, poly:cmnRetPoly(g,R0), r, toca:true, noHall:true, moveis:cmnMoveis(g, {k:"estar", r}, ld, 3)}) }
   for(let k=0;k<g.c.length;k++) if(g.c[k]===CZ+1) g.c[k]=CC;
   // portas, janelas e mobiliário
   amb.forEach(f=>{

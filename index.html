@@ -7527,7 +7527,7 @@ function comunsTerreo(st, m, prog){
     // fora o retângulo do estar, o resto deste vão não entra de novo na busca
     for(let j=R0.j;j<R0.j+R0.h;j++) for(let i=R0.i;i<R0.i+R0.w;i++){ const k=j*g.nx+i; if(g.c[k]===CC) g.c[k]=CZ+1 }
     const A_=R0.w*R0.h*res*res, ld= cego.findIndex(x=>x)>=0? cego.findIndex(x=>x) : (r.w>=r.h? 2 : 0);
-    estar.push({k:"estar", nome: A_>=60? "Área livre coberta" : "Estar", area:A_, poly:cmnRetPoly(g,R0), r, toca:true, noHall:true, moveis:cmnMoveis(g, {k:"estar", r}, ld, 3)}) }
+    estar.push({k:"estar", nome: A_>=60? "Estar e convivência" : "Estar", area:A_, poly:cmnRetPoly(g,R0), r, toca:true, noHall:true, moveis:cmnMoveis(g, {k:"estar", r}, ld, 3)}) }
   for(let k=0;k<g.c.length;k++) if(g.c[k]===CZ+1) g.c[k]=CC;
   // portas, janelas e mobiliário
   amb.forEach(f=>{
@@ -7799,8 +7799,24 @@ function cmnDistPolys(a, b){ let d=1e9; const ds=(p,q,r)=>{ const dx=r[0]-q[0], 
 function cmnTocaFachada(C, f){ const g=C.gT; if(!g) return false; const ct=cmnContato(g, f.r, C.TT.luz, null); return ct.luz>0 }
 
 /* ---------- entrada: m.comuns ---------- */
+/* cache por assinatura: tudo o que o planejador lê do estado e do modelo (o recálculo com a mesma geometria é imediato) */
+const CMN_CACHE=new Map();
+function cmnChave(st, m){
+  const T=m.ter||{}, L=st.lote||{};
+  const rep=(k,v)=> typeof v==="number"? Math.round(v*100)/100 : v;
+  return JSON.stringify([st.comuns, st.produto.lazer, (st.garagem||{}).bici, L.pts, L.front, L.principal, L.norte, L.lat, cmnUnidades(m), m.emb, m.tGar,
+    [T.lat, T.fd, T.hallBand, T.pass, T.cols, T.colsGar, T.walk, T.drive, T.driveRua, T.drive0&&T.drive0.dv, T.veiReal, T.dmn, T.d2, T.gar, T.lmn, T.lmx],
+    m.acesso, (m.vf&&m.vf.vagas||[]).map(v=>v.poly), (m.coreSets||[]).map(cs=>[cs.i, cs.core, cs.lobby, cs.lay&&cs.lay.coreExtra, cs.lay&&cs.lay.coreFundo, cs.lay&&cs.lay.ux, cs.lay&&cs.lay.vy, cs.lay&&cs.lay.nucleo&&cs.lay.nucleo.portas]),
+    (m.T||[]).map(t=>[t.plate, t.oco]), ((m.vert&&m.vert.floors&&m.vert.floors.ter&&m.vert.floors.ter.ramps)||[]).map(r=>r.poly)], rep);
+}
 function comunsCalc(st, m){
   const C=st.comuns||{}; if(C.on===false || !m.emb || !m.emb.length) return null;
+  const chave=cmnChave(st, m); if(CMN_CACHE.has(chave)){ const r=CMN_CACHE.get(chave); CMN_CACHE.delete(chave); CMN_CACHE.set(chave, r); return r }
+  const out=comunsCalc0(st, m); CMN_CACHE.set(chave, out); if(CMN_CACHE.size>24) CMN_CACHE.delete(CMN_CACHE.keys().next().value);
+  return out;
+}
+function comunsCalc0(st, m){
+  const C=st.comuns||{};
   const prog=comunsPrograma(st, m);
   const TT=comunsTerreo(st, m, prog);
   const TR=comunsRecuo(st, m, prog, TT);
@@ -19345,7 +19361,7 @@ function comunsTerreo(st, m, prog){
     // fora o retângulo do estar, o resto deste vão não entra de novo na busca
     for(let j=R0.j;j<R0.j+R0.h;j++) for(let i=R0.i;i<R0.i+R0.w;i++){ const k=j*g.nx+i; if(g.c[k]===CC) g.c[k]=CZ+1 }
     const A_=R0.w*R0.h*res*res, ld= cego.findIndex(x=>x)>=0? cego.findIndex(x=>x) : (r.w>=r.h? 2 : 0);
-    estar.push({k:"estar", nome: A_>=60? "Área livre coberta" : "Estar", area:A_, poly:cmnRetPoly(g,R0), r, toca:true, noHall:true, moveis:cmnMoveis(g, {k:"estar", r}, ld, 3)}) }
+    estar.push({k:"estar", nome: A_>=60? "Estar e convivência" : "Estar", area:A_, poly:cmnRetPoly(g,R0), r, toca:true, noHall:true, moveis:cmnMoveis(g, {k:"estar", r}, ld, 3)}) }
   for(let k=0;k<g.c.length;k++) if(g.c[k]===CZ+1) g.c[k]=CC;
   // portas, janelas e mobiliário
   amb.forEach(f=>{
@@ -19617,8 +19633,24 @@ function cmnDistPolys(a, b){ let d=1e9; const ds=(p,q,r)=>{ const dx=r[0]-q[0], 
 function cmnTocaFachada(C, f){ const g=C.gT; if(!g) return false; const ct=cmnContato(g, f.r, C.TT.luz, null); return ct.luz>0 }
 
 /* ---------- entrada: m.comuns ---------- */
+/* cache por assinatura: tudo o que o planejador lê do estado e do modelo (o recálculo com a mesma geometria é imediato) */
+const CMN_CACHE=new Map();
+function cmnChave(st, m){
+  const T=m.ter||{}, L=st.lote||{};
+  const rep=(k,v)=> typeof v==="number"? Math.round(v*100)/100 : v;
+  return JSON.stringify([st.comuns, st.produto.lazer, (st.garagem||{}).bici, L.pts, L.front, L.principal, L.norte, L.lat, cmnUnidades(m), m.emb, m.tGar,
+    [T.lat, T.fd, T.hallBand, T.pass, T.cols, T.colsGar, T.walk, T.drive, T.driveRua, T.drive0&&T.drive0.dv, T.veiReal, T.dmn, T.d2, T.gar, T.lmn, T.lmx],
+    m.acesso, (m.vf&&m.vf.vagas||[]).map(v=>v.poly), (m.coreSets||[]).map(cs=>[cs.i, cs.core, cs.lobby, cs.lay&&cs.lay.coreExtra, cs.lay&&cs.lay.coreFundo, cs.lay&&cs.lay.ux, cs.lay&&cs.lay.vy, cs.lay&&cs.lay.nucleo&&cs.lay.nucleo.portas]),
+    (m.T||[]).map(t=>[t.plate, t.oco]), ((m.vert&&m.vert.floors&&m.vert.floors.ter&&m.vert.floors.ter.ramps)||[]).map(r=>r.poly)], rep);
+}
 function comunsCalc(st, m){
   const C=st.comuns||{}; if(C.on===false || !m.emb || !m.emb.length) return null;
+  const chave=cmnChave(st, m); if(CMN_CACHE.has(chave)){ const r=CMN_CACHE.get(chave); CMN_CACHE.delete(chave); CMN_CACHE.set(chave, r); return r }
+  const out=comunsCalc0(st, m); CMN_CACHE.set(chave, out); if(CMN_CACHE.size>24) CMN_CACHE.delete(CMN_CACHE.keys().next().value);
+  return out;
+}
+function comunsCalc0(st, m){
+  const C=st.comuns||{};
   const prog=comunsPrograma(st, m);
   const TT=comunsTerreo(st, m, prog);
   const TR=comunsRecuo(st, m, prog, TT);
@@ -30277,7 +30309,7 @@ function cmnLive(m){
   if(!C){ res.innerHTML=`<p class="note">${S.comuns&&S.comuns.on===false? "Planta simplificada: o lazer entra como blocos no térreo." : "Sem embasamento para planejar."}</p>`; setHTML("cmnPb",""); setHTML("cmnProg",""); return }
   const nv=cmnNivel(C.nota), nb=C.problemas.filter(p=>p.nivel==="bad").length, nw=C.problemas.length-nb;
   const PART={perimetro:"ambientes nas paredes", galeria:"galeria central", neutro:"galerias", centro:"galerias", fachada:"galeria junto à fachada"};
-  res.innerHTML=`<div class="row sb" style="flex-wrap:nowrap"><b>Nota ${C.nota}</b><span class="pill ${nv}">${nb? `${nb} grave${nb>1?"s":""}` : nw? `${nw} atenção` : "sem problemas"}</span></div>
+  res.innerHTML=`<div class="row sb" style="flex-wrap:nowrap"><b>Nota ${C.nota}</b><span class="pill ${nb? "bad" : nw? "warn" : "ok"}">${nb? `${nb} grave${nb>1?"s":""}` : nw? `${nw} atenção` : "sem problemas"}</span></div>
     <div class="cmn-sub">${C.amb.length} ambientes${C.partido&&PART[C.partido]? ` · ${PART[C.partido]}` : ""}${C.falta.length? ` · <span style="color:var(--bad)">${C.falta.length} não coube${C.falta.length>1?"ram":""}</span>` : ""}</div>`;
   const MX=4;
   setHTML("cmnPb", C.problemas.slice(0,MX).map(p=>`<div class="cmn-pb"><span class="dot ${p.nivel==="bad"?"bad":"warn"}"></span><span>${esc(p.msg)}</span></div>`).join("") + (C.problemas.length>MX? `<div class="cmn-pb mais">e mais ${C.problemas.length-MX}</div>` : ""));
@@ -32706,6 +32738,8 @@ const GLOSS_DATA = {
 
   /* --- térreo e áreas comuns --- */
   "Térreo e áreas comuns": { t:"Térreo e áreas comuns", d:"O Gabarito monta o térreo como um projetista: clausura e portaria na fachada do acesso de pedestres, hall social atrás delas, galerias até o hall dos elevadores de cada torre e os ambientes encostados nas paredes e nas fachadas, abertos para a circulação. Lixo, gás e medidores ficam no recuo, junto ao alinhamento; o resto do recuo vira jardim. A nota começa em 100 e perde 25 por problema grave e 6 por atenção.", f:"Referência genérica (NBR 9050, NBR 13523, códigos de obras usuais) — conferir na lei." },
+  "Partido do térreo": { t:"Partido do térreo", d:"Como os ambientes se organizam no hall. <b>Ambientes nas paredes</b>: salão, academia, apoio e serviço encostados nas fachadas, nas divisas, no núcleo e na garagem, com o vão do meio como hall, estar e galeria. <b>Galeria central</b>: a galeria até os elevadores é traçada primeiro e os ambientes encostam dos dois lados. <b>Galerias</b>: corredores mais curtos até cada torre, para térreos estreitos. O Gabarito testa os partidos e fica com o que acomoda o programa com luz, encostado e com menos sobra." },
+  "Área técnica": { t:"Área técnica do térreo", d:"Bolsão fechado, sem acesso pela circulação, que sobrou entre ambientes: vira casa de bombas, gerador ou reservatório. Junto da faixa de veículos vira depósito com porta para a garagem." },
   "Clausura": { t:"Clausura (eclusa de pedestres)", d:"Espaço entre dois portões na entrada de pedestres: o segundo só abre com o primeiro fechado. A portaria fica ao lado, vendo a rua e o portão de veículos." },
   "Rota acessível": { t:"Rota acessível", d:"Caminho contínuo de pelo menos 1,20 m, sem degraus e sem atravessar outro ambiente, do portão até os elevadores e até cada área comum (NBR 9050). No desenho, a linha azul tracejada; as portas que estão nela ganham um ponto azul." },
   "Apoio do condomínio": { t:"Apoio do condomínio", d:"Ambientes que todo prédio residencial tem além do lazer: clausura, portaria, sanitários acessíveis, vestiário e copa de funcionários, DML (depósito de material de limpeza), bicicletário, abrigo de resíduos, central de gás e medidores. O tamanho cresce com o número de unidades." },
