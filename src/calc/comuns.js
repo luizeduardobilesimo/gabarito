@@ -1130,8 +1130,24 @@ function cmnDistPolys(a, b){ let d=1e9; const ds=(p,q,r)=>{ const dx=r[0]-q[0], 
 function cmnTocaFachada(C, f){ const g=C.gT; if(!g) return false; const ct=cmnContato(g, f.r, C.TT.luz, null); return ct.luz>0 }
 
 /* ---------- entrada: m.comuns ---------- */
+/* cache por assinatura: tudo o que o planejador lê do estado e do modelo (o recálculo com a mesma geometria é imediato) */
+const CMN_CACHE=new Map();
+function cmnChave(st, m){
+  const T=m.ter||{}, L=st.lote||{};
+  const rep=(k,v)=> typeof v==="number"? Math.round(v*100)/100 : v;
+  return JSON.stringify([st.comuns, st.produto.lazer, (st.garagem||{}).bici, L.pts, L.front, L.principal, L.norte, L.lat, cmnUnidades(m), m.emb, m.tGar,
+    [T.lat, T.fd, T.hallBand, T.pass, T.cols, T.colsGar, T.walk, T.drive, T.driveRua, T.drive0&&T.drive0.dv, T.veiReal, T.dmn, T.d2, T.gar, T.lmn, T.lmx],
+    m.acesso, (m.vf&&m.vf.vagas||[]).map(v=>v.poly), (m.coreSets||[]).map(cs=>[cs.i, cs.core, cs.lobby, cs.lay&&cs.lay.coreExtra, cs.lay&&cs.lay.coreFundo, cs.lay&&cs.lay.ux, cs.lay&&cs.lay.vy, cs.lay&&cs.lay.nucleo&&cs.lay.nucleo.portas]),
+    (m.T||[]).map(t=>[t.plate, t.oco]), ((m.vert&&m.vert.floors&&m.vert.floors.ter&&m.vert.floors.ter.ramps)||[]).map(r=>r.poly)], rep);
+}
 function comunsCalc(st, m){
   const C=st.comuns||{}; if(C.on===false || !m.emb || !m.emb.length) return null;
+  const chave=cmnChave(st, m); if(CMN_CACHE.has(chave)){ const r=CMN_CACHE.get(chave); CMN_CACHE.delete(chave); CMN_CACHE.set(chave, r); return r }
+  const out=comunsCalc0(st, m); CMN_CACHE.set(chave, out); if(CMN_CACHE.size>24) CMN_CACHE.delete(CMN_CACHE.keys().next().value);
+  return out;
+}
+function comunsCalc0(st, m){
+  const C=st.comuns||{};
   const prog=comunsPrograma(st, m);
   const TT=comunsTerreo(st, m, prog);
   const TR=comunsRecuo(st, m, prog, TT);

@@ -94,6 +94,32 @@ describe('núcleo novo (lay.nucleo.portas, docs/COMUNS.md §0)', () => {
   });
 });
 
+describe('convivência com a garagem do térreo e com o núcleo real', () => {
+  it('nenhum ambiente nem galeria sobre vaga ou corredor da garagem do térreo (garagem por partidos)', T, () => {
+    for (const k of ['exemplo', 'grande']) { const { m } = calc(k), C = m.comuns, gt = m.gar && m.gar.ter; if (!gt) continue;
+      const enc = p => G.scaleToArea(p, G.area(p) * 0.9);
+      const obst = [...gt.vagas.filter(v => v.tipo !== 'off').map(v => v.poly), ...(gt.aisles || []).map(a => a.poly)];
+      terreo(C).forEach(a => obst.forEach(o => expect(G.polysOverlap(enc(a.poly), enc(o)), `${k}: ${a.nome}`).toBe(false))) }
+  });
+  it('a rota acessível termina na porta do elevador publicada pelo núcleo (lay.nucleo.portas)', T, () => {
+    const { m } = calc('exemplo'), C = m.comuns;
+    m.coreSets.forEach(cs => { const ps = ((cs.lay.nucleo || {}).portas || []).filter(p => p.tipo === 'elev'); if (!ps.length) return;
+      const r = C.rota.find(x => x.local === 'terreo' && x.torre === cs.i && !x.sem); expect(r, `torre ${cs.i + 1}`).toBeTruthy();
+      const fim = r.pts[r.pts.length - 1]; expect(Math.min(...ps.map(p => Math.hypot(p.p[0] - fim[0], p.p[1] - fim[1])))).toBeLessThan(0.01) });
+  });
+  it('lote estreito (estudo de referência): com o hall dos elevadores invadido pela faixa de veículos, o programa cabe e o problema é grave e claro', T, () => {
+    const st = estado(A, { lote: { pts: [[0, 0], [20, 0], [20, 40], [0, 40]], front: [0], rec: [{}, {}, {}, {}] }, produto: { torres: [{ pav: 10 }], subsolos: 2 } }), m = A.compute(st), C = m.comuns;
+    expect(C.falta.filter(a => a.local === 'terreo' && a.k !== 'hall')).toEqual([]);
+    expect(C.problemas.some(p => p.k === 'veiculos' && p.nivel === 'bad' && /hall dos elevadores/.test(p.msg))).toBe(true);
+  });
+  it('partido perimetral: cada ambiente coberto encosta as costas numa parede, no núcleo ou em outro ambiente', T, () => {
+    for (const k of ['exemplo', 'grande']) { const { m } = calc(k), C = m.comuns, [ux, vy] = C.eixos.terreo; if (!['perimetro', 'galeria'].includes(C.partido)) continue;
+      const circ = [...(C.circ.terreo || []), ...(C.circ.hall || [])];
+      terreo(C).filter(a => !['hall', 'clausura', 'portaria'].includes(a.k)).forEach(a => { const livres = ladosFora(a, ux, vy).filter(p => circ.some(c => G.pip(p, c))).length;
+        expect(livres, `${k}: ${a.nome}`).toBeLessThanOrEqual(2) }) }
+  });
+});
+
 describe('gás, lixo e carro × pedestre', () => {
   it('abrigo de resíduos no recuo, junto ao alinhamento; central de gás fora do prédio', T, () => {
     for (const k of ['exemplo', 'grande']) { const { m } = calc(k), C = m.comuns;
