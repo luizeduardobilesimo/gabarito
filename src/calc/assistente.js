@@ -10,8 +10,11 @@
        regras: { id, nome, caMax, hMax, toTorre, recFrente, ia },
                  id = registro de cidadesLista() (cidadeAplicar marca S.regrasRef) · "" = sem cidade (DEF.regras, "regras a conferir")
                  nome = cidade digitada ("Outra") · os 4 números, quando vêm, valem por cima da cidade · ia = ler a lei depois (só marca)
-       produto:{ padrao:"compacto"|"familia"|"alto", preco (R$/m² médio), terreno (R$, opcional) }
+       produto:{ padrao:"compacto"|"familia"|"alto" (presets antigos) | chave de DIR_PADROES com `diretrizes`, preco (R$/m² médio), terreno (R$, opcional) },
+       diretrizes:{ modo:"livre"|"diretrizes", subMax, gacMax (−1 livre · 0 não · N até N), tips [nº de dormitórios] }   (opcional)
      }
+     Com `diretrizes` (assistente novo): o padrão vem de DIR_PADROES (src/calc/diretrizes.js, dirAplicaPadrao: mix, preços, lazer, CUB,
+     vagas, coberturas) e, no modo "diretrizes", subsolos, garagens elevadas e tipologias viram regra para o otimizador.
      O mix vem do preset do otimizador (MIX_PRESETS/presetMix) e cada tipologia recebe preço = preço médio × pf do preset.
      Sem preço do terreno, fin.terreno fica 0 e a tela o estima depois do otimizador (assTerrenoEstimado).
      S.guia.conf (flags de interface do checklist, src/ui/progresso.js) recebe o que o assistente confirmou.
@@ -84,17 +87,38 @@ function assEstado(base, resp){
   st.regras.caBas=Math.min(st.regras.caBas, st.regras.caMax);
   if(!R.id && R.nome && String(R.nome).trim()){ st.regras.cidade=String(R.nome).trim(); st.guia.conf.regras=true }
   // ---- produto ----
+  const DR=r.diretrizes;
+  if(DR && typeof DIR_PADROES!=="undefined" && DIR_PADROES[P.padrao]) assDiretrizes(st, P, DR);
+  else {
   const pk = ASS_N0[P.padrao]!=null? P.padrao : "familia", pr=MIX_PRESETS[pk];
   const pm = assNum(P.preco) || assPrecoSugerido(st, pk);
   st.produto.mix = presetMix(st, pk, ASS_N0[pk]).map(u=>{ const t=pr.tips.find(x=>x.nome===u.nome)||{pf:1}; return {...u, preco:Math.round(pm*t.pf/50)*50} });
   st.produto.torres=[{pav:8}];
   const cb=ASS_COB[pk]; st.produto.cob = cb? { ...st.produto.cob, on:true, qtd:2, area:cb.area, preco:Math.round(pm*1.12/50)*50 } : { ...st.produto.cob, on:false };
   st.blocos && (st.blocos.modo="auto");
+  }
   if(assNum(P.preco)) st.guia.conf.preco=true;
   // ---- terreno ----
   const tr=assNum(P.terreno);
   st.fin.terreno = tr>0? Math.round(tr) : 0; st.fin.permuta=0; st.fin.permutaFin=0;
   if(tr>0) st.guia.conf.custo=true;
+  return st;
+}
+/** padrão e diretrizes do assistente novo (src/calc/diretrizes.js) */
+function assDiretrizes(st, P, DR){
+  const k=P.padrao, PD=DIR_PADROES[k], pm=assNum(P.preco)||PD.preco[1];
+  st.diretrizes=clone(DEF.diretrizes);
+  dirAplicaPadrao(st, k, {N:PD.n0, preco:pm});
+  const d=st.diretrizes, on=DR.modo==="diretrizes";
+  d.modo = on? "diretrizes" : "livre";
+  if(on){ d.subMax=dirLim(DR.subMax); d.gacMax=dirLim(DR.gacMax);
+    const tips=Array.isArray(DR.tips)? [...new Set(DR.tips.map(Number).filter(q=>q>=0 && q<=4))].sort((a,b)=>a-b) : [];
+    if(tips.length && JSON.stringify(tips)!==JSON.stringify(d.tips)){ d.tips=tips; const mx=dirPresetMix(st, "dir", PD.n0); if(mx.length) st.produto.mix=mx }
+    if(d.subMax>=0) st.produto.subsolos=Math.min(st.produto.subsolos, d.subMax);
+    if(d.gacMax>=0) st.produto.garAcima=Math.min(st.produto.garAcima, d.gacMax);
+    dirAplicaFixos(st) }
+  st.produto.torres=[{pav:8}];
+  st.blocos && (st.blocos.modo="auto");
   return st;
 }
 /** o estudo é o exemplo que vem com o app (nome e contorno do DEF) */

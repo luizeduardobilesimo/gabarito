@@ -60,10 +60,11 @@ describe('codificar e decodificar o estado', () => {
     expect(volta.S).toEqual(JSON.parse(JSON.stringify(st)));
   });
 
-  it('o link do estudo padrão fica abaixo de 4,2 mil caracteres', async () => {
+  it('o link do estudo padrão fica abaixo de 4,3 mil caracteres', async () => {
     // (era 4 mil; os pacotes de realismo — núcleo, garagem, térreo e áreas comuns — somaram opções ao estado: 3.992 → 4.032)
     const tok = await A.verEncode(A.verPayload(A.DEF));
-    expect(tok.length).toBeLessThan(4200);
+    // (4,2 → 4,3 mil: as diretrizes do produto, src/calc/diretrizes.js, entraram no estado: 4.037 → 4.228)
+    expect(tok.length).toBeLessThan(4300);
   });
 
   it('sem CompressionStream cai para JSON puro ("j") e ainda decodifica', async () => {

@@ -1,7 +1,9 @@
 /* ================= assistente "Novo estudo", faixa do exemplo e entrada da 1ª visita (UX v3 §3.1 e §3.2) =================
    Parte pura em src/calc/assistente.js (assEstado, assEhExemplo, assPrecoSugerido…). Aqui só a tela:
    - assAbrir(opts?)  → tela cheia por cima do app (criada aqui, listener próprio). opts = {onDone(estudoId), onCancel(), primeira}.
-     Estado local ASS (nada vai para S antes de "Gerar"). 4 passos: Terreno · Regras · Produto · Gerando (barra, Voltar, Pular).
+     Estado local ASS (nada vai para S antes de "Gerar"). 5 passos: Terreno · Regras · Produto (padrão: Econômico/MCMV, Médio, Médio-alto,
+     Alto, Luxo — DIR_PADROES de src/calc/diretrizes.js) · Restrições (Livre | Com diretrizes: subsolo, garagem elevada, tipologias) ·
+     Gerando (barra, Voltar, Pular).
      Gerar: assEstado → otimizador (otimRodar(opts, onProg, {st, m}) do P3 quando aceitar o 3º argumento; senão o Worker "job" do
      calcworker com o estado explícito; senão otimizar() na página) → aplicarOtim → um único passo de desfazer → Viabilidade
      + cartão "O que fizemos". Sem combinação: máximo de pavimentos (maxPav) e Produto com aviso. Mapa/"desenhar depois": sem otimizador,
@@ -15,7 +17,7 @@
 
 const ASS_PRIMEIRA = (()=>{ try{ return !localStorage.getItem("gabarito.v2") && !localStorage.getItem("gabarito.estudo") && !localStorage.getItem("gabarito.boasvindas") }catch(e){ return false } })();
 const ASS = { el:null, passo:0, r:null, opts:{}, rodando:false, cancel:false, erro:"", prog:0, fase:0, feito:null };
-const ASS_PASSOS = ["Terreno","Regras","Produto","Pronto"];
+const ASS_PASSOS = ["Terreno","Regras","Produto","Restrições","Pronto"];
 const ASS_IC = {
   ret:'<rect x="7.5" y="3.5" width="12" height="17" rx="1"/><path d="M4 3.5v17M3 3.5h2M3 20.5h2" opacity=".55"/>',
   mapa:'<path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.4"/>',
@@ -24,10 +26,16 @@ const ASS_IC = {
   compacto:'<path d="M3.5 20.5h17"/><rect x="6" y="11" width="12" height="9.5" rx=".8"/><path d="M9 14h1.5M13.5 14H15M9 17h1.5M13.5 17H15" opacity=".6"/>',
   familia:'<path d="M3.5 20.5h17"/><rect x="7" y="6" width="10" height="14.5" rx=".8"/><path d="M9.7 9h1.3M13 9h1.3M9.7 12h1.3M13 12h1.3M9.7 15h1.3M13 15h1.3" opacity=".6"/>',
   alto:'<path d="M3.5 20.5h17"/><rect x="8" y="3" width="8" height="17.5" rx=".8"/><path d="M10.3 6h1.1M12.6 6h1.1M10.3 9h1.1M12.6 9h1.1M10.3 12h1.1M12.6 12h1.1M10.3 15h1.1M12.6 15h1.1" opacity=".6"/>',
+  medioAlto:'<path d="M3.5 20.5h17"/><rect x="5" y="9" width="6.5" height="11.5" rx=".8"/><rect x="12.5" y="5" width="6.5" height="15.5" rx=".8"/><path d="M7 12h2.5M7 15h2.5M14.5 8h2.5M14.5 11h2.5M14.5 14h2.5" opacity=".6"/>',
+  luxo:'<path d="M3.5 20.5h17"/><rect x="8.5" y="6" width="7" height="14.5" rx=".8"/><path d="M12 2.5v3.5M10.2 4.2h3.6" /><path d="M10.5 9h3M10.5 12h3M10.5 15h3" opacity=".6"/>',
+  livre:'<circle cx="12" cy="12" r="8"/><path d="m9 15 1.8-4.2L15 9l-1.8 4.2z"/>',
+  regras:'<rect x="5" y="3.5" width="14" height="17" rx="1.5"/><path d="M8.5 8h7M8.5 11.5h7M8.5 15h4.5"/>',
   ok:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   x:'<path d="M6 6l12 12M18 6 6 18"/>',
 };
-const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ASS_IC[k]}</svg>`;
+const ASS_IC_PAD = { economico:"compacto", medio:"familia", medioAlto:"medioAlto", alto:"alto", luxo:"luxo" };
+const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ASS_IC[k]||ASS_IC[ASS_IC_PAD[k]]||""}</svg>`;
+const ASS_DIR = ()=>typeof DIR_PADROES!=="undefined";   // diretrizes do produto (src/calc/diretrizes.js) presentes
 
 (function(){ const s=document.createElement("style"); s.textContent=`
 .ass{position:fixed;inset:0;z-index:76;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;align-items:center;overflow-y:auto;font-family:var(--f-sans,var(--f-body));-webkit-font-smoothing:antialiased}
@@ -41,7 +49,7 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass-top .by{display:none}
 .ass-tt{font-size:13px;font-weight:550;color:var(--muted);padding-left:12px;margin-left:2px;border-left:1px solid var(--line)}
 @keyframes assIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.ass-prog{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:22px 32px 0}
+.ass-prog{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:22px 32px 0}
 .ass-seg{display:grid;gap:7px;font-size:11.5px;font-weight:550;color:var(--faint,var(--muted));letter-spacing:.01em}
 .ass-seg i{display:block;height:3px;border-radius:9px;background:var(--line);overflow:hidden;position:relative}
 .ass-seg i::after{content:"";position:absolute;inset:0;width:0;background:var(--sel);border-radius:9px;transition:width .45s var(--ease)}
@@ -59,7 +67,14 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass textarea{min-height:96px;font-size:13px;font-family:var(--f-code,monospace);resize:vertical}
 .ass-g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .ass-tiles{display:grid;gap:10px}
-.ass-tiles.t4{grid-template-columns:repeat(4,1fr)} .ass-tiles.t3{grid-template-columns:repeat(3,1fr)}
+.ass-tiles.t4{grid-template-columns:repeat(4,1fr)} .ass-tiles.t3{grid-template-columns:repeat(3,1fr)} .ass-tiles.t5{grid-template-columns:repeat(5,1fr);gap:8px} .ass-tiles.t2{grid-template-columns:1fr 1fr}
+.ass-tiles.t5 .ass-tile{padding:12px 10px 11px;min-height:104px}
+.ass-tiles.t5 .ass-tile b{font-size:13px}
+.ass-tiles.t5 .ass-tile span{font-size:11.5px}
+.ass-dr{display:grid;gap:14px}
+.ass-dr .seg{width:100%}
+.ass-dr .seg button{font-size:13px;padding:7px 10px}
+.ass .chips .chip{font-size:12.5px;padding:6px 13px}
 .ass-tile{display:grid;align-content:start;gap:4px;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:var(--r,12px);padding:13px 13px 12px;cursor:pointer;color:var(--ink);font:inherit;box-shadow:var(--shadow-s);transition:border-color .15s var(--ease),box-shadow .15s var(--ease),background .15s var(--ease);min-height:96px}
 .ass-tile:hover{border-color:var(--line-2)}
 .ass-tile svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;color:var(--muted);margin-bottom:6px;transition:color .15s}
@@ -113,9 +128,11 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
   .ass-prog{padding:14px 16px 0;gap:6px}
   .ass-body{padding:22px 16px 12px;gap:16px;flex:1;align-content:start}
   .ass-h h1{font-size:23px}
-  .ass-tiles.t4{grid-template-columns:1fr 1fr} .ass-tiles.t3{grid-template-columns:1fr}
-  .ass-tiles.t3 .ass-tile{grid-template-columns:28px 1fr;column-gap:12px;min-height:0;align-items:center}
-  .ass-tiles.t3 .ass-tile svg{grid-row:span 2;margin:0}
+  .ass-tiles.t4{grid-template-columns:1fr 1fr} .ass-tiles.t3,.ass-tiles.t5,.ass-tiles.t2{grid-template-columns:1fr}
+  .ass-tiles.t3 .ass-tile,.ass-tiles.t5 .ass-tile,.ass-tiles.t2 .ass-tile{grid-template-columns:28px 1fr;column-gap:12px;min-height:0;align-items:center}
+  .ass-tiles.t3 .ass-tile svg,.ass-tiles.t5 .ass-tile svg,.ass-tiles.t2 .ass-tile svg{grid-row:span 2;margin:0}
+  .ass-tiles.t5 .ass-tile{min-height:0;padding:11px 13px}
+  .ass-tiles.t5 .ass-tile span+span{display:none}
   .ass-tile{min-height:84px}
   .ass-ret{grid-template-columns:1fr 1fr}
   .ass-prev{grid-column:1/-1;height:74px}
@@ -159,7 +176,8 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 function assResp0(){
   return { nome:"", lote:{modo:"ret", frente:"20", fundo:"40", texto:""},
     regras:{ id:"", outra:false, nome:"", vals:assRegVals(null), ia:false },
-    produto:{ padrao:"familia", preco:"", terreno:"" } };
+    produto:{ padrao: ASS_DIR()? "medio" : "familia", preco:"", terreno:"" },
+    dir:{ modo:"livre", subMax:-1, gacMax:-1, tips:null } };
 }
 /* os 4 números das regras mostrados no passo 2 (toTorre em %) */
 function assRegVals(c){
@@ -170,7 +188,8 @@ function assRespFinal(){
   const r=ASS.r, R=r.regras, v=R.vals, to=assNum(v.toTorre);
   return { nome:r.nome, lote:{...r.lote},
     regras:{ id: R.outra? "" : R.id, nome: R.outra? R.nome : "", caMax:v.caMax, hMax:v.hMax, toTorre: to!=null? to/100 : null, recFrente:v.recFrente, ia:R.ia },
-    produto:{...r.produto} };
+    produto:{...r.produto},
+    ...(ASS_DIR() && DIR_PADROES[r.produto.padrao]? { diretrizes:{ ...r.dir, tips: r.dir.tips || DIR_PADROES[r.produto.padrao].tips.slice() } } : {}) };
 }
 const assArea = ()=>{ const f=assNum(ASS.r.lote.frente), p=assNum(ASS.r.lote.fundo); return f>0&&p>0? f*p : 0 };
 
@@ -216,17 +235,35 @@ function assP2(){
       <div class="ass-ctx"><div class="ass-g2">${n("caMax","Aproveitamento máximo (CA)","×")}${n("hMax","Altura máxima","m")}${n("toTorre","Ocupação da torre (TO)","%")}${n("recFrente","Recuo frontal","m")}</div>${tag}</div>
       <label class="sw"><input type="checkbox" id="assIA" ${R.ia?"checked":""}><span class="tg"></span><span>Ler a lei com IA depois <span style="color:var(--muted)">· você envia o PDF em Terreno</span></span></label>` };
 }
+/* padrão: os 5 de DIR_PADROES (diretrizes do produto); sem o módulo, os 3 presets antigos */
+const assSugPreco = k => ASS_DIR() && DIR_PADROES[k]? DIR_PADROES[k].preco[1] : assPrecoSugerido(DEF, k);
+const assNomePadrao = k => ASS_DIR() && DIR_PADROES[k]? DIR_PADROES[k].nome : (MIX_PRESETS[k]||{}).nome||k;
+function assPadraoDesc(k){
+  if(!(ASS_DIR() && DIR_PADROES[k])) return assPresetDesc(k).split(" · ").map(x=>x.replace("–"," a "));
+  const P=DIR_PADROES[k], a=P.tips.map(q=>P.areas[q][1]);
+  return [k==="economico"? "MCMV" : P.sub, `${Math.min(...a)} a ${Math.max(...a)} m²`, dirFaixaPreco(P)];
+}
 function assP3(){
-  const P=ASS.r.produto, sug=assPrecoSugerido(DEF, P.padrao), nomeP=MIX_PRESETS[P.padrao].nome;
-  const tile=k=>`<button type="button" class="ass-tile" data-padrao="${k}" aria-pressed="${P.padrao===k}">${assIc(k)}<b>${MIX_PRESETS[k].nome}</b>${assPresetDesc(k).split(" · ").map(x=>`<span>${esc(x.replace("–"," a "))}</span>`).join("")}</button>`;
-  return { t:"Que produto e por quanto?", d:"Escolha o padrão e o preço de venda. A gente testa torres, andares, unidades e garagens.",
-    body:`<div><span class="ass-l" id="assPL">Padrão das unidades</span><div class="ass-tiles t3" role="group" aria-labelledby="assPL">${tile("compacto")}${tile("familia")}${tile("alto")}</div></div>
+  const P=ASS.r.produto, sug=assSugPreco(P.padrao), nomeP=assNomePadrao(P.padrao), ks=ASS_DIR()? DIR_ORDEM : ["compacto","familia","alto"];
+  const tile=k=>`<button type="button" class="ass-tile" data-padrao="${k}" aria-pressed="${P.padrao===k}" title="${esc(assNomePadrao(k))}">${assIc(k)}<b>${esc(ASS_DIR()? (DIR_PADROES[k].curto||DIR_PADROES[k].nome) : MIX_PRESETS[k].nome)}</b>${(ASS_DIR()? [k==="economico"? "MCMV" : DIR_PADROES[k].sub, assPadraoDesc(k)[1]] : assPadraoDesc(k)).map(x=>`<span>${esc(x)}</span>`).join("")}</button>`;
+  return { t:"Que produto e por quanto?", d:"Escolha o padrão e o preço de venda. Ele traz unidades, lazer, custo e vagas típicos — tudo editável depois.",
+    body:`<div><span class="ass-l" id="assPL">Padrão do empreendimento</span><div class="ass-tiles ${ks.length>3? "t5" : "t3"}" role="group" aria-labelledby="assPL">${ks.map(tile).join("")}</div></div>
       <div class="ass-g2"><div class="fld"><label class="fl" for="assPr">Preço médio de venda</label><div class="inp"><input id="assPr" data-r="produto.preco" inputmode="decimal" value="${esc(P.preco)}" placeholder="${nf(sug,0)}" autocomplete="off"><em>R$/m²</em></div>
           <div class="ass-sug" id="assSug">${assNum(P.preco)? "" : `Sugestão para ${esc(nomeP)} <button type="button" data-sug="${sug}">R$ ${nf(sug,0)}</button>`}</div></div>
         <div class="fld"><label class="fl" for="assT">Preço do terreno <span style="color:var(--muted);font-weight:400">· opcional</span></label><div class="inp"><input id="assT" data-r="produto.terreno" inputmode="decimal" value="${esc(P.terreno)}" placeholder="—" autocomplete="off"><em>R$</em></div>
           <div class="ass-sug">${assNum(P.terreno)? "" : "Sem valor, estimamos 12% do VGV"}</div></div></div>` };
 }
+/* passo 4: estudo livre ou com diretrizes (o que o produto precisa ter) */
 function assP4(){
+  const D=ASS.r.dir, pk=ASS.r.produto.padrao, PD=ASS_DIR()? DIR_PADROES[pk] : null, tips=D.tips || (PD? PD.tips : []);
+  const tile=(k,t,d,ic)=>`<button type="button" class="ass-tile" data-dmodo="${k}" aria-pressed="${D.modo===k}">${assIc(ic)}<b>${t}</b><span>${d}</span></button>`;
+  const seg=(k,rot)=>`<div class="fld"><span class="ass-l">${rot}</span><div class="seg full" role="group" aria-label="${esc(rot)}">${[[0,"Não"],[1,"Até 1"],[2,"Até 2"],[-1,"Livre"]].map(([v,l])=>`<button type="button" data-d${k}="${v}" aria-pressed="${+D[k==="sub"? "subMax" : "gacMax"]===v}">${l}</button>`).join("")}</div></div>`;
+  const chips=[0,1,2,3,4].map(q=>`<button type="button" class="chip" data-dtip="${q}" aria-pressed="${tips.includes(q)}">${PD? PD.nomes[q] : DIR_Q[q]}</button>`).join("");
+  return { t:"O produto tem regras próprias?", d:"No livre, o sistema busca o melhor resultado. Com diretrizes, ele obedece ao padrão e ao que você marcar aqui.",
+    body:`<div class="ass-tiles t2" role="group" aria-label="Modo do estudo">${tile("livre","Livre","Só resultado e aproveitamento","livre")}${tile("diretrizes","Com diretrizes",`${esc(PD? PD.nome : "Padrão")} e as restrições abaixo`,"regras")}</div>
+      ${D.modo==="diretrizes"? `<div class="ass-ctx ass-dr">${seg("sub","Pode ter subsolo?")}${seg("gac","Garagem elevada?")}<div class="fld"><span class="ass-l">Tipologias</span><div class="chips" role="group" aria-label="Tipologias">${chips}</div></div></div>` : ""}` };
+}
+function assP5(){
   const fases=["Lote e regras","Torres, andares e unidades","Garagem conferida no desenho","Viabilidade"];
   return { t:"Montando o seu estudo", d:"Testamos as combinações dentro das regras e ficamos com a de maior lucro.",
     body:`<div class="ass-run"><div><div class="ass-bar"><i id="assBar" style="width:${(ASS.prog*100).toFixed(0)}%"></i></div><div class="ass-pc"><span id="assFase">${fases[ASS.fase]||""}</span><span id="assPct">${nf(ASS.prog*100,0)}%</span></div></div>
@@ -237,16 +274,16 @@ const ASS_FASES = ["Lote e regras","Torres, andares e unidades","Garagem conferi
 function assRender(foco){
   const el=ASS.el; if(!el) return;
   const novo = ASS.ult!==ASS.passo; ASS.ult=ASS.passo;
-  const P=[assP1,assP2,assP3,assP4][ASS.passo](), n=ASS.passo, rodando=n===3;
+  const P=[assP1,assP2,assP3,assP4,assP5][ASS.passo](), n=ASS.passo, rodando=n===4;
   const prim = ASS.opts.primeira && !rodando;
   el.innerHTML = `<div class="ass-top"><div class="brand" aria-hidden="true"><svg class="rx-ic" viewBox="0 0 32 32"><rect class="t" y="1" width="32" height="30" rx="6"/><path class="g" d="M11.2 8.8L18.6 16.2L11.2 23.6L8.3 20.7L12.8 16.2L8.3 11.7ZM21.2 9.35L23.75 11.9L21.2 14.45L18.65 11.9ZM21.2 17.95L23.75 20.5L21.2 23.05L18.65 20.5Z"/></svg><span class="wm">gabarito<i>.</i></span><span class="ass-tt">Novo estudo</span></div>
       ${rodando? "" : `<button type="button" class="btn ghost sm" data-a="fechar">${prim? "Explorar o exemplo" : "Cancelar"}</button>`}</div>
     <div class="ass-wrap"><div class="ass-box${novo?" in":""}" role="dialog" aria-modal="true" aria-labelledby="assT">
       <div class="ass-prog" aria-hidden="true">${ASS_PASSOS.map((l,i)=>`<div class="ass-seg ${i<n?"done":i===n?"on":""}"><i></i>${l}</div>`).join("")}</div>
-      <div class="ass-body"><div class="ass-h"><p class="eb">${rodando? "Quase pronto" : `Passo ${n+1} de 3`}</p><h1 id="assT">${P.t}</h1><p>${P.d}</p></div>${P.body}
+      <div class="ass-body"><div class="ass-h"><p class="eb">${rodando? "Quase pronto" : `Passo ${n+1} de 4`}</p><h1 id="assT">${P.t}</h1><p>${P.d}</p></div>${P.body}
         ${ASS.erro? `<p class="ass-st bad" role="alert">${esc(ASS.erro)}</p>` : ""}</div>
       <div class="ass-foot">${rodando? `<span class="sp"></span><button type="button" class="btn ghost" data-a="cancelar">Cancelar</button>`
-        : `${n>0? `<button type="button" class="btn ghost" data-a="voltar">← Voltar</button>` : ""}<span class="sp"></span><button type="button" class="btn ghost" data-a="pular">Pular</button><button type="button" class="btn pri" data-a="seguir">${n===2? "Gerar estudo" : "Continuar"}</button>`}</div>
+        : `${n>0? `<button type="button" class="btn ghost" data-a="voltar">← Voltar</button>` : ""}<span class="sp"></span><button type="button" class="btn ghost" data-a="pular">Pular</button><button type="button" class="btn pri" data-a="seguir">${n===3? "Gerar estudo" : "Continuar"}</button>`}</div>
     </div></div>`;
   if(foco!==false) setTimeout(()=>{ const f= foco && el.querySelector(foco) || el.querySelector(".ass-body input:not([type=checkbox]),.ass-body select,.ass-body textarea") || el.querySelector("[data-a=seguir],[data-a=cancelar]"); if(f) try{ f.focus({preventScroll:true}) }catch(e){} }, 20);
 }
@@ -273,7 +310,7 @@ function assDigita(e){
   assSet(p, t.value); ASS.erro="";
   if(p==="lote.frente"||p==="lote.fundo"){ const pv=document.getElementById("assPrev"); if(pv) pv.innerHTML=assPrevSVG() }
   if(p==="lote.texto"){ const s=document.getElementById("assCSt"); if(s) s.innerHTML=assCoordSt() }
-  if(p==="produto.preco"){ const s=document.getElementById("assSug"); const sug=assPrecoSugerido(DEF, ASS.r.produto.padrao); if(s) s.innerHTML= assNum(t.value)? "" : `Sugestão para ${esc(MIX_PRESETS[ASS.r.produto.padrao].nome)} <button type="button" data-sug="${sug}">R$ ${nf(sug,0)}</button>` }
+  if(p==="produto.preco"){ const s=document.getElementById("assSug"); const sug=assSugPreco(ASS.r.produto.padrao); if(s) s.innerHTML= assNum(t.value)? "" : `Sugestão para ${esc(assNomePadrao(ASS.r.produto.padrao))} <button type="button" data-sug="${sug}">R$ ${nf(sug,0)}</button>` }
   const al=ASS.el.querySelector(".ass-body [role=alert]"); if(al) al.remove();
 }
 function assMuda(e){
@@ -296,7 +333,14 @@ document.addEventListener("keydown", e=>{
 function assClique(e){
   const tl=e.target.closest(".ass-tile");
   if(tl){ if(tl.dataset.modo){ ASS.r.lote.modo=tl.dataset.modo; ASS.erro=""; assRender(ASS.r.lote.modo==="coord"? "#assC" : ASS.r.lote.modo==="ret"? "#assF" : false) }
-    else if(tl.dataset.padrao){ ASS.r.produto.padrao=tl.dataset.padrao; assRender(false); const b=ASS.el.querySelector(`[data-padrao="${tl.dataset.padrao}"]`); if(b) b.focus() } return }
+    else if(tl.dataset.padrao){ ASS.r.produto.padrao=tl.dataset.padrao; ASS.r.dir.tips=null; assRender(false); const b=ASS.el.querySelector(`[data-padrao="${tl.dataset.padrao}"]`); if(b) b.focus() }
+    else if(tl.dataset.dmodo){ ASS.r.dir.modo=tl.dataset.dmodo; assRender(false); const b=ASS.el.querySelector(`[data-dmodo="${tl.dataset.dmodo}"]`); if(b) b.focus() } return }
+  const dg=e.target.closest("[data-dsub],[data-dgac]");
+  if(dg){ const k=dg.dataset.dsub!=null? "subMax" : "gacMax"; ASS.r.dir[k]=+(dg.dataset.dsub ?? dg.dataset.dgac); dg.parentElement.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed", x===dg)); return }
+  const dt=e.target.closest("[data-dtip]");
+  if(dt){ const D=ASS.r.dir, PD=ASS_DIR()? DIR_PADROES[ASS.r.produto.padrao] : null, q=+dt.dataset.dtip, l=(D.tips || (PD? PD.tips : [])).slice();
+    const nl=l.includes(q)? l.filter(x=>x!==q) : [...l, q].sort((a,b)=>a-b); if(!nl.length) return;
+    D.tips=nl; dt.setAttribute("aria-pressed", nl.includes(q)); return }
   const sg=e.target.closest("[data-sug]");
   if(sg){ ASS.r.produto.preco=nf(+sg.dataset.sug,0); const i=document.getElementById("assPr"); if(i){ i.value=ASS.r.produto.preco; i.focus() } sg.parentElement.innerHTML=""; return }
   const b=e.target.closest("[data-a]"); if(!b) return;
@@ -324,13 +368,14 @@ function assValida(){
 function assSeguir(){
   const er=assValida(); if(er){ ASS.erro=er; assRender(false); return }
   ASS.erro="";
-  if(ASS.passo<2){ ASS.passo++; assRender() } else assGerar();
+  if(ASS.passo<3){ ASS.passo++; assRender() } else assGerar();
 }
 function assPular(){
   const r=ASS.r; ASS.erro="";
   if(ASS.passo===0){ r.lote.modo="depois" }
   if(ASS.passo===1){ r.regras.id=""; r.regras.outra=false; r.regras.vals=assRegVals(null) }
-  if(ASS.passo===2){ r.produto.preco=""; r.produto.terreno=""; return assGerar() }
+  if(ASS.passo===2){ r.produto.preco=""; r.produto.terreno="" }
+  if(ASS.passo===3){ r.dir.modo="livre"; return assGerar() }
   ASS.passo++; assRender();
 }
 
@@ -357,11 +402,11 @@ async function assOtimizar(st, onProg){
 }
 function assCancelar(){
   ASS.cancel=true; if(typeof otimCancelar==="function") otimCancelar(); if(ASS.job && typeof calcCancelar==="function") calcCancelar();
-  ASS.rodando=false; ASS.passo=2; assRender(); toast("Geração cancelada");
+  ASS.rodando=false; ASS.passo=3; assRender(); toast("Geração cancelada");
 }
 const assEspera = ms=>new Promise(r=>setTimeout(r, ms));
 async function assGerar(){
-  ASS.passo=3; ASS.rodando=true; ASS.cancel=false; ASS.prog=0; ASS.fase=0; assRender(false);
+  ASS.passo=4; ASS.rodando=true; ASS.cancel=false; ASS.prog=0; ASS.fase=0; assRender(false);
   const resp=assRespFinal(), semLote = resp.lote.modo==="mapa" || resp.lote.modo==="depois";
   try{
     await assEspera(250);
@@ -386,12 +431,13 @@ async function assGerar(){
     });
     ASS.rodando=false; assFechar(false);
     if(destino==="terreno" && resp.lote.modo==="mapa" && typeof mapaAbrir==="function") setTimeout(()=>{ try{ mapaAbrir() }catch(e){ console.error(e) } }, 120);
-    assFeitoMostra({ resp, best, motivo, estimado, semLote, terreno:fin.fin.terreno });
+    const dirFalha = best && best.dir && !best.dir.ok ? best.dir.falhas.filter(x=>x.grave).map(x=>x.msg)[0] : "";
+    assFeitoMostra({ resp, best, motivo, estimado, semLote, terreno:fin.fin.terreno, dirFalha });
     toast(motivo? "Estudo criado com aviso — veja o cartão" : "Estudo criado — Ctrl+Z desfaz");
     if(typeof ASS.opts.onDone==="function") try{ ASS.opts.onDone(typeof EST!=="undefined"? EST.id : null) }catch(e){ console.error("[assistente] onDone", e) }
   }catch(e){
     if(ASS.cancel) return;
-    console.error("[assistente]", e); ASS.rodando=false; ASS.passo=2; ASS.erro="Não foi possível gerar o estudo. Tente de novo."; assRender(false);
+    console.error("[assistente]", e); ASS.rodando=false; ASS.passo=3; ASS.erro="Não foi possível gerar o estudo. Tente de novo."; assRender(false);
   }
 }
 /* troca o estado inteiro num só passo de desfazer. Exemplo intocado aberto: vira o estudo; senão, um estudo novo (o aberto fica guardado) */
@@ -438,7 +484,7 @@ function assFeitoLive(){
   const pend = m? progressoItens(S, m, f).filter(i=>i.ok===false && !(I.semLote && i.k==="ruas")).slice(0,3) : [];
   const warn = !!I.motivo;
   const h = `<div class="fh"><span class="ic${warn?" warn":""}">${assIc(warn? "x" : "ok")}</span><div><b>${warn? "Estudo criado com aviso" : "Estudo pronto"}</b><span>${warn? esc(I.motivo) : I.semLote? "Desenhe o lote e peça a melhor combinação em Produto." : "Primeira versão montada. Ctrl+Z desfaz tudo."}</span></div><button type="button" class="fx" data-fx aria-label="Fechar">${assIc("x")}</button></div>
-    <dl><dt>Lote</dt><dd>${lote}</dd><dt>Regras</dt><dd>${regras}</dd><dt>Produto</dt><dd>${prod}</dd>${I.semLote? "" : `<dt>Resultado</dt><dd id="assFRes">${res}</dd>`}${I.estimado? `<dt>Terreno</dt><dd class="warn">${mi(S.fin.terreno)} estimado (12% do VGV)</dd>` : ""}</dl>
+    <dl><dt>Lote</dt><dd>${lote}</dd><dt>Regras</dt><dd>${regras}</dd><dt>Produto</dt><dd>${prod}</dd>${typeof dirAtiva==="function" && dirAtiva(S)? `<dt>Diretrizes</dt><dd${I.dirFalha? ' class="warn"' : ""}>${esc(dirResumo(S))}${I.dirFalha? ` · ${esc(I.dirFalha)}` : ""}</dd>` : ""}${I.semLote? "" : `<dt>Resultado</dt><dd id="assFRes">${res}</dd>`}${I.estimado? `<dt>Terreno</dt><dd class="warn">${mi(S.fin.terreno)} estimado (12% do VGV)</dd>` : ""}</dl>
     ${pend.length || R.regras.ia? `<div class="pg">Próximos passos</div>${R.regras.ia? `<div class="pi"><span>Ler a lei com IA<i>envie o PDF do plano diretor</i></span><button type="button" class="btn sm" data-fi="ia">Abrir</button></div>` : ""}${pend.map(i=>`<div class="pi"><span>${esc(i.nome)}<i>${esc(i.dica)}</i></span><button type="button" class="btn sm" data-fi="${i.k}">Resolver</button></div>`).join("")}` : ""}`;
   if(c.innerHTML!==h) c.innerHTML=h;
 }
