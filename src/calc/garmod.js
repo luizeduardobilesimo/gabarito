@@ -200,6 +200,8 @@ function gmFila(Lv, R, g, p, side, ctx, out){
   let I=gmIvAnd(Hh, [[p.a, p.b]]);
   const sub=r=>{ if(r[3]<=ya+1e-6 || r[1]>=yb-1e-6) return; I=gmIvSub(I, r[0]-1e-6, r[2]+1e-6) };
   ctx.soft.forEach(sub); ctx.stalls.forEach(s=>sub(s.r)); I=gmKPsub(I, ctx.KP, ya, yb);
+  // folga de 0,25 m dos núcleos (pilares de canto e espessura das paredes não invadem a vaga)
+  for(const o of Lv.OB){ if(o.k!=="nucleo") continue; const r=gmBandRange(o, ya-0.25, yb+0.25); if(r) I=gmIvSub(I, r[0]-0.25, r[1]+0.25) }
   if(!I.length) return;
   const isHard=x=>Hh.some(([a,b])=>Math.abs(a-x)<1e-5||Math.abs(b-x)<1e-5);
   const t= p.dir||1, sh=t*rd*cot, f0=Math.min(0,sh), f1=Math.max(0,sh);
@@ -264,7 +266,7 @@ function gmAvalia(FR, R, g, ys, xs, opt={}){
     res.pisos.push({f, fi, pcs, net, att, ok:AL.ok, becos, stalls:out.stalls, pil:out.pil, conns:L.conns});
     res.tot+=out.stalls.length; res.pen+=pen });
   res.peds=peds; res.pen+=peds.reduce((s,p)=>s+(p.falta? 4 : p.L/8),0)*FR.fl.length + 0.2*Vs.length;
-  res.pen+=2.0*base.filter(p=>p.pass && p.o==="H").length*FR.fl.length;   // passagem estreita: só quando não há outro jeito
+  res.pen+=2.0*base.filter(p=>p.pass && !p.junta).length*FR.fl.length;   // passagem estreita: só quando não há outro jeito
   res.sc=res.tot-res.pen; res.ys=ys; res.xs=xs; res.g=g;
   return res;
 }
@@ -288,8 +290,17 @@ function gmDesvios(FR, R, g, base){
       if(!best || w>best.w+0.3 || (Math.abs(w-best.w)<=0.3 && desv<best.desv)) best={y0,y1,w,va,vb,J,desv}; break } });
     if(!best) continue;
     out.push({o:"H", a:u0, b:u1, y0:best.y0, y1:best.y1, w:best.w, pass:true, dir:0});
-    best.J.forEach(([a,b])=>out.push({o:"V", a:best.va, b:best.vb, y0:a, y1:b, w:3.0, pass:true, dir:0}));
+    best.J.forEach(([a,b])=>out.push({o:"V", a:best.va, b:best.vb, y0:a, y1:b, w:3.0, pass:true, junta:true, dir:0}));
     uni(p1.i, p2.i) }
+  // corredores de níveis diferentes ainda separados: transversal estreita (de 2,9 m até a largura do corredor) entre eles
+  const lv=[...new Set(H.map(p=>p.y0.toFixed(2)))].map(Number).sort((a,b)=>a-b);
+  for(let k=0;k+1<lv.length;k++){ const A_=H.filter(p=>Math.abs(p.y0-lv[k])<0.01), B_=H.filter(p=>Math.abs(p.y0-lv[k+1])<0.01);
+    A_.forEach(p1=>B_.forEach(p2=>{ if(comp[p1.i]===comp[p2.i]) return; const u0=Math.max(p1.a,p2.a), u1=Math.min(p1.b,p2.b); if(u1-u0<2.9) return;
+      const va=p1.y0, vb=p2.y1; let best=null;
+      for(let x=u0; x<=u1-2.9+1e-9; x+=0.25){ for(let w=Math.min(g.AV,u1-x); w>=2.9-1e-9; w-=0.25){
+        if(gmHard(FR.V, x+0.02, x+w-0.02).some(([a,b])=>a<=va+1e-6 && b>=vb-1e-6)){ if(!best || w>best.w+1e-6) best={x,w}; break } } }
+      if(!best || best.w>=g.AV-0.3) return;   // com largura cheia a transversal comum já resolve
+      out.push({o:"V", a:va, b:vb, y0:best.x, y1:best.x+best.w, w:best.w, pass:true, dir:0}); uni(p1.i, p2.i) })) }
   return out;
 }
 /* pontas de corredor sem saída (além da última junção, de transversal ou de rampa) */
@@ -314,11 +325,12 @@ function gmPedestres(FR, R, net){
       rects.forEach(({p,r})=>{ let L, rr;
         if(d[0]){ if(s[1]-hw<r[1] || s[1]+hw>r[3]) return; const e= d[0]>0? r[0] : r[2]; L=(e-s[0])*d[0]; if(L<-0.01 || (d[0]>0? s[0]>r[2] : s[0]<r[0])) return; L=Math.max(0,L); rr= d[0]>0? [s[0], s[1]-hw, s[0]+L, s[1]+hw] : [s[0]-L, s[1]-hw, s[0], s[1]+hw] }
         else { if(s[0]-hw<r[0] || s[0]+hw>r[2]) return; const e= d[1]>0? r[1] : r[3]; L=(e-s[1])*d[1]; if(L<-0.01 || (d[1]>0? s[1]>r[3] : s[1]<r[1])) return; L=Math.max(0,L); rr= d[1]>0? [s[0]-hw, s[1], s[0]+hw, s[1]+L] : [s[0]-hw, s[1]-L, s[0]+hw, s[1]] }
-        if(best && L>=best.L-1e-6) return;
+        const par= (p.o==="H")===(!!d[0]), Lc=L+(par? 4 : 0);   // chegar de frente ao corredor (atravessando), não pela ponta
+        if(best && Lc>=best.Lc-1e-6) return;
         if(L>0.05){ const I=gmHard(FR.H, rr[1], rr[3]); if(!I.some(([a,b2])=>a<=rr[0]+1e-6 && b2>=rr[2]-1e-6)) return }
         // travessia zebrada do corredor, em frente à faixa (ou à porta do hall)
         const x0= d[0]? s[0]+d[0]*L : s[0]-hw, y0= d[1]? s[1]+d[1]*L : s[1]-hw, x1= d[0]? (d[0]>0? r[2] : r[0]) : s[0]+hw, y1= d[1]? (d[1]>0? r[3] : r[1]) : s[1]+hw;
-        best={L, r: L>0.05? rr : null, li, s, e:[s[0]+d[0]*(L+0.6), s[1]+d[1]*(L+0.6)], d, piece:p.i, cross:[Math.min(x0,x1), Math.min(y0,y1), Math.max(x0,x1), Math.max(y0,y1)]} }) });
+        best={L, Lc, r: L>0.05? rr : null, li, s, e:[s[0]+d[0]*(L+0.6), s[1]+d[1]*(L+0.6)], d, piece:p.i, cross: par? null : [Math.min(x0,x1), Math.min(y0,y1), Math.max(x0,x1), Math.max(y0,y1)]} }) });
     peds.push(best || {li, falta:true}) });
   return peds;
 }
@@ -402,7 +414,7 @@ function gmMundo(FR, R, L, P){
     const axL= s.ang===90? [0,s.side] : [s.t*Math.cos(L.g.th), s.side*Math.sin(L.g.th)], out=toF([-axL[0], -axL[1]]);
     const r= V_? gmRectSw(s.r) : s.r;
     return {poly:loc.map(Wd), c:Wd(c), fm:Wd(fm), out:dirW(out), u:s.u, uc:s.uc, row:s.piece*2+(s.side>0?1:0), grp:s.grp, j:s.j, aisle:s.piece, tipo:"n", W:s.W, ang:s.ang, _f:{...s, r, rd: V_? R.C : L.g.rd}} });
-  const aisles=P.net.map(p=>{ const r=gmRect(p); return {poly:rectW(r), o:p.o, conn:!!p.conn, pass:!!p.pass, dir:p.dir||0, w:p.w, i:p.i, r,
+  const aisles=P.net.map(p=>{ const r=gmRect(p); return {poly:rectW(r), o:p.o, conn:!!p.conn, pass:!!p.pass && !p.junta, dir:p.dir||0, w:p.w, i:p.i, r,
     a:Wd(p.o==="H"? [p.a,(p.y0+p.y1)/2] : [(p.y0+p.y1)/2,p.a]), b:Wd(p.o==="H"? [p.b,(p.y0+p.y1)/2] : [(p.y0+p.y1)/2,p.b])} });
   const peds=L.peds.filter(p=>!p.falta).map(p=>({poly: p.r? rectW(p.r) : null, cross: p.cross? rectW(p.cross) : null, a:Wd(p.s), b:Wd(p.e), L:p.L, lobby:p.li, d:dirW(p.d)}));
   const retornos=P.becos.filter(b=>b.longo && b.r).map(b=>rectW(b.r));
@@ -586,13 +598,19 @@ function gmMonta(poly, obst, E, o, pisos, M, FR, L){
       let Lx={vagas:vagas.filter(v=>v.tipo!=="faixa"), pillars:pillarsW, aisles:[], acc:{}, crosses:[], AI:L.g.A, ux:FR.ux, vy:FR.vy, corr:[...aislePolys, ...pedPolys, ...W.retornos, ...faixas.map(v=>v.poly)]};
       vagas=[...Lx.vagas, ...faixas];
     }
+    // numeração: fileira por fileira (de cima para baixo e da esquerda para a direita, no referencial), na ordem ao longo do corredor
+    { const rows=new Map(); vagas.forEach(v=>{ if(!garCar(v.tipo) || !v._f) return; const k=v._f.o+":"+v.row; if(!rows.has(k)) rows.set(k,[]); rows.get(k).push(v) });
+      const ord=[...rows.values()].map(l=>{ const xs=l.map(v=>v.c[0]), ys=l.map(v=>v.c[1]); return {l, x:Math.min(...xs), y:Math.max(...ys), hor: Math.max(...xs)-Math.min(...xs) >= Math.max(...ys)-Math.min(...ys)} });
+      ord.sort((a,b)=>Math.abs(a.y-b.y)>3? b.y-a.y : a.x-b.x); let n=0;   // de cima para baixo, da esquerda para a direita (no desenho)
+      ord.forEach(o=>o.l.sort((a,b)=> o.hor? a.c[0]-b.c[0] : b.c[1]-a.c[1]).forEach(v=>v.num=++n));
+      vagas.forEach(v=>{ if(garCar(v.tipo) && v.num==null) v.num=++n }) }
     vagas=vagas.map(v=>{ const {_f, ...r}=v; r.ang=r.ang||(_f? _f.ang : 90); return r });
     // rotas: da chegada a cada saída, pela rede de corredores, com o raio de giro nas esquinas
     const routes=[]; for(let i=1;i<portals.length;i++){ const r=garRotaRede(W.aisles, R, portals[0].p, portals[i].p) || (Rc? rota(Rc, Rc.seeds[0], Rc.seeds[i]) : null); if(r) routes.push({pts:r, de:portals[0].label, para:portals[i].label}) }
     const path=W.aisles.map(a=>({pts:[a.a, a.b], dir:a.dir||0, conn:a.conn}));
     // raio de giro nas junções (corredor × transversal) e na saída dos patamares
     let giroFalha=0; P.net.forEach(p=>{ if(p.pass) return; P.net.filter(q=>q.i>p.i && !q.pass && !q.conn && !p.conn && q.o!==p.o && gmToca(gmRect(p),gmRect(q),0.05)).forEach(q=>{ if(!garGiroOk(p.w,q.w,R)) giroFalha++ }) });
-    const passagens=P.net.filter(p=>p.pass && p.o==="H").map(p=>+p.w.toFixed(2));
+    const passagens=P.net.filter(p=>p.pass && !p.junta).map(p=>+p.w.toFixed(2));
     const lw=(+E.rampaL||3.6)+0.9; P.att.forEach((l,pi)=>{ const p=P.net.find(x=>l.includes(x.i)); const pt=P.f.PT[pi]; if(p && pt){ const par= p.o==="H"? Math.abs(pt.h[0])>0.7 : Math.abs(pt.h[1])>0.7; if(!par && !garGiroOk(lw,p.w,R)) giroFalha++ } });
     const count=vagas.filter(v=>garCar(v.tipo)).length;
     const sobras=gmSobras(FR, R, L, P, vagas, pil);

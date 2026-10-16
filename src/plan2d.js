@@ -126,7 +126,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     const dr=css("--c-drive");
     (lay.aisles||[]).forEach(a=>fillP(a.poly, dr, 0.95));
     (lay.retornos||[]).forEach(p=>{ fillP(p, dr, 0.95); strokeP(p, css("--muted"), 0.8, [3,3]); if(V.s>6) label("retorno", w2s(G.centroid(p)), {size:8.5, bg:false, col:css("--ink-2")}) });
-    (lay.aisles||[]).filter(a=>a.pass && a.o==="H").forEach(a=>{ strokeP(a.poly, css("--warn"), 1, [4,3]); if(V.s>5) label(`passagem ${nf(a.w,1)} m · mão única`, w2s(G.centroid(a.poly)), {size:8.5, col:css("--warn-t")||css("--warn")}) });
+    (lay.aisles||[]).filter(a=>a.pass).forEach(a=>{ strokeP(a.poly, css("--warn"), 1, [4,3]); if(V.s>5) label(`passagem ${nf(a.w,1)} m · mão única`, w2s(G.centroid(a.poly)), {size:8.5, col:css("--warn-t")||css("--warn")}) });
   }
   function sobrasDraw(lay){ (lay.sobras||[]).forEach(o=>{ o.polys.forEach(p=>{ fillP(p, css("--c-tec"), 1); hatch(p, css("--muted"), 0.22) });
       if(V.s>4.5 && o.area>=8){ const nome= o.tipo==="deposito"? "depósito" : o.tipo==="semAcesso"? "sem acesso de veículos" : "área técnica"; label(`${nome} · ${nf(o.area,0)} m²`, w2s(o.c), {size:8.5, col:css("--ink-2")}) } }) }
@@ -137,7 +137,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       for(let t=-R_; t<=R_; t+=0.5){ const P_=[c[0]+d[0]*t, c[1]+d[1]*t], p1=w2s([P_[0]+n[0]*R_,P_[1]+n[1]*R_]), p2=w2s([P_[0]-n[0]*R_,P_[1]-n[1]*R_]); g.beginPath(); g.moveTo(...p1); g.lineTo(...p2); g.stroke() }
       g.restore(); g.globalAlpha=1; strokeP(p, css("--d-acc"), 0.8) };
     (lay.peds||[]).forEach(pd=>{ const d=pd.d||[1,0]; zebra(pd.poly, d); zebra(pd.cross, d);
-      if(V.s>7 && pd.poly) label("pedestres", w2s(G.centroid(pd.poly)), {size:8.5, col:css("--d-acc")}) }) }
+      if(V.s>7 && pd.poly && pd.L>4) label("pedestres", w2s(G.centroid(pd.poly)), {size:8.5, col:css("--d-acc")}) }) }
   function stallsDraw(lay){
     lay.pillars.forEach(p=>fillP(p,css("--ink"),0.85));
     let nCar=0; const partido=lay.modelo==="partido";
@@ -150,7 +150,7 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
       // batente (trava de roda) a 0,8 m do fundo da vaga
       if(partido && car && v.out && v.poly.length===4 && V.s>7){ const bk=[v.c[0]-v.out[0]*1.7, v.c[1]-v.out[1]*1.7], n=[-v.out[1],v.out[0]], h=0.7; const p1=w2s([bk[0]+n[0]*h,bk[1]+n[1]*h]), p2=w2s([bk[0]-n[0]*h,bk[1]-n[1]*h]);
         g.strokeStyle=css("--ink"); g.globalAlpha=0.5; g.lineWidth=Math.max(1.2,V.s*0.12); g.beginPath(); g.moveTo(...p1); g.lineTo(...p2); g.stroke(); g.globalAlpha=1 }
-      if(V.s>9){ const t= v.tipo==="pcd"?"PCD": v.tipo==="idoso"?"ID": v.tipo==="faixa"?"":v.tipo==="off"?"×": v.tipo==="presa"?"presa": v.tipo==="moto"?"M": v.tipo==="bici"?`${v.bikes||""} bic.` : v.ev?"EV":String(partido? nCar : i+1); if(t) label(t, w2s(v.c), {size:9,bg:false, col: v.ev&&v.tipo==="n"? css("--d-acc") : undefined}) } });
+      if(V.s>9){ const t= v.tipo==="pcd"?"PCD": v.tipo==="idoso"?"ID": v.tipo==="faixa"?"":v.tipo==="off"?"×": v.tipo==="presa"?"presa": v.tipo==="moto"?"M": v.tipo==="bici"?`${v.bikes||""} bic.` : v.ev?"EV":String(partido? (v.num||nCar) : i+1); if(t) label(t, w2s(v.c), {size:9,bg:false, col: v.ev&&v.tipo==="n"? css("--d-acc") : undefined}) } });
     if(lay.qe){ const [x,y]=w2s(lay.qe), s_=Math.max(6,Math.min(12,V.s*0.7)); g.fillStyle=css("--c-tec"); g.strokeStyle=css("--ink"); g.lineWidth=1; g.fillRect(x-s_/2,y-s_/2,s_,s_); g.strokeRect(x-s_/2,y-s_/2,s_,s_); if(V.s>4) label("QE", [x, y-s_-6], {size:9}) }
   }
   function garBodyInner(lay){

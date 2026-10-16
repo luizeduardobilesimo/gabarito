@@ -28,11 +28,10 @@ extendDEF("garagem", {
   motos: false, motosMax: 0.1,                 // motos 1,0 × 2,2 m nas sobras (máx. em % das unidades)
   bici: "off", biciPorUn: 1, biciM2: 100,      // bicicletário: off | un (por unidade) | area (1 a cada X m² construídos)
   ev: 0, evCusto: 9000,                        // % de vagas com recarga e custo por ponto
-  // partidos de garagem (src/calc/garmod.js) — valores de referência usuais; conferir no código de obras
-  partido: "auto",                             // auto | simples | estreita | duplo | pente | anel | espinha | inclinado
-  acrParede: 0.25, acrPilar: 0.10,             // acréscimo na largura da vaga por lado com parede / pilar contíguo (m)
-  raioExt: 6.0, raioInt: 3.0,                  // raio de giro do carro (externo e interno, m)
-  becoMax: 25, faixaPed: 1.2, pcdModo: "auto"  // corredor sem saída máximo (m) · faixa de pedestres (m) · PCD: auto | compartilhada | lado
+  // partidos de garagem (src/calc/garmod.js) — referência usual, conferir no código de obras: partido auto|simples|estreita|duplo|
+  // pente|anel|espinha|inclinado · largura acrescida por lado junto à parede / ao pilar (m) · faixa da PCD auto|compartilhada|lado.
+  // Raio de giro (6,0/3,0 m), corredor sem saída (25 m) e faixa de pedestres (1,20 m) ficam fixos em garRegras (link #ver= curto)
+  partido: "auto", acrParede: 0.25, acrPilar: 0.1, pcdModo: "auto"
 });
 const garX = st => (st && st.garagem) || DEF.garagem;
 const RAMPA_TIPOS = { reta:"Retas empilhadas", alternada:"Alternadas (tesoura)", helicoidal:"Helicoidal", L:"Em L, com patamar", elevador:"Elevador de carros" };
@@ -602,7 +601,16 @@ function garExtras(base, poly, obst, E, o){
   const R=rasterCheck(poly, blocks, cars, base.pillars, portals, base.aisle);
   const corr=[...(base.aisles||[]).map(a=>a.poly), ...(base.peds||[]).filter(p=>p.poly).map(p=>p.poly), ...(base.retornos||[]), ...faixas.map(v=>v.poly)];
   const F=extras(poly, blocks, keep, {vagas:cars, pillars:base.pillars, aisles:[], acc:{}, crosses:[], AI:base.aisle, ux:base.ux, vy:base.vy, corr}, R, E, portals, o);
-  const r= F? {...base, vagas:[...F.vagas, ...faixas], grid:F.R.grid, reach:F.R.reach} : base;
+  let r= F? {...base, vagas:[...F.vagas, ...faixas], grid:F.R.grid, reach:F.R.reach} : base;
+  // bicicletário nas sobras (depósito / área técnica junto à circulação): módulos de 3,0 × 2,0 m com 5 bicicletas
+  let falta=(o.bici||0)-r.vagas.reduce((s,v)=>s+(v.tipo==="bici"? v.bikes||0 : 0),0);
+  if(falta>0 && (base.sobras||[]).length && base.ux){ const ux=base.ux, vy=base.vy, add=[];
+    base.sobras.filter(s=>s.tipo!=="semAcesso").sort((a,b)=>(a.tipo==="deposito"?0:1)-(b.tipo==="deposito"?0:1) || b.area-a.area).forEach(s=>s.polys.forEach(p=>{
+      if(falta<=0) return; const [u0,u1]=G.extent(p,ux), [v0,v1]=G.extent(p,vy), Lu=u1-u0, Lv=v1-v0;
+      const [a,b]= Lu>=Lv? [BICI[0],BICI[1]] : [BICI[1],BICI[0]], nu=Math.floor((Lu+1e-6)/a), nv=Math.floor((Lv+1e-6)/b);
+      for(let i=0;i<nu && falta>0;i++) for(let j=0;j<nv && falta>0;j++){ const q=G.rect(ux,vy,u0+i*a,v0+j*b,a,b);
+        add.push({poly:q, c:G.centroid(q), fm:G.centroid(q), out:[0,0], u:0, uc:0, row:-1, grp:-1, aisle:-1, tipo:"bici", bikes:BICI[2], extra:true, sobra:true}); falta-=BICI[2] } }));
+    if(add.length) r={...r, vagas:[...r.vagas, ...add]} }
   mp.set(k, r); return r;
 }
 /* marcações manuais (tirar/devolver, tipo da vaga) sobre o layout-base */
