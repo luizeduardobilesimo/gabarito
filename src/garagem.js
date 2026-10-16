@@ -25,7 +25,12 @@ extendDEF("garagem", {
   presas: false, presasMax: 0.3, presasVinc: "unidade",   // vagas presas (tandem): % de unidades que aceitam · vínculo
   motos: false, motosMax: 0.1,                 // motos 1,0 × 2,2 m nas sobras (máx. em % das unidades)
   bici: "off", biciPorUn: 1, biciM2: 100,      // bicicletário: off | un (por unidade) | area (1 a cada X m² construídos)
-  ev: 0, evCusto: 9000                         // % de vagas com recarga e custo por ponto
+  ev: 0, evCusto: 9000,                        // % de vagas com recarga e custo por ponto
+  // partidos de garagem (src/calc/garmod.js) — valores de referência usuais; conferir no código de obras
+  partido: "auto",                             // auto | simples | estreita | duplo | pente | anel | espinha | inclinado
+  acrParede: 0.25, acrPilar: 0.10,             // acréscimo na largura da vaga por lado com parede / pilar contíguo (m)
+  raioExt: 6.0, raioInt: 3.0,                  // raio de giro do carro (externo e interno, m)
+  becoMax: 25, faixaPed: 1.2, pcdModo: "auto"  // corredor sem saída máximo (m) · faixa de pedestres (m) · PCD: auto | compartilhada | lado
 });
 const garX = st => (st && st.garagem) || DEF.garagem;
 const RAMPA_TIPOS = { reta:"Retas empilhadas", alternada:"Alternadas (tesoura)", helicoidal:"Helicoidal", L:"Em L, com patamar", elevador:"Elevador de carros" };
@@ -508,6 +513,8 @@ function simplify(p, eps){ if(p.length<3) return p; const d=(q,a,b)=>{ const dx=
 
 /* ---------- solver de um pavimento ---------- */
 function garageSolve(poly, obst, E, o){
+  // partidos de garagem (src/calc/garmod.js): rede de corredores contínua, módulo 5,0 + 5,5 + 5,0, malha de pilares, faixa de pedestres, PCD com faixa
+  if(typeof garModSolve==="function" && !o.velho){ try{ const M=garModSolve(poly, obst, E, o); if(M && M.cands.length){ const r=garModFinal(poly, obst, E, o, M); if(r) return r } }catch(e){ console.error("[garmod]", e) } }
   const portals=o.portals||[], blocks=[...obst, ...(o.blocks||[])], keep=o.keep||[];
   let dirs=[];
   if(E.garDir!=="auto"){ const a=(+E.garDirGraus||0)*Math.PI/180; dirs=[[Math.cos(a),Math.sin(a)]] }
@@ -566,7 +573,8 @@ function garageSolve(poly, obst, E, o){
 /* layout com cache + marcações manuais */
 function garageLayout(poly, obst, E, key, o){
   const r2=q=>[+q[0].toFixed(2),+q[1].toFixed(2)];
-  const sig=JSON.stringify([poly.map(r2), obst.map(c=>c.map(r2)), (o.blocks||[]).map(c=>c.map(r2)), (o.portals||[]).map(p=>[r2(p.p),p.heading.map(v=>+v.toFixed(3))]), (o.keep||[]).map(k=>k.map(r2)), E.vagaL,E.vagaC,E.corredor,E.porModulo,E.pilar,E.pcd,E.idoso,E.angulo,E.garDir,E.garDirGraus,!!o.quick, !!o.presas, !!o.motos, o.bici||0]);
+  const sig=JSON.stringify([poly.map(r2), obst.map(c=>c.map(r2)), (o.blocks||[]).map(c=>c.map(r2)), (o.portals||[]).map(p=>[r2(p.p),p.heading.map(v=>+v.toFixed(3))]), (o.keep||[]).map(k=>k.map(r2)), E.vagaL,E.vagaC,E.corredor,E.porModulo,E.pilar,E.pcd,E.idoso,E.angulo,E.garDir,E.garDirGraus,!!o.quick, !!o.presas, !!o.motos, o.bici||0, E.rampaL, o.terreo?1:0,
+    (o.lobbies||[]).map(l=>[l.poly.map(r2), (l.portas||[]).map(r2)]), o.gx? [o.gx.acrParede,o.gx.acrPilar,o.gx.raioExt,o.gx.raioInt,o.gx.becoMax,o.gx.faixaPed,o.gx.pcdModo,o.gx.partido] : 0]);
   let base=_garCache.get(sig);
   if(!base){ base=garageSolve(poly,obst,E,o); if(_garCache.size>80) _garCache.clear(); _garCache.set(sig,base) }
   const off=E.off||{}, ov=E.vtipo||{}; let count=0;
@@ -579,10 +587,13 @@ function garagens(st, m, opt){
   const E=st.estudo, P=st.produto, V=m.vert, out={}, q=!!opt.quick, GX=garX(st);
   const ext = q? {} : {presas:!!GX.presas, motos:!!GX.motos}, bReq = q? {n:0} : biciReq(st, m); let bici=bReq.n;
   const jobs=[]; // [chave, nível, solver(bicicletas que faltam)]
+  // halls dos elevadores: a garagem liga cada um ao corredor por uma faixa de pedestres (portas do contrato do núcleo, se houver)
+  const LB=(m.coreSets||[]).filter(cs=>cs.lobby&&cs.lobby.length>2).map(cs=>{ const nu=cs.lay&&cs.lay.nucleo; const portas=nu&&Array.isArray(nu.portas)? nu.portas.filter(d=>d&&d.p&&(!d.tipo||d.tipo==="elev")).map(d=>d.p) : []; return {poly:cs.lobby, portas, i:cs.i} });
+  ext.gx=GX; ext.lobbies=LB;
   Object.values(V.floors).forEach(f=>{
     if(f.key==="ter") return;
     if(!f.poly.length) return;
-    jobs.push([f.key, f.k, b=>garageLayout(f.poly, m.obst, E, f.key, {portals:f.portals, blocks:f.blocks, keep:f.landings, ramps:f.ramps, quick:q, ...ext, bici:b})]);
+    jobs.push([f.key, f.k, b=>garageLayout(f.poly, m.obst, E, f.key, {portals:f.portals, blocks:f.blocks, keep:f.landings, ramps:f.ramps, quick:q, ...ext, bici:b, terreo:true})]);
   });
   // térreo: garagem nos fundos, entrada pela faixa ao lado das rampas
   const T=m.ter;
@@ -593,7 +604,7 @@ function garagens(st, m, opt){
     const keep=[...(T.keep||[])];
     // rampa colocada à mão dentro da garagem do térreo: a boca precisa estar ligada
     fT.portals.forEach(pt=>{ if(G.pip(pt.p,T.gar)) portals.push(pt) });
-    jobs.push(["ter", 0, b=>garageLayout(T.gar, [...m.obst, ...T.colsGar], E, "ter", {portals, blocks, keep, ramps:fT.ramps.filter(r=>G.polysOverlap(r.poly,T.gar)), quick:q, ...ext, bici:b})]);
+    jobs.push(["ter", 0, b=>garageLayout(T.gar, [...m.obst, ...T.colsGar], E, "ter", {portals, blocks, keep, ramps:fT.ramps.filter(r=>G.polysOverlap(r.poly,T.gar)), quick:q, ...ext, bici:b, terreo:true})]);
   }
   // do mais perto da rua para o mais fundo (o bicicletário e os limites de presas/motos vão sendo consumidos nessa ordem)
   const ord=jobs.slice().sort((a,b)=>Math.abs(a[1])-Math.abs(b[1]) || a[1]-b[1]);
