@@ -225,6 +225,59 @@ function otimFechaTxt(fx, semLucro){
   return `Margem abaixo da meta de ${pct(fx.meta,0)}.${op.length? " Chega à meta com "+op.join(" ou ")+"." : ""}`;
 }
 
+/* ---------- conferência com o layout real da garagem (motor do otimizador e do "o que fecha a conta", src/calc/ciclo.js) ----------
+   otimMotor(base, o) → {cabe, nivelOk, avalia, notaMassa, rascunho, confere, melhorDe, repara}
+   o = {cal (calibração das vagas), fin(st,m)→f, score(f,m)→nota, forma?, rTol?, pavMinF?, memoEf?}
+   As vagas por pavimento variam muito com o empilhamento das rampas e a posição do núcleo (no 20 × 40: de 5 a 13 por subsolo), então a
+   estimativa só ORDENA; quem decide é o layout. avalia(st) = cálculo rápido (layout da garagem com rotas) + finance. repara(cur, subir):
+   faltando vagas, testa as três saídas de um incorporador e fica com a de melhor nota que fecha as vagas (ou, se nenhuma fecha, a que
+   mais se aproxima): menos pavimentos tipo (menos unidades = menos vagas exigidas), +1 subsolo, +1 garagem elevada (só se a torre
+   continuar cabendo). No máximo 3 rodadas de reparo; depois `subir` rodadas de "subida da encosta" (ver abaixo). */
+function otimMotor(base, o){
+  const {cal, fin, score, forma=false, rTol=0.1, pavMinF=1, memoEf=null}=o, R0=base.regras;
+  const cabe=m=>m.T.every(x=>x.fit) && m.H<=(m.hLim ?? R0.hMax)+1e-6 && m.CA<=R0.caMax+1e-6;
+  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m);
+  const avalia=st=>{ const mm=compute(st,{quick:true}), f=fin(st,mm); return {st, m:mm, f, sc:score(f,mm)} };
+  const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
+  // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
+  // rascunho {st, sc0} (nota da massa) sem calcular a garagem — quem calcula é `confere`
+  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null; const {m0, sc0}=notaMassa(s2);
+    if(!cabe(m0) || m0.minApto<R0.aptoMin) return null;
+    if(forma && (m0.T.some(t=>t.blcIgn && t.blcIgn.length) || otimDesvio(m0)>rTol)) return null;
+    return {st:s2, sc0} };
+  const confere=r=>{ if(!r) return null; const c=avalia(r.st); return forma && otimDesvio(c.m)>rTol ? null : c };
+  const melhorDe=l=>l.filter(Boolean).sort((a,b)=>(nivelOk(b)-nivelOk(a)) || (nivelOk(a)? b.sc-a.sc : (a.m.vagasReq-a.m.vagas)-(b.m.vagasReq-b.m.vagas) || b.sc-a.sc))[0];
+  const repara=(cur, subir)=>{
+    for(let t=0; t<3 && !nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, nT=P.torres.length, pav=P.torres[0].pav;
+      const porPav=Math.max(1, nT*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), k=Math.max(1, Math.ceil((m.vagasReq-m.vagas)/porPav));
+      const nx=melhorDe([
+        pav-k>=pMinV ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav-k) }) : null,
+        rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++ }),
+        rascunho(cur.st, p=>{ if(p.garAcima>=3) return false; p.garAcima++ })].map(confere));
+      if(!nx) break; cur=nx }
+    // com as vagas fechadas, sobe a encosta com o layout real (`subir` rodadas): mais andares (o que sobra de vagas, ou +1 e +2 — o
+    // rendimento da garagem muda com o núcleo, que muda com a altura), mais andares com +1 subsolo, ou um subsolo/uma elevada a menos,
+    // ou a elevada trocada por um subsolo. Vizinho fora das regras nem é calculado; os outros são calculados na ordem da nota da massa,
+    // só os que a massa diz que melhoram, até 3 por rodada — fica com o primeiro que fecha as vagas e melhora.
+    for(let t=0; t<subir && nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, mv=cur.st.regras.m2Vaga||28, sobra=m.vagas-m.vagasReq, pav=P.torres[0].pav;
+      const porPav=Math.max(1, P.torres.length*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), yS=cal.s*Math.floor((m.subA||0)/mv), yG=cal.g*Math.floor((m.embA||0)/mv);
+      const up=Math.floor(sobra/porPav), up2=Math.max(1, Math.floor((sobra+yS)/porPav)), sc0=notaMassa(clone(cur.st)).sc0;
+      const viz=[
+        rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav+Math.max(1, up)) }),
+        up<=1 ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav+2) }) : null,
+        rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++; p.torres.forEach(x=>x.pav=pav+up2) }),
+        P.subsolos>0 && sobra>=0.5*yS ? rascunho(cur.st, p=>{ p.subsolos-- }) : null,
+        P.garAcima>0 && sobra>=0.5*yG ? rascunho(cur.st, p=>{ p.garAcima-- }) : null,
+        P.garAcima>0 && P.subsolos<5 ? rascunho(cur.st, p=>{ p.garAcima--; p.subsolos++ }) : null]   // troca a elevada por um subsolo (a torre desce 1 pé-direito)
+        .filter(r=>r && r.sc0>sc0+1e-9).sort((a,b)=>b.sc0-a.sc0).slice(0,3);
+      let nx=null; for(const r of viz){ const c=confere(r); if(c && nivelOk(c) && c.sc>cur.sc){ nx=c; break } }
+      if(nx) cur=nx; else break }
+    return cur };
+  return {cabe, nivelOk, avalia, notaMassa, rascunho, confere, melhorDe, repara, cal};
+}
+const OTIM_PEN_PEND = 0.03;   // nota − 3% por pendência grave do projeto (lazer que não coube, rampa/elevador com pendência…), até 3
+const OTIM_EXTRAS = ["sol","solFonte","vento","malha","malhaCusto"];   // critérios extras que não mudam com a garagem
+
 let OTIM=null;
 /* otimizar(opts, onProg?, onDone?, ctx?) → Promise do resultado (também entregue a onDone; rejeita com Error("cancelado")).
    Puro (sem DOM): roda no Web Worker. Na interface, chame otimRodar (src/ui/calcworker.js), o caminho único.
@@ -234,7 +287,8 @@ let OTIM=null;
    vento=false, malha=false, efic=false, vc=false} (efic/vc acrescentam eficiência global e V/C aos critérios da fronteira de Pareto).
    terrenoPct (assistente, terreno sem preço): cada combinação é avaliada com terreno = terrenoPct × o seu VGV — o mesmo que o assistente
    lança depois (antes ele otimizava com terreno 0 e cobrava 12% do VGV só no fim, e a ordem não era a do resultado mostrado).
-   opts.cal (testes): calibração das vagas {s, g, t, vf} fixa.
+   opts.cal (testes): calibração das vagas {s, g, t, vf} fixa. Fase "ciclo" (garagem real, térreo, cálculo completo da 1ª, lazer enxuto —
+   ver `ciclo` abaixo): opts.ciclo=false desliga, opts.completo=false pula o completo, opts.tempoCiclo (padrão até 8 s), opts.cicloN (3).
    Busca (UX v3 P3): unidades por andar 2…8 (e 1 em lote pequeno); para cada garagem, alturas até o MENOR entre o gabarito/CA e o que
    cabe (a planta estreita com a altura) e também 70% e 50% disso; vagas estimadas pela calibração por pavimento; ordem = nível
    (lucro > 0 e margem s/ VGV ≥ S.fin.margemAlvo › lucro > 0 › prejuízo) e depois o objetivo. As 14 melhores vão à conferência com o layout
@@ -243,7 +297,10 @@ let OTIM=null;
    garagem elevada, vagas já cumpridas) não são recalculadas; o sol (que não depende dos subsolos) é guardado por assinatura.
    Resultado serializável (contrato para a interface e o assistente):
      res        até 5 opções conferidas, em ordem (nível, objetivo); cada uma {nT, pk, N, pav, sub, gac, mix, units, vagas, req, lucro,
-                margem (s/ VGV), tir, vpl, vgv, efic, nivel, semLucro?, terreno? (com terrenoPct)}
+                margem (s/ VGV), tir, vpl, vgv, efic, nivel, semLucro?, terreno? (com terrenoPct), garagem {rampaTipo, acessoVei, ladoVei,
+                angulo} (a com que foi conferida — aplicarOtim grava), garInfo? {base, tipos[]} (melhor de cada tipo de circulação), pend
+                [{k, grave, msg}] (o que o projeto não resolve), completo? (a 1ª: números do cálculo COMPLETO, os do Projeto), vagasFalta?,
+                enxuto? (alternativa "lazer enxuto" da 1ª: opção inteira + lazer, tira, dLucro, dMargem — só aplicada se escolhida)}
      fecha      quando a 1ª está abaixo da meta: {k, motivo, meta, lucro, margem, precoAtual, precoZero, precoMeta (R$/m² médio; os
                 menores entre as opções, opcaoZero/opcaoMeta = índice em res quando não é a 1ª), terrenoAtual, terrenoZero, terrenoMeta, terrenoPct}
      semLucro   = fecha, quando nem a 1ª dá lucro (res[0].semLucro = true): a menos ruim + motivo + o que fecharia a conta
@@ -339,7 +396,13 @@ function otimizar(opts, onProg, onDone, ctx={}){
     }
     prog(0.6*i/jobs.length);
     if(i<jobs.length) setTimeout(step,0);
-    else { res.sort(otimMelhor); prog(0.6); validar(res.slice(0,14), out=>{
+    else { res.sort(otimMelhor); prog(0.6); validar(res.slice(0,14), out0=>{
+      const canc=e=>/cancelado/.test(e && e.message || "");
+      ciclo(out0).catch(e=>{ if(canc(e)) throw e; console.error("[otimizar] ciclo", e); return out0 })
+        .then(fechaFim).catch(e=>{ if(canc(e)) cancela(); else reject(e) }) }) }
+  };
+  /* depois do ciclo: nenhuma opção (por quê), o que fecharia a conta e a fronteira */
+  const fechaFim=out=>{ if(parou()) return cancela();
       const o={res:out, obj:opts.obj, k, cal, meta, ms:performance.now()-t0, testadas:res.length, ...(tPct? {terrenoPct:tPct} : {}), ...(formaInfo? {forma:formaInfo} : {})};
       // nenhuma combinação conferida: por quê (lote pequeno para as regras, ou a garagem não comporta as vagas exigidas)
       if(!out.length){ const mv=base.regras.m2Vaga||28, ys=Math.max(0, Math.round(cal.s*Math.floor((mNow.subA || G.area(base.lote.pts)*(1-base.regras.permeab))/mv)));
@@ -356,69 +419,84 @@ function otimizar(opts, onProg, onDone, ctx={}){
           if(pm!=null && (o.fecha.precoMeta==null || pm<o.fecha.precoMeta-1)){ o.fecha.precoMeta=pm; o.fecha.opcaoMeta=q } });
         if(!(b.lucro>0)){ o.semLucro=o.fecha; b.semLucro=true } }catch(e){ console.error("[otimizar] fecha", e); if(!(b.lucro>0)){ o.semLucro={k:"custo", motivo:"custos acima da receita", meta}; b.semLucro=true } } }
       if(!mc) return finish(o);
-      multi(out, o) }) }
-  };
+      multi(out, o) };
   const stOf=r=>{ const st=clone(base); st.produto.mix=clone(r.mix); st.produto.subsolos=r.sub; st.produto.garAcima=r.gac; st.produto.torres=Array.from({length:r.nT},()=>({pav:r.pav})); return st };   // st.blocos fica como está: a forma é do usuário
   const extras=(st,m,r)=>{ const s=otimSol(st,m,true); r.sol=s.h; r.solFonte=s.fonte;
     if(opts.vento){ const v=otimVento(st,m); if(v!=null) r.vento=v }
     if(opts.malha){ const x=otimMalha(st,m); if(x){ r.malha=x; if(x.custo!=null) r.malhaCusto=x.custo } } return r };
-  const R0=base.regras, cabe=m=>m.T.every(x=>x.fit) && m.H<=(m.hLim ?? R0.hMax)+1e-6 && m.CA<=R0.caMax+1e-6;
-  /* conferência com o layout real da garagem. As vagas por pavimento variam muito com o empilhamento das rampas e a posição do núcleo
-     (no 20 × 40: de 5 a 13 por subsolo), então a estimativa só ORDENA; quem decide é o layout. Faltando vagas, testa as três saídas de
-     um incorporador e fica com a de melhor nota que fecha as vagas (ou, se nenhuma fecha, a que mais se aproxima): menos pavimentos
-     tipo (menos unidades = menos vagas exigidas), +1 subsolo, +1 garagem elevada (só se a torre continuar cabendo). Sobrando vagas de
-     um pavimento inteiro, tenta tirar um subsolo/uma elevada. No máximo 3 rodadas de reparo + 1 de corte por opção. */
-  const pMinV=Math.max(2, pavMinF), nivelOk=x=>x.m.vagas>=x.m.vagasReq && cabe(x.m);
-  const avalia=st=>{ const mm=compute(st,{quick:true}), f=fin(st,mm); return {st, m:mm, f, sc:score(f,mm)} };
-  const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
-  // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
-  // rascunho {st, sc0} (nota da massa) sem calcular a garagem — quem calcula é `confere`
-  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null; const {m0, sc0}=notaMassa(s2);
-    if(!cabe(m0) || m0.minApto<R0.aptoMin) return null;
-    if(forma && (m0.T.some(t=>t.blcIgn && t.blcIgn.length) || otimDesvio(m0)>rTol)) return null;
-    return {st:s2, sc0} };
-  const confere=r=>{ if(!r) return null; const c=avalia(r.st); return forma && otimDesvio(c.m)>rTol ? null : c };
-  const melhorDe=l=>l.filter(Boolean).sort((a,b)=>(nivelOk(b)-nivelOk(a)) || (nivelOk(a)? b.sc-a.sc : (a.m.vagasReq-a.m.vagas)-(b.m.vagasReq-b.m.vagas) || b.sc-a.sc))[0];
-  const repara=(cur, subir)=>{
-    for(let t=0; t<3 && !nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, nT=P.torres.length, pav=P.torres[0].pav;
-      const porPav=Math.max(1, nT*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), k=Math.max(1, Math.ceil((m.vagasReq-m.vagas)/porPav));
-      const nx=melhorDe([
-        pav-k>=pMinV ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav-k) }) : null,
-        rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++ }),
-        rascunho(cur.st, p=>{ if(p.garAcima>=3) return false; p.garAcima++ })].map(confere));
-      if(!nx) break; cur=nx }
-    // com as vagas fechadas, sobe a encosta com o layout real (só nas primeiras opções da lista, `subir` rodadas): mais andares (o que
-    // sobra de vagas, ou +1 e +2 — o rendimento da garagem muda com o núcleo, que muda com a altura), mais andares com +1 subsolo, ou um
-    // subsolo/uma elevada a menos, ou a elevada trocada por um subsolo. Vizinho fora das regras nem é calculado; os outros são calculados
-    // na ordem da nota da massa, só os que a massa diz que melhoram, até 3 por rodada — fica com o primeiro que fecha as vagas e melhora.
-    for(let t=0; t<subir && nivelOk(cur); t++){ const P=cur.st.produto, m=cur.m, mv=cur.st.regras.m2Vaga||28, sobra=m.vagas-m.vagasReq, pav=P.torres[0].pav;
-      const porPav=Math.max(1, P.torres.length*P.mix.reduce((s,u)=>s+u.qtd,0)*(+cur.st.regras.vagasApto||1)), yS=cal.s*Math.floor((m.subA||0)/mv), yG=cal.g*Math.floor((m.embA||0)/mv);
-      const up=Math.floor(sobra/porPav), up2=Math.max(1, Math.floor((sobra+yS)/porPav)), sc0=notaMassa(clone(cur.st)).sc0;
-      const viz=[
-        rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav+Math.max(1, up)) }),
-        up<=1 ? rascunho(cur.st, p=>{ p.torres.forEach(x=>x.pav=pav+2) }) : null,
-        rascunho(cur.st, p=>{ if(p.subsolos>=5) return false; p.subsolos++; p.torres.forEach(x=>x.pav=pav+up2) }),
-        P.subsolos>0 && sobra>=0.5*yS ? rascunho(cur.st, p=>{ p.subsolos-- }) : null,
-        P.garAcima>0 && sobra>=0.5*yG ? rascunho(cur.st, p=>{ p.garAcima-- }) : null,
-        P.garAcima>0 && P.subsolos<5 ? rascunho(cur.st, p=>{ p.garAcima--; p.subsolos++ }) : null]   // troca a elevada por um subsolo (a torre desce 1 pé-direito)
-        .filter(r=>r && r.sc0>sc0+1e-9).sort((a,b)=>b.sc0-a.sc0).slice(0,3);
-      let nx=null; for(const r of viz){ const c=confere(r); if(c && nivelOk(c) && c.sc>cur.sc){ nx=c; break } }
-      if(nx) cur=nx; else break }
-    return cur };
-  // confirma as melhores com o layout real da garagem (reparo acima)
-  const conf=new Map();   // chave → {st, m} das opções conferidas (para o "o que fecharia a conta" sem recalcular)
+  // conferência com o layout real da garagem (avalia, repara…): otimMotor, também usado pelo "o que fecha a conta" (src/calc/ciclo.js)
+  const MT=otimMotor(base, {cal, fin, score, forma, rTol, pavMinF, memoEf}), {nivelOk, avalia, repara}=MT;
+  // garagem com que cada combinação foi avaliada (aplicarOtim grava junto): a do estudo, até a fase do ciclo trocar
+  const gar0 = typeof cicloGarDe==="function"? cicloGarDe(base) : null;
+  // progresso: busca 0–0,6 · conferência 0,6–pV1 · ciclo (garagem, térreo, cálculo completo) pV1–pC1 · fronteira pC1–1
+  const pV1 = mc? 0.7 : 0.72, pC1 = mc? 0.88 : 1;
+  /* opção do resultado a partir de uma conferência c = {st, m, f, sc} (r = a combinação de origem) */
+  const opcao=(r, c)=>{ const st=c.st, m=c.m, f=c.f;
+    const v={...r, sc:c.sc, pav:st.produto.torres[0].pav, sub:st.produto.subsolos, gac:st.produto.garAcima, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma)};
+    v.nivel=otimNivel(v, meta); v.key=otimKey(v); v.est=false; if(tPct) v.terreno=st.fin.terreno;
+    if(gar0) v.garagem=cicloGarDe(st);
+    return v };
+  // confirma as melhores com o layout real da garagem (reparo em otimMotor)
+  const conf=new Map();   // chave → {st, m, f, sc} das opções conferidas (para o ciclo e o "o que fecharia a conta" sem recalcular)
   const validar=(list, done)=>{ let j=0; const out=[];
     const stepV=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<list.length && out.length<5 && performance.now()-ts<60){ const r=list[j++];
-        const c=repara(avalia(stOf(r)), j<=3? 4 : 0), st=c.st, m=c.m, f=c.f;
+        const c=repara(avalia(stOf(r)), j<=3? 4 : 0), st=c.st, m=c.m;
         if(!nivelOk(c) || (forma && otimDesvio(m)>rTol)) continue;   // forma: unidades além da tolerância não entram nas melhores
-        const v={...r, sc:c.sc, pav:st.produto.torres[0].pav, sub:st.produto.subsolos, gac:st.produto.garAcima, units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma)};
-        v.nivel=otimNivel(v, meta); v.key=otimKey(v); v.est=false; if(tPct) v.terreno=st.fin.terreno;
+        const v=opcao(r, c);
         if(out.some(x=>x.key===v.key)) continue;   // o reparo pode levar duas opções à mesma combinação
-        if(mc) extras(st,m,v); out.push(v); conf.set(v.key, {st, m}) }
-      prog(0.6+0.2*j/Math.max(1,list.length));
+        if(mc) extras(st,m,v); out.push(v); conf.set(v.key, c) }
+      prog(0.6+(pV1-0.6)*j/Math.max(1,list.length));
       if(j<list.length && out.length<5) setTimeout(stepV,0); else done(out.sort(otimMelhor)) };
     stepV() };
+  /* ---------- ciclo com o projeto real (fecha a volta Produto → Projeto → Viabilidade) ----------
+     Nas finalistas (até opts.cicloN = 3), com o cálculo rápido: tipo de rampa, lado e posição do acesso de veículos e ângulo das vagas
+     (cicloGarFinalista, src/calc/ciclo.js: reta, alternada, helicoidal, L e elevador de carros), e as configurações que rendem mais
+     vagas passam pelo reparo (−subsolo, −elevada, +andares) — fica a de melhor RESULTADO (nível, depois o objetivo), não a de mais vagas;
+     o elevador de carros entra com o custo dele (m.custosExtra). Depois: pendências do projeto (lazer que não coube, rampa ou elevador com
+     pendência, faixa de veículos no hall…) pesam na ordem (OTIM_PEN_PEND por pendência grave); a 1ª opção é refeita com o cálculo
+     COMPLETO (o mesmo do Projeto e da Viabilidade: vagas, lucro e margem mostrados = os de depois de aplicar); e a variante "lazer
+     enxuto" (sem o que não coube e sem os complementos — cicloLazerEnxuto) vira uma ALTERNATIVA explícita (r.enxuto), nunca aplicada
+     sozinha. Tempo: o que sobra de tempoTotal, reservando o cálculo completo e a fronteira (opts.tempoCiclo, padrão até 8 s). */
+  const ciclo = async out=>{
+    if(opts.ciclo===false || !out.length || typeof cicloGarFinalista!=="function") return out;
+    const t1=performance.now(), completo=opts.completo!==false, tot=opts.tempoTotal ?? 15000;
+    const bud=Math.min(opts.tempoCiclo ?? 8000, Math.max(1500, tot-(t1-t0)-(completo? 4500 : 0)-(mc? 1500 : 0)-800));
+    const tem=()=>performance.now()-t1<bud, pausa=()=>new Promise(r=>setTimeout(r,0)), pa=p=>prog(pV1+(pC1-pV1)*Math.min(1,p));
+    const nF=Math.min(out.length, opts.cicloN ?? 3); let cfgs=null;
+    for(let q=0; q<nF; q++){ if(q && !tem()) break; if(parou()) throw new Error("cancelado");
+      const r=out[q], c=conf.get(r.key); if(!c) continue;
+      const g=await cicloGarFinalista(MT, c, {tem, temTriagem: q? tem : ()=>performance.now()-t1<0.55*bud, parou, pausa, configs:cfgs, meta, prog:p=>pa(0.75*(q+p)/nF)});
+      if(!q) cfgs=g.configs;
+      const v=opcao(r, g.melhor.c); v.garInfo=g.info; conf.set(v.key, g.melhor.c);
+      if(mc){ if(v.key!==r.key) extras(g.melhor.c.st, g.melhor.c.m, v); else OTIM_EXTRAS.forEach(k=>{ if(r[k]!==undefined) v[k]=r[k] }) }   // o sol não muda com a garagem
+      out[q]=v; }
+    // pendências do projeto (cálculo rápido) na ordem
+    out.forEach(r=>{ const c=conf.get(r.key); r.pend=c? cicloPend(c.m) : []; const ng=r.pend.filter(p=>p.grave).length; if(ng) r.sc-=OTIM_PEN_PEND*Math.min(3,ng)*Math.abs(r.sc) });
+    const seen=new Set(); out=out.filter(r=>!seen.has(r.key) && seen.add(r.key)).sort(otimMelhor);
+    pa(0.78); await pausa(); if(parou()) throw new Error("cancelado");
+    // a 1ª com o cálculo completo (o do Projeto); faltando vagas nele, tenta a seguinte (uma vez)
+    if(completo){
+      for(let q=0; q<Math.min(2, out.length); q++){ const r=out[q], c=conf.get(r.key); if(!c) continue;
+        if(q && performance.now()-t0>tot-2500){ [out[0], out[1]]=[out[1], out[0]]; break }   // sem tempo para conferir a 2ª: ela sobe sem o completo
+        const st=clone(c.st), m=compute(st), f=fin(st, m), cc={st, m, f, sc:score(f, m)};
+        const v=opcao(r, cc); v.garInfo=r.garInfo; v.completo=true; v.pend=cicloPend(m); v.sc=r.sc+(cc.sc-c.sc);
+        OTIM_EXTRAS.forEach(k=>{ if(r[k]!==undefined) v[k]=r[k] });
+        conf.set(v.key, cc);
+        if(nivelOk(cc)){ out.splice(q, 1); out.unshift(v); break }   // a 2ª fecha e a 1ª não: a 2ª passa para o topo
+        // não fecha as vagas no cálculo completo: fica marcada e a seguinte é conferida
+        v.vagasFalta=cc.m.vagasReq-cc.m.vagas; v.pend.unshift({k:"vagas", grave:true, msg:`no layout completo faltam ${v.vagasFalta} vaga${v.vagasFalta>1?"s":""}`}); out[q]=v;
+        pa(0.86); await pausa(); if(parou()) throw new Error("cancelado") }
+    }
+    pa(0.9); await pausa(); if(parou()) throw new Error("cancelado");
+    // variante "lazer enxuto" da 1ª (alternativa explícita, com o reparo de garagens e andares que ela permite)
+    const r0=out[0], c0=conf.get(r0.key), lz=c0 && cicloLazerEnxuto(c0.st, c0.m);
+    if(lz && performance.now()-t0<tot-(lz.naoCoube.length? -1500 : 500)){   // o que não coube sempre ganha a alternativa (até 1,5 s além do total)
+      const s2=clone(c0.st); s2.produto.lazer.itens=clone(lz.itens); let c=avalia(s2); c=repara(c, 1);
+      if(nivelOk(c) && c.f.lucro>c0.f.lucro+1){ const v=opcao(r0, c); delete v.garInfo; delete v.pend;
+        r0.enxuto={...v, lazer:clone(lz.itens), tira:lz.tira, dLucro:c.f.lucro-c0.f.lucro, dMargem:c.f.margemVGV-c0.f.margemVGV, pend:cicloPend(c.m)} } }
+    pa(1);
+    return out };
   // multicritério: confere com a garagem real alguns pontos da fronteira estimada e calcula a fronteira final
   const multi=(out, o)=>{
     const R=base.regras, crit0=[PARETO_CRIT.lucro, PARETO_CRIT.sol, PARETO_CRIT.vagas, ...(forma? [PARETO_CRIT.dev] : []), ...(opts.efic? [PARETO_CRIT.efic] : []), ...(opts.vc? [PARETO_CRIT.vc] : [])], have=new Set(out.map(r=>r.key));
@@ -431,9 +509,9 @@ function otimizar(opts, onProg, onDone, ctx={}){
     const stepM=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<tBud){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
         if(!m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false};
+        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false, ...(gar0? {garagem:gar0} : {})};
         v.nivel=otimNivel(v, meta); if(tPct) v.terreno=st.fin.terreno; val.push(extras(st,m,v)) }
-      prog(0.8+0.2*j/Math.max(1,cand.length));
+      prog(pC1+(1-pC1)*j/Math.max(1,cand.length));
       if(j<cand.length && performance.now()-t1<tBud) return setTimeout(stepM,0);
       const seen=new Set(), P=[...out, ...val].filter(r=>!seen.has(r.key) && seen.add(r.key));
       const crit=[...crit0]; if(opts.vento && P.length && P.every(r=>r.vento!=null)) crit.push(PARETO_CRIT.vento);
@@ -446,9 +524,13 @@ function otimizar(opts, onProg, onDone, ctx={}){
   step();
   return done;
 }
-/* aplica uma opção: pavimentos, mix, subsolos e garagens. Forma desenhada (r.forma): o nº de torres e S.blocos ficam como estão
-   (só o total de andares muda — o último bloco estica) e os demais campos de cada torre são preservados */
+/* aplica uma opção de uma vez (um passo de desfazer na interface): pavimentos, mix, subsolos e garagens E a garagem com que ela foi
+   conferida (r.garagem: tipo de rampa, lado e posição do acesso de veículos, ângulo das vagas — cicloGarPoe) e, na alternativa "lazer
+   enxuto" (r.enxuto, aplicada só quando o usuário escolhe), o programa de lazer (r.lazer). Forma desenhada (r.forma): o nº de torres e
+   S.blocos ficam como estão (só o total de andares muda — o último bloco estica) e os demais campos de cada torre são preservados */
 function aplicarOtim(r, st=S){ const old=st.produto.torres||[];
-  st.produto.torres=Array.from({length:r.nT},(_,i)=> r.forma? {...(old[i]||{}), pav:r.pav} : {pav:r.pav}); st.produto.mix=clone(r.mix); st.produto.subsolos=r.sub; st.produto.garAcima=r.gac }
+  st.produto.torres=Array.from({length:r.nT},(_,i)=> r.forma? {...(old[i]||{}), pav:r.pav} : {pav:r.pav}); st.produto.mix=clone(r.mix); st.produto.subsolos=r.sub; st.produto.garAcima=r.gac;
+  if(r.garagem && typeof cicloGarPoe==="function") cicloGarPoe(st, r.garagem);
+  if(Array.isArray(r.lazer)) st.produto.lazer.itens=clone(r.lazer) }
 /* opções do otimizador com vários critérios (vão junto com S.otim para o Worker); filtros fVagas/fSol/solMin são só da tela */
 extendDEF("otim", { ...DEF.otim, rTol:0.10, mc:true, vento:false, malha:false, efic:false, vc:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });

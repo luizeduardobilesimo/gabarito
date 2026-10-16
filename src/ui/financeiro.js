@@ -98,6 +98,7 @@ function finViabHTML(k){ return k==="prem"? finPremHTML() : k==="risco"? finRisc
 /* ---------------- Resultado ---------------- */
 function finResHTML(){
   return RES("Resultado", `<div id="finTop"></div><div class="fprog" id="finProg">${typeof progressoLinhaHTML==="function"? progressoLinhaHTML() : ""}</div>`, {cls:"fres", aside:"", asideId:"vStat"}) +
+    (typeof cxSecHTML==="function"? cxSecHTML() : "") +   // "O que fecha a conta" (src/ui/ciclo.js): só quando a margem está abaixo da meta
     finEssHTML() +
     SEC("Saúde do negócio", `<div id="finSaude"></div>`, {key:"saude", info:"Indicadores da colinha de viabilidade, cada um com a sua faixa de referência (semáforo). A margem e o retorno ficam no resultado, logo acima. As faixas são suas: Premissas › Metas e referências.", sum:""}) +
     SEC("Fluxo de caixa", `<div id="cash"></div>`, {key:"cash", info:"Entradas menos saídas, acumuladas mês a mês. O ponto mais baixo é o caixa necessário (exposição máxima); o payback é quando a curva volta a zero.", sum:""}) +
@@ -480,6 +481,7 @@ function finViabLive(m, f, fast){
   if(finVis("cash")) setHTML("cash", finCaixaSVG(f));
   if(finVis("dre")){ setHTML("dreStack", finCompHTML(f)); setHTML("dre", finDREHTML(m, f)) }
   finSums(m, f);
+  if(typeof cxLive==="function") cxLive(m, f, fast);
   saudePermutaSub();
   // Premissas principais (Resultado)
   if(document.getElementById("f-fin-terreno")){

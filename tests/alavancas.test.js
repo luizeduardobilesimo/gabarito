@@ -138,7 +138,10 @@ describe('otimizador: margem s/ VGV, hLim, eficiência global e V/C', () => {
   });
   it('fronteira de Pareto completa (torres + tipologias + unidades): mesmas melhores opções de antes e tempo medido (meta ≤ 15 s)', async () => {
     const B = A, st = estado(B, {}), m = B.compute(st), t0 = Date.now();
-    const o = await B.otimizar({ obj: 'lucro', torres: true, tipologias: true, unidades: true, mc: true, paretoMax: 8 }, null, null, { st, m });
+    // sem a fase "ciclo" (garagem real e cálculo completo da 1ª, src/calc/ciclo.js): ela tem orçamento de tempo e pode achar, conforme a
+    // carga da máquina, uma posição de acesso que rende alguns mil a mais — os números exatos abaixo são os da busca e da conferência;
+    // o ciclo e o tempo total com ele são conferidos em tests/otimciclo.test.js
+    const o = await B.otimizar({ obj: 'lucro', torres: true, tipologias: true, unidades: true, mc: true, paretoMax: 8, ciclo: false }, null, null, { st, m });
     const dt = (Date.now() - t0) / 1000;
     console.log(`fronteira de Pareto: ${dt.toFixed(1)} s · ${o.testadas} combinações · ${o.pts.length} estimadas · ${o.pareto.pts.length} conferidas, ${o.pareto.pts.filter(p => p.fronteira).length} na fronteira`);
     // UX v3 P3 (mudança intencional): vagas calibradas por pavimento no layout real, alturas limitadas pelo que cabe (e mais baixas),

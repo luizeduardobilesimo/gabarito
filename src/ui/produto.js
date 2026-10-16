@@ -117,8 +117,8 @@ function prOtimOpcoes(){
     ${GRP("O que variar")}<div class="chips">${(fm? "" : chip("torres","Nº de torres"))+chip("tipologias","Tipologias")+chip("unidades","Unidades por andar")}${fm? `<span class="pill" title="Pavimentos (o último bloco estica), subsolos e garagens elevadas sempre variam">pavimentos · subsolos · garagens</span>` : ""}</div>
     ${extra? GRP("Comparar também")+`<div class="chips">${extra}</div>` : ""}`;
 }
-const PR_OT_INFO = "Testa número de torres, tipologias, unidades por andar, pavimentos, subsolos e garagens — sempre dentro das regras. As melhores são conferidas com o layout real da garagem, que sobe ou desce andares e subsolos até fechar as vagas. Combinações com lucro e margem na meta vêm antes; se nenhuma dá lucro, aparece a menos ruim e o que fecharia a conta. “Aplicar” troca torres, unidades, subsolos e garagens do estudo — Ctrl+Z desfaz.";
-const PR_OT_INFO_FORMA = "Com a forma desenhada, o número de torres e os blocos ficam como você fez. A sugestão escolhe tipologias e unidades por andar que preenchem o bloco com as unidades no tamanho do mix (até 10% maiores), o total de andares (o último bloco estica, dentro do gabarito e do CA), subsolos e garagens elevadas. As melhores são conferidas com o layout real da garagem. “Aplicar” troca só pavimentos, unidades, subsolos e garagens — Ctrl+Z desfaz.";
+const PR_OT_INFO = "Testa número de torres, tipologias, unidades por andar, pavimentos, subsolos e garagens — sempre dentro das regras. As melhores são conferidas com o projeto real: a garagem com rotas (que sobe ou desce andares e subsolos até fechar as vagas), o tipo de rampa ou elevador de carros, a posição do acesso e o ângulo das vagas — vence o melhor resultado, não o de mais vagas — e o térreo (lazer que não coube e outras pendências pesam na ordem). A primeira é refeita com o cálculo completo: os números dela são os que o Projeto e a Viabilidade mostram depois de aplicar. Combinações com lucro e margem na meta vêm antes; se a conta não fecha, aparece o que fecharia, com Aplicar. “Aplicar” troca torres, unidades, subsolos, garagens, rampa e acesso de uma vez — Ctrl+Z desfaz.";
+const PR_OT_INFO_FORMA = "Com a forma desenhada, o número de torres e os blocos ficam como você fez. A sugestão escolhe tipologias e unidades por andar que preenchem o bloco com as unidades no tamanho do mix (até 10% maiores), o total de andares (o último bloco estica, dentro do gabarito e do CA), subsolos e garagens elevadas. As melhores são conferidas com o projeto real (garagem com rotas, tipo de rampa, acesso e ângulo das vagas, térreo) e a primeira com o cálculo completo. “Aplicar” troca pavimentos, unidades, subsolos, garagens, rampa e acesso — Ctrl+Z desfaz.";
 STEP_R.produto = ()=>{
   const P=S.produto, fm=typeof otimFormaAtiva==="function" && otimFormaAtiva(S), otInfo=fm? PR_OT_INFO_FORMA : PR_OT_INFO;
   const body =
@@ -159,23 +159,29 @@ function prOtAviso(O){
   if(!O) return "";
   if(O.semOpcao) return `<div class="pr-av bad" role="status"><b>Nenhuma combinação fecha as regras com as vagas exigidas</b> — ${esc(O.semOpcao.motivo)}.</div>`;
   const fx=O.semLucro || O.fecha; if(!fx || !O.res.length) return "";
-  const pr=v=>`R$ ${nf(Math.ceil(v/50)*50,0)}/m²`, temT=fx.terrenoAtual>0 || fx.terrenoPct>0, qual=q=>q? ` <i>(opção ${q+1})</i>` : "";
-  const k=[`<span>Preço médio hoje <b>${pr(fx.precoAtual)}</b></span>`,
-    O.semLucro && fx.precoZero? `<span>Margem 0 <b>${pr(fx.precoZero)}</b>${qual(fx.opcaoZero)}</span>` : "",
-    fx.precoMeta? `<span>Meta de ${pct(fx.meta,0)} <b>${pr(fx.precoMeta)}</b>${qual(fx.opcaoMeta)}</span>` : "",
-    O.semLucro && temT && fx.terrenoZero>0? `<span>Terreno até <b>${mi(fx.terrenoZero)}</b></span>` : "",
-    !O.semLucro && temT && fx.terrenoMeta>0? `<span>Terreno p/ meta <b>${mi(fx.terrenoMeta)}</b></span>` : ""].filter(Boolean).join("");
-  return O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim; fecha a conta com:<div class="k">${k}</div></div>`
-    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção. Chega à meta com:<div class="k">${k}</div></div>`;
+  // o que fecha a conta, cada linha com Aplicar (src/ui/ciclo.js): lazer enxuto, preço médio, terreno
+  const L=typeof cxLinhasOtim==="function"? cxLinhasOtim(O) : [], k=`<div class="cx">${L.map(cxLinhaHTML).join("")}</div>`;
+  return O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`
+    : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`;
 }
+/* garagem com que a opção foi conferida (tipo de rampa, acesso, ângulo) e pendências do projeto, em uma linha cada */
+function prOtGarHTML(r){
+  if(!r.garagem) return "";
+  const gi=r.garInfo, troca=typeof cicloGarIgual==="function" && !cicloGarIgual(r.garagem, cicloGarDe(S));
+  const n=gi && gi.tipos? gi.tipos.filter(x=>x.ok).length : 0;
+  return `<div class="note">Garagem: ${esc(cicloGarNome(r.garagem, S))}${n>1? ` · a melhor de ${n} tipos de circulação` : ""}${troca? ` <span class="pill">muda</span>` : ""}</div>`;
+}
+function prOtPendHTML(r){ const p=(r.pend||[]).filter(x=>x.grave); return p.length? `<div class="note" style="color:var(--warn-t)">${esc(p.slice(0,2).map(x=>x.msg).join(" · "))}</div>` : "" }
 function otimHTML(){
   const O=OTIM; if(!O.res.length) return prOtAviso(O) || `<p class="note">${O.forma? "Nenhuma combinação preenche a forma desenhada dentro das regras e das vagas. Ajuste a forma ou o mix." : "Nenhuma combinação atende às regras e às vagas exigidas."}</p>`;
   const cur=window._last.f, ob=OBJ[O.obj][2];
   const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0? (r.semLucro? "Menos ruim" : "Melhor opção") : "Opção "+(k+1)} · ${MIX_PRESETS[r.pk].nome}</b><button type="button" class="btn sm" data-act="otApply" data-i="${k}">Aplicar</button></div>
-    <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas${r.forma?` · ${r.dev>0.005?"unidades "+pct(r.dev,0)+" maiores que o mix":"preenche a forma"}`:""}</div>
+    <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas${r.forma?` · ${r.dev>0.005?"unidades "+pct(r.dev,0)+" maiores que o mix":"preenche a forma"}`:""}</div>${prOtGarHTML(r)}${prOtPendHTML(r)}
     <div class="rm"><span>Lucro<b${r.lucro<0?' class="pr-bad"':""}>${mi(r.lucro)}</b></span><span>Margem<b>${pct(r.margem)}</b></span><span>Retorno<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
   const L=O.res.slice(0,4);
-  return prOtAviso(O) + card(L[0],0) + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
+  // margem na meta: a alternativa "lazer enxuto" (quando melhora) fica logo abaixo da melhor opção; abaixo da meta ela vai no aviso
+  const enx = !(O.semLucro || O.fecha) && typeof cxLinhasOtim==="function"? cxLinhasOtim(O) : [];
+  return prOtAviso(O) + card(L[0],0) + (enx.length? `<div class="cx">${enx.map(cxLinhaHTML).join("")}</div>` : "") + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
     + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}${O.forma?" · forma desenhada fixa":""}${O.terrenoPct? ` · terreno a ${pct(O.terrenoPct,0)} do VGV`:""} · hoje: lucro ${mi(cur.lucro)}, margem ${pct(cur.margemVGV)}</p>`;
 }
 
@@ -310,7 +316,8 @@ Object.assign(ACT,{
       toast(!r.res.length? "Nenhuma combinação viável — veja o motivo em Sugestões" : r.semLucro? "Nenhuma combinação dá lucro — veja o que fecharia a conta" : "Sugestões prontas — a melhor está no topo");
     }catch(e){ OTRUN=false; if(TAB==="produto") renderTab();
       if(!/cancelado|ocupado/.test(e && e.message||"")){ console.error("[produto] otimizador", e); toast("Não foi possível sugerir agora. Tente de novo.") } } },
-  otApply: b=>{ const r=OTIM&&OTIM.res[+b.dataset.i]; if(!r) return; aplicarOtim(r); PR.mix=-1; renderTab(); fit3dDepois(); toast("Opção aplicada — Ctrl+Z desfaz") },
+  otApply: b=>{ const r=OTIM&&OTIM.res[+b.dataset.i]; if(!r) return; const troca=r.garagem && typeof cicloGarIgual==="function" && !cicloGarIgual(r.garagem, cicloGarDe(S));
+    aplicarOtim(r); PR.mix=-1; renderTab(); fit3dDepois(); toast(troca? `Opção aplicada com a garagem (${(RAMPA_TIPOS[r.garagem.rampaTipo]||"").toLowerCase()}) — Ctrl+Z desfaz` : "Opção aplicada — Ctrl+Z desfaz") },
   addTorre: ()=>{ const T=S.produto.torres; if(T.length<4){ T.push({pav:T.at(-1)?.pav||8}); if(typeof blcTorreNova==="function") blcTorreNova(T.length-1); renderTab(); toast(`Torre ${T.length} adicionada`) } },
   rmT: b=>{ const T=S.produto.torres, i=+b.dataset.i; if(T.length<2 || !T[i]) return; T.splice(i,1); if(typeof blcTorreRemovida==="function") blcTorreRemovida(i); renderTab(); toast(`Torre ${i+1} removida — Ctrl+Z desfaz`) },
   maxPav: ()=>{ const t=maxPav(S); if(t>0){ S.produto.torres.forEach(x=>x.pav=t); update(); toast(`${t} pavimentos por torre (gabarito/CA)`) } else toast("Nenhum pavimento cabe com essas regras") },

@@ -53,8 +53,10 @@ describe('otimizar() com vários critérios', () => {
   const opts = { obj: 'lucro', torres: false, tipologias: false, unidades: true, paretoMax: 4 };
   it('objetivo lucro: o multicritério não muda as melhores opções; aplicar um ponto reproduz os números', async () => {
     const B = carregar(); const st = estado(B, {}); const m = B.compute(st);
-    const so = await B.otimizar({ ...opts, mc: false }, null, null, { st, m });
-    const mc = await B.otimizar({ ...opts, mc: true }, null, null, { st, m });
+    // sem a fase "ciclo" (garagem real, cálculo completo da 1ª): ela tem orçamento de tempo, que muda com a carga da máquina e com a
+    // reserva da fronteira — aqui o que se confere é só que a fronteira não muda as melhores (o ciclo é testado em otimciclo.test.js)
+    const so = await B.otimizar({ ...opts, mc: false, ciclo: false }, null, null, { st, m });
+    const mc = await B.otimizar({ ...opts, mc: true, ciclo: false }, null, null, { st, m });
     const key = r => [r.nT, r.pk, r.N, r.pav, r.sub, r.gac, Math.round(r.lucro), r.vagas].join(',');
     expect(mc.res.map(key)).toEqual(so.res.map(key));
     expect(so.pareto).toBeUndefined();
