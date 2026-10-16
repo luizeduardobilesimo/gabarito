@@ -104,8 +104,10 @@ function nucleoMonta(o={}){
 function nucPre(B, p, u0, v0, h){   // dutos de ventilação da antecâmara (PF) ou duto de pressurização (PFP), atrás da antecâmara
   if(p.t==="pf_duto"){ const w=0.8; B.cell("duto","duto entrada",u0,v0,w,h,{sub:"entrada"}); B.cell("duto","duto saída",u0+w,v0,w,h,{sub:"saida"}); return 2*w }
   if(p.t==="pf_press"){ B.cell("duto","pressurização",u0,v0,1.0,h,{sub:"press"}); return 1.0 }
+  if(p.t==="ep"){ B.cell("duto","duto de ventilação",u0,v0,0.8,h,{sub:"vent"}); return 0.8 }   // EP: ventilação permanente da escada (sem depender da fachada)
   return 0;
 }
+const nucPreW = p => p.t==="pf_duto"? 1.6 : p.t==="pf_press"? 1.0 : p.t==="ep"? 0.8 : 0;
 function nucAntNome(p){ return p.t==="ep"? "hall da escada" : p.t==="pf_press"? "antecâmara" : "antecâmara" }
 /* escada de lances paralelos a u (fundo), patamar do pavimento na ponta `ent` ("lo"|"hi") */
 function nucEscU(B, p, u0, v0, w, ent, nome="escada"){ return B.cell("esc", nome, u0, v0, w, p.escD, {ori:"u", ent}) }
@@ -118,7 +120,7 @@ const NUC_PRUMADAS = [{k:"hidraulica", nome:"shaft hidráulico"}, {k:"eletrica",
 const NUC_MONTA = {
   /* frente: [antecâmara][elevadores][hall de serviço + shafts] · fundo: [dutos][escada][lixo/DML] */
   linear(B, p){
-    const F=p.F, pre0 = p.t==="pf_duto"? 1.6 : p.t==="pf_press"? 1.0 : 0;
+    const F=p.F, pre0 = nucPreW(p);
     let Wa=Math.max(p.t==="ep"? 1.8 : 2.4, pre0+1.2); const nE=Math.max(1,p.nE);
     let bEnd=Wa+nE*p.Wel; if(bEnd-pre0 < p.LsMin) { Wa+=p.LsMin-(bEnd-pre0); bEnd=Wa+nE*p.Wel }
     Wa=Math.round(Wa*20)/20; bEnd=Wa+nE*p.Wel;
@@ -137,7 +139,7 @@ const NUC_MONTA = {
   pressurizada(B, p){ NUC_MONTA.linear(B, p) },
   /* frente: [antecâmara][elevador(es)][DML][shafts] · fundo: [dutos][escada] */
   "linear-curto"(B, p){
-    const F=p.F, pre0 = p.t==="pf_duto"? 1.6 : p.t==="pf_press"? 1.0 : 0;
+    const F=p.F, pre0 = nucPreW(p);
     let Wa=Math.max(p.t==="ep"? 1.8 : 2.4, pre0+1.2); const nE=p.nE;
     const Wd=1.3, Ws=1.2; let L=Wa+nE*p.Wel+Wd+Ws;
     if(L-pre0 < p.LsMin){ Wa+=p.LsMin-(L-pre0); Wa=Math.round(Wa*20+0.499)/20; L=Wa+nE*p.Wel+Wd+Ws }
@@ -151,11 +153,11 @@ const NUC_MONTA = {
   },
   /* até 4 pavimentos: [hall da escada][elevador][shafts] · fundo: [escada] */
   baixo(B, p){
-    const F=p.F; let Wa=1.8; const nE=Math.min(1,p.nE), Ws=1.2; let L=Wa+nE*p.Wel+Ws;
-    if(L<p.LsMin){ Wa+=p.LsMin-L; Wa=Math.round(Wa*20+0.499)/20; L=Wa+nE*p.Wel+Ws }
+    const F=p.F, pre0=nucPreW(p); let Wa=1.8; const nE=Math.min(1,p.nE), Ws=1.2; let L=Wa+nE*p.Wel+Ws;
+    if(L-pre0<p.LsMin){ Wa+=p.LsMin-(L-pre0); Wa=Math.round(Wa*20+0.499)/20; L=Wa+nE*p.Wel+Ws }
     B.cell("ant","hall da escada",0,0,Wa,F,{resgate:true}); B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");
     const u=nucElevs(B, p, Wa, nE); nucShaftsU(B, p, u, 0, F, NUC_PRUMADAS.slice(0,2), 0);
-    nucEscU(B, p, 0, F, L, "lo"); B.door("u",F,0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    const pre=nucPre(B, p, 0, F, p.escD); nucEscU(B, p, pre, F, L-pre, "lo"); B.door("u",F,pre+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
     B.split=L/2;
   },
   /* [escada no sentido da profundidade][antecâmara/dutos][elevadores ⟂ hall][hall dos elevadores][elevadores ⟂ hall] */
@@ -174,7 +176,7 @@ const NUC_MONTA = {
       else B.cell("shaft","shaft hidráulico",u2,F,w2,D-F,{sub:"hidraulica", semAcesso:true}) }
     else if(p.t==="pf_duto"){ B.cell("duto","duto entrada",E,F,Wt/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída",E+Wt/2,F,Wt/2,D-F,{sub:"saida"}) }
     else if(p.t==="pf_press"){ B.cell("duto","pressurização",E,F,Wt,D-F,{sub:"press"}) }
-    else B.cell("shaft","shaft hidráulico",E,F,Wt,D-F,{sub:"hidraulica", semAcesso:true});
+    else B.cell("duto","duto de ventilação",E,F,Wt,D-F,{sub:"vent"});
     const Wc=Math.round((p.EV.caixa[1]+NUC_R.paredeCF)*20+0.499)/20, Wh=Math.max(2.0, NUC_R.hallElev+0.3), hE=D/2;
     const uA=E+Wt, uH=uA+Wc, uC=uH+Wh, nA=Math.min(2, Math.ceil(nE/2)), nC=Math.min(2, nE-nA);
     const hs=0.8;   // shafts no fundo do hall
@@ -194,7 +196,7 @@ const NUC_MONTA = {
     B.door("u",0,E+Wt-1.05,NUC_R.porta,1,"escada"); B.door("v",E,0.15,NUC_R.porta,-1,"escada",{dobra:"b"});
     if(p.t==="pf_duto"){ B.cell("duto","duto entrada",E,F,Wt/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída",E+Wt/2,F,Wt/2,D-F,{sub:"saida"}) }
     else if(p.t==="pf_press") B.cell("duto","pressurização",E,F,Wt,D-F,{sub:"press"});
-    else B.cell("shaft","shaft hidráulico",E,F,Wt,D-F,{sub:"hidraulica", semAcesso:true});
+    else B.cell("duto","duto de ventilação",E,F,Wt,D-F,{sub:"vent"});
     const u=nucElevs(B, p, E+Wt, nE); nucShaftsU(B, p, u, 0, F, NUC_PRUMADAS.slice(0,2), 0);
     B.ala={u0:E+Wt, vIn:F};   // fundo da ala dos elevadores: vai para a unidade vizinha
     B.split=E+Wt;
@@ -215,7 +217,7 @@ const NUC_MONTA = {
   },
   /* frente: [antecâmara][elevadores][shafts][DML][antecâmara 2] · fundo: [dutos][escada 1][escada 2][dutos] */
   duas(B, p){
-    const F=p.F, pre0 = p.t==="pf_duto"? 1.6 : p.t==="pf_press"? 1.0 : 0, nE=Math.max(1,p.nE);
+    const F=p.F, pre0 = nucPreW(p), nE=Math.max(1,p.nE);
     let Wa=Math.max(p.t==="ep"? 1.8 : 2.4, pre0+1.2);
     if(Wa+nE*p.Wel-pre0 < p.LsMin){ Wa+=p.LsMin-(Wa+nE*p.Wel-pre0); Wa=Math.round(Wa*20+0.499)/20 }
     const b1=Wa+nE*p.Wel, Ws=1.2, Wd=Math.max(1.4, Math.round((p.LsMin-Wa+pre0-Ws)*20+0.499)/20), L=b1+Ws+Wd+Wa;
@@ -306,7 +308,7 @@ function nucleoDesenho(N){
       const g=0.22; for(let k=g;k<c.w+c.h;k+=g){ const a=[c.u+Math.max(0,k-c.h), c.v+Math.min(c.h,k)], b=[c.u+Math.min(c.w,k), c.v+Math.max(0,k-c.w)]; ln(a,b,"fino") }
       const cx=c.u+c.w/2, cy=c.v+c.h/2, r=Math.min(c.w,c.h)*0.28;
       if(c.sub==="entrada") out.push({arrow:[[cx,cy+r],[cx,cy-r]]}); else if(c.sub==="saida") out.push({arrow:[[cx,cy-r],[cx,cy+r]]});
-      out.push({txt: c.sub==="entrada"? "E" : c.sub==="saida"? "S" : "P", p:[cx+(c.w>0.7? 0.22 : 0), cy], s:0.24, bg:true});
+      out.push({txt: c.sub==="entrada"? "E" : c.sub==="saida"? "S" : c.sub==="vent"? "V" : "P", p:[cx+(c.w>0.7? 0.22 : 0), cy], s:0.24, bg:true});
     }
     if(c.k==="shaft"){
       ln([c.u+0.08,c.v+0.08],[c.u+c.w-0.08,c.v+c.h-0.08],"fino"); ln([c.u+c.w-0.08,c.v+0.08],[c.u+0.08,c.v+c.h-0.08],"fino");
@@ -363,7 +365,7 @@ function nucleoValida(nuc, ctx={}){
   }
   if(P.t==="pf_press" && !ofK("duto").some(c=>c.sub==="press")) add("semPress","bad","Escada pressurizada sem duto de insuflamento.");
   if(P.t==="pf_balcao"){ ofK("balc").forEach(c=>{ if(ctx.fachada===false || c.semFachada) add("balcFach","bad","O balcão aberto precisa estar na fachada.", c.nome) }); if(!ofK("balc").length) add("semBalc","bad","Escada com balcão sem o balcão aberto.") }
-  if(P.t==="ep" && ctx.fachada===false) add("epVent","warn","Escada enclausurada protegida precisa de janela na fachada ou duto de ventilação.");
+  if(P.t==="ep" && ctx.fachada===false && !ofK("duto").some(c=>c.sub==="vent")) add("epVent","warn","Escada enclausurada protegida precisa de janela na fachada ou duto de ventilação.");
   // elevadores: porta na antecâmara, hall à frente, quantidade, cabine, emergência
   N.doors.filter(d=>d.tipo==="elev").forEach(d=>{ const mid=[(d.a[0]+d.b[0])/2+d.n[0]*0.2, (d.a[1]+d.b[1])/2+d.n[1]*0.2];
     const c=cs.find(c=>mid[0]>c.u+1e-6&&mid[0]<c.u+c.w-1e-6&&mid[1]>c.v+1e-6&&mid[1]<c.v+c.h-1e-6);

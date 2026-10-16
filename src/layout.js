@@ -44,11 +44,11 @@ function coreBuild(ux,vy,cu0,vEdge,s,depthB,o){
     .map(d=>({p:WP([(d.a[0]+d.b[0])/2,0]), dir:fora, larg:d.larg, tipo:d.tipo==="vao"||d.tipo==="elev"? "elev" : d.tipo}));
   const els=cells.filter(c=>c.k==="elev"), hallU=cells.find(c=>c.k==="hall");
   const hallElevTipo = hallU? W(hallU) : els.length? R(Math.min(...els.map(c=>c.u)), -(+o.corr||1.6), Math.max(...els.map(c=>c.u+c.w))-Math.min(...els.map(c=>c.u)), +o.corr||1.6) : null;
-  const PRU={hidraulica:"hidraulica", eletrica:"eletrica", gas:"gas", entrada:"duto-entrada", saida:"duto-saida", press:"pressurizacao"};
+  const PRU={hidraulica:"hidraulica", eletrica:"eletrica", gas:"gas", entrada:"duto-entrada", saida:"duto-saida", press:"pressurizacao", vent:"ventilacao"};
   const prumadas=cells.filter(c=>["shaft","duto","elev","emerg","esc"].includes(c.k)).map(c=>({k: c.k==="elev"? "elevador" : c.k==="emerg"? "emergencia" : c.k==="esc"? "escada" : PRU[c.sub]||c.sub, nome:c.nome, poly:W(c)}));
   const fach = cells.some(c=>(c.k==="esc"||c.k==="balc") && c.v+c.h>=Dt-0.01) && (o.fachada || o.escTipo==="pf_balcao" || !!o._fachada);
   const p=N.p, nucleo={partido:N.partido, partidoNome:N.partidoNome, nota:null, problemas:[], portas, hallElev:lobby, hallElevTipo, frente:[P(0,0),P(L,0)], prumadas, fachada:fach,
-    dim:{L, D:Dt, F, escD:p.escD, escLarg:p.larg, degrau:{n:p.deg.n, e:p.deg.e, p:p.deg.p}, patamar:null, elev:{n:els.length, cap:p.cap, caixa:p.EV.caixa, cabine:p.EV.cabine}, ant:null},
+    dim:{L, D:Math.max(...perfil.map(t=>t.d), Dn), F, escD:p.escD, escLarg:p.larg, degrau:{n:p.deg.n, e:p.deg.e, p:p.deg.p}, patamar:null, elev:{n:els.length, cap:p.cap, caixa:p.EV.caixa, cabine:p.EV.cabine}, ant:null},
     local:{partido:N.partido, L, D:Math.max(...cells.map(c=>c.v+c.h)), F, ala:N.ala, perfil:perfil.map(t=>({u0:t.u0,u1:t.u1,d:t.d,fach:!!t.fach})), cells, doors:N.doors, p}};
   const esc=cells.find(c=>c.k==="esc"); if(esc){ const comp=(esc.ori==="v"? esc.h : esc.w)-NUC_R.paredeCF; nucleo.dim.patamar=Math.round((comp-p.deg.run)/2*100)/100 }
   const ant=cells.find(c=>c.k==="ant"); if(ant) nucleo.dim.ant=[Math.round((ant.w-NUC_R.paredeCF)*100)/100, Math.round((ant.h-NUC_R.paredeCF)*100)/100];
