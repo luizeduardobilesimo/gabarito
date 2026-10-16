@@ -15,7 +15,9 @@ const bbHit=(a,b)=>a[0]<=b[2]&&b[0]<=a[2]&&a[1]<=b[3]&&b[1]<=a[3];
 const obList=list=>(list||[]).filter(p=>p&&p.length).map(p=>({p, b:bbOf(p)}));
 const obHit=(L,poly)=>{ const b=bbOf(poly); return L.some(o=>bbHit(o.b,b) && G.polysOverlap(poly,o.p)) };
 const obPip=(L,pt)=>L.some(o=>pt[0]>=o.b[0]&&pt[0]<=o.b[2]&&pt[1]>=o.b[1]&&pt[1]<=o.b[3] && G.pip(pt,o.p));
-const rampLen=(h,E)=> h/Math.max(0.05,E.rampaInc) + 3.0; // + transições de 1,5 m em cada ponta
+/* rampa reta: miolo na inclinação do estudo + transições de 3,0 m a 10% em cada ponta (com 20% dá h/i + 3,0 m, como antes) */
+const RAMPA_TRANS=3.0, RAMPA_TRANS_I=0.10;
+const rampLen=(h,E)=>{ const i=Math.max(0.05,E.rampaInc); return i<=RAMPA_TRANS_I? h/i : h/i + 2*RAMPA_TRANS*(1-RAMPA_TRANS_I/i) };
 function stripPoly(lat,fd,lc,w,d0,d1){ return G.rect(lat,fd,lc-w/2,d0,w,d1-d0) }
 /* ---------- garagem completa: opções novas (todas desligadas por padrão; os estudos antigos não mudam) ----------
    estudo.rampaTipo: "reta" | "alternada" | "helicoidal" | "L" | "elevador" (elevador de carros) */
@@ -639,7 +641,8 @@ function garagens(st, m, opt){
     const keep=[...(T.keep||[])];
     // rampa colocada à mão dentro da garagem do térreo: a boca precisa estar ligada
     fT.portals.forEach(pt=>{ if(G.pip(pt.p,T.gar)) portals.push(pt) });
-    jobs.push(["ter", 0, b=>garageLayout(T.gar, [...m.obst, ...T.colsGar], E, "ter", {portals, blocks, keep, ramps:fT.ramps.filter(r=>G.polysOverlap(r.poly,T.gar)), quick:q, ...ext, bici:b, terreo:true})]);
+    jobs.push(["ter", 0, b=>garageLayout(T.gar, [...m.obst, ...T.colsGar], E, "ter", {portals, blocks, keep, ramps:fT.ramps.filter(r=>G.polysOverlap(r.poly,T.gar)), quick:q, ...ext, bici:b, terreo:true,
+      lobbies: (T.colsGar||[]).length? T.colsGar.map(p=>({poly:p, portas:[]})) : LB})]);   // térreo: a faixa de pedestres leva ao hall
   }
   // do mais perto da rua para o mais fundo (o bicicletário e os limites de presas/motos vão sendo consumidos nessa ordem)
   const ord=jobs.slice().sort((a,b)=>Math.abs(a[1])-Math.abs(b[1]) || a[1]-b[1]);
