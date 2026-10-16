@@ -227,4 +227,17 @@ describe('partidos de garagem: área por vaga, rede contínua e malha', () => {
       o.polys.forEach(p => { l.vagas.forEach(v => expect(inter(v.poly, p)).toBeLessThan(0.3)); l.aisles.forEach(a => expect(inter(a.poly, p)).toBeLessThan(0.3)) });
     });
   });
+  it('passagem estreita só abaixo da largura do corredor (com a largura cheia é corredor comum, com vagas)', T, () => {
+    for (const { m } of Object.values(RES)) for (const [, l] of subs(m)) {
+      (l.passagens || []).forEach(w => expect(w).toBeLessThan(l.aisle - 0.05));
+      l.aisles.filter(a => a.pass).forEach(a => expect(a.w).toBeLessThan(l.aisle - 0.05));
+    }
+  });
+  it('corredor ou ramal sem saída acima do limite de beco ganha o bolsão de retorno; garagem elevada resolvida', T, () => {
+    const B = A.garRegras(A.DEF.estudo, A.DEF.garagem);
+    for (const { m } of Object.values(RES)) for (const [, l] of subs(m)) (l.becos || []).forEach(b => { if (b.L > B.beco) expect(b.longo).toBe(true) });
+    // subsolo + garagem elevada (como o estudo de referência 05): todos os pavimentos resolvidos, com vagas
+    const { m } = calc({ lote: lote(30, 50), produto: { torres: [{ pav: 10 }], subsolos: 1, garAcima: 1 } });
+    Object.values(m.gar).forEach(l => expect(l.count).toBeGreaterThan(0));
+  });
 });

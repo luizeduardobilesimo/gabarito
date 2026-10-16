@@ -148,12 +148,16 @@ function gmTransvCand(FR, R, g, Hs){
   return out;
 }
 /* peças de uma transversal em x: trechos livres em v que atravessam por inteiro os corredores que tocam */
-function gmTransv(FR, R, g, Hs, x){
+function gmTransv(FR, R, g, Hs, x, ramal){
   const AV=g.AV, I=gmHard(FR.V, x+0.05, x+AV-0.05), out=[];
   I.forEach(([a,b])=>{ const tc=Hs.filter(p=>p.a<=x+AV-2.4 && p.b>=x+2.4 && p.y0>=a-0.01 && p.y1<=b+0.01); if(!tc.length) return;
     let lo=Math.min(...tc.map(p=>p.y0)), hi=Math.max(...tc.map(p=>p.y1)), port=false;
     FR.fl.forEach(f=>f.PT.forEach(pt=>{ const L=pt.land; if(L[2]<x-0.15 || L[0]>x+AV+0.15) return; const c=(L[1]+L[3])/2; if(c<a || c>b) return; port=true; lo=Math.min(lo, Math.max(a, L[1])); hi=Math.max(hi, Math.min(b, L[3])) }));
-    if(tc.length<2 && !port) return;
+    if(tc.length<2 && !port){
+      // ramal sem saída (até o limite de beco) a partir de um corredor só: atende sobras grandes longe da rede
+      if(!ramal || tc.length!==1) return; const h=tc[0], lo2=Math.max(a, h.y0-R.beco), hi2=Math.min(b, h.y1+R.beco);
+      if(h.y0-lo2<g.rd+1 && hi2-h.y1<g.rd+1) return;
+      out.push({o:"V", a:lo2, b:hi2, y0:x, y1:x+AV, w:AV, x, tc:0.5, ramal:true}); return }
     out.push({o:"V", a:lo, b:hi, y0:x, y1:x+AV, w:AV, x, tc:tc.length}) });
   return out;
 }
@@ -238,6 +242,7 @@ function gmAvalia(FR, R, g, ys, xs, opt={}){
   // corredores principais (peças) — mão dupla a 90°, mão única alternada nas inclinadas
   let Hs=[]; ys.forEach((y,li)=>gmHard(FR.H, y+0.05, y+A-0.05).forEach(([a,b])=>{ if(b-a>=2*R.W) Hs.push({o:"H", a, b, y0:y, y1:y+A, w:A, lvl:li, dir: g.ang===90? 0 : (li%2? -1 : 1)}) }));
   let Vs=[]; xs.forEach(x=>gmTransv(FR, R, g, Hs, x).forEach(v=>Vs.push(v)));
+  (opt.rs||[]).forEach(x=>gmTransv(FR, R, g, Hs, x, true).forEach(v=>{ if(v.ramal) Vs.push(v) }));
   // pontas curtas além da transversal mais de fora viram fileira junto à parede (sem beco)
   Hs=Hs.map(h=>{ const vs=Vs.filter(v=>v.a<=h.y0+0.3 && v.b>=h.y1-0.3 && v.y0<h.b && v.y1>h.a); if(!vs.length) return h;
     const lo=Math.min(...vs.map(v=>v.y0)), hi=Math.max(...vs.map(v=>v.y1)), lim=g.rd+2.6; let a=h.a, b=h.b;
@@ -269,7 +274,7 @@ function gmAvalia(FR, R, g, ys, xs, opt={}){
     res.tot+=out.stalls.length; res.pen+=pen });
   res.peds=peds; res.pen+=peds.reduce((s,p)=>s+(p.falta? 4 : p.L/8),0)*FR.fl.length + 0.2*Vs.length;
   res.pen+=2.0*base.filter(p=>gmEstreita(p,g)).length*FR.fl.length;   // passagem estreita: só quando não há outro jeito
-  res.sc=res.tot-res.pen; res.ys=ys; res.xs=xs; res.g=g;
+  res.sc=res.tot-res.pen; res.ys=ys; res.xs=xs; res.rs=opt.rs||[]; res.g=g;
   return res;
 }
 /* desvio: trechos do mesmo corredor separados por núcleo/rampa e sem outra ligação ganham uma passagem ao lado do
@@ -309,7 +314,7 @@ function gmDesvios(FR, R, g, base){
 function gmBecos(net, adj, att, f, R, g){
   const becos=[], byI=new Map(net.map(p=>[p.i,p]));
   net.forEach(p=>{ if(p.conn || p.pass) return; const js=[];
-    adj[p.i].forEach(j=>{ const o=byI.get(j); if(!o) return; const r=gmRect(o); js.push(p.o==="H"? [r[0],r[2]] : [r[1],r[3]]) });
+    adj[p.i].forEach(j=>{ const o=byI.get(j); if(!o || o.ramal && !p.ramal) return;   /* um ramal sem saída não encurta o beco de quem o recebe */ const r=gmRect(o); js.push(p.o==="H"? [r[0],r[2]] : [r[1],r[3]]) });
     att.forEach((l,pi)=>{ if(l.includes(p.i)){ const L=f.PT[pi].land; js.push(p.o==="H"? [L[0],L[2]] : [L[1],L[3]]) } });
     if(!js.length) return; const mn=Math.min(...js.map(j=>j[0])), mx=Math.max(...js.map(j=>j[1]));
     [[p.a, mn-p.a, -1],[p.b, p.b-mx, 1]].forEach(([e,L,sg])=>{ if(L>g.rd+0.5) becos.push({p:p.i, o:p.o, e, L, sg, longo:L>R.beco}) }) });
@@ -373,9 +378,16 @@ function garModBusca(poly, obst, E, o, pisos){
         // terceira transversal nas melhores (pavimentos longos)
         if(!quick) local.slice(0,4).forEach(L=>{ if(L.xs.length!==2 || Date.now()-t0>lim) return; C.forEach(x=>{ if(L.xs.some(y=>Math.abs(y-x)<g.AV+2*R.W)) return; const L3=gmAvalia(FR, R, g, sq.ys, [...L.xs, x].sort((a,b)=>a-b), opt); if(L3.sc>L.sc) local.push(L3) }) });
         local.sort((a,b)=>b.sc-a.sc); local.slice(0, quick? 1 : 3).forEach(L=>all.push({FR, L})) }) }) });
+  // ramais sem saída (até o limite de beco) nas melhores estruturas: atendem sobras grandes que a rede não alcança
+  if(!quick){ all.sort((a,b)=>b.L.sc-a.L.sc); const t1=Date.now();
+    all.slice(0,8).forEach(({FR, L})=>{ const g=L.g, opt={gu:FR.fb[0]+R.acrP-R.PIL/2-R.acrPil, gv:FR.fb[1]+R.acrP-R.PIL/2-R.acrPil, aprox:true};
+      const Cr=gmTransvCand(FR, R, g, L.Hs).filter(x=>gmTransv(FR, R, g, L.Hs, x, true).some(v=>v.ramal));
+      let cur=L; for(let it=0; it<2 && Date.now()-t1<1500; it++){ let mel=null;
+        Cr.forEach(x=>{ if([...cur.xs, ...cur.rs].some(y=>Math.abs(y-x)<g.AV+2*R.W)) return; const L4=gmAvalia(FR, R, g, cur.ys, cur.xs, {...opt, rs:[...cur.rs, x]}); if(L4.sc>(mel||cur).sc+0.5) mel=L4 });
+        if(!mel) break; all.push({FR, L:mel}); cur=mel } }) }
   if(R.partido!=="auto"){ const fx=all.filter(x=>gmPartido(x.L)===R.partido); if(fx.length) return {R, cands:fx.sort((a,b)=>b.L.sc-a.L.sc), lobbies} }
   all.sort((a,b)=>b.L.sc-a.L.sc);
-  const div=[], sg=x=>x.FR.ux.map(v=>v.toFixed(2))+"|"+x.L.ys.length+"|"+x.L.xs.map(v=>Math.round(v/2)).join(",")+"|"+x.L.ys.map(v=>Math.round(v/2)).join(",");
+  const div=[], sg=x=>x.FR.ux.map(v=>v.toFixed(2))+"|"+x.L.ys.length+"|"+x.L.xs.map(v=>Math.round(v/2)).join(",")+"|"+x.L.rs.map(v=>Math.round(v/2)).join(",")+"|"+x.L.ys.map(v=>Math.round(v/2)).join(",");
   const vs=new Set(); all.forEach(x=>{ const k=sg(x); if(!vs.has(k)){ vs.add(k); div.push(x) } });
   return {R, cands:div, lobbies};
 }
@@ -404,7 +416,7 @@ function gmRefina(FR, R, L){
   // fileiras das transversais: começam na face de um corredor principal
   L.Hs.slice(0,3).forEach(h=>{ add(gu0, h.y1-R.PIL/2-R.acrPil); add(gu0, h.y0+R.PIL/2+R.acrPil) });
   let best=null;
-  opts.slice(0,8).forEach(op=>{ const L2=gmAvalia(FR, R, g, L.ys, L.xs, {...op, pil:true}); if(!best || L2.sc>best.sc) best=L2 });
+  opts.slice(0,8).forEach(op=>{ const L2=gmAvalia(FR, R, g, L.ys, L.xs, {...op, pil:true, rs:L.rs}); if(!best || L2.sc>best.sc) best=L2 });
   return best;
 }
 /* do referencial para o mundo: vagas, pilares, corredores, pedestres, retornos (um pavimento) */
@@ -571,10 +583,12 @@ function garLarguraMin(poly){ let best=Infinity; for(let i=0;i<poly.length;i++){
 function garModGrupo(poly, obst, E, o, pisos){
   if(!poly || poly.length<3) return null;
   const M=garModBusca(poly, obst, E, o, pisos), R=M.R; if(!M.cands.length) return null;
-  const T=o.quick? 1 : 5, vistos=new Set(); let best=null;
-  for(const {FR, L} of M.cands){ if(vistos.size>=T) break; if(L.pisos.some(P=>!P.ok)) continue;
-    const sig=L.tot+":"+L.ys.map(y=>y.toFixed(1))+":"+L.xs.map(x=>x.toFixed(1))+":"+FR.ux.map(v=>v.toFixed(3)); if(vistos.has(sig)) continue; vistos.add(sig);
-    const L2=o.quick? gmAvalia(FR, R, L.g, L.ys, L.xs, {gu:FR.fb[0]+R.acrP-R.PIL/2-R.acrPil, gv:FR.fb[1]+R.acrP-R.PIL/2-R.acrPil, pil:true}) : gmRefina(FR, R, L);
+  // refina as 5 melhores sem ramal e as 2 melhores com ramal (a avaliação aproximada favorece os ramais)
+  const T=o.quick? 1 : 5, Tr=o.quick? 0 : 2, vistos=new Set(); let best=null, nS=0, nR=0;
+  for(const {FR, L} of M.cands){ if(nS>=T && nR>=Tr) break; if(L.pisos.some(P=>!P.ok)) continue;
+    const ram=L.rs.length>0; if(ram? nR>=Tr : nS>=T) continue;
+    const sig=L.tot+":"+L.ys.map(y=>y.toFixed(1))+":"+L.xs.map(x=>x.toFixed(1))+":"+L.rs.map(x=>x.toFixed(1))+":"+FR.ux.map(v=>v.toFixed(3)); if(vistos.has(sig)) continue; vistos.add(sig); if(ram) nR++; else nS++;
+    const L2=o.quick? gmAvalia(FR, R, L.g, L.ys, L.xs, {gu:FR.fb[0]+R.acrP-R.PIL/2-R.acrPil, gv:FR.fb[1]+R.acrP-R.PIL/2-R.acrPil, pil:true, rs:L.rs}) : gmRefina(FR, R, L);
     const out=gmMonta(poly, obst, E, o, pisos, M, FR, L2);
     const sc=Object.values(out).reduce((s,l)=>s+l.count,0)-L2.pen;
     if(!best || sc>best.sc) best={sc, out} }
