@@ -1,0 +1,103 @@
+// Térreo, hall e áreas comuns (src/calc/comuns.js, docs/COMUNS.md §3): programa, adjacências, rota acessível, gás e lixo,
+// nenhum ambiente sem acesso e nenhum ambiente solto no meio da circulação.
+import { describe, it, expect } from 'vitest';
+import { carregar, estado } from './harness.js';
+
+const T = { timeout: 240000 };
+const A = carregar();
+const G = A.G;
+const LZ = [
+  { nome: 'Salão de festas', area: 90, local: 'terreo' }, { nome: 'Espaço gourmet', area: 45, local: 'terreo' }, { nome: 'Academia', area: 60, local: 'terreo' },
+  { nome: 'Brinquedoteca', area: 35, local: 'terreo' }, { nome: 'Piscina', area: 70, local: 'emb', desc: true }, { nome: 'Deck / solário', area: 80, local: 'emb', desc: true },
+  { nome: 'Playground', area: 50, local: 'emb', desc: true }];
+const ret = (w, d) => ({ pts: [[0, 0], [w, 0], [w, d], [0, d]], front: [0], principal: 0, rec: [{}, {}, {}, {}], acessoPed: 0.3, acessoVei: 0.8 });
+const CASOS = {
+  exemplo: {},
+  grande: { lote: ret(60, 75), produto: { torres: [{ pav: 16 }], subsolos: 1, garAcima: 0, lojaTerreo: 0, garTerOn: true, lazer: { hall: 0, itens: LZ } } },
+  pequeno: { lote: ret(18, 36), produto: { torres: [{ pav: 10 }], subsolos: 1, garAcima: 0, lojaTerreo: 0, garTerOn: false, cob: { on: false, qtd: 1, area: 120, preco: 15000 },
+    mix: [{ nome: '2 dorm.', area: 62, qtd: 2, preco: 12000, sac: 5 }], lazer: { hall: 0, itens: [{ nome: 'Espaço gourmet', area: 35, local: 'terreo' }, { nome: 'Academia', area: 30, local: 'terreo' }] } } },
+};
+const R = {};
+const calc = k => R[k] || (R[k] = (() => { const st = estado(A, CASOS[k]); return { st, m: A.compute(st) } })());
+const terreo = C => C.amb.filter(a => a.local === 'terreo' && !a.recuo);
+const centro = p => G.centroid(p);
+// ponto logo fora do meio de cada lado do retângulo (no referencial do térreo)
+const ladosFora = (a, ux, vy, d = 0.25) => { const P = a.poly.map(q => [G.dot(q, ux), G.dot(q, vy)]), u0 = Math.min(...P.map(q => q[0])), u1 = Math.max(...P.map(q => q[0])), v0 = Math.min(...P.map(q => q[1])), v1 = Math.max(...P.map(q => q[1]));
+  const W = (u, v) => [ux[0] * u + vy[0] * v, ux[1] * u + vy[1] * v], um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
+  return [W(u0 - d, vm), W(u1 + d, vm), W(um, v0 - d), W(um, v1 + d)] };
+
+describe('programa realista do térreo', () => {
+  it('o apoio do condomínio entra no programa (portaria, clausura, sanitários, funcionários, DML, lixo, gás, medidores)', T, () => {
+    const { st, m } = calc('exemplo');
+    const ks = A.comunsPrograma(st, m).map(a => a.k);
+    for (const k of ['clausura', 'portaria', 'hall', 'wc', 'vest', 'copaf', 'dml', 'lixo', 'gas', 'medidores']) expect(ks).toContain(k);
+    expect(ks).toContain('salao'); expect(ks).toContain('copa');   // salão vira salão + copa
+  });
+  it('no exemplo, o programa inteiro cabe no térreo e a nota é boa', T, () => {
+    const { m } = calc('exemplo'), C = m.comuns;
+    expect(C).toBeTruthy();
+    expect(C.falta.filter(a => a.local === 'terreo')).toEqual([]);
+    expect(C.nota).toBeGreaterThanOrEqual(75);
+    expect(C.problemas.filter(p => p.nivel === 'bad')).toEqual([]);
+  });
+  it('lote grande e lote pequeno: cada ambiente com nome, área e mobiliário; o que não cabe vira aviso com motivo', T, () => {
+    for (const k of ['grande', 'pequeno']) { const { m } = calc(k), C = m.comuns;
+      expect(C.amb.length).toBeGreaterThan(8);
+      C.amb.forEach(a => { expect(a.nome).toBeTruthy(); expect(a.area).toBeGreaterThan(0.5) });
+      terreo(C).filter(a => !['clausura', 'hall'].includes(a.k)).forEach(a => expect((a.moveis || []).length, a.nome).toBeGreaterThan(0));
+      C.falta.forEach(a => { expect(a.motivo).toBeTruthy(); expect(C.problemas.some(p => p.msg.startsWith(a.nome))).toBe(true) }) }
+  });
+  it('cálculo rápido (otimizador) não roda o planejador', T, () => {
+    const st = estado(A, {}), m = A.compute(st, { quick: true, layouts: false });
+    expect(m.comuns == null).toBe(true); expect(Array.isArray(m.lzLay.terreo)).toBe(true);
+  });
+});
+
+describe('adjacências e acessos', () => {
+  it('a copa encosta no salão de festas e abre para ele', T, () => {
+    const { m } = calc('exemplo'), C = m.comuns, sal = C.amb.find(a => a.k === 'salao'), cp = C.amb.find(a => a.k === 'copa');
+    expect(sal && cp).toBeTruthy();
+    const [ux, vy] = C.eixos.terreo; expect(ladosFora(cp, ux, vy, 0.2).some(p => G.pip(p, sal.poly)) || ladosFora(sal, ux, vy, 0.2).some(p => G.pip(p, cp.poly))).toBe(true);
+    expect((cp.portas || []).length).toBeGreaterThan(0);
+  });
+  it('nenhum ambiente coberto do térreo sem porta para a circulação', T, () => {
+    for (const k of ['exemplo', 'grande', 'pequeno']) terreo(calc(k).m.comuns).filter(a => a.k !== 'hall').forEach(a => expect((a.portas || []).length, `${k}: ${a.nome}`).toBeGreaterThan(0));
+  });
+  it('rota acessível: do portão ao hall dos elevadores de cada torre e a cada ambiente, sem atravessar outro ambiente', T, () => {
+    for (const k of ['exemplo', 'grande', 'pequeno']) { const { m } = calc(k), C = m.comuns;
+      const torres = C.rota.filter(r => r.local === 'terreo' && r.amb == null);
+      expect(torres.length, k).toBeGreaterThan(0); torres.forEach(r => { expect(r.sem, `${k}: ${r.para}`).toBeFalsy(); expect(r.pts.length).toBeGreaterThan(1) });
+      terreo(C).forEach(a => { if (a.rotaOk === false) expect(a.par && C.amb.find(x => x.id === a.par && x.rotaOk !== false), `${k}: ${a.nome}`).toBeTruthy() });
+      expect(C.problemas.filter(p => p.k === 'rota' && p.nivel === 'bad')).toEqual([]) }
+  });
+  it('nenhum ambiente solto no meio: cada um tem ao menos dois lados encostados em parede, núcleo ou outro ambiente', T, () => {
+    for (const k of ['exemplo', 'grande', 'pequeno']) { const { m } = calc(k), C = m.comuns, [ux, vy] = C.eixos.terreo;
+      const circ = [...(C.circ.terreo || []), ...(C.circ.hall || []), ...(C.sobra || [])];
+      terreo(C).filter(a => a.k !== 'hall').forEach(a => { const livres = ladosFora(a, ux, vy).filter(p => circ.some(c => G.pip(p, c))).length;
+        expect(livres, `${k}: ${a.nome}`).toBeLessThanOrEqual(2) }) }
+  });
+});
+
+describe('gás, lixo e carro × pedestre', () => {
+  it('abrigo de resíduos no recuo, junto ao alinhamento; central de gás fora do prédio', T, () => {
+    for (const k of ['exemplo', 'grande']) { const { m } = calc(k), C = m.comuns;
+      const lx = C.amb.find(a => a.k === 'lixo'), gs = C.amb.find(a => a.k === 'gas');
+      expect(lx && lx.recuo, k).toBeTruthy(); expect(lx.dAl).toBeLessThanOrEqual(1.0);
+      expect(gs && gs.recuo, k).toBeTruthy(); expect(G.pip(centro(gs.poly), m.emb)).toBe(false) }
+  });
+  it('a rota de pedestres não cruza a faixa de veículos', T, () => {
+    for (const k of ['exemplo', 'grande', 'pequeno']) expect(calc(k).m.comuns.problemas.filter(p => p.k === 'veiculos' && p.nivel === 'bad'), k).toEqual([]);
+  });
+});
+
+describe('laje do embasamento', () => {
+  it('piscina com deck e solário, apoio encostado na torre, playground longe da água', T, () => {
+    const { m } = calc('grande'), C = m.comuns, L = C.amb.filter(a => a.local === 'emb');
+    const p = L.find(a => a.k === 'piscina'), ap = L.find(a => a.k === 'apoioPisc'), pg = L.find(a => a.k === 'playground');
+    expect(p && ap && pg).toBeTruthy();
+    expect(p.lamina.length).toBe(4); expect(p.deckA).toBeGreaterThan(30);
+    expect(m.T.some(t => G.polysOverlap(G.scaleToArea(ap.poly, G.area(ap.poly) * 1.6), t.plate))).toBe(true);
+    expect(A.cmnDistPolys(pg.poly, p.lamina)).toBeGreaterThanOrEqual(4);
+    expect(L.every(a => a.rotaOk !== false)).toBe(true);
+  });
+});

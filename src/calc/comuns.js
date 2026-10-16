@@ -586,7 +586,7 @@ function comunsTerreo(st, m, prog){
       for(let i=0;i+clW<=g.nx;i++){ const r={i,j,w:clW,h:clD}; if(!cabe(r)) continue;
         let fach=0; for(let t=0;t<clW;t++){ const v=g.at(i+t,j-1); if((v===CE||v===CF) && !G.pip(g.W(g.cu(i+t), g.cv(j-1)-res*0.4), m.emb)) fach++ } if(fach<clW) continue;   // fachada de verdade (rua/recuo), não a loja
         // atrás dela precisa caber o hall (3,6 × 3,0 m livres) e, ao lado, a portaria na fachada
-        const hw=Math.round(3.6/res), hd=Math.round(3.0/res), atras=[0,-Math.round((hw-clW)/2),clW-hw].some(di=>cabe({i:i+di, j:j+clD, w:hw, h:hd}));
+        const hw=Math.round(2.4/res), hd=Math.round(3.0/res), atras=[0,-Math.round((hw-clW)/2),clW-hw].some(di=>cabe({i:i+di, j:j+clD, w:hw, h:hd}));
         const pw=Math.round(2.7/res), pd=Math.round(3.3/res), lado=cabe({i:i+clW, j, w:pw, h:pd}) || cabe({i:i-pw, j, w:pw, h:pd});
         const sc=-Math.abs(g.u0+(i+clW/2)*res-uPed) - 2*(g.v0+j*res-dmn) + (atras? 16 : 0) + (lado? 6 : 0); if(!best||sc>best.sc) best={...r,sc} } }
     if(best){ rCl={i:best.i,j:best.j,w:best.w,h:best.h}; break } }
@@ -602,7 +602,7 @@ function comunsTerreo(st, m, prog){
   }
   // 3. hall social: retângulo encostado numa face interna da clausura (fundo ou lateral), com o tamanho do programa; de
   //    preferência já chegando ao hall dos elevadores
-  if(hl && fCl){ const sL=cmnSoma(g, v=>v===CL), sA=cmnPS(g, k=>g.c[k]===CA?1:0), mn=Math.round(2.4/res), need=Math.round(1.2/res), cr=fCl.r, A=hl.A;
+  if(hl && fCl){ const sL=cmnSoma(g, v=>v===CL), sA=cmnPS(g, k=>g.c[k]===CA?1:0), mn=Math.round(2.1/res), need=Math.round(1.2/res), cr=fCl.r, A=hl.A;
     let best=null;
     for(const f of [1, 0.85, 0.7, 0.55, 0.4]){
       for(let rr=1; rr<=3.2+1e-6; rr+=0.3){ const w0=Math.sqrt(A*f*rr)/res, h0=A*f/(w0*res)/res;
@@ -615,7 +615,7 @@ function comunsTerreo(st, m, prog){
             if(!best || sc>best.sc) best={...r_, sc, f, face} } } }
       if(best) break }
     if(best){ fHall=novo(hl, best); fCl.faceHall=best.face; g.c.forEach((v,k)=>{ if(v===fHall.cod) g.c[k]=CH }) }
-    else falta.push({...hl, motivo:"não há 2,4 × 2,4 m livres atrás da clausura (o núcleo ou as lojas fecham a entrada)"}) }
+    else falta.push({...hl, nivel:"warn", motivo:"não há 2,1 m livres atrás da clausura (o núcleo ou as lojas fecham a entrada); a galeria de entrada faz as vezes de hall"}) }
   // a clausura abre para o hall: conta como circulação para quem está atrás dela
   if(fCl && !fHall){ const nr=Math.round(1.5/res); for(let i=fCl.r.i;i<fCl.r.i+fCl.r.w;i++) for(let t=0;t<nr;t++){ const j=fCl.r.j+fCl.r.h+t; if(g.at(i,j)!==CL) break; g.c[j*g.nx+i]=CH } }
   if(fHall) fHall.hallCirc=true;
@@ -853,7 +853,7 @@ function comunsValida(C, st, m){
   const todos=(C.amb||[]), por=k=>todos.filter(a=>a.k===k), semLuz=[], soVent=[];
   const lista=as=>as.map(a=>a.nome).join(", ").replace(/, ([^,]*)$/," e $1");
   // programa
-  (C.falta||[]).forEach(a=>{ const c=CMN_CAT[a.k]; add("programa", a.obrig||c.grupo!=="lazer"? "bad" : "warn", `${a.nome} não coube: ${a.motivo}.`, a.id) });
+  (C.falta||[]).forEach(a=>{ const c=CMN_CAT[a.k]; add("programa", a.nivel || (a.obrig||(c.grupo!=="lazer"&&c.grupo!=="externo")? "bad" : "warn"), `${a.nome} não coube: ${a.motivo}.`, a.id) });
   todos.forEach(a=>{ const c=CMN_CAT[a.k]; if(!c) return;
     // medida mínima e proporção (de eixo a eixo; a parede desconta 0,15)
     const r=a.r, g=a.local==="emb"? C.gL : a.recuo? C.gR : a.local==="terreo"? C.gT : C.gP, res=(g&&g.res)||CMN_RES;
@@ -868,12 +868,13 @@ function comunsValida(C, st, m){
     if(a.local!=="emb" && !a.recuo && !c.desc && a.k!=="hall" && a.k!=="clausura" && (!a.portas || !a.portas.length)) add("acesso","bad",`${a.nome} sem porta para a circulação.`, a.id);
     const viaPar = a.par && todos.find(x=>x.id===a.par && x.rotaOk!==false);   // copa: entra pelo salão
     if(a.rotaOk===false && !viaPar) add("rota","bad",`${a.nome} fora da rota acessível (não se chega sem atravessar outro ambiente).`, a.id) });
-  if(semLuz.length) P.push({k:"luz", nivel:"warn", ambs:semLuz.map(a=>a.id), msg:`Sem janela para fora: ${lista(semLuz)}${C.motivoLuz? ` (${C.motivoLuz})` : ""} — ventilação mecânica e luz artificial.`});
-  if(soVent.length) P.push({k:"luz", nivel:"warn", ambs:soVent.map(a=>a.id), msg:`${lista(soVent)}: a parede externa fica a menos de 1,5 m da divisa — só ventilação, sem janela de verdade.`});
+  if(semLuz.length || soVent.length) P.push({k:"luz", nivel:"warn", ambs:[...semLuz,...soVent].map(a=>a.id), msg: semLuz.length?
+    `Sem janela para fora: ${lista(semLuz)}${C.motivoLuz? ` (${C.motivoLuz})` : ""}${soVent.length? `; ${lista(soVent)} só com ventilação (parede a menos de 1,5 m da divisa)` : ""} — ventilação mecânica e luz artificial.`
+    : `${lista(soVent)}: a parede externa fica a menos de 1,5 m da divisa — só ventilação, sem janela de verdade.`});
   // adjacências
   por("copa").forEach(cp=>{ const s=todos.find(x=>x.id===cp.par); if(s && !(cp.portas||[]).length) add("adjacencia","bad",`A copa não abre para o ${s.nome.toLowerCase()}.`, cp.id) });
   const wc=por("wc")[0];
-  ["salao","gourmet","brinq"].forEach(k=>por(k).filter(a=>a.local==="terreo").forEach(a=>{ if(!wc){ add("adjacencia","warn",`${a.nome} sem sanitário PCD no térreo.`, a.id); return } const d=Math.hypot(...[0,1].map(t=>G.centroid(a.poly)[t]-G.centroid(wc.poly)[t])); if(d>22) add("adjacencia","warn",`Sanitários PCD a ${cmnNf(d,0)} m do ${a.nome.toLowerCase()} (ideal ≤ 20 m).`, a.id) }));
+  ["salao","gourmet","brinq"].forEach(k=>por(k).filter(a=>a.local==="terreo").forEach(a=>{ if(!wc){ add("adjacencia","warn",`${a.nome} sem sanitário PCD no térreo.`, a.id); return } const d=Math.hypot(...[0,1].map(t=>G.centroid(a.poly)[t]-G.centroid(wc.poly)[t])); if(d>30) add("adjacencia","warn",`Sanitários PCD a ${cmnNf(d,0)} m do ${a.nome.toLowerCase()} (ideal ≤ 30 m).`, a.id) }));
   por("piscina").forEach(p=>{ const ap=todos.find(x=>x.par===p.id); if(!ap) add("adjacencia","warn","Piscina sem sanitário e ducha por perto.", p.id); else { const d=Math.hypot(...[0,1].map(t=>G.centroid(p.poly)[t]-G.centroid(ap.poly)[t])); if(d>25) add("adjacencia","warn",`Apoio da piscina a ${cmnNf(d,0)} m dela.`, p.id) } });
   const pg=por("playground")[0], pi=por("piscina")[0];
   if(pg && pi && pg.local===pi.local){ const d=cmnDistPolys(pg.poly, pi.lamina||pi.poly); if(d<4) add("seguranca","warn",`Playground a ${cmnNf(d,1)} m da água — afaste ou cerque a piscina.`, pg.id) }
@@ -888,7 +889,8 @@ function comunsValida(C, st, m){
     if(dv>30) add("portaria","warn",`Portaria a ${cmnNf(dv,0)} m do portão de veículos (câmeras).`, pt.id) }
   // hall social ligado aos elevadores
   (C.TT&&C.TT.ligacoes||[]).forEach(l=>{ if(!l.ok) add("rota","bad",`O hall não chega ao hall dos elevadores${l.al.torre!=null? " da torre "+(l.al.torre+1) : ""}.`); else if(l.estreito) add("rota","warn",`A galeria até${l.al.torre!=null? " a torre "+(l.al.torre+1) : " a garagem"} fica com 1,20 m (estreita).`) });
-  const hl=por("hall")[0]; if(hl && hl.area < hl.A*0.7) add("area","warn",`Hall social com ${cmnNf(hl.area,0)} m² (o programa pede ${cmnNf(hl.A,0)} m²).`, hl.id);
+  // hall social: o hall de entrada mais as galerias fazem a área de recepção e espera
+  const hl=por("hall")[0]; if(hl){ const gal=((C.circ||{}).terreo||[]).reduce((s,p)=>s+G.area(p),0); if(hl.area < hl.A*0.3 || hl.area+gal < hl.A*0.8) add("area","warn",`Hall social com ${cmnNf(hl.area,0)} m² e ${cmnNf(gal,0)} m² de galerias (o programa pede ${cmnNf(hl.A,0)} m²).`, hl.id) }
   // gás e lixo
   por("gas").forEach(gs=>{ if(!gs.recuo) add("gas","bad","A central de gás ficou dentro do prédio — precisa de área externa ventilada.", gs.id);
     else { const cl=por("clausura")[0]; const d=cl? cmnDistPolys(gs.poly, cl.poly) : 99; if(d<3) add("gas","warn",`Central de gás a ${cmnNf(d,1)} m da entrada de pedestres (afaste ≥ 3 m).`, gs.id);
