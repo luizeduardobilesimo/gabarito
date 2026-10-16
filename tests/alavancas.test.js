@@ -145,8 +145,10 @@ describe('otimizador: margem s/ VGV, hLim, eficiência global e V/C', () => {
     // conferência que sobe/desce andares e subsolos com o layout real e ordem "lucro > 0 e margem ≥ meta" antes do objetivo.
     // As três melhores de antes continuam, com o mesmo lucro; entra uma melhor (2 torres × 11 pav, 1 subsolo: R$ 38,5 mi > 35,2 mi).
     // Antes: ['1|alto|3|15|1|0', '1|alto|4|11|1|0', '2|alto|2|11|0|2', '1|alto|2|20|1|0', '2|atual|4|10|2|0'] · [35211511, 34629825, 33727734, 33328450, 19748241]
-    expect(o.res.map(r => B.otimKey(r))).toEqual(['2|alto|2|11|1|0', '1|alto|3|15|1|0', '1|alto|4|11|1|0', '1|alto|2|20|1|0', '2|alto|1|19|1|0']);
-    expect(o.res.map(r => Math.round(r.lucro))).toEqual([38457714, 35211511, 34629825, 33328450, 22836944]);
+    // Garagem por partidos (docs/COMUNS.md §2, mudança intencional): as quatro melhores não mudam; a 5ª (2 torres × 1 un/andar)
+    // passa de 19 pav + 1 subsolo (R$ 22,8 mi) para 20 pav + 2 subsolos (R$ 18,8 mi) — a garagem real rende menos vagas nesse lote.
+    expect(o.res.map(r => B.otimKey(r))).toEqual(['2|alto|2|11|1|0', '1|alto|3|15|1|0', '1|alto|4|11|1|0', '1|alto|2|20|1|0', '2|alto|1|20|2|0']);
+    expect(o.res.map(r => Math.round(r.lucro))).toEqual([38457714, 35211511, 34629825, 33328450, 18751086]);
     expect(o.pareto.pts.length).toBeGreaterThan(5); expect(o.pareto.pts.some(p => p.fronteira)).toBe(true);
     expect(dt).toBeLessThan(30);        // a meta é ≤ 15 s numa máquina livre; o teto do teste é folgado para não oscilar com a carga
   }, 300000);
