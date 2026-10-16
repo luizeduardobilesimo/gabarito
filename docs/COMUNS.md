@@ -92,3 +92,16 @@ IN 09/CBMSC, NBR 13994/16858 elevadores, códigos de obras usuais); tudo configu
 - Projeto › Garagem: no RES, m²/vaga e nota da garagem; seção "Partido da garagem" (fechada, com resumo).
 - Respeitar `docs/UX.md` (v3): ≤ 6 campos visíveis por sub-aba, seções fechadas com resumo, painel ≤ 1.400 px,
   um `.btn.pri` (o do rodapé), Ctrl+Z em tudo.
+
+## 5. Exemplos do Luiz (16/10/2026) — não se limitar a eles
+
+- Vagas encostadas em parede ou pilar de um lado ou dos dois lados têm largura acrescida (configurável, "conferir na lei").
+- Vaga PCD com faixa de transferência de 1,20 m de um lado ou compartilhada entre duas vagas PCD; marcada no desenho.
+- Rampas e acessos: geometria real (transições de 10%, patamar, raio de curva, portão/controle e espera fora da via,
+  sem conflito com vagas e pedestres).
+- Rota de veículos e manobra: raio de giro real (≈ 5,5–6,0 m externo), sentido de circulação coerente, manobra diante
+  de cada vaga sem invadir outra vaga ou pilar, sem becos sem retorno.
+- Lazer: nada de "quadrado genérico no meio"; cada ambiente com formato e equipamento do seu uso, encostado em
+  paredes/fachadas e organizado ao longo de uma circulação clara a partir do hall.
+- Núcleos em harmonia: peça coesa, alinhada à malha e às prumadas, módulos alinhados, hall retangular centrado nas
+  portas, sem serrilhados nem sobras, na mesma posição em todos os pavimentos.
