@@ -338,15 +338,21 @@ function cmnPoeParede(g, a, o){
             top.push({...r, sc, f, frT:1, ladoPorta:s.d, ct:{luz:lz, luzLado:lzL}}); top.sort((x,y)=>y.sc-x.sc); if(top.length>K) top.pop() } } } } }
   return top;
 }
+/* células livres a até r células (pelas livres) de uma célula que satisfaz pred */
+function cmnPertoDe(g, pred, r){ const n=g.nx*g.ny, d=new Int16Array(n).fill(999), Q=[], out=new Uint8Array(n);
+  for(let k=0;k<n;k++) if(pred(g.c[k])){ d[k]=0; Q.push(k) }
+  for(let q=0;q<Q.length;q++){ const k=Q[q]; if(d[k]>=r) continue; const i=k%g.nx, j=(k/g.nx)|0; for(const [a,b] of cmnDI){ const kk=(j+b)*g.nx+i+a; if(g.at(i+a,j+b)===CL && d[kk]>d[k]+1){ d[kk]=d[k]+1; out[kk]=1; Q.push(kk) } } }
+  return out }
 /* rede de circulação (partido perimetral): do hall de entrada (CH/CC), pelas células livres com folga de 1,20 m, até cada
    hall de elevadores (alvos) e até a frente de cada ambiente já colocado (trecho de porta). Devolve true se tudo se liga. */
 function cmnRedeOk(g, alvos, feitos){
   const n=g.nx*g.ny, rm=Math.max(1,Math.ceil((1.2/g.res-1)/2)), fol=cmnFolga(g, v=>v===CL||cmnCirc(v)), vis=new Uint8Array(n), Q=[];
+  const pA=cmnPertoDe(g, v=>v===CA, rm);   // a boca do hall dos elevadores pode ser estreita (o hall já é a passagem)
   for(let k=0;k<n;k++) if(g.c[k]===CH||g.c[k]===CC){ vis[k]=1; Q.push(k) }
   if(!Q.length) return true;
   for(let q=0;q<Q.length;q++){ const k=Q[q], i=k%g.nx, j=(k/g.nx)|0;
     for(const [a,b] of cmnDI){ const ii=i+a, jj=j+b, v=g.at(ii,jj), kk=jj*g.nx+ii; if(vis[kk]) continue;
-      if(v===CC||v===CH||v===CA || (v===CL && fol[kk]>rm)){ vis[kk]=1; Q.push(kk) } } }
+      if(v===CC||v===CH||v===CA || (v===CL && (fol[kk]>rm || pA[kk]))){ vis[kk]=1; Q.push(kk) } } }
   for(const al of alvos){ let ok=false; for(const k of al.set) if(vis[k]){ ok=true; break } if(!ok) return false }
   const SV=cmnPS(g, k=>vis[k]?1:0);
   for(const f of feitos){ if(!f.r || f.porFora) continue; const need=Math.ceil((CMN_CAT[f.k].porta||0.9)/g.res)+1, par=f.parCod; let ok=false;
@@ -412,7 +418,8 @@ function cmnLiga(g, alvoSet, rb, modo, perto){   // perto: Uint8Array das célul
     const n=g.nx*g.ny, dS=new Int16Array(n).fill(999), Q=[]; for(let k=0;k<n;k++) if(g.c[k]===CC||g.c[k]===CH){ dS[k]=0; Q.push(k) }
     for(let q=0;q<Q.length;q++){ const k=Q[q]; if(dS[k]>=r+1) continue; const i=k%g.nx, j=(k/g.nx)|0; for(const [a,b] of cmnDI){ const kk=(j+b)*g.nx+i+a; if(g.at(i+a,j+b)===CL && dS[kk]>dS[k]+1){ dS[kk]=dS[k]+1; Q.push(kk) } } }
     // (o hall dos elevadores de uma torre é passagem para a outra, como no prédio de verdade)
-    const path=cmnCaminho(g, k=>g.c[k]===CC||g.c[k]===CH, k=>alvoSet.has(k), k=>g.c[k]===CA || (g.c[k]===CL||g.c[k]===CC||g.c[k]===CH) && (fol[k]>r || dS[k]<=r), custo);
+    const pA=cmnPertoDe(g, v=>v===CA, r);
+    const path=cmnCaminho(g, k=>g.c[k]===CC||g.c[k]===CH, k=>alvoSet.has(k), k=>g.c[k]===CA || (g.c[k]===CL||g.c[k]===CC||g.c[k]===CH) && (fol[k]>r || dS[k]<=r || pA[k]), custo);
     if(path){ cmnPincel(g, path, r, CC, v=>v===CL); return {path, estreito: r<rb} } }
   return null;
 }
@@ -711,7 +718,7 @@ function comunsTerreo(st, m, prog){
   cores.forEach(cs=>{ const lay=cs.lay||{}, nuc=lay.nucleo;
     cmnPinta(g, cs.core, CO); [...(lay.coreExtra||[]), ...(lay.coreFundo||[])].forEach(p=>cmnPinta(g,p,CO));   // coreFundo: depósito atrás do núcleo (núcleo novo)
     const set=new Set();
-    if(cs.lobby && cs.lobby.length) cmnPinta(g, cs.lobby, CA);
+    if(cs.lobby && cs.lobby.length) cmnPinta(g, cs.lobby, CA, v=>v!==CO);   // a faixa de veículos sobre o hall continua obstáculo (vira problema na validação)
     else if(nuc && Array.isArray(nuc.portas)) nuc.portas.filter(p=>p.tipo!=="servico").forEach(p=>{ const c=p.p||p; cmnPinta(g, G.rect(ux,vy,G.dot(c,ux)-0.6,G.dot(c,vy)-0.6,1.2,1.2), CA, v=>v!==CO) });
     alvos.push({torre:cs.i, set, poly:cs.lobby}) });
   (T.walk||[]).forEach((p,q)=>cmnPinta(g, p, CA, v=>v===CF||v===CL));
@@ -1102,6 +1109,11 @@ function comunsValida(C, st, m){
   const T=m.ter||{}, faixas=[...(T.drive||[]), ...(T.driveRua||[])];
   const cruza=(C.rota||[]).filter(r=>r.local!=="emb" && r.pts.length>1 && faixas.some(f=>r.pts.some((p,i)=>i && G.segPolyHit(r.pts[i-1],p,G.scaleToArea(f,G.area(f)*0.98)))));
   if(cruza.length) add("veiculos","bad",`A rota de pedestres cruza a faixa de veículos (${cruza.map(r=>r.para).join(", ")}).`);
+  // hall dos elevadores invadido pela faixa de veículos / rampa (núcleo encostado no acesso de veículos)
+  const rampasT=((m.vert&&m.vert.floors&&m.vert.floors.ter&&m.vert.floors.ter.ramps)||[]).map(r=>r.poly);
+  (m.coreSets||[]).forEach(cs=>{ if(!cs.lobby || cs.lobby.length<3) return; const lb=G.sArea(cs.lobby)<0? cs.lobby.slice().reverse() : cs.lobby;
+    const inv=Math.max(0, ...[...faixas, ...rampasT].map(f=>G.area(G.clipToPoly(f, lb)||[])));   // faixa e rampa se sobrepõem: vale a maior
+    if(inv>0.5) add("veiculos","bad",`A faixa de veículos passa sobre o hall dos elevadores${(m.coreSets.length>1)? " da torre "+(cs.i+1) : ""} (${cmnNf(inv,0)} m²) — mova o núcleo ou o acesso de veículos.`) });
   if(C.TT && C.TT.veiFrente && Math.abs(C.TT.uPed-C.TT.uVei)<3.5) add("veiculos","warn","Portões de pedestres e de veículos colados: separe ao menos 3,5 m.");
   const bad=P.filter(p=>p.nivel==="bad").length, warn=P.filter(p=>p.nivel==="warn").length;
   const nota=Math.max(0, Math.round(100 - bad*CMN_NOTA.bad - warn*CMN_NOTA.warn));
