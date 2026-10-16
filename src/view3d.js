@@ -133,7 +133,10 @@ function rebuild3d(m, force){
       yy+=P.pe }
     if(t.duplexA>1){ slab(G.scaleToArea(topP,t.duplexA), yy, P.pe-0.22, col3("--m-cob"), {eop:0.22}); yy+=P.pe }
     if(ti===0) lzMesh(LZ.cob, yy);
-    if(P.atico && topP.length) slab(G.scaleToArea(topP, (t.Atop??t.A)*0.25), yy, 3, col3("--m-gar"));
+    // ático técnico sobre o núcleo (caixa d'água, barrilete, casa de máquinas) e a saída dos dutos acima da cobertura
+    if(P.atico && topP.length){ const nc=lay && (lay.coreOut||lay.core);
+      if(nc && nc.length>2){ slab(nc, yy, 3, col3("--m-gar"), {eop:0.3}); (lay.coreParts||[]).forEach(cp=>{ if(cp.kind==="duto") slab(G.scaleToArea(cp.poly, G.area(cp.poly)*0.8), yy+3, 1.2, col3("--c-duto"), {eop:0.3}) }) }
+      else slab(G.scaleToArea(topP, (t.Atop??t.A)*0.25), yy, 3, col3("--m-gar")) }
   });
   // envelope: extrusão única ou (2.4) pilha de polígonos por cota com recuos progressivos
   if(m.env && m.env.length){ const ce=col3("--m-env"); outline(m.torAll, 0, m.env[0].z0, ce, true); m.env.forEach(e=>{ outline(e.poly, e.z0, e.z1-e.z0, ce, true); outline(e.poly, e.z0, 0.001, ce, true) }) }

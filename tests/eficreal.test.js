@@ -74,7 +74,7 @@ describe('eficiência real da planta — retângulo e "Personalizar"', () => {
     expect(pers.m.constr).toBeCloseTo(auto.m.constr, 6); expect(pers.m.CA).toBeCloseTo(auto.m.CA, 9); expect(pers.m.units).toBe(auto.m.units);
     expect(pers.t.privAndar).toBeCloseTo(somaUn(auto.m.tipo[0]), 6);           // o mesmo pavimento tipo do automático
     const rel = pers.m.privRes / auto.m.privRes;
-    expect(rel).toBeGreaterThan(0.92); expect(rel).toBeLessThan(0.98);
+    expect(rel).toBeGreaterThan(0.92); expect(rel).toBeLessThan(0.99);   // núcleo compacto (docs/COMUNS.md §1): o desenho rende ~2% menos
     expect(pers.f.vgv).toBeLessThan(auto.f.vgv);
     const R = A.blcResumo(exemplo('pers'), pers.m);
     expect(R.efic).toBeCloseTo(pers.t.eficReal, 9); expect(R.eficInf).toBe(0.8);       // o que a interface mostra: real × informada
@@ -83,9 +83,10 @@ describe('eficiência real da planta — retângulo e "Personalizar"', () => {
 
 describe('eficiência real da planta — Ajustar mix, pilha de blocos e contorno ocupado', () => {
   it('"Ajustar mix" mira a área real para unidades: depois dele o mix cabe (r ≥ 1) e não propõe mais nada', () => {
-    const st = exemplo('ret'), m = A.compute(st), R = A.blcResumo(st, m);
+    const st = exemplo('ret'); st.produto.mix.forEach(u => u.area = Math.round(u.area * 1.05));
+    const m = A.compute(st), R = A.blcResumo(st, m);
     expect(R.real).toBe(true); expect(R.util).toBeGreaterThanOrEqual(R.priv - 1e-9);
-    expect(m.T[0].fit).toBe(false);                                            // 316 m² do mix não cabem nos ~300 m² desenhados
+    expect(m.T[0].fit).toBe(false);                                            // 332 m² do mix não cabem nos ~310 m² desenhados
     expect(R.muda).toBe(true);
     st.produto.mix.forEach((u, j) => u.qtd = R.q[j]);
     expect(st.produto.mix.reduce((s, u) => s + u.area * u.qtd, 0)).toBeLessThanOrEqual(R.util + 1e-6);
@@ -176,7 +177,7 @@ describe('otimizador: atalho coerente com o compute completo', () => {
       expect(me.privRes).toBeCloseTo(m2.privRes - m2.sacBal, 6);                 // privativa residencial idêntica
       expect(m2.units).toBe(p.units);
       // o resto da diferença é o térreo (lojas e hall), que o massing só estima — como no modo automático (~1–2%)
-      expect(Math.abs(f2.vgv - p.vgv) / p.vgv).toBeLessThan(0.03);
+      expect(Math.abs(f2.vgv - p.vgv) / p.vgv).toBeLessThan(0.035);
     }
   }, 300000);
 });

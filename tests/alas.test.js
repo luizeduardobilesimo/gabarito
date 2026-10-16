@@ -101,10 +101,11 @@ describe('C3 — o que continua no motor de antes (tipoLayout)', () => {
   const RET = [[15, 15], [45, 15], [45, 35], [15, 35]];
   it('planta retangular desenhada: layout idêntico ao tipoLayout', () => {
     const st = comBloco({ pts: RET, de: 1 }), m = calc(st), t = m.T[0], E = st.estudo, P = st.produto;
-    const list = []; P.mix.forEach(u => { for (let q = 0; q < u.qtd; q++) list.push({ nome: u.nome, alvo: u.area * t.r, sac: +u.sac || 0 }) });
+    const r0 = A.massing(st).T[0].r;   // fator antes da eficiência real (o compute desenha com ele e só depois ajusta t.r)
+    const list = []; P.mix.forEach(u => { for (let q = 0; q < u.qtd; q++) list.push({ nome: u.nome, alvo: u.area * r0, sac: +u.sac || 0 }) });
     const nAuto = (t.units > 60 || t.H > 45) ? 3 : (t.H > 12 ? 2 : 1);
     const ref = A.tipoLayout(t.plate, list, { corr: E.corrTipo, profMin: E.profMin, nElev: +E.elevadores || nAuto, pos: E.nucleoPos, lado: E.nucleoLado, escada: E.escadaLado, planta: E.tipoPlanta,
-      escTipo: E.escTipo, nEsc: E.nEsc, emerg: E.emerg, fachada: E.fachada, sacTipo: P.sacTipo, sacProf: P.sacProf, _st: st, _areaFixa: true });   // a repartição pelos partidos (reparte.js) também
+      escTipo: E.escTipo, nEsc: E.nEsc, emerg: E.emerg, fachada: E.fachada, sacTipo: P.sacTipo, sacProf: P.sacProf, _st: st, _pav: t.pav, _H: t.H, _nElevAuto: !(+E.elevadores), _areaFixa: true });   // a repartição pelos partidos (reparte.js) também
     const lay = m.tipo[0];
     expect(lay.alas).toBeUndefined();
     // (a repartição pelos partidos depende da área-alvo, que a eficiência real ajusta depois: os cortes podem andar centímetros)

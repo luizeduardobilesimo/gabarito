@@ -1043,82 +1043,61 @@ const G = (() => {
 /* ---- layout.js ---- */
 /* ================= Fase 2: pavimento tipo ================= */
 const ESC_TIPOS = { ep:"Enclausurada protegida (EP)", pf_duto:"À prova de fumaça com antecâmara e dutos (PF)", pf_balcao:"À prova de fumaça com balcão aberto (PF)", pf_press:"Pressurizada (PFP)" };
-const CORE_F=2.4, CORE_B=2.7;
-// sequência das peças do núcleo em duas fileiras: frente (abre para o hall) e fundo (escada)
-function coreSeq(o){
-  if(o._seq) return o._seq;   // C3 (src/calc/alas.js): sequência própria (segunda escada, sem elevadores)
-  const t=o.escTipo||"pf_duto", nE=Math.max(1,o.nElev||2), front=[], back=[];
-  const grp=(second)=>{ const fr=[], bk=[];
-    if(t==="pf_balcao"){ fr.push({k:"pass",nome:"acesso",w:2.2,door:"hall",door2:"balc"}); bk.push({k:"balc",nome:"balcão aberto",w:2.2,doorSide:"esc"},{k:"esc",nome:"escada",w:5.8}) }
-    else { bk.push({k:"esc",nome:"escada",w:5.8}); if(t==="pf_press") bk.push({k:"duto",nome:"pressurização",w:1.0});
-      if(t==="ep") fr.push({k:"ant",nome:"hall da escada",w:1.8,door:"hall",door2:"esc"});
-      else { fr.push({k:"ant",nome:"antecâmara",w:2.2,door:"hall",door2:"esc"}); if(t==="pf_duto") fr.push({k:"duto",nome:"dutos",w:0.8}) } }
-    if(!second && o.emerg) fr.splice(1,0,{k:"emerg",nome:"elev. emergência",w:2.3,doorSide:"ant"});
-    return {fr,bk} };
-  const g1=grp(false);
-  front.push(...g1.fr); back.push(...g1.bk);
-  for(let i=0;i<nE;i++) front.push({k:"elev",nome:"elevador",w:2.1,door:"hall"});
-  front.push({k:"shaft",nome:"shafts",w:1.1,door:"hall"});
-  if(o.nEsc===2){ const g2=grp(true); return {front, back, g2} }
-  return {front, back, g2:null};
-}
+const CORE_F=2.2, CORE_B=2.7;   // fileira da frente (elevadores/antecâmara) e do fundo (escada de 1,20 m) — eixo a eixo
+/* núcleo de circulação vertical: o partido e as medidas vêm de src/calc/nucleo.js (nucleoMonta, referencial local u×v);
+   aqui ele vai para o mundo (ux, vy, ponta cu0, face vEdge, sentido s) e a faixa atrás dele até a fachada (depthB além do
+   fundo do núcleo) vai para as unidades vizinhas (o._notch = lados com unidade) — o núcleo fica um retângulo coeso, igual
+   em todos os pavimentos. Sem vizinho (ou faixa rasa ≤ 1,2 m) o fundo do núcleo cresce até a fachada. */
 function coreBuild(ux,vy,cu0,vEdge,s,depthB,o){
-  const seq=coreSeq(o), F=CORE_F, B=depthB;
-  // posições ao longo do núcleo
-  let fu=0; const fr=seq.front.map(c=>{ const r={...c,u:fu}; fu+=c.w; return r });
-  let bu=0; const bk=seq.back.map(c=>{ const r={...c,u:bu}; bu+=c.w; return r });
-  if(seq.g2){ const Lpre=Math.max(fu,bu); let f2=Math.max(fu, Lpre), b2=f2; seq.g2.fr.reverse().forEach(()=>{}); 
-    const g2f=seq.g2.fr.slice(), g2b=seq.g2.bk.slice(); const wf=g2f.reduce((a,c)=>a+c.w,0), wb=g2b.reduce((a,c)=>a+c.w,0); const L2=Math.max(Lpre+Math.max(wf,wb), 0);
-    let x=L2-wf; g2f.forEach(c=>{ fr.push({...c,u:x}); x+=c.w }); x=L2-wb; g2b.forEach(c=>{ bk.push({...c,u:x}); x+=c.w }); fu=L2; bu=L2 }
-  if(!seq.g2){ const gap=fu-bu; // fundo menor que a frente: nada de “sobras” sem acesso
-    if(gap>1.6){ const ps={k:"pass",nome:"serviço",w:1.0,u:fu,door:"hall",door2:"hserv"}; fr.push(ps); fu+=1.0; const gw=fu-bu;
-      // fundo que sobra vira hall de serviço (elevadores com porta dupla) + lixo/DML — tudo com acesso
-      if(gw>3.2){ bk.push({k:"lixo",nome:"lixo / DML",w:1.6,u:bu,doorSide:"hserv"}, {k:"hserv",nome:"hall de serviço",w:gw-1.6,u:bu+1.6}) }
-      else { bk.push({k:"lixo",nome:"lixo / DML",w:gw,u:bu}); ps.door2="lixo" }
-      bu=fu }
-    else if(gap>0.3){ bk.push({k:"shaft",nome:"shafts",w:gap,u:bu}); bu=fu } }
-  const L=Math.max(fu,bu);
-  // completa lacunas: frente vira hall; fundo vira área técnica
-  const fill=(row,k,nome)=>{ row.sort((a,b)=>a.u-b.u); const out=[]; let x=0; row.forEach(c=>{ if(c.u-x>0.3) out.push({k,nome,w:c.u-x,u:x}); out.push(c); x=c.u+c.w }); if(L-x>0.3) out.push({k,nome,w:L-x,u:x}); return out };
-  const FR=fill(fr,"hall","hall"), BK=fill(bk,"tec","área técnica").flatMap(c=>{ if(c.k!=="tec") return [c];
-    if(c.w<=2.4) return [{...c,k:"shaft",nome:"shafts"}];
-    return [{k:"lixo",nome:"lixo / DML",w:1.6,u:c.u,doorSide:"hserv"},{k:"hserv",nome:"hall de serviço",w:c.w-1.6,u:c.u+1.6}] });
-  const mir=o.escada==="D";
-  const U=(u,w)=> mir? cu0+(L-u-w) : cu0+u;
-  const R=(u,w,va,vb)=>{ const uu=U(u,w); return s>0? G.rect(ux,vy,uu,vEdge+va,w,vb-va) : G.rect(ux,vy,uu,vEdge-vb,w,vb-va) };
-  const P=(u,v)=>{ const uu=mir? cu0+L-u : cu0+u, vv= s>0? vEdge+v : vEdge-v; return [ux[0]*uu+vy[0]*vv, ux[1]*uu+vy[1]*vv] };
-  const cells=[], doors=[], lines=[];
-  FR.forEach(c=>cells.push({...c, poly:R(c.u,c.w,0,F), row:"f"}));
-  // escada na ponta do núcleo encostado na fachada: profundidade do lance real (2 lances + parede), o resto volta para a unidade vizinha
-  const escD=o._escD||CORE_B, notches=[];
-  BK.forEach(c=>{ let d=B;
-    if(c.k==="esc" && o._notch && B-escD>=1.0){ const side= c.u<0.05? "start" : Math.abs(c.u+c.w-L)<0.05? "end" : null;
-      if(side && o._notch.includes(side)){ d=escD; notches.push({side, u:c.u, w:c.w}) } }
-    cells.push({...c, d, poly:R(c.u,c.w,F,F+d), row:"b"}) });
-  const door=(u,v,du,dv,w,sw)=>{ doors.push({a:P(u,v), b:P(u+du*w,v+dv*w), sw}) };
-  cells.forEach(c=>{
-    if(c.door==="hall"){ const w=c.k==="elev"? 1.0 : c.k==="shaft"? 0.7 : 0.9; door(c.u+(c.w-w)/2,0,1,0,w, c.k==="elev"?0:1) }
-    if(c.door2){ const tgt=cells.find(x=>x.row==="b" && x.k===c.door2 && x.u<c.u+c.w-0.3 && x.u+x.w>c.u+0.3); if(tgt){ const a=Math.max(c.u,tgt.u), b=Math.min(c.u+c.w,tgt.u+tgt.w), w=Math.min(0.9,b-a-0.2); door(a+(b-a-w)/2,F,1,0,w,1) } }
-    if(c.doorSide){ const nb=cells.find(x=>x.row===c.row && x.k===c.doorSide && (Math.abs(x.u-(c.u+c.w))<0.05 || Math.abs(x.u+x.w-c.u)<0.05)); if(nb){ const uE= Math.abs(nb.u-(c.u+c.w))<0.05? c.u+c.w : c.u, v0=c.row==="f"?0:F, h=c.row==="f"?F:B; door(uE, v0+(h-0.9)/2, 0,1,0.9,1) } }
-    if(c.k==="elev"){ const h=cells.find(x=>x.row==="b" && x.k==="hserv" && Math.min(c.u+c.w,x.u+x.w)-Math.max(c.u,x.u)>1.1); if(h){ const a=Math.max(c.u,h.u), b=Math.min(c.u+c.w,h.u+h.w); door(a+(b-a-1.0)/2,F,1,0,1.0,0) } }
-    if(c.k==="esc"){ // lances, patamares e seta de subida
-      const v0=F, v1=F+(c.d||B), vm=(v0+v1)/2, uA=c.u+1.2, uB=c.u+c.w-1.2;
-      lines.push([P(uA,vm),P(uB,vm)]);
-      for(let u=uA; u<=uB+0.01; u+=0.28){ lines.push([P(u,v0+0.05),P(u,vm)]); lines.push([P(u,vm),P(u,v1-0.05)]) }
-      lines.push({arrow:[P(uB-0.3,v0+(vm-v0)/2),P(uA+0.3,v0+(vm-v0)/2)]});
-    }
-    if(c.k==="elev"||c.k==="emerg"){ const a=0.25; lines.push([P(c.u+a,c.row==="f"?a:F+a),P(c.u+c.w-a,c.row==="f"?F-a:F+B-a)]); lines.push([P(c.u+c.w-a,c.row==="f"?a:F+a),P(c.u+a,c.row==="f"?F-a:F+B-a)]) }
-    if(c.k==="duto"){ const v0=c.row==="f"?0:F, h=c.row==="f"?F:B; for(let k=-h;k<c.w;k+=0.3){ const x0=Math.max(0,k), y0=Math.max(0,-k); lines.push([P(c.u+x0,v0+y0),P(c.u+Math.min(c.w,k+h),v0+Math.min(h,c.w-k))]) } }
-  });
-  // contorno do núcleo: retângulo menos os recortes atrás das escadas (do lado da fachada)
-  const poly=R(0,L,0,F+B); let outline=poly;
-  if(notches.length){ const back=[[L,F+B]]; notches.slice().sort((a,b)=>b.u-a.u).forEach(n=>{ const d=F+escD;
-      if(n.side==="end"){ back.length=0; back.push([L,d],[n.u,d],[n.u,F+B]) } else back.push([n.u+n.w,F+B],[n.u+n.w,d],[0,d]) });
-    const pts=[[0,0],[L,0],...back]; if(!notches.some(n=>n.side==="start")) pts.push([0,F+B]);
-    outline=pts.filter((q,i)=>i===0||Math.hypot(q[0]-pts[i-1][0],q[1]-pts[i-1][1])>1e-6).map(([u,v])=>P(u,v)) }
-  const sobras=notches.map(n=>({side:n.side, u0:n.u, u1:n.u+n.w, vIn:F+escD, vOut:F+B, poly:R(n.u,n.w,F+escD,F+B)}));
-  // poly = projeção total (obstáculo nas garagens, como antes) · outline = contorno real no pavimento tipo
-  return {L, depth:F+B, cells, doors, lines, poly, outline, lobby:R(0,L,-2.0,0), sobras, mir};
+  const N=nucleoMonta(o), L=N.L, F=N.F, Dn=N.D, mir=o.escada==="D", Dt=F+Math.max(depthB, Dn-F);
+  const P=(u,v)=>{ const uu=cu0+(mir? L-u : u), vv= s>0? vEdge+v : vEdge-v; return [ux[0]*uu+vy[0]*vv, ux[1]*uu+vy[1]*vv] };
+  const R=(u,v,w,h)=>{ const uu= mir? L-u-w : u; return s>0? G.rect(ux,vy,cu0+uu,vEdge+v,w,h) : G.rect(ux,vy,cu0+uu,vEdge-v-h,w,h) };
+  const cells=N.cells.map(c=>({...c})), extra=Dt-Dn, nb=o._notch||null;
+  // perfil do fundo: trechos [u0,u1] e a profundidade em que o núcleo termina
+  let perfil=[];
+  if(N.ala) perfil=[{u0:0,u1:N.ala.u0,d:Dn},{u0:N.ala.u0,u1:L,d:N.ala.vIn}];
+  else { const fc=cells.filter(c=>c.fachada); let x=0; fc.sort((a,b)=>a.u-b.u).forEach(c=>{ if(c.u>x+0.01) perfil.push({u0:x,u1:c.u,d:Dn}); perfil.push({u0:c.u,u1:c.u+c.w,d:Dt,fach:true}); x=c.u+c.w }); if(x<L-0.01) perfil.push({u0:x,u1:L,d:Dn}) }
+  cells.forEach(c=>{ if(c.fachada) c.h=Dt-c.v });
+  const sobras=[], absorve = extra>0.05 && (!nb || !nb.length || extra<=1.2);
+  if(absorve){ // faixa rasa ou sem unidades vizinhas: o fundo do núcleo vai até a fachada (os ambientes do fundo ficam mais fundos)
+    perfil.forEach(t=>{ if(t.fach) return; cells.forEach(c=>{ if(Math.abs(c.v+c.h-t.d)<0.01 && c.u>=t.u0-0.01 && c.u+c.w<=t.u1+0.01) c.h=Dt-c.v }); t.d=Dt }) }
+  else if(extra>0.05 || N.ala){
+    const livres=perfil.filter(t=>t.d<Dt-0.05);
+    livres.forEach(t=>{ const ok=[]; if(t.u0<0.05 && nb && nb.includes("start")) ok.push("start"); if(t.u1>L-0.05 && nb && nb.includes("end")) ok.push("end");
+      const pc=(side,u0,u1)=>sobras.push({side, u0, u1, vIn:t.d, vOut:Dt, poly:R(u0,t.d,u1-u0,Dt-t.d)});
+      if(ok.length===2){ const sp=Math.min(t.u1-1.0, Math.max(t.u0+1.0, N.split!=null? N.split : (t.u0+t.u1)/2)); pc("start",t.u0,sp); pc("end",sp,t.u1) }
+      else if(ok.length===1) pc(ok[0],t.u0,t.u1);
+      else { cells.push({k:"tec", nome:"reserva técnica", u:t.u0, v:t.d, w:t.u1-t.u0, h:Dt-t.d, semAcesso:true}); t.d=Dt } });
+  }
+  // contorno real: frente reta + fundo pelo perfil (sem as sobras que vão para as unidades)
+  const fundo=[]; perfil.slice().reverse().forEach(t=>fundo.push([t.u1,t.d],[t.u0,t.d]));
+  const pts=[[0,0],[L,0],...fundo].filter((q,i,a)=>i===0||Math.hypot(q[0]-a[i-1][0],q[1]-a[i-1][1])>1e-6);
+  const limpo=pts.filter((q,i)=>{ const a=pts[(i-1+pts.length)%pts.length], b=pts[(i+1)%pts.length]; return Math.abs((q[0]-a[0])*(b[1]-a[1])-(q[1]-a[1])*(b[0]-a[0]))>1e-6 });
+  let outline=limpo.map(([u,v])=>P(u,v)); if(G.sArea(outline)*G.sArea(R(0,0,L,Dt))<0) outline=outline.reverse();
+  { const key=q=>Math.round(G.dot(q,ux)*100)*1e6+Math.round(G.dot(q,vy)*100); let k=0; outline.forEach((q,i)=>{ if(key(q)<key(outline[k])) k=i }); outline=[...outline.slice(k),...outline.slice(0,k)] }   // mesma ordem com a escada de um lado ou do outro
+  const W=c=>R(c.u,c.v,c.w,c.h), WP=q=>P(q[0],q[1]);
+  const out=cells.map(c=>({...c, poly:W(c), row: c.v<0.01? "f" : "b"}));
+  const doors=N.doors.map(d=>{ const a=WP(d.a), b=WP(d.b), n0=WP([d.a[0]+d.n[0], d.a[1]+d.n[1]]), nn=[n0[0]-a[0], n0[1]-a[1]], k=Math.hypot(nn[0],nn[1])||1;
+    return {a, b, sw:d.sw, dir:[nn[0]/k, nn[1]/k], tipo:d.tipo==="vao"? "elev" : d.tipo, larg:d.larg} });
+  const lines=nucleoDesenho({...N, cells}).map(x=> x.l? Object.assign([WP(x.l[0]),WP(x.l[1])], {c:x.c}) : x.arrow? {arrow:[WP(x.arrow[0]),WP(x.arrow[1])]} : x.dot? {dot:WP(x.dot)} : {txt:x.txt, p:WP(x.p), s:x.s, bg:x.bg});
+  const lobby=R(0,-2.0,L,2.0);
+  // contrato (docs/COMUNS.md §0): portas na face do núcleo, hall dos elevadores, prumadas
+  const fora=(()=>{ const a=P(0,0), b=P(0,-1); return [b[0]-a[0], b[1]-a[1]] })();
+  const portas=N.doors.filter(d=>["elev","escada","servico","vao"].includes(d.tipo) && Math.abs(d.a[1])<0.01 && Math.abs(d.b[1])<0.01)
+    .map(d=>({p:WP([(d.a[0]+d.b[0])/2,0]), dir:fora, larg:d.larg, tipo:d.tipo==="vao"||d.tipo==="elev"? "elev" : d.tipo}));
+  const els=cells.filter(c=>c.k==="elev"), hallU=cells.find(c=>c.k==="hall");
+  const hallElevTipo = hallU? W(hallU) : els.length? R(Math.min(...els.map(c=>c.u)), -(+o.corr||1.6), Math.max(...els.map(c=>c.u+c.w))-Math.min(...els.map(c=>c.u)), +o.corr||1.6) : null;
+  const PRU={hidraulica:"hidraulica", eletrica:"eletrica", gas:"gas", entrada:"duto-entrada", saida:"duto-saida", press:"pressurizacao", vent:"ventilacao"};
+  const prumadas=cells.filter(c=>["shaft","duto","elev","emerg","esc"].includes(c.k)).map(c=>({k: c.k==="elev"? "elevador" : c.k==="emerg"? "emergencia" : c.k==="esc"? "escada" : PRU[c.sub]||c.sub, nome:c.nome, poly:W(c)}));
+  const fach = cells.some(c=>(c.k==="esc"||c.k==="balc") && c.v+c.h>=Dt-0.01) && (o.fachada || o.escTipo==="pf_balcao" || !!o._fachada);
+  const p=N.p, nucleo={partido:N.partido, partidoNome:N.partidoNome, nota:null, problemas:[], portas, hallElev:lobby, hallElevTipo, frente:[P(0,0),P(L,0)], prumadas, fachada:fach,
+    dim:{L, D:Math.max(...perfil.map(t=>t.d), Dn), F, escD:p.escD, escLarg:p.larg, degrau:{n:p.deg.n, e:p.deg.e, p:p.deg.p}, patamar:null, elev:{n:els.length, cap:p.cap, caixa:p.EV.caixa, cabine:p.EV.cabine}, ant:null},
+    local:{partido:N.partido, L, D:Math.max(...cells.map(c=>c.v+c.h)), F, ala:N.ala, perfil:perfil.map(t=>({u0:t.u0,u1:t.u1,d:t.d,fach:!!t.fach})), cells, doors:N.doors, p}};
+  const esc=cells.find(c=>c.k==="esc"); if(esc){ const comp=(esc.ori==="v"? esc.h : esc.w)-NUC_R.paredeCF; nucleo.dim.patamar=Math.round((comp-p.deg.run)/2*100)/100 }
+  const ant=cells.find(c=>c.k==="ant"); if(ant) nucleo.dim.ant=[Math.round((ant.w-NUC_R.paredeCF)*100)/100, Math.round((ant.h-NUC_R.paredeCF)*100)/100];
+  NUC_INFO.set(lobby, nucleo);
+  // poly = projeção até a fachada (contorno quando as sobras não vão para as unidades) · outline = núcleo real
+  return {L, depth:Dt, cells:out, doors, lines, poly:R(0,0,L,Dt), outline, lobby, sobras, mir, nucleo};
 }
 // recorta um canto retangular de Q (convexo): corner = vértice do canto (u,v no referencial ux/vy), inner = canto oposto do recorte
 function notchPoly(Q, ux, vy, corner, inner){
@@ -1147,39 +1126,39 @@ function tipoLayout(plate, units, o){
   const ux=G.longestDir(plate), vy=[-ux[1],ux[0]];
   const [u0,u1]=G.extent(plate,ux), [v0,v1]=G.extent(plate,vy), D=v1-v0, Lu=u1-u0;
   const corr=o.corr, fachada = o.fachada || o.escTipo==="pf_balcao";
-  const seq=coreSeq(o); const est=Math.max(seq.front.reduce((a,c)=>a+c.w,0), seq.back.reduce((a,c)=>a+c.w,0)) + (seq.g2? Math.max(seq.g2.fr.reduce((a,c)=>a+c.w,0),seq.g2.bk.reduce((a,c)=>a+c.w,0)) : 0);
-  const coreLen=Math.min(Lu*0.8, est);
+  const DN=nucleoMonta(o), NF=DN.F, NB=DN.D-DN.F;   // núcleo (src/calc/nucleo.js): comprimento e profundidade do partido
+  const coreLen=Math.min(Lu*0.8, DN.L);
   let dbl = D >= 2*o.profMin + corr; if(o.planta==="central") dbl=true; if(o.planta==="lateral") dbl=false;
-  const reg=[]; let corridor, hallEnds=[], cv0, cv1, vEdge, sgn, depthB=CORE_B;
+  const reg=[]; let corridor, hallEnds=[], vEdge, sgn, depthB=NB;
   const sub=(va,vb,ua,ub)=>{ const b=G.band(plate,vy,va,vb); return (ua===undefined||!b.length)? b : G.band(b,ux,ua,ub) };
-  const pos=Math.min(1,Math.max(0,o.pos??0.5)), cu0=u0+0.01+pos*Math.max(0,Lu-coreLen-0.02), cu1=cu0+Math.max(coreLen, coreBuild([1,0],[0,1],0,0,1,CORE_B,o).L); // ponta real do núcleo (a passagem de serviço alonga a frente): as unidades começam depois dela
+  const pos=Math.min(1,Math.max(0,o.pos??0.5)), cu0=u0+0.01+pos*Math.max(0,Lu-coreLen-0.02), cu1=cu0+DN.L; // ponta real do núcleo: as unidades começam depois dela
   if(dbl){
     const vc=(v0+v1)/2, c0=vc-corr/2, c1=vc+corr/2;
     corridor = sub(c0,c1,u0+0.01,u1-0.01);
-    if(o.lado==="A"){ vEdge=c1; sgn=1; if(fachada) depthB=Math.max(CORE_B, v1-c1-CORE_F); cv0=c1; cv1=c1+CORE_F+depthB; reg.push({p:sub(v0,c0),fac:"min"}); reg.push({p:sub(c1,v1,u0,cu0),fac:"max"}); reg.push({p:sub(c1,v1,cu1,u1),fac:"max"}) }
-    else { vEdge=c0; sgn=-1; if(fachada) depthB=Math.max(CORE_B, c0-v0-CORE_F); cv0=c0-CORE_F-depthB; cv1=c0; reg.push({p:sub(c1,v1),fac:"max"}); reg.push({p:sub(v0,c0,u0,cu0),fac:"min"}); reg.push({p:sub(v0,c0,cu1,u1),fac:"min"}) }
+    if(o.lado==="A"){ vEdge=c1; sgn=1; if(fachada) depthB=Math.max(NB, v1-c1-NF); reg.push({p:sub(v0,c0),fac:"min"}); reg.push({p:sub(c1,v1,u0,cu0),fac:"max"}); reg.push({p:sub(c1,v1,cu1,u1),fac:"max"}) }
+    else { vEdge=c0; sgn=-1; if(fachada) depthB=Math.max(NB, c0-v0-NF); reg.push({p:sub(c1,v1),fac:"max"}); reg.push({p:sub(v0,c0,u0,cu0),fac:"min"}); reg.push({p:sub(v0,c0,cu1,u1),fac:"min"}) }
   } else {
     const side = o.lado==="A";
     corridor = side? sub(v1-corr,v1,u0,u1) : sub(v0,v0+corr,u0,u1);
-    vEdge = side? v1-corr : v0+corr; sgn = side? -1 : 1; depthB=Math.max(CORE_B, D-corr-CORE_F);
-    cv0=v0; cv1=v1;
+    vEdge = side? v1-corr : v0+corr; sgn = side? -1 : 1; depthB=Math.max(NB, D-corr-NF);
     const uv0 = side? v0 : v0+corr, uv1 = side? v1-corr : v1;
     reg.push({p:sub(uv0,uv1,u0,cu0),fac:side?"min":"max"}); reg.push({p:sub(uv0,uv1,cu1,u1),fac:side?"min":"max"});
   }
   // núcleo na fachada: a escada fica com a profundidade do lance e a sobra vai para a unidade ao lado (se houver unidade desse lado)
   const sideReg=w=>reg.find(r=>{ if(!r.p.length || G.area(r.p)<=4) return false; const [a,b]=G.extent(r.p,ux); return w==="esq"? Math.abs(b-cu0)<0.05 && a<cu0-0.5 : Math.abs(a-cu1)<0.05 && b>cu1+0.5 });
   const mirC=o.escada==="D", wSide=ls=> (ls==="start")!==mirC ? "esq" : "dir";
-  const oc = (depthB-CORE_B>=1.0 && o.escProf!==false)? {...o, _escD:CORE_B, _notch:["start","end"].filter(ls=>sideReg(wSide(ls)))} : o;
+  const oc = (o.escProf!==false)? {...o, _notch:["start","end"].filter(ls=>sideReg(wSide(ls)))} : o;
   const CB=coreBuild(ux,vy,cu0,vEdge,sgn,depthB,oc);
-  const core=CB.poly, sobraA=[], reserva=[];
+  const sobraA=[], reserva=[], falhas=[];
   (CB.sobras||[]).forEach(sb=>{ const w=wSide(sb.side), r=sideReg(w); if(!r) return;
     const wu0= mirC? cu0+CB.L-sb.u1 : cu0+sb.u0, wu1= mirC? cu0+CB.L-sb.u0 : cu0+sb.u1, vIn=vEdge+sgn*sb.vIn;
     const [ra,rb]=G.extent(r.p,ux), [rva,rvb]=G.extent(r.p,vy);
     const Q=sub(rva,rvb, w==="esq"? ra : wu0, w==="esq"? wu1 : rb);
     const np=notchPoly(Q, ux, vy, [w==="esq"? wu1 : wu0, vEdge], [w==="esq"? wu0 : wu1, vIn]);
-    if(np){ sobraA.push(G.area(np)-G.area(r.p)); r.p=np; reserva.push(sb.poly) } });
-  const coreOut = reserva.length===(CB.sobras||[]).length ? CB.outline : core;
-  const cParts=CB.cells.map(c=>({nome:c.nome,kind:c.k,poly:c.poly,area:G.area(c.poly)}));
+    if(np){ sobraA.push(G.area(np)-G.area(r.p)); r.p=np; reserva.push(sb.poly) } else falhas.push(sb.poly) });
+  (CB.sobras||[]).forEach(sb=>{ if(!reserva.includes(sb.poly) && !falhas.includes(sb.poly)) falhas.push(sb.poly) });
+  const coreOut = falhas.length ? CB.poly : CB.outline, core=coreOut;   // o núcleo real (compacto) também nas garagens e no térreo
+  const cParts=CB.cells.map(c=>({nome:c.nome,kind:c.k,poly:c.poly,area:G.area(c.poly)})).concat(falhas.map(p=>({nome:"reserva técnica",kind:"tec",poly:p,area:G.area(p)})));
   const R=reg.filter(r=>r.p.length && G.area(r.p)>4).map(r=>({...r, A:G.area(r.p), list:[], used:0}));
   const us=units.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo);
   const totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
@@ -1204,7 +1183,7 @@ function tipoLayout(plate, units, o){
       prev=cut; out.push(un) });
   });
   const kinds={}; cParts.forEach(c=>kinds[c.kind]=(kinds[c.kind]||0)+c.area);
-  return {ux,vy,units:out,rep:rep? {custo:rep.custo, antigo:rep.antigo} : null,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:sobraA.reduce((s,a)=>s+a,0)};
+  return {ux,vy,units:out,rep:rep? {custo:rep.custo, antigo:rep.antigo} : null,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:[],coreFundo:reserva,escSobra:0,nucleo:CB.nucleo};
 }
 
 
@@ -2043,7 +2022,7 @@ function tipoLayouts(st, m, opt){
     const list=[]; P.mix.forEach(u=>{ for(let q=0;q<u.qtd;q++) list.push({nome:u.nome, alvo:u.area*t.r, sac:+u.sac||0}) });
     const nAuto=(t.units>60||t.H>45)?3:(t.H>12?2:1);
     return (typeof alasTipoLayout==="function" ? alasTipoLayout : tipoLayout)(t.plate, list, {corr:E.corrTipo, profMin:E.profMin, nElev: +E.elevadores||nAuto, pos:E.nucleoPos, lado:E.nucleoLado, escada:E.escadaLado, planta:E.tipoPlanta,
-      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st, _rap:!!(opt && opt.quick), _areaFixa:!!(t.desenhada || m.torOcupa)}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
+      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st, _pav:t.pav, _H:t.H, _nElevAuto:!(+E.elevadores), _rap:!!(opt && opt.quick), _areaFixa:!!(t.desenhada || m.torOcupa)}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
   });
   if(typeof blcLayFaixas==="function") blcLayFaixas(st, m);   // C2: blocos fora da referência → mesmo núcleo, unidades por área (f.lay)
 }
@@ -2058,7 +2037,7 @@ function compute(st, opt={}){
   m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; (t.faixas.some(f=>f.lay)? t.faixas.map(f=>[f.lay||l, f.nTipo]) : [[l, t.tipoFloors]]).forEach(([ly,fl])=>ly.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } })) });
   m.coreSets = m.tipo.map((l,i)=>l && l.core && l.core.length? {i, core:l.core, lobby:l.lobby, lay:l} : null).filter(Boolean);
   m.cores = m.coreSets.map(c=>c.core); m.lobbies = m.coreSets.map(c=>c.lobby).filter(p=>p&&p.length);
-  m.obst = [...m.cores, ...m.lobbies, ...m.coreSets.flatMap(c=>c.lay.coreExtra||[])];   // C3: a segunda escada desce até o térreo
+  m.obst = [...m.cores, ...m.lobbies, ...m.coreSets.flatMap(c=>c.lay.coreExtra||[]), ...m.coreSets.flatMap(c=>c.lay.coreFundo||[])];   // C3: a segunda escada desce até o térreo
   // térreo definitivo, com o hall chegando aos núcleos
   m.ter = terreoZones(st, m, m.lz); areasFin(st, m);
   if(m.sacBal){ m.constr+=m.sacBal; m.privRes+=m.sacBal; m.priv+=m.sacBal }
@@ -5335,7 +5314,7 @@ const blcFora = (p, c) => !p.length || !c || c.length<3 ? 0 : Math.max(0, G.area
 /* fração de um polígono (convexo, ex.: o núcleo) que cai dentro da planta — amostras numa grade 6 × 6; a planta pode ser L, U ou ter pátio */
 function blcDentro(p, plate){
   const ux=G.longestDir(p), vy=[-ux[1],ux[0]], [u0,u1]=G.extent(p,ux), [v0,v1]=G.extent(p,vy); let n=0, d=0;
-  for(let a=0;a<6;a++) for(let b=0;b<6;b++){ const u=u0+(a+0.5)/6*(u1-u0), v=v0+(b+0.5)/6*(v1-v0), q=[ux[0]*u+vy[0]*v, ux[1]*u+vy[1]*v]; if(!G.pip(q,p)) continue; n++; if(G.pip(q,plate)) d++ }
+  for(let a=0;a<12;a++) for(let b=0;b<12;b++){ const u=u0+(a+0.5)/12*(u1-u0), v=v0+(b+0.5)/12*(v1-v0), q=[ux[0]*u+vy[0]*v, ux[1]*u+vy[1]*v]; if(!G.pip(q,p)) continue; n++; if(G.pip(q,plate)) d++ }
   return n ? d/n : 1;
 }
 const blcNome = i => `torre ${i+1}`;
@@ -7201,6 +7180,11 @@ function estrPontosTorre(t, lay, sec, vaoMax){
     add(a); for(let k=1;k<n;k++) add([a[0]+(b[0]-a[0])*k/n, a[1]+(b[1]-a[1])*k/n]) }));
   const ux=lay.ux, vy=lay.vy, h=sec/2, sq=c=>{ const u=G.dot(c,ux), v=G.dot(c,vy); return G.rect(ux,vy,u-h,v-h,sec,sec) };
   const inside=c=>sq(c).every(q=>G.pip(q,t.plate));
+  // pilares do núcleo ficam dentro das paredes dele (o núcleo é compacto: o fundo não chega à fachada e, nas garagens, o pilar
+  // centrado no canto ficaria meio dentro da vaga de trás)
+  if(lay.core && lay.core.length>2){ const [ku0,ku1]=G.extent(lay.core,ux), [kv0,kv1]=G.extent(lay.core,vy), cl=(x,a,b)=>Math.min(Math.max(x,a),b);
+    pts.forEach((p,i)=>{ const u=G.dot(p,ux), v=G.dot(p,vy); if(u<ku0-0.01||u>ku1+0.01||v<kv0-0.01||v>kv1+0.01) return; const uu=cl(u,ku0+h,ku1-h), vv=cl(v,kv0+h,kv1-h);
+      pts[i]=[ux[0]*uu+vy[0]*vv, ux[1]*uu+vy[1]*vv] }) }
   const out=[];
   pts.forEach(p=>{ if(inside(p)){ out.push(p); return }
     let best=null; busca: for(const s of [h, sec, 1.5*sec]) for(const [a,b] of [[1,1],[1,-1],[-1,1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]]){ const c=[p[0]+(ux[0]*a+vy[0]*b)*s, p[1]+(ux[1]*a+vy[1]*b)*s]; if(inside(c)){ best=c; break busca } }
@@ -8406,6 +8390,442 @@ function normasAvaliar(st, m){
   return v;
 }
 function normasResumo(itens){ const c={ok:0,warn:0,bad:0,na:0}; (itens||[]).forEach(x=>c[x.status]=(c[x.status]||0)+1); return c }
+
+/* ---- calc/nucleo.js ---- */
+/* ================= núcleo de circulação vertical (docs/COMUNS.md §1) =================
+   Mesmo método das plantas de apartamento (docs/APTOS.md): regras de projeto reais + catálogo de partidos de mercado +
+   validação com nota e motivo + desenho técnico fiel. Puro (sem DOM): roda no Worker e nos testes.
+
+   Referencial local do núcleo: u ao longo do corredor (0 → L), v da frente (0, face do corredor/hall) para o fundo.
+   Duas fileiras com as MESMAS linhas de eixo (nada de serrilhado): frente (F = 2,20 m: antecâmara, elevadores, serviço —
+   tudo abre para o corredor) e fundo (escada de lances paralelos ao corredor, dutos, lixo/DML). A escada termina numa
+   linha de eixo da frente; a sobra vira patamar (área de resgate), nunca "dente".
+   Medidas = referência genérica (NBR 9077, IN 09 CBMSC, NBR 9050, NBR 16858/NM 207) — conferir na lei.
+
+   API: nucleoCatalogo() · nucleoParams(o) · nucleoMonta(o) (modelo local) · nucleoValida(nuc, ctx) → {nota, problemas}
+        nucleoElevNec(ctx) (tráfego simplificado) · coreBuild (src/layout.js) chama nucleoMonta e leva ao mundo. */
+
+extendDEF("nucleo", { partido: "auto", cap: 8 });
+
+const NUC_R = {
+  parede: 0.15, paredeCF: 0.20,          // alvenaria comum · parede corta-fogo/estrutural (eixo a eixo, as células já a contêm)
+  F: 2.20,                               // fileira da frente (eixo): caixa de elevador 1,85 + paredes; antecâmara 2,00 livre
+  escLarg: 1.20, bomba: 0.10,            // largura útil mínima do lance · vão entre lances
+  espelho: [0.16, 0.18], piso: [0.28, 0.32], blondel: [0.63, 0.65],
+  patamarMax: 2.40,                      // patamar mais longo que isso = área sobrando
+  antProf: 1.80, antLarg: 1.20,          // antecâmara: profundidade e largura livres mínimas
+  porta: 0.90, portaServ: 0.80, portaShaft: 0.60,
+  hallElev: 1.50,                        // livre diante das portas dos elevadores (giro de cadeira de rodas)
+  dutoA: 0.70, dutoLado: 0.60,           // seção mínima de cada duto (entrada e saída de ar)
+  resgate: [0.80, 1.20],                 // área de resgate (cadeira de rodas) no patamar ou na antecâmara
+  areaMaxPct: 0.25,                      // núcleo acima de 25% da laje do tipo = pesado
+  fonte: "NBR 9077 · IN 09 CBMSC · NBR 9050 · NBR 16858 (referência — conferir na lei)",
+};
+/* caixa (interna) e cabine por capacidade — elevadores sem casa de máquinas (MRL); ordem de grandeza de catálogo */
+const NUC_ELEV = {
+  6:  { cap:6,  kg:450,  caixa:[1.60,1.70], cabine:[1.00,1.25], porta:0.80 },
+  8:  { cap:8,  kg:600,  caixa:[1.80,1.85], cabine:[1.10,1.40], porta:0.80 },
+  10: { cap:10, kg:750,  caixa:[1.90,2.05], cabine:[1.20,1.50], porta:0.90 },
+  13: { cap:13, kg:1000, caixa:[2.10,2.30], cabine:[1.40,1.60], porta:0.90 },
+};
+const NUC_EMERG = { cap:13, kg:1000, caixa:[2.00,2.50], cabine:[1.10,2.10], porta:1.10 };   // maca: cabine ≥ 1,10 × 2,10
+
+const NUC_CAT = [
+  { id:"linear", nome:"Linear com hall de serviço", desc:"Antecâmara e elevadores alinhados no corredor; escada atrás deles; hall de serviço com lixo/DML e shafts na ponta.", quando:"2 elevadores (o mais comum)", fixavel:true },
+  { id:"linear-curto", nome:"Linear compacto", desc:"Antecâmara, elevador, DML e shafts abrindo no corredor; escada atrás.", quando:"1 elevador", fixavel:true },
+  { id:"u", nome:"Elevadores frente a frente", desc:"Hall dos elevadores perpendicular ao corredor, elevadores dos dois lados; escada no sentido da profundidade.", quando:"3 ou mais elevadores, núcleo central", fixavel:true },
+  { id:"l", nome:"Em L", desc:"Escada no sentido da profundidade e ala rasa de elevadores; a unidade vizinha contorna os elevadores.", quando:"laje rasa, núcleo menor", fixavel:true },
+  { id:"pressurizada", nome:"Escada pressurizada", desc:"Sem dutos de ventilação: duto de insuflamento na escada e casa de máquinas no térreo ou na cobertura.", quando:"escada PFP" },
+  { id:"balcao", nome:"Escada com balcão aberto", desc:"Acesso à escada por um balcão aberto na fachada (dispensa dutos).", quando:"escada PF com balcão" },
+  { id:"duas", nome:"Duas escadas", desc:"Uma escada em cada ponta do núcleo, cada uma com a sua antecâmara.", quando:"2 escadas (lâmina longa ou edifício alto)" },
+  { id:"emergencia", nome:"Com elevador de emergência", desc:"Elevador de emergência abrindo na antecâmara da escada; os demais no corredor.", quando:"acima de 80 m (ou quando ligado)" },
+  { id:"baixo", nome:"Baixo (escada protegida e 1 elevador)", desc:"Hall da escada, um elevador e shafts; sem dutos.", quando:"até 4 pavimentos" },
+  { id:"escada2", nome:"Escada isolada", desc:"Segunda escada com a sua antecâmara (núcleo de alas).", quando:"distância a percorrer longa" },
+];
+function nucleoCatalogo(){ return NUC_CAT.map(c=>({...c})) }
+function nucleoNomePartido(id){ const c=NUC_CAT.find(c=>c.id===id); return c? c.nome : id }
+
+/* ---------- parâmetros (degraus pela altura de piso a piso, largura pela população) ---------- */
+function nucleoDegraus(pe){
+  const h=Math.max(2.4, +pe||3), n=Math.ceil(h/NUC_R.espelho[1]-1e-9), e=h/n;
+  const p=Math.round(Math.min(NUC_R.piso[1], Math.max(NUC_R.piso[0], 0.635-2*e))*100)/100, a=Math.ceil(n/2);
+  return {n, e, p, a, run:(a-1)*p};
+}
+function nucleoParams(o={}){
+  const st=o._st||null, NU=(st&&st.nucleo)||{}, pe=(st&&st.produto&&st.produto.pe)||3;
+  const pop = st && typeof normaPopulacao==="function" ? normaPopulacao(st.produto.mix) : 0;
+  const lNorma = pop && typeof normaLarguras==="function" ? normaLarguras(pop).escada : 0;
+  const larg=Math.max(NUC_R.escLarg, Math.ceil(lNorma*20-1e-9)/20), deg=nucleoDegraus(pe);
+  const cap=NUC_ELEV[NU.cap]? +NU.cap : 8, EV=NUC_ELEV[cap];
+  const F=Math.max(NUC_R.F, EV.caixa[1]+NUC_R.paredeCF+0.15), escD=Math.round((2*larg+NUC_R.bomba+NUC_R.paredeCF)*100)/100;
+  const Wel=Math.round((EV.caixa[0]+NUC_R.paredeCF)*100)/100;
+  const LsMin=deg.run+2*larg+NUC_R.paredeCF;
+  let nE=Math.max(0, o.nElev==null? 2 : +o.nElev);
+  if(o._nElevAuto && o._pav) nE=Math.max(1, nucleoElevNec({pav:o._pav, H:o._H, pop, cap}).n);   // automático: pelo tráfego (população × pavimentos)
+  return { t:o.escTipo||"pf_duto", nE, nEsc:o.nEsc===2? 2 : 1, emerg:!!o.emerg, pe, pop, larg, deg, cap, EV,
+    F, escD, Wel, LsMin, corr:+o.corr||1.6, fixo:NU.partido||"auto" };
+}
+function nucleoPartidoDe(o, p){
+  if(o._seq) return "escada2";
+  if(p.t==="pf_balcao") return "balcao";
+  if(p.nEsc===2) return "duas";
+  if(p.emerg) return "emergencia";
+  if(["linear","linear-curto","u","l"].includes(p.fixo)) return p.fixo==="linear" && p.t==="pf_press" ? "pressurizada" : p.fixo;
+  if(p.t==="pf_press") return p.nE>=3? "u" : p.nE<=1? "linear-curto" : "pressurizada";
+  if(p.t==="ep" && p.nE<=1) return "baixo";
+  if(p.nE>=3) return "u";
+  if(p.nE<=1) return "linear-curto";
+  return "linear";
+}
+
+/* ---------- montagem (modelo local) ---------- */
+function nucleoMonta(o={}){
+  const p=nucleoParams(o), id=nucleoPartidoDe(o, p);
+  const B={ id, p, cells:[], doors:[], L:0, D:p.F+p.escD, F:p.F, split:null };
+  const r2=x=>Math.round(x*1000)/1000;
+  B.cell=(k,nome,u,v,w,h,x={})=>{ const c={k,nome,u:r2(u),v:r2(v),w:r2(w),h:r2(h),...x}; B.cells.push(c); return c };
+  // porta: parede ao longo de u (eixo "u", em v=const) ou ao longo de v (eixo "v", em u=const); abre para o lado `para` (+1/−1 no eixo normal)
+  B.door=(eixo,pos,a0,w,para,tipo,x={})=>{ const a= eixo==="u"? [a0,pos] : [pos,a0], b= eixo==="u"? [a0+w,pos] : [pos,a0+w];
+    const n= eixo==="u"? [0,para] : [para,0]; const d={a, b, n, larg:w, tipo, sw: tipo==="elev"||tipo==="emerg"||tipo==="vao"? 0 : 1, ...x};
+    if(x.dobra==="b"){ d.a=b; d.b=a } B.doors.push(d); return d };
+  (NUC_MONTA[id]||NUC_MONTA.linear)(B, p, o, false);
+  B.L=r2(Math.max(...B.cells.map(c=>c.u+c.w))); B.D=r2(Math.max(...B.cells.filter(c=>!c.fundo).map(c=>c.v+c.h)));
+  return {partido:id, partidoNome:nucleoNomePartido(id), L:B.L, D:B.D, F:p.F, escD:p.escD, split:B.split, ala:B.ala||null,
+    cells:B.cells, doors:B.doors, p:{t:p.t, nE:p.nE, nEsc:p.nEsc, emerg:p.emerg, larg:p.larg, deg:p.deg, cap:p.cap, EV:p.EV, F:p.F, escD:p.escD, LsMin:p.LsMin, corr:p.corr, pe:p.pe, pop:p.pop, fixo:p.fixo}};
+}
+
+/* peças comuns */
+function nucPre(B, p, u0, v0, h){   // dutos de ventilação da antecâmara (PF) ou duto de pressurização (PFP), atrás da antecâmara
+  if(p.t==="pf_duto"){ const w=0.8; B.cell("duto","duto entrada",u0,v0,w,h,{sub:"entrada"}); B.cell("duto","duto saída",u0+w,v0,w,h,{sub:"saida"}); return 2*w }
+  if(p.t==="pf_press"){ B.cell("duto","pressurização",u0,v0,1.0,h,{sub:"press"}); return 1.0 }
+  if(p.t==="ep"){ B.cell("duto","duto de ventilação",u0,v0,0.8,h,{sub:"vent"}); return 0.8 }   // EP: ventilação permanente da escada (sem depender da fachada)
+  return 0;
+}
+const nucPreW = p => p.t==="pf_duto"? 1.6 : p.t==="pf_press"? 1.0 : p.t==="ep"? 0.8 : 0;
+function nucAntNome(p){ return p.t==="ep"? "hall da escada" : p.t==="pf_press"? "antecâmara" : "antecâmara" }
+/* escada de lances paralelos a u (fundo), patamar do pavimento na ponta `ent` ("lo"|"hi") */
+function nucEscU(B, p, u0, v0, w, ent, nome="escada"){ return B.cell("esc", nome, u0, v0, w, p.escD, {ori:"u", ent}) }
+function nucEscV(B, p, u0, v0, h, ent, nome="escada"){ return B.cell("esc", nome, u0, v0, p.escD, h, {ori:"v", ent}) }
+function nucElevs(B, p, u0, n){ let u=u0; for(let i=0;i<n;i++){ B.cell("elev","elevador",u,0,p.Wel,p.F,{porta:"f", cap:p.cap}); B.door("u",0,u+(p.Wel-p.EV.porta)/2,p.EV.porta,-1,"elev"); u+=p.Wel } return u }
+/* shafts por prumada, lado a lado em u, com porta de visita na frente (v=0) ou na lateral */
+function nucShaftsU(B, p, u0, v0, h, lista, portaV){ const w=0.6; lista.forEach((s,i)=>{ B.cell("shaft",s.nome,u0+i*w,v0,w,h,{sub:s.k}); if(portaV!=null) B.door("u",portaV,u0+i*w+0.05,0.5,portaV>v0? 1 : -1,"shaft") }); return lista.length*w }
+const NUC_PRUMADAS = [{k:"hidraulica", nome:"shaft hidráulico"}, {k:"eletrica", nome:"shaft elétrico e telecom"}, {k:"gas", nome:"shaft de gás"}];
+
+const NUC_MONTA = {
+  /* frente: [antecâmara][elevadores][hall de serviço + shafts] · fundo: [dutos][escada][lixo/DML] */
+  linear(B, p){
+    const F=p.F, pre0 = nucPreW(p);
+    let Wa=Math.max(p.t==="ep"? 1.8 : 2.4, pre0+1.2); const nE=Math.max(1,p.nE);
+    let bEnd=Wa+nE*p.Wel; if(bEnd-pre0 < p.LsMin) { Wa+=p.LsMin-(bEnd-pre0); bEnd=Wa+nE*p.Wel }
+    Wa=Math.round(Wa*20)/20; bEnd=Wa+nE*p.Wel;
+    B.cell("ant", nucAntNome(p), 0, 0, Wa, F, {resgate:true});
+    B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");                    // do corredor para a antecâmara (abre no sentido da fuga)
+    nucElevs(B, p, Wa, nE);
+    const Wh=1.4, Ws=0.7, uh=bEnd;
+    B.cell("hserv","hall de serviço",uh,0,Wh,F); B.door("u",0,uh+0.3,NUC_R.portaServ,1,"servico");
+    NUC_PRUMADAS.forEach((s,i)=>{ const h=F/3; B.cell("shaft",s.nome,uh+Wh,i*h,Ws,h,{sub:s.k}); B.door("v",uh+Wh,i*h+0.07,h-0.14,-1,"shaft") });
+    const pre=nucPre(B, p, 0, F, p.escD);
+    nucEscU(B, p, pre, F, bEnd-pre, "lo");
+    B.door("u",F,pre+0.15,NUC_R.porta,1,"escada",{dobra:"b"});       // antecâmara → escada (abre para dentro da escada)
+    B.cell("lixo","lixo / DML",uh,F,Wh+Ws,p.escD); B.door("u",F,uh+0.3,NUC_R.portaServ,1,"servico");
+    B.split=bEnd;
+  },
+  pressurizada(B, p){ NUC_MONTA.linear(B, p) },
+  /* frente: [antecâmara][elevador(es)][DML][shafts] · fundo: [dutos][escada] */
+  "linear-curto"(B, p){
+    const F=p.F, pre0 = nucPreW(p);
+    let Wa=Math.max(p.t==="ep"? 1.8 : 2.4, pre0+1.2); const nE=p.nE;
+    const Wd=1.3, Ws=1.2; let L=Wa+nE*p.Wel+Wd+Ws;
+    if(L-pre0 < p.LsMin){ Wa+=p.LsMin-(L-pre0); Wa=Math.round(Wa*20+0.499)/20; L=Wa+nE*p.Wel+Wd+Ws }
+    B.cell("ant", nucAntNome(p), 0, 0, Wa, F, {resgate:true}); B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");
+    let u=nucElevs(B, p, Wa, nE);
+    B.cell("lixo","DML",u,0,Wd,F); B.door("u",0,u+0.25,NUC_R.portaServ,1,"servico"); u+=Wd;
+    nucShaftsU(B, p, u, 0, F, NUC_PRUMADAS.slice(0,2), 0);
+    const pre=nucPre(B, p, 0, F, p.escD);
+    nucEscU(B, p, pre, F, L-pre, "lo"); B.door("u",F,pre+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    B.split=Wa;
+  },
+  /* até 4 pavimentos: [hall da escada][elevador][shafts] · fundo: [escada] */
+  baixo(B, p){
+    const F=p.F, pre0=nucPreW(p); let Wa=1.8; const nE=Math.min(1,p.nE), Ws=1.2; let L=Wa+nE*p.Wel+Ws;
+    if(L-pre0<p.LsMin){ Wa+=p.LsMin-(L-pre0); Wa=Math.round(Wa*20+0.499)/20; L=Wa+nE*p.Wel+Ws }
+    B.cell("ant","hall da escada",0,0,Wa,F,{resgate:true}); B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");
+    const u=nucElevs(B, p, Wa, nE); nucShaftsU(B, p, u, 0, F, NUC_PRUMADAS.slice(0,2), 0);
+    const pre=nucPre(B, p, 0, F, p.escD); nucEscU(B, p, pre, F, L-pre, "lo"); B.door("u",F,pre+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    B.split=L/2;
+  },
+  /* [escada no sentido da profundidade][antecâmara/dutos][elevadores ⟂ hall][hall dos elevadores][elevadores ⟂ hall] */
+  u(B, p, o, emerg){
+    const D=Math.max(p.F+p.escD, p.LsMin), F=p.F, E=p.escD, nE=Math.max(1,p.nE);
+    nucEscV(B, p, 0, 0, D, "lo");
+    // coluna da antecâmara: atrás dela os dutos (PF), o insuflamento (PFP) ou, com emergência, o elevador de emergência + dutos
+    const We=Math.round((NUC_EMERG.caixa[0]+NUC_R.paredeCF)*20)/20, Wdu = p.t==="pf_duto"? 1.6 : p.t==="pf_press"? 1.0 : 0;
+    const Wt = emerg? We+Math.max(Wdu,1.2) : 2.2;
+    B.cell("ant", nucAntNome(p), E, 0, Wt, F, {resgate:true});
+    B.door("u",0,E+Wt-1.05,NUC_R.porta,1,"escada"); B.door("v",E,0.15,NUC_R.porta,-1,"escada",{dobra:"b"});
+    if(emerg){ B.cell("emerg","elevador de emergência",E,F,We,D-F,{porta:"f", cap:"emerg"}); B.door("u",F,E+(We-NUC_EMERG.porta)/2,NUC_EMERG.porta,-1,"emerg");
+      const u2=E+We, w2=Wt-We;
+      if(p.t==="pf_duto"){ B.cell("duto","duto entrada",u2,F,w2/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída",u2+w2/2,F,w2/2,D-F,{sub:"saida"}) }
+      else if(p.t==="pf_press") B.cell("duto","pressurização",u2,F,w2,D-F,{sub:"press"});
+      else B.cell("shaft","shaft hidráulico",u2,F,w2,D-F,{sub:"hidraulica", semAcesso:true}) }
+    else if(p.t==="pf_duto"){ B.cell("duto","duto entrada",E,F,Wt/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída",E+Wt/2,F,Wt/2,D-F,{sub:"saida"}) }
+    else if(p.t==="pf_press"){ B.cell("duto","pressurização",E,F,Wt,D-F,{sub:"press"}) }
+    else B.cell("duto","duto de ventilação",E,F,Wt,D-F,{sub:"vent"});
+    const Wc=Math.round((p.EV.caixa[1]+NUC_R.paredeCF)*20+0.499)/20, Wh=Math.max(2.0, NUC_R.hallElev+0.3), hE=D/2;
+    const uA=E+Wt, uH=uA+Wc, uC=uH+Wh, nA=Math.min(2, Math.ceil(nE/2)), nC=Math.min(2, nE-nA);
+    const hs=0.8;   // shafts no fundo do hall
+    B.cell("hall","hall dos elevadores",uH,0,Wh,D-hs,{aberto:true}); B.door("u",0,uH,Wh,-1,"vao",{tipo:"elev", vao:true});
+    NUC_PRUMADAS.forEach((s,i)=>{ const w=Wh/3; B.cell("shaft",s.nome,uH+i*w,D-hs,w,hs,{sub:s.k}); B.door("u",D-hs,uH+i*w+0.08,w-0.16,-1,"shaft") });
+    const lado=(u0,n,porta,uPorta)=>{ for(let i=0;i<2;i++){ const v=i*hE;
+      if(i<n){ B.cell("elev","elevador",u0,v,Wc,hE,{porta, cap:p.cap}); B.door("v",uPorta,v+(hE-p.EV.porta)/2,p.EV.porta,porta==="r"? 1 : -1,"elev") }
+      else { const lixo = u0>uH; B.cell("lixo", lixo? "lixo" : "DML", u0, v, Wc, hE); B.door("v",uPorta,v+0.3,NUC_R.portaServ,porta==="r"? -1 : 1,"servico") } } };
+    lado(uA, nA, "r", uH); lado(uC, nC, "l", uC);
+    B.split=uH+Wh/2;
+  },
+  /* [escada ⟂][antecâmara/dutos] + ala rasa de elevadores e shafts (a unidade vizinha contorna) */
+  l(B, p){
+    const D=Math.max(p.F+p.escD, p.LsMin), F=p.F, E=p.escD, nE=Math.max(1,p.nE);
+    nucEscV(B, p, 0, 0, D, "lo");
+    const Wt=2.2; B.cell("ant", nucAntNome(p), E, 0, Wt, F, {resgate:true});
+    B.door("u",0,E+Wt-1.05,NUC_R.porta,1,"escada"); B.door("v",E,0.15,NUC_R.porta,-1,"escada",{dobra:"b"});
+    if(p.t==="pf_duto"){ B.cell("duto","duto entrada",E,F,Wt/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída",E+Wt/2,F,Wt/2,D-F,{sub:"saida"}) }
+    else if(p.t==="pf_press") B.cell("duto","pressurização",E,F,Wt,D-F,{sub:"press"});
+    else B.cell("duto","duto de ventilação",E,F,Wt,D-F,{sub:"vent"});
+    const u=nucElevs(B, p, E+Wt, nE); nucShaftsU(B, p, u, 0, F, NUC_PRUMADAS.slice(0,2), 0);
+    B.ala={u0:E+Wt, vIn:F};   // fundo da ala dos elevadores: vai para a unidade vizinha
+    B.split=E+Wt;
+  },
+  /* fundo: [balcão aberto (até a fachada)][escada][lixo] · frente: [acesso][shafts][elevadores][hall de serviço] */
+  balcao(B, p){
+    const F=p.F, Wb=2.0, nE=Math.max(1,p.nE); let Ws=1.2;
+    let bEnd=Wb+Ws+nE*p.Wel; if(bEnd-Wb < p.LsMin){ Ws+=p.LsMin-(bEnd-Wb); Ws=Math.round(Ws*20+0.499)/20; bEnd=Wb+Ws+nE*p.Wel }
+    B.cell("ant","acesso ao balcão",0,0,Wb,F); B.door("u",0,Wb-1.05,NUC_R.porta,1,"escada");
+    B.cell("balc","balcão aberto",0,F,Wb,p.escD,{fachada:true}); B.door("u",F,0.55,NUC_R.porta,1,"escada");
+    nucShaftsU(B, p, Wb, 0, F, NUC_PRUMADAS.slice(0,2).concat(Ws>1.5? [NUC_PRUMADAS[2]] : []), 0);
+    if(Ws>1.8){ const c=B.cells[B.cells.length-1]; c.w=Ws-0.6*(B.cells.filter(x=>x.k==="shaft").length-1) }
+    nucElevs(B, p, Wb+Ws, nE);
+    nucEscU(B, p, Wb, F, bEnd-Wb, "lo"); B.door("v",Wb,F+(p.escD-NUC_R.porta)/2,NUC_R.porta,1,"escada");
+    const Wh=1.6; B.cell("hserv","hall de serviço",bEnd,0,Wh,F); B.door("u",0,bEnd+0.35,NUC_R.portaServ,1,"servico");
+    B.cell("lixo","lixo / DML",bEnd,F,Wh,p.escD); B.door("u",F,bEnd+0.35,NUC_R.portaServ,1,"servico");
+    B.split=bEnd;
+  },
+  /* frente: [antecâmara][elevadores][shafts][DML][antecâmara 2] · fundo: [dutos][escada 1][escada 2][dutos] */
+  duas(B, p){
+    const F=p.F, pre0 = nucPreW(p), nE=Math.max(1,p.nE);
+    let Wa=Math.max(p.t==="ep"? 1.8 : 2.4, pre0+1.2);
+    if(Wa+nE*p.Wel-pre0 < p.LsMin){ Wa+=p.LsMin-(Wa+nE*p.Wel-pre0); Wa=Math.round(Wa*20+0.499)/20 }
+    const b1=Wa+nE*p.Wel, Ws=1.2, Wd=Math.max(1.4, Math.round((p.LsMin-Wa+pre0-Ws)*20+0.499)/20), L=b1+Ws+Wd+Wa;
+    B.cell("ant", nucAntNome(p), 0, 0, Wa, F, {resgate:true}); B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");
+    nucElevs(B, p, Wa, nE);
+    nucShaftsU(B, p, b1, 0, F, NUC_PRUMADAS.slice(0,2), 0);
+    B.cell("lixo","lixo / DML",b1+Ws,0,Wd,F); B.door("u",0,b1+Ws+0.3,NUC_R.portaServ,1,"servico");
+    B.cell("ant", nucAntNome(p)+" 2", L-Wa, 0, Wa, F, {resgate:true}); B.door("u",0,L-Wa+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    const pre=nucPre(B, p, 0, F, p.escD); nucEscU(B, p, pre, F, b1-pre, "lo"); B.door("u",F,pre+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    const c0=B.cells.length; const pre2=nucPre(B, p, L-pre0, F, p.escD); B.cells.slice(c0).forEach(c=>{ c.nome+=" 2" });
+    nucEscU(B, p, b1, F, L-pre2-b1, "hi", "escada 2"); B.door("u",F,L-pre2-0.15-NUC_R.porta,NUC_R.porta,1,"escada");
+    B.split=b1;
+  },
+  /* frente: [antecâmara][dutos][elevadores][hall de serviço] · fundo: [elevador de emergência][escada][lixo/DML] */
+  emergencia(B, p, o){
+    if(p.nE>=3){ NUC_MONTA.u(B, p, o, true); return }
+    const F=p.F, nE=Math.max(1,p.nE), We=Math.round((NUC_EMERG.caixa[0]+NUC_R.paredeCF)*20)/20;
+    let Wa=We+1.25; const Wdu = p.t==="pf_duto"? 0.9 : 0;
+    let bEnd=Wa+Wdu+nE*p.Wel; if(bEnd-We < p.LsMin){ Wa+=p.LsMin-(bEnd-We); Wa=Math.round(Wa*20+0.499)/20; bEnd=Wa+Wdu+nE*p.Wel }
+    B.cell("ant", nucAntNome(p), 0, 0, Wa, F, {resgate:true}); B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");
+    if(Wdu){ B.cell("duto","duto entrada",Wa,0,Wdu,F/2,{sub:"entrada"}); B.cell("duto","duto saída",Wa,F/2,Wdu,F/2,{sub:"saida"}) }
+    nucElevs(B, p, Wa+Wdu, nE);
+    B.cell("emerg","elevador de emergência",0,F,We,p.escD,{porta:"f", cap:"emerg"}); B.door("u",F,(We-NUC_EMERG.porta)/2,NUC_EMERG.porta,-1,"emerg");
+    if(p.t==="pf_press"){ B.cell("duto","pressurização",bEnd-1.0,F,1.0,p.escD,{sub:"press"}) }
+    const escFim = p.t==="pf_press"? bEnd-1.0 : bEnd;
+    nucEscU(B, p, We, F, escFim-We, "lo"); B.door("u",F,We+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    const Wh=1.4, Ws=0.7, uh=bEnd;
+    B.cell("hserv","hall de serviço",uh,0,Wh,F); B.door("u",0,uh+0.3,NUC_R.portaServ,1,"servico");
+    NUC_PRUMADAS.forEach((s,i)=>{ const h=F/3; B.cell("shaft",s.nome,uh+Wh,i*h,Ws,h,{sub:s.k}); B.door("v",uh+Wh,i*h+0.07,h-0.14,-1,"shaft") });
+    B.cell("lixo","lixo / DML",uh,F,Wh+Ws,p.escD); B.door("u",F,uh+0.3,NUC_R.portaServ,1,"servico");
+    B.split=bEnd;
+  },
+  /* segunda escada dos núcleos por alas: [escada ⟂][antecâmara/dutos] (EP: só a escada, porta direto no corredor) */
+  escada2(B, p){
+    const D=Math.max(p.F+p.escD, p.LsMin), F=p.F, E=p.escD;
+    nucEscV(B, p, 0, 0, D, "lo", "escada 2");
+    if(p.t==="ep"){ B.door("u",0,0.15,NUC_R.porta,1,"escada"); return }
+    const Wt=2.2;
+    if(p.t==="pf_balcao"){ B.cell("ant","acesso ao balcão",E,0,Wt,F); B.door("u",0,E+Wt-1.05,NUC_R.porta,1,"escada"); B.cell("balc","balcão aberto",E,F,Wt,D-F,{fachada:true}); B.door("u",F,E+0.6,NUC_R.porta,1,"escada"); B.door("v",E,F+0.3,NUC_R.porta,-1,"escada",{dobra:"b"}); return }
+    B.cell("ant", nucAntNome(p)+" 2", E, 0, Wt, F, {resgate:true});
+    B.door("u",0,E+Wt-1.05,NUC_R.porta,1,"escada"); B.door("v",E,0.15,NUC_R.porta,-1,"escada",{dobra:"b"});
+    if(p.t==="pf_press") B.cell("duto","pressurização 2",E,F,Wt,D-F,{sub:"press"});
+    else { B.cell("duto","duto entrada 2",E,F,Wt/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída 2",E+Wt/2,F,Wt/2,D-F,{sub:"saida"}) }
+  },
+};
+
+/* ---------- desenho técnico (linhas no referencial local; o coreBuild leva ao mundo) ---------- */
+/* L: {l:[[u,v],[u,v]], c?:"fino"|"medio"|"tracejado"} · {arrow:[[u,v],[u,v]]} · {txt, p:[u,v], s?} · {dot:[u,v]} */
+function nucleoDesenho(N){
+  const out=[], t=NUC_R.paredeCF/2, ln=(a,b,c)=>out.push({l:[a,b], c}), P=N.p;
+  N.cells.forEach(c=>{
+    if(c.k==="esc"){
+      const ori=c.ori||"u", A0=(ori==="u"? c.u : c.v)+t, A1=(ori==="u"? c.u+c.w : c.v+c.h)-t, C0=(ori==="u"? c.v : c.u)+t, C1=(ori==="u"? c.v+c.h : c.u+c.w)-t;
+      const M=(a,x)=> ori==="u"? [a,x] : [x,a];    // a = ao longo dos lances · x = através
+      const lw=Math.min(P.larg, (C1-C0-NUC_R.bomba)/2), run=P.deg.run, pat=Math.max(0.3,(A1-A0-run)/2);
+      const ent=c.ent||"lo", s0 = ent==="lo"? A0+pat : A1-pat, dir = ent==="lo"? 1 : -1, s1=s0+dir*run;
+      const f1=[C0, C0+lw], f2=[C1-lw, C1];   // lance que sobe (f1) e lance que desce (f2)
+      // bomba (guarda central) e bordas dos patamares
+      ln(M(s0,C0+lw),M(s1,C0+lw),"medio"); ln(M(s0,C1-lw),M(s1,C1-lw),"medio");
+      ln(M(s0,C0),M(s0,C1),"medio"); ln(M(s1,C0),M(s1,C1),"medio");
+      for(let k=1;k<P.deg.a-1;k++){ const a=s0+dir*k*P.deg.p; ln(M(a,f1[0]),M(a,f1[1])); ln(M(a,f2[0]),M(a,f2[1])) }
+      // corte do lance que sobe (linha de quebra) e linhas de piso com seta
+      const ac=s0+dir*run*0.55, z=(f1[1]-f1[0])/3; ln(M(ac-dir*0.12,f1[0]),M(ac-dir*0.12,f1[0]+z),"medio"); ln(M(ac-dir*0.12,f1[0]+z),M(ac+dir*0.12,f1[1]-z),"medio"); ln(M(ac+dir*0.12,f1[1]-z),M(ac+dir*0.12,f1[1]),"medio");
+      const m1=(f1[0]+f1[1])/2, m2=(f2[0]+f2[1])/2;
+      out.push({dot:M(s0-dir*0.35,m1)}); out.push({arrow:[M(s0-dir*0.35,m1),M(ac-dir*0.1,m1)]});
+      out.push({dot:M(s0-dir*0.35,m2)}); out.push({arrow:[M(s0-dir*0.35,m2),M(s1-dir*0.15,m2)]});
+      out.push({txt:"S", p:M(s0-dir*0.15,m1-0.28*(lw>0.9?1:0.6)), s:0.30}); out.push({txt:"D", p:M(s0-dir*0.15,m2+0.28*(lw>0.9?1:0.6)), s:0.30});
+      out.push({txt:c.nome, p:M(ent==="lo"? A1-pat/2 : A0+pat/2,(C0+C1)/2), s:0.22, bg:true, rot:ori==="u"? 0 : 1});
+      // área de resgate no patamar do pavimento (cadeira de rodas 0,80 × 1,20) — só quando a antecâmara não a tem
+      if(pat>=NUC_R.resgate[1]+0.05 && !N.cells.some(a=>a.k==="ant" && a.resgate && a.w>=NUC_R.resgate[1]+0.4)){ const r0= ent==="lo"? A0+0.05 : A1-0.05-NUC_R.resgate[1], [x0,x1]=[C1-0.05-NUC_R.resgate[0], C1-0.05];
+        const q=[M(r0,x0),M(r0+NUC_R.resgate[1],x0),M(r0+NUC_R.resgate[1],x1),M(r0,x1)]; q.forEach((a,i)=>ln(a,q[(i+1)%4],"tracejado")); out.push({txt:"MR", p:M(r0+NUC_R.resgate[1]/2,(x0+x1)/2), s:0.22}) }
+    }
+    if(c.k==="elev"||c.k==="emerg"){
+      const EV = c.k==="emerg"? NUC_EMERG : P.EV, por=c.porta||"f", tw=NUC_R.paredeCF/2;
+      // eixos da cabine: "frente" = lado da porta
+      const fr = por==="f"? {a:[c.u,c.v], ax:[1,0], ay:[0,1], W:c.w, H:c.h} : por==="r"? {a:[c.u+c.w,c.v], ax:[0,1], ay:[-1,0], W:c.h, H:c.w} : {a:[c.u,c.v+c.h], ax:[0,-1], ay:[1,0], W:c.h, H:c.w};
+      const Q=(x,y)=>[fr.a[0]+fr.ax[0]*x+fr.ay[0]*y, fr.a[1]+fr.ax[1]*x+fr.ay[1]*y];
+      const cw=Math.min(EV.cabine[0], fr.W-2*tw-0.35), cd=Math.min(EV.cabine[1], fr.H-2*tw-0.30), x0=(fr.W-cw)/2 - 0.12, y0=tw+0.12;
+      const cab=[Q(x0,y0),Q(x0+cw,y0),Q(x0+cw,y0+cd),Q(x0,y0+cd)]; cab.forEach((a,i)=>ln(a,cab[(i+1)%4],"medio"));
+      ln(cab[0],cab[2]); ln(cab[1],cab[3]);
+      // contrapeso na lateral oposta à botoeira
+      const cx0=x0+cw+0.08, cx1=Math.min(fr.W-tw-0.04, cx0+0.16), cy0=y0+0.15, cy1=Math.min(fr.H-tw-0.08, y0+cd-0.15);
+      if(cx1-cx0>0.06){ const cp=[Q(cx0,cy0),Q(cx1,cy0),Q(cx1,cy1),Q(cx0,cy1)]; cp.forEach((a,i)=>ln(a,cp[(i+1)%4],"medio")); ln(cp[0],cp[2],"fino") }
+      // portas de correr (duas folhas) na soleira
+      const pw=EV.porta, px=(fr.W-pw)/2; ln(Q(px,tw*0.4),Q(px+pw/2+0.05,tw*0.4),"medio"); ln(Q(px+pw/2-0.05,tw*1.4),Q(px+pw,tw*1.4),"medio");
+    }
+    if(c.k==="duto"){
+      const g=0.22; for(let k=g;k<c.w+c.h;k+=g){ const a=[c.u+Math.max(0,k-c.h), c.v+Math.min(c.h,k)], b=[c.u+Math.min(c.w,k), c.v+Math.max(0,k-c.w)]; ln(a,b,"fino") }
+      const cx=c.u+c.w/2, cy=c.v+c.h/2, r=Math.min(c.w,c.h)*0.28;
+      if(c.sub==="entrada") out.push({arrow:[[cx,cy+r],[cx,cy-r]]}); else if(c.sub==="saida") out.push({arrow:[[cx,cy-r],[cx,cy+r]]});
+      out.push({txt: c.sub==="entrada"? "E" : c.sub==="saida"? "S" : c.sub==="vent"? "V" : "P", p:[cx+(c.w>0.7? 0.22 : 0), cy], s:0.24, bg:true});
+    }
+    if(c.k==="shaft"){
+      ln([c.u+0.08,c.v+0.08],[c.u+c.w-0.08,c.v+c.h-0.08],"fino"); ln([c.u+c.w-0.08,c.v+0.08],[c.u+0.08,c.v+c.h-0.08],"fino");
+      out.push({txt:{hidraulica:"H", eletrica:"E", gas:"G"}[c.sub]||"", p:[c.u+c.w/2, c.v+c.h/2], s:0.24, bg:true});
+    }
+    if(c.k==="balc"){ const v=c.v+c.h; ln([c.u+0.1,v-0.12],[c.u+c.w-0.1,v-0.12],"tracejado") }
+    if(c.resgate && c.k==="ant" && c.w>=NUC_R.resgate[1]+0.4){ const x0=c.u+0.15, y0=c.v+c.h-0.1-NUC_R.resgate[0];
+      const q=[[x0,y0],[x0+NUC_R.resgate[1],y0],[x0+NUC_R.resgate[1],y0+NUC_R.resgate[0]],[x0,y0+NUC_R.resgate[0]]]; q.forEach((a,i)=>ln(a,q[(i+1)%4],"tracejado")); out.push({txt:"MR", p:[x0+NUC_R.resgate[1]/2,y0+NUC_R.resgate[0]/2], s:0.22}) }
+  });
+  return out;
+}
+
+/* ---------- validação (nota e problemas em linguagem simples) ---------- */
+const NUC_NF=(x,d=2)=>(Math.round(x*Math.pow(10,d))/Math.pow(10,d)).toFixed(d).replace(".",",");
+/** elevadores necessários (tráfego simplificado: 8% da população em 5 min, intervalo ≤ 120 s) */
+function nucleoElevNec(ctx){
+  const pav=Math.max(1,+ctx.pav||1), H=Math.max(3,+ctx.H||pav*3), popT=Math.max(0,+ctx.pop||0)*pav, cap=+ctx.cap||8;
+  if(pav<=4 && H<=12) return {n:0, rtt:0, intervalo:0, popT, v:1};
+  const v = H<=30? 1.0 : H<=60? 1.75 : 2.5, pp=0.8*cap, N=pav, S=N*(1-Math.pow((N-1)/N, pp));
+  const rtt = 2*H/v + (S+1)*9 + 2*pp*1.2, c5 = 300*pp/rtt;
+  let n=Math.max(1, Math.ceil(0.08*popT/c5 - 1e-9)); while(rtt/n>120 && n<8) n++;
+  if(pav>=8) n=Math.max(2,n);   // a partir de 8 pavimentos, dois elevadores (um fica na manutenção)
+  return {n, rtt, intervalo:rtt/n, popT, v};
+}
+/** nuc = lay.nucleo (com .local = modelo de nucleoMonta) · ctx = {pav, H (altura descendente), pop, units, plateA, fachada, tec} */
+function nucleoValida(nuc, ctx={}){
+  const N=nuc && nuc.local; if(!N) return {nota:null, problemas:[]};
+  const P=N.p, pr=[], add=(k,nivel,msg,parte)=>pr.push({k,nivel,msg,parte});
+  const cs=N.cells, ofK=k=>cs.filter(c=>c.k===k);
+  // escada: largura, degraus, patamares
+  ofK("esc").forEach(c=>{
+    const larg=Math.min(P.larg, ((c.ori==="v"? c.w : c.h)-NUC_R.paredeCF-NUC_R.bomba)/2), lMin=Math.max(NUC_R.escLarg, ctx.largMin||0);
+    if(larg < lMin-0.005) add("escLarg","bad",`Escada com ${NUC_NF(larg)} m de largura útil; precisa de ${NUC_NF(lMin)} m.`, c.nome);
+    const d=P.deg, bl=2*d.e+d.p;
+    if(d.e>NUC_R.espelho[1]+0.003 || d.e<NUC_R.espelho[0]-0.003 || d.p<NUC_R.piso[0]-0.003 || d.p>NUC_R.piso[1]+0.003 || bl<NUC_R.blondel[0]-0.005 || bl>NUC_R.blondel[1]+0.005)
+      add("degrau","warn",`Degraus de ${NUC_NF(d.e*100,1)} × ${NUC_NF(d.p*100,0)} cm fora da faixa (espelho 16–18, piso 28–32, 2e+p 63–65 cm).`, c.nome);
+    const comp=(c.ori==="v"? c.h : c.w)-NUC_R.paredeCF, pat=(comp-d.run)/2;
+    if(pat < larg-0.02) add("patamar","bad",`Patamar de ${NUC_NF(pat)} m, menor que a largura do lance (${NUC_NF(larg)} m).`, c.nome);
+    else if(pat > NUC_R.patamarMax+0.01) add("patamarLongo","warn",`Patamares de ${NUC_NF(pat)} m: a caixa da escada sobra ${NUC_NF((pat-Math.max(larg,1.5))*2*(c.ori==="v"? c.w : c.h),1)} m².`, c.nome);
+  });
+  if(!ofK("esc").length) add("semEscada","bad","Núcleo sem escada.");
+  // antecâmara e dutos (PF), pressurização, balcão
+  const ants=ofK("ant").filter(c=>/antec/.test(c.nome));
+  if(["pf_duto","pf_press"].includes(P.t) && N.partido!=="balcao"){
+    if(!ants.length) add("semAnt","bad","Escada à prova de fumaça sem antecâmara.");
+    ants.forEach(c=>{ const prof=Math.min(c.w,c.h)-NUC_R.paredeCF; if(prof<NUC_R.antProf-0.005) add("antRasa","bad",`Antecâmara com ${NUC_NF(prof)} m de profundidade; o mínimo é ${NUC_NF(NUC_R.antProf)} m.`, c.nome) });
+  }
+  if(P.t==="pf_duto"){ const ent=ofK("duto").filter(c=>c.sub==="entrada"), sai=ofK("duto").filter(c=>c.sub==="saida"), a=c=>Math.max(0,c.w-NUC_R.parede)*Math.max(0,c.h-NUC_R.parede);
+    if(!ent.length || !sai.length) add("semDuto","bad","Escada PF sem os dutos de entrada e de saída de ar da antecâmara.");
+    [...ent,...sai].forEach(c=>{ if(a(c)<NUC_R.dutoA-0.005 || Math.min(c.w,c.h)-NUC_R.parede<NUC_R.dutoLado-0.005) add("dutoPeq","bad",`${c.nome[0].toUpperCase()+c.nome.slice(1)} com ${NUC_NF(a(c))} m²; o mínimo é ${NUC_NF(NUC_R.dutoA)} m² (lado ≥ ${NUC_NF(NUC_R.dutoLado)} m).`, c.nome) });
+    // dutos precisam encostar na antecâmara
+    const enc=(c,d)=>{ const ov=(a0,a1,b0,b1)=>Math.min(a1,b1)-Math.max(a0,b0); return (Math.abs(c.v+c.h-d.v)<0.01||Math.abs(d.v+d.h-c.v)<0.01)&&ov(c.u,c.u+c.w,d.u,d.u+d.w)>0.3 || (Math.abs(c.u+c.w-d.u)<0.01||Math.abs(d.u+d.w-c.u)<0.01)&&ov(c.v,c.v+c.h,d.v,d.v+d.h)>0.3 };
+    [...ent,...sai].forEach(c=>{ if(!ants.some(a=>enc(a,c))) add("dutoLonge","bad",`${c.nome[0].toUpperCase()+c.nome.slice(1)} não encosta na antecâmara.`, c.nome) });
+  }
+  if(P.t==="pf_press" && !ofK("duto").some(c=>c.sub==="press")) add("semPress","bad","Escada pressurizada sem duto de insuflamento.");
+  if(P.t==="pf_balcao"){ ofK("balc").forEach(c=>{ if(ctx.fachada===false || c.semFachada) add("balcFach","bad","O balcão aberto precisa estar na fachada.", c.nome) }); if(!ofK("balc").length) add("semBalc","bad","Escada com balcão sem o balcão aberto.") }
+  if(P.t==="ep" && ctx.fachada===false && !ofK("duto").some(c=>c.sub==="vent")) add("epVent","warn","Escada enclausurada protegida precisa de janela na fachada ou duto de ventilação.");
+  // elevadores: porta na antecâmara, hall à frente, quantidade, cabine, emergência
+  N.doors.filter(d=>d.tipo==="elev").forEach(d=>{ const mid=[(d.a[0]+d.b[0])/2+d.n[0]*0.2, (d.a[1]+d.b[1])/2+d.n[1]*0.2];
+    const c=cs.find(c=>mid[0]>c.u+1e-6&&mid[0]<c.u+c.w-1e-6&&mid[1]>c.v+1e-6&&mid[1]<c.v+c.h-1e-6);
+    if(c && c.k==="ant") add("elevAnt","bad","Porta de elevador abrindo direto na antecâmara (só o de emergência pode).", c.nome) });
+  const nEl=ofK("elev").length, hallU=ofK("hall")[0];
+  if(nEl){ const livre = hallU? (hallU.w-NUC_R.paredeCF) : (ctx.corr!=null? ctx.corr : P.corr);
+    if(livre < NUC_R.hallElev-0.005) add("hallElev","bad",`Hall diante dos elevadores com ${NUC_NF(livre)} m; precisa de ${NUC_NF(NUC_R.hallElev)} m livres (giro da cadeira de rodas).`) }
+  if(P.EV.cabine[0]<1.10-0.001 || P.EV.cabine[1]<1.40-0.001) add("cabine","warn",`Cabine de ${NUC_NF(P.EV.cabine[0])} × ${NUC_NF(P.EV.cabine[1])} m não é acessível (mínimo 1,10 × 1,40).`);
+  if(ctx.pav){ const nec=nucleoElevNec({pav:ctx.pav, H:ctx.H, pop:ctx.pop!=null? ctx.pop : P.pop, cap:P.cap});
+    if(nEl < nec.n) add("elevN", nEl===0||nec.n-nEl>1? "bad" : "warn", nEl? `${nEl} elevador${nEl>1?"es":""} para ${ctx.pav} pavimentos e ${Math.round(nec.popT)} moradores; o tráfego pede ${nec.n}.` : `Sem elevador acima de 4 pavimentos.`);
+    if(ctx.emergObrig && !ofK("emerg").length) add("emerg","bad","Acima de 80 m o núcleo precisa de elevador de emergência abrindo na antecâmara.");
+    if(ctx.escReq && ctx.escOf && ctx.escRank && ctx.escRank[ctx.escOf]<ctx.escRank[ctx.escReq]) add("escTipo","bad",`A altura pede escada ${ctx.escReq}; o núcleo tem ${ctx.escOf}.`) }
+  // acesso: toda peça com porta (dutos e caixas de elevador não precisam), nenhuma peça "sobra"
+  cs.forEach(c=>{ if(["duto","elev","emerg","esc","hall"].includes(c.k) || c.semAcesso) return;
+    const tem=N.doors.some(d=>{ const mid=[(d.a[0]+d.b[0])/2,(d.a[1]+d.b[1])/2]; return mid[0]>=c.u-0.01&&mid[0]<=c.u+c.w+0.01&&mid[1]>=c.v-0.01&&mid[1]<=c.v+c.h+0.01 && !(Math.abs(mid[0]-c.u)>0.01&&Math.abs(mid[0]-c.u-c.w)>0.01&&Math.abs(mid[1]-c.v)>0.01&&Math.abs(mid[1]-c.v-c.h)>0.01) });
+    if(!tem) add(c.k==="tec"? "sobra" : "semAcesso", c.k==="tec"? "warn" : "bad", c.k==="tec"? `Sobra sem uso de ${NUC_NF(c.w*c.h,1)} m² no núcleo.` : `${c.nome[0].toUpperCase()+c.nome.slice(1)} sem porta.`, c.nome) });
+  if(!cs.some(c=>c.k==="shaft" && c.sub==="hidraulica") || !cs.some(c=>c.k==="shaft" && c.sub==="eletrica")) add("shafts","warn","Faltam shafts de prumada (hidráulico e elétrico) com visita pelo hall.");
+  // harmonia: peças lado a lado sem sobreposição, sem buraco, e o fundo encontrando as linhas da frente
+  const harm=nucleoHarmonia(N); harm.forEach(h=>add(h.k,h.nivel,h.msg));
+  if(ctx.plateA && ctx.coreA && ctx.coreA/ctx.plateA>NUC_R.areaMaxPct) add("pesado","warn",`Núcleo ocupa ${Math.round(ctx.coreA/ctx.plateA*100)}% do andar (referência ≤ ${Math.round(NUC_R.areaMaxPct*100)}%).`);
+  if(N.partido==="l") add("emL","warn","Núcleo em L: a unidade vizinha contorna a ala dos elevadores.");
+  const bad=pr.filter(q=>q.nivel==="bad").length, warn=pr.filter(q=>q.nivel==="warn").length;
+  return {nota:Math.max(0, 100-25*bad-6*warn), problemas:pr.sort((a,b)=>(a.nivel==="bad"? 0 : 1)-(b.nivel==="bad"? 0 : 1))};
+}
+/** alinhamento/serrilhado: cobertura do retângulo (sem buraco nem sobreposição) e linhas de eixo comuns às duas fileiras */
+function nucleoHarmonia(N){
+  const out=[], cs=N.cells.filter(c=>!c.fundo && c.w>0.02 && c.h>0.02), L=N.L, D=N.D;
+  let sobre=0; for(let i=0;i<cs.length;i++) for(let j=i+1;j<cs.length;j++){ const a=cs[i], b=cs[j];
+    const w=Math.min(a.u+a.w,b.u+b.w)-Math.max(a.u,b.u), h=Math.min(a.v+a.h,b.v+b.h)-Math.max(a.v,b.v); if(w>0.02&&h>0.02) sobre+=w*h }
+  if(sobre>0.05) out.push({k:"sobrepoe", nivel:"bad", msg:`Peças do núcleo sobrepostas (${NUC_NF(sobre,1)} m²).`});
+  const alvo = N.perfil? N.perfil.reduce((s,t)=>s+(t.u1-t.u0)*t.d,0) : N.ala? L*D-(L-N.ala.u0)*(D-N.ala.vIn) : L*D, soma=cs.reduce((s,c)=>s+c.w*c.h,0);
+  if(alvo-soma>0.3) out.push({k:"buraco", nivel:"warn", msg:`Núcleo com ${NUC_NF(alvo-soma,1)} m² sem uso entre as peças.`});
+  // fileiras: linhas de eixo verticais (u) que cortam a fileira da frente e a do fundo — as do fundo precisam encontrar as da frente
+  const F=N.F, fr=cs.filter(c=>c.v<0.01 && c.h>=F-0.01), bk=cs.filter(c=>c.v>=F-0.01 && c.v<F+0.01);
+  if(fr.length && bk.length){ const lf=new Set(fr.flatMap(c=>[c.u,c.u+c.w]).map(x=>x.toFixed(2)));
+    const esc=bk.filter(c=>c.k==="esc"||c.k==="lixo"||c.k==="emerg"); let des=0;
+    const ants=fr.filter(c=>c.k==="ant"), sob=c=>ants.some(a=>c.u>=a.u-0.02 && c.u+c.w<=a.u+a.w+0.02);   // dutos e elevador de emergência atrás da antecâmara: um bloco só
+    const junto=x=>bk.some(d=>(d.k==="duto"||d.k==="emerg") && sob(d) && (Math.abs(d.u-x)<0.02 || Math.abs(d.u+d.w-x)<0.02));
+    esc.forEach(c=>{ [c.u, c.u+c.w].forEach(x=>{ if(x>0.05 && x<L-0.05 && !junto(x) && ![...lf].some(y=>Math.abs(+y-x)<0.06)) des++ }) });
+    if(des) out.push({k:"desalinhado", nivel:"warn", msg:`Escada ou lixo fora das linhas da frente (${des} ${des>1?"divisas desencontradas":"divisa desencontrada"}): serrilhado.`});
+  }
+  // contorno: retângulo (ou L declarado)
+  const prof=new Set(N.perfil? N.perfil.filter(t=>!t.fach).map(t=>t.d.toFixed(2)) : cs.filter(c=>c.v+c.h>F+0.01).map(c=>(c.v+c.h).toFixed(2)));
+  if(prof.size>1 && !N.ala) out.push({k:"dentes", nivel:"warn", msg:`Fundo do núcleo em ${prof.size} profundidades: contorno com dentes.`});
+  return out;
+}
+
+/* ---------- informação para o contrato (lay.nucleo) — o coreBuild preenche ---------- */
+const NUC_INFO = new WeakMap();   // lobby → nucleo (núcleos montados por outros módulos, ex.: alas, recuperam a ficha)
+
+/* validação no fim do cálculo (altura, pavimentos e população por torre) */
+HOOK.compute.push((m, st)=>{
+  (m.tipo||[]).forEach((l,i)=>{ if(!l || !l.core) return; const t=m.T[i]; if(!t) return;
+    if(!l.nucleo && l.lobby) { const n=NUC_INFO.get(l.lobby); if(n) l.nucleo=n }
+    const nuc=l.nucleo; if(!nuc || !nuc.local) return;
+    const pe=st.produto.pe, Hd=Math.max(0, t.H-pe), pop=typeof normaPopulacao==="function"? normaPopulacao(st.produto.mix) : 0;
+    const escReq = typeof normaEscadaTipo==="function"? normaEscadaTipo(Hd) : null, escOf = typeof normaEscadaOferecida==="function"? normaEscadaOferecida(st.estudo.escTipo) : null;
+    const largMin = pop && typeof normaLarguras==="function"? normaLarguras(pop).escada : 0;
+    const v=nucleoValida(nuc, {pav:t.pav, H:t.H, pop, largMin, plateA:G.area(t.plate), coreA:l.coreA, corr:st.estudo.corrTipo, fachada:nuc.fachada,
+      emergObrig: typeof normaElevEmergObrig==="function" && normaElevEmergObrig(Hd), escReq, escOf, escRank: typeof NORMA_ESC_RANK!=="undefined"? NORMA_ESC_RANK : null});
+    nuc.nota=v.nota; nuc.problemas=v.problemas;
+    if(nuc.elevNec==null) nuc.elevNec=nucleoElevNec({pav:t.pav, H:t.H, pop, cap:nuc.local.p.cap}).n;
+  });
+  const ns=(m.tipo||[]).filter(l=>l && l.nucleo && l.nucleo.nota!=null).map(l=>l.nucleo.nota);
+  m.nucleo = ns.length? {nota:Math.min(...ns), partidos:(m.tipo||[]).map(l=>l && l.nucleo? l.nucleo.partido : null)} : null;
+});
 
 /* ---- calc/orcamento.js ---- */
 /* ================= orçamento paramétrico por sistema =================
@@ -10511,82 +10931,61 @@ const G = (() => {
 
 /* ================= Fase 2: pavimento tipo ================= */
 const ESC_TIPOS = { ep:"Enclausurada protegida (EP)", pf_duto:"À prova de fumaça com antecâmara e dutos (PF)", pf_balcao:"À prova de fumaça com balcão aberto (PF)", pf_press:"Pressurizada (PFP)" };
-const CORE_F=2.4, CORE_B=2.7;
-// sequência das peças do núcleo em duas fileiras: frente (abre para o hall) e fundo (escada)
-function coreSeq(o){
-  if(o._seq) return o._seq;   // C3 (src/calc/alas.js): sequência própria (segunda escada, sem elevadores)
-  const t=o.escTipo||"pf_duto", nE=Math.max(1,o.nElev||2), front=[], back=[];
-  const grp=(second)=>{ const fr=[], bk=[];
-    if(t==="pf_balcao"){ fr.push({k:"pass",nome:"acesso",w:2.2,door:"hall",door2:"balc"}); bk.push({k:"balc",nome:"balcão aberto",w:2.2,doorSide:"esc"},{k:"esc",nome:"escada",w:5.8}) }
-    else { bk.push({k:"esc",nome:"escada",w:5.8}); if(t==="pf_press") bk.push({k:"duto",nome:"pressurização",w:1.0});
-      if(t==="ep") fr.push({k:"ant",nome:"hall da escada",w:1.8,door:"hall",door2:"esc"});
-      else { fr.push({k:"ant",nome:"antecâmara",w:2.2,door:"hall",door2:"esc"}); if(t==="pf_duto") fr.push({k:"duto",nome:"dutos",w:0.8}) } }
-    if(!second && o.emerg) fr.splice(1,0,{k:"emerg",nome:"elev. emergência",w:2.3,doorSide:"ant"});
-    return {fr,bk} };
-  const g1=grp(false);
-  front.push(...g1.fr); back.push(...g1.bk);
-  for(let i=0;i<nE;i++) front.push({k:"elev",nome:"elevador",w:2.1,door:"hall"});
-  front.push({k:"shaft",nome:"shafts",w:1.1,door:"hall"});
-  if(o.nEsc===2){ const g2=grp(true); return {front, back, g2} }
-  return {front, back, g2:null};
-}
+const CORE_F=2.2, CORE_B=2.7;   // fileira da frente (elevadores/antecâmara) e do fundo (escada de 1,20 m) — eixo a eixo
+/* núcleo de circulação vertical: o partido e as medidas vêm de src/calc/nucleo.js (nucleoMonta, referencial local u×v);
+   aqui ele vai para o mundo (ux, vy, ponta cu0, face vEdge, sentido s) e a faixa atrás dele até a fachada (depthB além do
+   fundo do núcleo) vai para as unidades vizinhas (o._notch = lados com unidade) — o núcleo fica um retângulo coeso, igual
+   em todos os pavimentos. Sem vizinho (ou faixa rasa ≤ 1,2 m) o fundo do núcleo cresce até a fachada. */
 function coreBuild(ux,vy,cu0,vEdge,s,depthB,o){
-  const seq=coreSeq(o), F=CORE_F, B=depthB;
-  // posições ao longo do núcleo
-  let fu=0; const fr=seq.front.map(c=>{ const r={...c,u:fu}; fu+=c.w; return r });
-  let bu=0; const bk=seq.back.map(c=>{ const r={...c,u:bu}; bu+=c.w; return r });
-  if(seq.g2){ const Lpre=Math.max(fu,bu); let f2=Math.max(fu, Lpre), b2=f2; seq.g2.fr.reverse().forEach(()=>{}); 
-    const g2f=seq.g2.fr.slice(), g2b=seq.g2.bk.slice(); const wf=g2f.reduce((a,c)=>a+c.w,0), wb=g2b.reduce((a,c)=>a+c.w,0); const L2=Math.max(Lpre+Math.max(wf,wb), 0);
-    let x=L2-wf; g2f.forEach(c=>{ fr.push({...c,u:x}); x+=c.w }); x=L2-wb; g2b.forEach(c=>{ bk.push({...c,u:x}); x+=c.w }); fu=L2; bu=L2 }
-  if(!seq.g2){ const gap=fu-bu; // fundo menor que a frente: nada de “sobras” sem acesso
-    if(gap>1.6){ const ps={k:"pass",nome:"serviço",w:1.0,u:fu,door:"hall",door2:"hserv"}; fr.push(ps); fu+=1.0; const gw=fu-bu;
-      // fundo que sobra vira hall de serviço (elevadores com porta dupla) + lixo/DML — tudo com acesso
-      if(gw>3.2){ bk.push({k:"lixo",nome:"lixo / DML",w:1.6,u:bu,doorSide:"hserv"}, {k:"hserv",nome:"hall de serviço",w:gw-1.6,u:bu+1.6}) }
-      else { bk.push({k:"lixo",nome:"lixo / DML",w:gw,u:bu}); ps.door2="lixo" }
-      bu=fu }
-    else if(gap>0.3){ bk.push({k:"shaft",nome:"shafts",w:gap,u:bu}); bu=fu } }
-  const L=Math.max(fu,bu);
-  // completa lacunas: frente vira hall; fundo vira área técnica
-  const fill=(row,k,nome)=>{ row.sort((a,b)=>a.u-b.u); const out=[]; let x=0; row.forEach(c=>{ if(c.u-x>0.3) out.push({k,nome,w:c.u-x,u:x}); out.push(c); x=c.u+c.w }); if(L-x>0.3) out.push({k,nome,w:L-x,u:x}); return out };
-  const FR=fill(fr,"hall","hall"), BK=fill(bk,"tec","área técnica").flatMap(c=>{ if(c.k!=="tec") return [c];
-    if(c.w<=2.4) return [{...c,k:"shaft",nome:"shafts"}];
-    return [{k:"lixo",nome:"lixo / DML",w:1.6,u:c.u,doorSide:"hserv"},{k:"hserv",nome:"hall de serviço",w:c.w-1.6,u:c.u+1.6}] });
-  const mir=o.escada==="D";
-  const U=(u,w)=> mir? cu0+(L-u-w) : cu0+u;
-  const R=(u,w,va,vb)=>{ const uu=U(u,w); return s>0? G.rect(ux,vy,uu,vEdge+va,w,vb-va) : G.rect(ux,vy,uu,vEdge-vb,w,vb-va) };
-  const P=(u,v)=>{ const uu=mir? cu0+L-u : cu0+u, vv= s>0? vEdge+v : vEdge-v; return [ux[0]*uu+vy[0]*vv, ux[1]*uu+vy[1]*vv] };
-  const cells=[], doors=[], lines=[];
-  FR.forEach(c=>cells.push({...c, poly:R(c.u,c.w,0,F), row:"f"}));
-  // escada na ponta do núcleo encostado na fachada: profundidade do lance real (2 lances + parede), o resto volta para a unidade vizinha
-  const escD=o._escD||CORE_B, notches=[];
-  BK.forEach(c=>{ let d=B;
-    if(c.k==="esc" && o._notch && B-escD>=1.0){ const side= c.u<0.05? "start" : Math.abs(c.u+c.w-L)<0.05? "end" : null;
-      if(side && o._notch.includes(side)){ d=escD; notches.push({side, u:c.u, w:c.w}) } }
-    cells.push({...c, d, poly:R(c.u,c.w,F,F+d), row:"b"}) });
-  const door=(u,v,du,dv,w,sw)=>{ doors.push({a:P(u,v), b:P(u+du*w,v+dv*w), sw}) };
-  cells.forEach(c=>{
-    if(c.door==="hall"){ const w=c.k==="elev"? 1.0 : c.k==="shaft"? 0.7 : 0.9; door(c.u+(c.w-w)/2,0,1,0,w, c.k==="elev"?0:1) }
-    if(c.door2){ const tgt=cells.find(x=>x.row==="b" && x.k===c.door2 && x.u<c.u+c.w-0.3 && x.u+x.w>c.u+0.3); if(tgt){ const a=Math.max(c.u,tgt.u), b=Math.min(c.u+c.w,tgt.u+tgt.w), w=Math.min(0.9,b-a-0.2); door(a+(b-a-w)/2,F,1,0,w,1) } }
-    if(c.doorSide){ const nb=cells.find(x=>x.row===c.row && x.k===c.doorSide && (Math.abs(x.u-(c.u+c.w))<0.05 || Math.abs(x.u+x.w-c.u)<0.05)); if(nb){ const uE= Math.abs(nb.u-(c.u+c.w))<0.05? c.u+c.w : c.u, v0=c.row==="f"?0:F, h=c.row==="f"?F:B; door(uE, v0+(h-0.9)/2, 0,1,0.9,1) } }
-    if(c.k==="elev"){ const h=cells.find(x=>x.row==="b" && x.k==="hserv" && Math.min(c.u+c.w,x.u+x.w)-Math.max(c.u,x.u)>1.1); if(h){ const a=Math.max(c.u,h.u), b=Math.min(c.u+c.w,h.u+h.w); door(a+(b-a-1.0)/2,F,1,0,1.0,0) } }
-    if(c.k==="esc"){ // lances, patamares e seta de subida
-      const v0=F, v1=F+(c.d||B), vm=(v0+v1)/2, uA=c.u+1.2, uB=c.u+c.w-1.2;
-      lines.push([P(uA,vm),P(uB,vm)]);
-      for(let u=uA; u<=uB+0.01; u+=0.28){ lines.push([P(u,v0+0.05),P(u,vm)]); lines.push([P(u,vm),P(u,v1-0.05)]) }
-      lines.push({arrow:[P(uB-0.3,v0+(vm-v0)/2),P(uA+0.3,v0+(vm-v0)/2)]});
-    }
-    if(c.k==="elev"||c.k==="emerg"){ const a=0.25; lines.push([P(c.u+a,c.row==="f"?a:F+a),P(c.u+c.w-a,c.row==="f"?F-a:F+B-a)]); lines.push([P(c.u+c.w-a,c.row==="f"?a:F+a),P(c.u+a,c.row==="f"?F-a:F+B-a)]) }
-    if(c.k==="duto"){ const v0=c.row==="f"?0:F, h=c.row==="f"?F:B; for(let k=-h;k<c.w;k+=0.3){ const x0=Math.max(0,k), y0=Math.max(0,-k); lines.push([P(c.u+x0,v0+y0),P(c.u+Math.min(c.w,k+h),v0+Math.min(h,c.w-k))]) } }
-  });
-  // contorno do núcleo: retângulo menos os recortes atrás das escadas (do lado da fachada)
-  const poly=R(0,L,0,F+B); let outline=poly;
-  if(notches.length){ const back=[[L,F+B]]; notches.slice().sort((a,b)=>b.u-a.u).forEach(n=>{ const d=F+escD;
-      if(n.side==="end"){ back.length=0; back.push([L,d],[n.u,d],[n.u,F+B]) } else back.push([n.u+n.w,F+B],[n.u+n.w,d],[0,d]) });
-    const pts=[[0,0],[L,0],...back]; if(!notches.some(n=>n.side==="start")) pts.push([0,F+B]);
-    outline=pts.filter((q,i)=>i===0||Math.hypot(q[0]-pts[i-1][0],q[1]-pts[i-1][1])>1e-6).map(([u,v])=>P(u,v)) }
-  const sobras=notches.map(n=>({side:n.side, u0:n.u, u1:n.u+n.w, vIn:F+escD, vOut:F+B, poly:R(n.u,n.w,F+escD,F+B)}));
-  // poly = projeção total (obstáculo nas garagens, como antes) · outline = contorno real no pavimento tipo
-  return {L, depth:F+B, cells, doors, lines, poly, outline, lobby:R(0,L,-2.0,0), sobras, mir};
+  const N=nucleoMonta(o), L=N.L, F=N.F, Dn=N.D, mir=o.escada==="D", Dt=F+Math.max(depthB, Dn-F);
+  const P=(u,v)=>{ const uu=cu0+(mir? L-u : u), vv= s>0? vEdge+v : vEdge-v; return [ux[0]*uu+vy[0]*vv, ux[1]*uu+vy[1]*vv] };
+  const R=(u,v,w,h)=>{ const uu= mir? L-u-w : u; return s>0? G.rect(ux,vy,cu0+uu,vEdge+v,w,h) : G.rect(ux,vy,cu0+uu,vEdge-v-h,w,h) };
+  const cells=N.cells.map(c=>({...c})), extra=Dt-Dn, nb=o._notch||null;
+  // perfil do fundo: trechos [u0,u1] e a profundidade em que o núcleo termina
+  let perfil=[];
+  if(N.ala) perfil=[{u0:0,u1:N.ala.u0,d:Dn},{u0:N.ala.u0,u1:L,d:N.ala.vIn}];
+  else { const fc=cells.filter(c=>c.fachada); let x=0; fc.sort((a,b)=>a.u-b.u).forEach(c=>{ if(c.u>x+0.01) perfil.push({u0:x,u1:c.u,d:Dn}); perfil.push({u0:c.u,u1:c.u+c.w,d:Dt,fach:true}); x=c.u+c.w }); if(x<L-0.01) perfil.push({u0:x,u1:L,d:Dn}) }
+  cells.forEach(c=>{ if(c.fachada) c.h=Dt-c.v });
+  const sobras=[], absorve = extra>0.05 && (!nb || !nb.length || extra<=1.2);
+  if(absorve){ // faixa rasa ou sem unidades vizinhas: o fundo do núcleo vai até a fachada (os ambientes do fundo ficam mais fundos)
+    perfil.forEach(t=>{ if(t.fach) return; cells.forEach(c=>{ if(Math.abs(c.v+c.h-t.d)<0.01 && c.u>=t.u0-0.01 && c.u+c.w<=t.u1+0.01) c.h=Dt-c.v }); t.d=Dt }) }
+  else if(extra>0.05 || N.ala){
+    const livres=perfil.filter(t=>t.d<Dt-0.05);
+    livres.forEach(t=>{ const ok=[]; if(t.u0<0.05 && nb && nb.includes("start")) ok.push("start"); if(t.u1>L-0.05 && nb && nb.includes("end")) ok.push("end");
+      const pc=(side,u0,u1)=>sobras.push({side, u0, u1, vIn:t.d, vOut:Dt, poly:R(u0,t.d,u1-u0,Dt-t.d)});
+      if(ok.length===2){ const sp=Math.min(t.u1-1.0, Math.max(t.u0+1.0, N.split!=null? N.split : (t.u0+t.u1)/2)); pc("start",t.u0,sp); pc("end",sp,t.u1) }
+      else if(ok.length===1) pc(ok[0],t.u0,t.u1);
+      else { cells.push({k:"tec", nome:"reserva técnica", u:t.u0, v:t.d, w:t.u1-t.u0, h:Dt-t.d, semAcesso:true}); t.d=Dt } });
+  }
+  // contorno real: frente reta + fundo pelo perfil (sem as sobras que vão para as unidades)
+  const fundo=[]; perfil.slice().reverse().forEach(t=>fundo.push([t.u1,t.d],[t.u0,t.d]));
+  const pts=[[0,0],[L,0],...fundo].filter((q,i,a)=>i===0||Math.hypot(q[0]-a[i-1][0],q[1]-a[i-1][1])>1e-6);
+  const limpo=pts.filter((q,i)=>{ const a=pts[(i-1+pts.length)%pts.length], b=pts[(i+1)%pts.length]; return Math.abs((q[0]-a[0])*(b[1]-a[1])-(q[1]-a[1])*(b[0]-a[0]))>1e-6 });
+  let outline=limpo.map(([u,v])=>P(u,v)); if(G.sArea(outline)*G.sArea(R(0,0,L,Dt))<0) outline=outline.reverse();
+  { const key=q=>Math.round(G.dot(q,ux)*100)*1e6+Math.round(G.dot(q,vy)*100); let k=0; outline.forEach((q,i)=>{ if(key(q)<key(outline[k])) k=i }); outline=[...outline.slice(k),...outline.slice(0,k)] }   // mesma ordem com a escada de um lado ou do outro
+  const W=c=>R(c.u,c.v,c.w,c.h), WP=q=>P(q[0],q[1]);
+  const out=cells.map(c=>({...c, poly:W(c), row: c.v<0.01? "f" : "b"}));
+  const doors=N.doors.map(d=>{ const a=WP(d.a), b=WP(d.b), n0=WP([d.a[0]+d.n[0], d.a[1]+d.n[1]]), nn=[n0[0]-a[0], n0[1]-a[1]], k=Math.hypot(nn[0],nn[1])||1;
+    return {a, b, sw:d.sw, dir:[nn[0]/k, nn[1]/k], tipo:d.tipo==="vao"? "elev" : d.tipo, larg:d.larg} });
+  const lines=nucleoDesenho({...N, cells}).map(x=> x.l? Object.assign([WP(x.l[0]),WP(x.l[1])], {c:x.c}) : x.arrow? {arrow:[WP(x.arrow[0]),WP(x.arrow[1])]} : x.dot? {dot:WP(x.dot)} : {txt:x.txt, p:WP(x.p), s:x.s, bg:x.bg});
+  const lobby=R(0,-2.0,L,2.0);
+  // contrato (docs/COMUNS.md §0): portas na face do núcleo, hall dos elevadores, prumadas
+  const fora=(()=>{ const a=P(0,0), b=P(0,-1); return [b[0]-a[0], b[1]-a[1]] })();
+  const portas=N.doors.filter(d=>["elev","escada","servico","vao"].includes(d.tipo) && Math.abs(d.a[1])<0.01 && Math.abs(d.b[1])<0.01)
+    .map(d=>({p:WP([(d.a[0]+d.b[0])/2,0]), dir:fora, larg:d.larg, tipo:d.tipo==="vao"||d.tipo==="elev"? "elev" : d.tipo}));
+  const els=cells.filter(c=>c.k==="elev"), hallU=cells.find(c=>c.k==="hall");
+  const hallElevTipo = hallU? W(hallU) : els.length? R(Math.min(...els.map(c=>c.u)), -(+o.corr||1.6), Math.max(...els.map(c=>c.u+c.w))-Math.min(...els.map(c=>c.u)), +o.corr||1.6) : null;
+  const PRU={hidraulica:"hidraulica", eletrica:"eletrica", gas:"gas", entrada:"duto-entrada", saida:"duto-saida", press:"pressurizacao", vent:"ventilacao"};
+  const prumadas=cells.filter(c=>["shaft","duto","elev","emerg","esc"].includes(c.k)).map(c=>({k: c.k==="elev"? "elevador" : c.k==="emerg"? "emergencia" : c.k==="esc"? "escada" : PRU[c.sub]||c.sub, nome:c.nome, poly:W(c)}));
+  const fach = cells.some(c=>(c.k==="esc"||c.k==="balc") && c.v+c.h>=Dt-0.01) && (o.fachada || o.escTipo==="pf_balcao" || !!o._fachada);
+  const p=N.p, nucleo={partido:N.partido, partidoNome:N.partidoNome, nota:null, problemas:[], portas, hallElev:lobby, hallElevTipo, frente:[P(0,0),P(L,0)], prumadas, fachada:fach,
+    dim:{L, D:Math.max(...perfil.map(t=>t.d), Dn), F, escD:p.escD, escLarg:p.larg, degrau:{n:p.deg.n, e:p.deg.e, p:p.deg.p}, patamar:null, elev:{n:els.length, cap:p.cap, caixa:p.EV.caixa, cabine:p.EV.cabine}, ant:null},
+    local:{partido:N.partido, L, D:Math.max(...cells.map(c=>c.v+c.h)), F, ala:N.ala, perfil:perfil.map(t=>({u0:t.u0,u1:t.u1,d:t.d,fach:!!t.fach})), cells, doors:N.doors, p}};
+  const esc=cells.find(c=>c.k==="esc"); if(esc){ const comp=(esc.ori==="v"? esc.h : esc.w)-NUC_R.paredeCF; nucleo.dim.patamar=Math.round((comp-p.deg.run)/2*100)/100 }
+  const ant=cells.find(c=>c.k==="ant"); if(ant) nucleo.dim.ant=[Math.round((ant.w-NUC_R.paredeCF)*100)/100, Math.round((ant.h-NUC_R.paredeCF)*100)/100];
+  NUC_INFO.set(lobby, nucleo);
+  // poly = projeção até a fachada (contorno quando as sobras não vão para as unidades) · outline = núcleo real
+  return {L, depth:Dt, cells:out, doors, lines, poly:R(0,0,L,Dt), outline, lobby, sobras, mir, nucleo};
 }
 // recorta um canto retangular de Q (convexo): corner = vértice do canto (u,v no referencial ux/vy), inner = canto oposto do recorte
 function notchPoly(Q, ux, vy, corner, inner){
@@ -10615,39 +11014,39 @@ function tipoLayout(plate, units, o){
   const ux=G.longestDir(plate), vy=[-ux[1],ux[0]];
   const [u0,u1]=G.extent(plate,ux), [v0,v1]=G.extent(plate,vy), D=v1-v0, Lu=u1-u0;
   const corr=o.corr, fachada = o.fachada || o.escTipo==="pf_balcao";
-  const seq=coreSeq(o); const est=Math.max(seq.front.reduce((a,c)=>a+c.w,0), seq.back.reduce((a,c)=>a+c.w,0)) + (seq.g2? Math.max(seq.g2.fr.reduce((a,c)=>a+c.w,0),seq.g2.bk.reduce((a,c)=>a+c.w,0)) : 0);
-  const coreLen=Math.min(Lu*0.8, est);
+  const DN=nucleoMonta(o), NF=DN.F, NB=DN.D-DN.F;   // núcleo (src/calc/nucleo.js): comprimento e profundidade do partido
+  const coreLen=Math.min(Lu*0.8, DN.L);
   let dbl = D >= 2*o.profMin + corr; if(o.planta==="central") dbl=true; if(o.planta==="lateral") dbl=false;
-  const reg=[]; let corridor, hallEnds=[], cv0, cv1, vEdge, sgn, depthB=CORE_B;
+  const reg=[]; let corridor, hallEnds=[], vEdge, sgn, depthB=NB;
   const sub=(va,vb,ua,ub)=>{ const b=G.band(plate,vy,va,vb); return (ua===undefined||!b.length)? b : G.band(b,ux,ua,ub) };
-  const pos=Math.min(1,Math.max(0,o.pos??0.5)), cu0=u0+0.01+pos*Math.max(0,Lu-coreLen-0.02), cu1=cu0+Math.max(coreLen, coreBuild([1,0],[0,1],0,0,1,CORE_B,o).L); // ponta real do núcleo (a passagem de serviço alonga a frente): as unidades começam depois dela
+  const pos=Math.min(1,Math.max(0,o.pos??0.5)), cu0=u0+0.01+pos*Math.max(0,Lu-coreLen-0.02), cu1=cu0+DN.L; // ponta real do núcleo: as unidades começam depois dela
   if(dbl){
     const vc=(v0+v1)/2, c0=vc-corr/2, c1=vc+corr/2;
     corridor = sub(c0,c1,u0+0.01,u1-0.01);
-    if(o.lado==="A"){ vEdge=c1; sgn=1; if(fachada) depthB=Math.max(CORE_B, v1-c1-CORE_F); cv0=c1; cv1=c1+CORE_F+depthB; reg.push({p:sub(v0,c0),fac:"min"}); reg.push({p:sub(c1,v1,u0,cu0),fac:"max"}); reg.push({p:sub(c1,v1,cu1,u1),fac:"max"}) }
-    else { vEdge=c0; sgn=-1; if(fachada) depthB=Math.max(CORE_B, c0-v0-CORE_F); cv0=c0-CORE_F-depthB; cv1=c0; reg.push({p:sub(c1,v1),fac:"max"}); reg.push({p:sub(v0,c0,u0,cu0),fac:"min"}); reg.push({p:sub(v0,c0,cu1,u1),fac:"min"}) }
+    if(o.lado==="A"){ vEdge=c1; sgn=1; if(fachada) depthB=Math.max(NB, v1-c1-NF); reg.push({p:sub(v0,c0),fac:"min"}); reg.push({p:sub(c1,v1,u0,cu0),fac:"max"}); reg.push({p:sub(c1,v1,cu1,u1),fac:"max"}) }
+    else { vEdge=c0; sgn=-1; if(fachada) depthB=Math.max(NB, c0-v0-NF); reg.push({p:sub(c1,v1),fac:"max"}); reg.push({p:sub(v0,c0,u0,cu0),fac:"min"}); reg.push({p:sub(v0,c0,cu1,u1),fac:"min"}) }
   } else {
     const side = o.lado==="A";
     corridor = side? sub(v1-corr,v1,u0,u1) : sub(v0,v0+corr,u0,u1);
-    vEdge = side? v1-corr : v0+corr; sgn = side? -1 : 1; depthB=Math.max(CORE_B, D-corr-CORE_F);
-    cv0=v0; cv1=v1;
+    vEdge = side? v1-corr : v0+corr; sgn = side? -1 : 1; depthB=Math.max(NB, D-corr-NF);
     const uv0 = side? v0 : v0+corr, uv1 = side? v1-corr : v1;
     reg.push({p:sub(uv0,uv1,u0,cu0),fac:side?"min":"max"}); reg.push({p:sub(uv0,uv1,cu1,u1),fac:side?"min":"max"});
   }
   // núcleo na fachada: a escada fica com a profundidade do lance e a sobra vai para a unidade ao lado (se houver unidade desse lado)
   const sideReg=w=>reg.find(r=>{ if(!r.p.length || G.area(r.p)<=4) return false; const [a,b]=G.extent(r.p,ux); return w==="esq"? Math.abs(b-cu0)<0.05 && a<cu0-0.5 : Math.abs(a-cu1)<0.05 && b>cu1+0.5 });
   const mirC=o.escada==="D", wSide=ls=> (ls==="start")!==mirC ? "esq" : "dir";
-  const oc = (depthB-CORE_B>=1.0 && o.escProf!==false)? {...o, _escD:CORE_B, _notch:["start","end"].filter(ls=>sideReg(wSide(ls)))} : o;
+  const oc = (o.escProf!==false)? {...o, _notch:["start","end"].filter(ls=>sideReg(wSide(ls)))} : o;
   const CB=coreBuild(ux,vy,cu0,vEdge,sgn,depthB,oc);
-  const core=CB.poly, sobraA=[], reserva=[];
+  const sobraA=[], reserva=[], falhas=[];
   (CB.sobras||[]).forEach(sb=>{ const w=wSide(sb.side), r=sideReg(w); if(!r) return;
     const wu0= mirC? cu0+CB.L-sb.u1 : cu0+sb.u0, wu1= mirC? cu0+CB.L-sb.u0 : cu0+sb.u1, vIn=vEdge+sgn*sb.vIn;
     const [ra,rb]=G.extent(r.p,ux), [rva,rvb]=G.extent(r.p,vy);
     const Q=sub(rva,rvb, w==="esq"? ra : wu0, w==="esq"? wu1 : rb);
     const np=notchPoly(Q, ux, vy, [w==="esq"? wu1 : wu0, vEdge], [w==="esq"? wu0 : wu1, vIn]);
-    if(np){ sobraA.push(G.area(np)-G.area(r.p)); r.p=np; reserva.push(sb.poly) } });
-  const coreOut = reserva.length===(CB.sobras||[]).length ? CB.outline : core;
-  const cParts=CB.cells.map(c=>({nome:c.nome,kind:c.k,poly:c.poly,area:G.area(c.poly)}));
+    if(np){ sobraA.push(G.area(np)-G.area(r.p)); r.p=np; reserva.push(sb.poly) } else falhas.push(sb.poly) });
+  (CB.sobras||[]).forEach(sb=>{ if(!reserva.includes(sb.poly) && !falhas.includes(sb.poly)) falhas.push(sb.poly) });
+  const coreOut = falhas.length ? CB.poly : CB.outline, core=coreOut;   // o núcleo real (compacto) também nas garagens e no térreo
+  const cParts=CB.cells.map(c=>({nome:c.nome,kind:c.k,poly:c.poly,area:G.area(c.poly)})).concat(falhas.map(p=>({nome:"reserva técnica",kind:"tec",poly:p,area:G.area(p)})));
   const R=reg.filter(r=>r.p.length && G.area(r.p)>4).map(r=>({...r, A:G.area(r.p), list:[], used:0}));
   const us=units.map((u,i)=>({...u,i})).sort((a,b)=>b.alvo-a.alvo);
   const totalAlvo=us.reduce((s,u)=>s+u.alvo,0), totalA=R.reduce((s,r)=>s+r.A,0)||1;
@@ -10672,7 +11071,7 @@ function tipoLayout(plate, units, o){
       prev=cut; out.push(un) });
   });
   const kinds={}; cParts.forEach(c=>kinds[c.kind]=(kinds[c.kind]||0)+c.area);
-  return {ux,vy,units:out,rep:rep? {custo:rep.custo, antigo:rep.antigo} : null,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:reserva,escSobra:sobraA.reduce((s,a)=>s+a,0)};
+  return {ux,vy,units:out,rep:rep? {custo:rep.custo, antigo:rep.antigo} : null,core,lobby:CB.lobby,coreParts:cParts,coreDoors:CB.doors,coreLines:CB.lines,corridor,dbl,hallEnds,coreA:G.area(coreOut),coreKinds:kinds,fachada,coreOut,coreReserva:[],coreFundo:reserva,escSobra:0,nucleo:CB.nucleo};
 }
 
 
@@ -11509,7 +11908,7 @@ function tipoLayouts(st, m, opt){
     const list=[]; P.mix.forEach(u=>{ for(let q=0;q<u.qtd;q++) list.push({nome:u.nome, alvo:u.area*t.r, sac:+u.sac||0}) });
     const nAuto=(t.units>60||t.H>45)?3:(t.H>12?2:1);
     return (typeof alasTipoLayout==="function" ? alasTipoLayout : tipoLayout)(t.plate, list, {corr:E.corrTipo, profMin:E.profMin, nElev: +E.elevadores||nAuto, pos:E.nucleoPos, lado:E.nucleoLado, escada:E.escadaLado, planta:E.tipoPlanta,
-      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st, _rap:!!(opt && opt.quick), _areaFixa:!!(t.desenhada || m.torOcupa)}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
+      escTipo:E.escTipo, nEsc:E.nEsc, emerg:E.emerg, fachada:E.fachada, sacTipo:P.sacTipo, sacProf:P.sacProf, _st:st, _pav:t.pav, _H:t.H, _nElevAuto:!(+E.elevadores), _rap:!!(opt && opt.quick), _areaFixa:!!(t.desenhada || m.torOcupa)}, t, st);   // C3: planta em L/U/T/H/pátio → layout por ala
   });
   if(typeof blcLayFaixas==="function") blcLayFaixas(st, m);   // C2: blocos fora da referência → mesmo núcleo, unidades por área (f.lay)
 }
@@ -11524,7 +11923,7 @@ function compute(st, opt={}){
   m.T.forEach((t,i)=>{ const l=m.tipo[i]; if(!l) return; (t.faixas.some(f=>f.lay)? t.faixas.map(f=>[f.lay||l, f.nTipo]) : [[l, t.tipoFloors]]).forEach(([ly,fl])=>ly.units.forEach(u=>{ if(u.sac){ m.sacA+=u.sac.area*fl; if(u.sac.tipo==="balanco") m.sacBal+=u.sac.area*fl } })) });
   m.coreSets = m.tipo.map((l,i)=>l && l.core && l.core.length? {i, core:l.core, lobby:l.lobby, lay:l} : null).filter(Boolean);
   m.cores = m.coreSets.map(c=>c.core); m.lobbies = m.coreSets.map(c=>c.lobby).filter(p=>p&&p.length);
-  m.obst = [...m.cores, ...m.lobbies, ...m.coreSets.flatMap(c=>c.lay.coreExtra||[])];   // C3: a segunda escada desce até o térreo
+  m.obst = [...m.cores, ...m.lobbies, ...m.coreSets.flatMap(c=>c.lay.coreExtra||[]), ...m.coreSets.flatMap(c=>c.lay.coreFundo||[])];   // C3: a segunda escada desce até o térreo
   // térreo definitivo, com o hall chegando aos núcleos
   m.ter = terreoZones(st, m, m.lz); areasFin(st, m);
   if(m.sacBal){ m.constr+=m.sacBal; m.privRes+=m.sacBal; m.priv+=m.sacBal }
@@ -14789,7 +15188,7 @@ const blcFora = (p, c) => !p.length || !c || c.length<3 ? 0 : Math.max(0, G.area
 /* fração de um polígono (convexo, ex.: o núcleo) que cai dentro da planta — amostras numa grade 6 × 6; a planta pode ser L, U ou ter pátio */
 function blcDentro(p, plate){
   const ux=G.longestDir(p), vy=[-ux[1],ux[0]], [u0,u1]=G.extent(p,ux), [v0,v1]=G.extent(p,vy); let n=0, d=0;
-  for(let a=0;a<6;a++) for(let b=0;b<6;b++){ const u=u0+(a+0.5)/6*(u1-u0), v=v0+(b+0.5)/6*(v1-v0), q=[ux[0]*u+vy[0]*v, ux[1]*u+vy[1]*v]; if(!G.pip(q,p)) continue; n++; if(G.pip(q,plate)) d++ }
+  for(let a=0;a<12;a++) for(let b=0;b<12;b++){ const u=u0+(a+0.5)/12*(u1-u0), v=v0+(b+0.5)/12*(v1-v0), q=[ux[0]*u+vy[0]*v, ux[1]*u+vy[1]*v]; if(!G.pip(q,p)) continue; n++; if(G.pip(q,plate)) d++ }
   return n ? d/n : 1;
 }
 const blcNome = i => `torre ${i+1}`;
@@ -16646,6 +17045,11 @@ function estrPontosTorre(t, lay, sec, vaoMax){
     add(a); for(let k=1;k<n;k++) add([a[0]+(b[0]-a[0])*k/n, a[1]+(b[1]-a[1])*k/n]) }));
   const ux=lay.ux, vy=lay.vy, h=sec/2, sq=c=>{ const u=G.dot(c,ux), v=G.dot(c,vy); return G.rect(ux,vy,u-h,v-h,sec,sec) };
   const inside=c=>sq(c).every(q=>G.pip(q,t.plate));
+  // pilares do núcleo ficam dentro das paredes dele (o núcleo é compacto: o fundo não chega à fachada e, nas garagens, o pilar
+  // centrado no canto ficaria meio dentro da vaga de trás)
+  if(lay.core && lay.core.length>2){ const [ku0,ku1]=G.extent(lay.core,ux), [kv0,kv1]=G.extent(lay.core,vy), cl=(x,a,b)=>Math.min(Math.max(x,a),b);
+    pts.forEach((p,i)=>{ const u=G.dot(p,ux), v=G.dot(p,vy); if(u<ku0-0.01||u>ku1+0.01||v<kv0-0.01||v>kv1+0.01) return; const uu=cl(u,ku0+h,ku1-h), vv=cl(v,kv0+h,kv1-h);
+      pts[i]=[ux[0]*uu+vy[0]*vv, ux[1]*uu+vy[1]*vv] }) }
   const out=[];
   pts.forEach(p=>{ if(inside(p)){ out.push(p); return }
     let best=null; busca: for(const s of [h, sec, 1.5*sec]) for(const [a,b] of [[1,1],[1,-1],[-1,1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]]){ const c=[p[0]+(ux[0]*a+vy[0]*b)*s, p[1]+(ux[1]*a+vy[1]*b)*s]; if(inside(c)){ best=c; break busca } }
@@ -17841,6 +18245,441 @@ function normasAvaliar(st, m){
   return v;
 }
 function normasResumo(itens){ const c={ok:0,warn:0,bad:0,na:0}; (itens||[]).forEach(x=>c[x.status]=(c[x.status]||0)+1); return c }
+
+/* ================= núcleo de circulação vertical (docs/COMUNS.md §1) =================
+   Mesmo método das plantas de apartamento (docs/APTOS.md): regras de projeto reais + catálogo de partidos de mercado +
+   validação com nota e motivo + desenho técnico fiel. Puro (sem DOM): roda no Worker e nos testes.
+
+   Referencial local do núcleo: u ao longo do corredor (0 → L), v da frente (0, face do corredor/hall) para o fundo.
+   Duas fileiras com as MESMAS linhas de eixo (nada de serrilhado): frente (F = 2,20 m: antecâmara, elevadores, serviço —
+   tudo abre para o corredor) e fundo (escada de lances paralelos ao corredor, dutos, lixo/DML). A escada termina numa
+   linha de eixo da frente; a sobra vira patamar (área de resgate), nunca "dente".
+   Medidas = referência genérica (NBR 9077, IN 09 CBMSC, NBR 9050, NBR 16858/NM 207) — conferir na lei.
+
+   API: nucleoCatalogo() · nucleoParams(o) · nucleoMonta(o) (modelo local) · nucleoValida(nuc, ctx) → {nota, problemas}
+        nucleoElevNec(ctx) (tráfego simplificado) · coreBuild (src/layout.js) chama nucleoMonta e leva ao mundo. */
+
+extendDEF("nucleo", { partido: "auto", cap: 8 });
+
+const NUC_R = {
+  parede: 0.15, paredeCF: 0.20,          // alvenaria comum · parede corta-fogo/estrutural (eixo a eixo, as células já a contêm)
+  F: 2.20,                               // fileira da frente (eixo): caixa de elevador 1,85 + paredes; antecâmara 2,00 livre
+  escLarg: 1.20, bomba: 0.10,            // largura útil mínima do lance · vão entre lances
+  espelho: [0.16, 0.18], piso: [0.28, 0.32], blondel: [0.63, 0.65],
+  patamarMax: 2.40,                      // patamar mais longo que isso = área sobrando
+  antProf: 1.80, antLarg: 1.20,          // antecâmara: profundidade e largura livres mínimas
+  porta: 0.90, portaServ: 0.80, portaShaft: 0.60,
+  hallElev: 1.50,                        // livre diante das portas dos elevadores (giro de cadeira de rodas)
+  dutoA: 0.70, dutoLado: 0.60,           // seção mínima de cada duto (entrada e saída de ar)
+  resgate: [0.80, 1.20],                 // área de resgate (cadeira de rodas) no patamar ou na antecâmara
+  areaMaxPct: 0.25,                      // núcleo acima de 25% da laje do tipo = pesado
+  fonte: "NBR 9077 · IN 09 CBMSC · NBR 9050 · NBR 16858 (referência — conferir na lei)",
+};
+/* caixa (interna) e cabine por capacidade — elevadores sem casa de máquinas (MRL); ordem de grandeza de catálogo */
+const NUC_ELEV = {
+  6:  { cap:6,  kg:450,  caixa:[1.60,1.70], cabine:[1.00,1.25], porta:0.80 },
+  8:  { cap:8,  kg:600,  caixa:[1.80,1.85], cabine:[1.10,1.40], porta:0.80 },
+  10: { cap:10, kg:750,  caixa:[1.90,2.05], cabine:[1.20,1.50], porta:0.90 },
+  13: { cap:13, kg:1000, caixa:[2.10,2.30], cabine:[1.40,1.60], porta:0.90 },
+};
+const NUC_EMERG = { cap:13, kg:1000, caixa:[2.00,2.50], cabine:[1.10,2.10], porta:1.10 };   // maca: cabine ≥ 1,10 × 2,10
+
+const NUC_CAT = [
+  { id:"linear", nome:"Linear com hall de serviço", desc:"Antecâmara e elevadores alinhados no corredor; escada atrás deles; hall de serviço com lixo/DML e shafts na ponta.", quando:"2 elevadores (o mais comum)", fixavel:true },
+  { id:"linear-curto", nome:"Linear compacto", desc:"Antecâmara, elevador, DML e shafts abrindo no corredor; escada atrás.", quando:"1 elevador", fixavel:true },
+  { id:"u", nome:"Elevadores frente a frente", desc:"Hall dos elevadores perpendicular ao corredor, elevadores dos dois lados; escada no sentido da profundidade.", quando:"3 ou mais elevadores, núcleo central", fixavel:true },
+  { id:"l", nome:"Em L", desc:"Escada no sentido da profundidade e ala rasa de elevadores; a unidade vizinha contorna os elevadores.", quando:"laje rasa, núcleo menor", fixavel:true },
+  { id:"pressurizada", nome:"Escada pressurizada", desc:"Sem dutos de ventilação: duto de insuflamento na escada e casa de máquinas no térreo ou na cobertura.", quando:"escada PFP" },
+  { id:"balcao", nome:"Escada com balcão aberto", desc:"Acesso à escada por um balcão aberto na fachada (dispensa dutos).", quando:"escada PF com balcão" },
+  { id:"duas", nome:"Duas escadas", desc:"Uma escada em cada ponta do núcleo, cada uma com a sua antecâmara.", quando:"2 escadas (lâmina longa ou edifício alto)" },
+  { id:"emergencia", nome:"Com elevador de emergência", desc:"Elevador de emergência abrindo na antecâmara da escada; os demais no corredor.", quando:"acima de 80 m (ou quando ligado)" },
+  { id:"baixo", nome:"Baixo (escada protegida e 1 elevador)", desc:"Hall da escada, um elevador e shafts; sem dutos.", quando:"até 4 pavimentos" },
+  { id:"escada2", nome:"Escada isolada", desc:"Segunda escada com a sua antecâmara (núcleo de alas).", quando:"distância a percorrer longa" },
+];
+function nucleoCatalogo(){ return NUC_CAT.map(c=>({...c})) }
+function nucleoNomePartido(id){ const c=NUC_CAT.find(c=>c.id===id); return c? c.nome : id }
+
+/* ---------- parâmetros (degraus pela altura de piso a piso, largura pela população) ---------- */
+function nucleoDegraus(pe){
+  const h=Math.max(2.4, +pe||3), n=Math.ceil(h/NUC_R.espelho[1]-1e-9), e=h/n;
+  const p=Math.round(Math.min(NUC_R.piso[1], Math.max(NUC_R.piso[0], 0.635-2*e))*100)/100, a=Math.ceil(n/2);
+  return {n, e, p, a, run:(a-1)*p};
+}
+function nucleoParams(o={}){
+  const st=o._st||null, NU=(st&&st.nucleo)||{}, pe=(st&&st.produto&&st.produto.pe)||3;
+  const pop = st && typeof normaPopulacao==="function" ? normaPopulacao(st.produto.mix) : 0;
+  const lNorma = pop && typeof normaLarguras==="function" ? normaLarguras(pop).escada : 0;
+  const larg=Math.max(NUC_R.escLarg, Math.ceil(lNorma*20-1e-9)/20), deg=nucleoDegraus(pe);
+  const cap=NUC_ELEV[NU.cap]? +NU.cap : 8, EV=NUC_ELEV[cap];
+  const F=Math.max(NUC_R.F, EV.caixa[1]+NUC_R.paredeCF+0.15), escD=Math.round((2*larg+NUC_R.bomba+NUC_R.paredeCF)*100)/100;
+  const Wel=Math.round((EV.caixa[0]+NUC_R.paredeCF)*100)/100;
+  const LsMin=deg.run+2*larg+NUC_R.paredeCF;
+  let nE=Math.max(0, o.nElev==null? 2 : +o.nElev);
+  if(o._nElevAuto && o._pav) nE=Math.max(1, nucleoElevNec({pav:o._pav, H:o._H, pop, cap}).n);   // automático: pelo tráfego (população × pavimentos)
+  return { t:o.escTipo||"pf_duto", nE, nEsc:o.nEsc===2? 2 : 1, emerg:!!o.emerg, pe, pop, larg, deg, cap, EV,
+    F, escD, Wel, LsMin, corr:+o.corr||1.6, fixo:NU.partido||"auto" };
+}
+function nucleoPartidoDe(o, p){
+  if(o._seq) return "escada2";
+  if(p.t==="pf_balcao") return "balcao";
+  if(p.nEsc===2) return "duas";
+  if(p.emerg) return "emergencia";
+  if(["linear","linear-curto","u","l"].includes(p.fixo)) return p.fixo==="linear" && p.t==="pf_press" ? "pressurizada" : p.fixo;
+  if(p.t==="pf_press") return p.nE>=3? "u" : p.nE<=1? "linear-curto" : "pressurizada";
+  if(p.t==="ep" && p.nE<=1) return "baixo";
+  if(p.nE>=3) return "u";
+  if(p.nE<=1) return "linear-curto";
+  return "linear";
+}
+
+/* ---------- montagem (modelo local) ---------- */
+function nucleoMonta(o={}){
+  const p=nucleoParams(o), id=nucleoPartidoDe(o, p);
+  const B={ id, p, cells:[], doors:[], L:0, D:p.F+p.escD, F:p.F, split:null };
+  const r2=x=>Math.round(x*1000)/1000;
+  B.cell=(k,nome,u,v,w,h,x={})=>{ const c={k,nome,u:r2(u),v:r2(v),w:r2(w),h:r2(h),...x}; B.cells.push(c); return c };
+  // porta: parede ao longo de u (eixo "u", em v=const) ou ao longo de v (eixo "v", em u=const); abre para o lado `para` (+1/−1 no eixo normal)
+  B.door=(eixo,pos,a0,w,para,tipo,x={})=>{ const a= eixo==="u"? [a0,pos] : [pos,a0], b= eixo==="u"? [a0+w,pos] : [pos,a0+w];
+    const n= eixo==="u"? [0,para] : [para,0]; const d={a, b, n, larg:w, tipo, sw: tipo==="elev"||tipo==="emerg"||tipo==="vao"? 0 : 1, ...x};
+    if(x.dobra==="b"){ d.a=b; d.b=a } B.doors.push(d); return d };
+  (NUC_MONTA[id]||NUC_MONTA.linear)(B, p, o, false);
+  B.L=r2(Math.max(...B.cells.map(c=>c.u+c.w))); B.D=r2(Math.max(...B.cells.filter(c=>!c.fundo).map(c=>c.v+c.h)));
+  return {partido:id, partidoNome:nucleoNomePartido(id), L:B.L, D:B.D, F:p.F, escD:p.escD, split:B.split, ala:B.ala||null,
+    cells:B.cells, doors:B.doors, p:{t:p.t, nE:p.nE, nEsc:p.nEsc, emerg:p.emerg, larg:p.larg, deg:p.deg, cap:p.cap, EV:p.EV, F:p.F, escD:p.escD, LsMin:p.LsMin, corr:p.corr, pe:p.pe, pop:p.pop, fixo:p.fixo}};
+}
+
+/* peças comuns */
+function nucPre(B, p, u0, v0, h){   // dutos de ventilação da antecâmara (PF) ou duto de pressurização (PFP), atrás da antecâmara
+  if(p.t==="pf_duto"){ const w=0.8; B.cell("duto","duto entrada",u0,v0,w,h,{sub:"entrada"}); B.cell("duto","duto saída",u0+w,v0,w,h,{sub:"saida"}); return 2*w }
+  if(p.t==="pf_press"){ B.cell("duto","pressurização",u0,v0,1.0,h,{sub:"press"}); return 1.0 }
+  if(p.t==="ep"){ B.cell("duto","duto de ventilação",u0,v0,0.8,h,{sub:"vent"}); return 0.8 }   // EP: ventilação permanente da escada (sem depender da fachada)
+  return 0;
+}
+const nucPreW = p => p.t==="pf_duto"? 1.6 : p.t==="pf_press"? 1.0 : p.t==="ep"? 0.8 : 0;
+function nucAntNome(p){ return p.t==="ep"? "hall da escada" : p.t==="pf_press"? "antecâmara" : "antecâmara" }
+/* escada de lances paralelos a u (fundo), patamar do pavimento na ponta `ent` ("lo"|"hi") */
+function nucEscU(B, p, u0, v0, w, ent, nome="escada"){ return B.cell("esc", nome, u0, v0, w, p.escD, {ori:"u", ent}) }
+function nucEscV(B, p, u0, v0, h, ent, nome="escada"){ return B.cell("esc", nome, u0, v0, p.escD, h, {ori:"v", ent}) }
+function nucElevs(B, p, u0, n){ let u=u0; for(let i=0;i<n;i++){ B.cell("elev","elevador",u,0,p.Wel,p.F,{porta:"f", cap:p.cap}); B.door("u",0,u+(p.Wel-p.EV.porta)/2,p.EV.porta,-1,"elev"); u+=p.Wel } return u }
+/* shafts por prumada, lado a lado em u, com porta de visita na frente (v=0) ou na lateral */
+function nucShaftsU(B, p, u0, v0, h, lista, portaV){ const w=0.6; lista.forEach((s,i)=>{ B.cell("shaft",s.nome,u0+i*w,v0,w,h,{sub:s.k}); if(portaV!=null) B.door("u",portaV,u0+i*w+0.05,0.5,portaV>v0? 1 : -1,"shaft") }); return lista.length*w }
+const NUC_PRUMADAS = [{k:"hidraulica", nome:"shaft hidráulico"}, {k:"eletrica", nome:"shaft elétrico e telecom"}, {k:"gas", nome:"shaft de gás"}];
+
+const NUC_MONTA = {
+  /* frente: [antecâmara][elevadores][hall de serviço + shafts] · fundo: [dutos][escada][lixo/DML] */
+  linear(B, p){
+    const F=p.F, pre0 = nucPreW(p);
+    let Wa=Math.max(p.t==="ep"? 1.8 : 2.4, pre0+1.2); const nE=Math.max(1,p.nE);
+    let bEnd=Wa+nE*p.Wel; if(bEnd-pre0 < p.LsMin) { Wa+=p.LsMin-(bEnd-pre0); bEnd=Wa+nE*p.Wel }
+    Wa=Math.round(Wa*20)/20; bEnd=Wa+nE*p.Wel;
+    B.cell("ant", nucAntNome(p), 0, 0, Wa, F, {resgate:true});
+    B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");                    // do corredor para a antecâmara (abre no sentido da fuga)
+    nucElevs(B, p, Wa, nE);
+    const Wh=1.4, Ws=0.7, uh=bEnd;
+    B.cell("hserv","hall de serviço",uh,0,Wh,F); B.door("u",0,uh+0.3,NUC_R.portaServ,1,"servico");
+    NUC_PRUMADAS.forEach((s,i)=>{ const h=F/3; B.cell("shaft",s.nome,uh+Wh,i*h,Ws,h,{sub:s.k}); B.door("v",uh+Wh,i*h+0.07,h-0.14,-1,"shaft") });
+    const pre=nucPre(B, p, 0, F, p.escD);
+    nucEscU(B, p, pre, F, bEnd-pre, "lo");
+    B.door("u",F,pre+0.15,NUC_R.porta,1,"escada",{dobra:"b"});       // antecâmara → escada (abre para dentro da escada)
+    B.cell("lixo","lixo / DML",uh,F,Wh+Ws,p.escD); B.door("u",F,uh+0.3,NUC_R.portaServ,1,"servico");
+    B.split=bEnd;
+  },
+  pressurizada(B, p){ NUC_MONTA.linear(B, p) },
+  /* frente: [antecâmara][elevador(es)][DML][shafts] · fundo: [dutos][escada] */
+  "linear-curto"(B, p){
+    const F=p.F, pre0 = nucPreW(p);
+    let Wa=Math.max(p.t==="ep"? 1.8 : 2.4, pre0+1.2); const nE=p.nE;
+    const Wd=1.3, Ws=1.2; let L=Wa+nE*p.Wel+Wd+Ws;
+    if(L-pre0 < p.LsMin){ Wa+=p.LsMin-(L-pre0); Wa=Math.round(Wa*20+0.499)/20; L=Wa+nE*p.Wel+Wd+Ws }
+    B.cell("ant", nucAntNome(p), 0, 0, Wa, F, {resgate:true}); B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");
+    let u=nucElevs(B, p, Wa, nE);
+    B.cell("lixo","DML",u,0,Wd,F); B.door("u",0,u+0.25,NUC_R.portaServ,1,"servico"); u+=Wd;
+    nucShaftsU(B, p, u, 0, F, NUC_PRUMADAS.slice(0,2), 0);
+    const pre=nucPre(B, p, 0, F, p.escD);
+    nucEscU(B, p, pre, F, L-pre, "lo"); B.door("u",F,pre+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    B.split=Wa;
+  },
+  /* até 4 pavimentos: [hall da escada][elevador][shafts] · fundo: [escada] */
+  baixo(B, p){
+    const F=p.F, pre0=nucPreW(p); let Wa=1.8; const nE=Math.min(1,p.nE), Ws=1.2; let L=Wa+nE*p.Wel+Ws;
+    if(L-pre0<p.LsMin){ Wa+=p.LsMin-(L-pre0); Wa=Math.round(Wa*20+0.499)/20; L=Wa+nE*p.Wel+Ws }
+    B.cell("ant","hall da escada",0,0,Wa,F,{resgate:true}); B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");
+    const u=nucElevs(B, p, Wa, nE); nucShaftsU(B, p, u, 0, F, NUC_PRUMADAS.slice(0,2), 0);
+    const pre=nucPre(B, p, 0, F, p.escD); nucEscU(B, p, pre, F, L-pre, "lo"); B.door("u",F,pre+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    B.split=L/2;
+  },
+  /* [escada no sentido da profundidade][antecâmara/dutos][elevadores ⟂ hall][hall dos elevadores][elevadores ⟂ hall] */
+  u(B, p, o, emerg){
+    const D=Math.max(p.F+p.escD, p.LsMin), F=p.F, E=p.escD, nE=Math.max(1,p.nE);
+    nucEscV(B, p, 0, 0, D, "lo");
+    // coluna da antecâmara: atrás dela os dutos (PF), o insuflamento (PFP) ou, com emergência, o elevador de emergência + dutos
+    const We=Math.round((NUC_EMERG.caixa[0]+NUC_R.paredeCF)*20)/20, Wdu = p.t==="pf_duto"? 1.6 : p.t==="pf_press"? 1.0 : 0;
+    const Wt = emerg? We+Math.max(Wdu,1.2) : 2.2;
+    B.cell("ant", nucAntNome(p), E, 0, Wt, F, {resgate:true});
+    B.door("u",0,E+Wt-1.05,NUC_R.porta,1,"escada"); B.door("v",E,0.15,NUC_R.porta,-1,"escada",{dobra:"b"});
+    if(emerg){ B.cell("emerg","elevador de emergência",E,F,We,D-F,{porta:"f", cap:"emerg"}); B.door("u",F,E+(We-NUC_EMERG.porta)/2,NUC_EMERG.porta,-1,"emerg");
+      const u2=E+We, w2=Wt-We;
+      if(p.t==="pf_duto"){ B.cell("duto","duto entrada",u2,F,w2/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída",u2+w2/2,F,w2/2,D-F,{sub:"saida"}) }
+      else if(p.t==="pf_press") B.cell("duto","pressurização",u2,F,w2,D-F,{sub:"press"});
+      else B.cell("shaft","shaft hidráulico",u2,F,w2,D-F,{sub:"hidraulica", semAcesso:true}) }
+    else if(p.t==="pf_duto"){ B.cell("duto","duto entrada",E,F,Wt/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída",E+Wt/2,F,Wt/2,D-F,{sub:"saida"}) }
+    else if(p.t==="pf_press"){ B.cell("duto","pressurização",E,F,Wt,D-F,{sub:"press"}) }
+    else B.cell("duto","duto de ventilação",E,F,Wt,D-F,{sub:"vent"});
+    const Wc=Math.round((p.EV.caixa[1]+NUC_R.paredeCF)*20+0.499)/20, Wh=Math.max(2.0, NUC_R.hallElev+0.3), hE=D/2;
+    const uA=E+Wt, uH=uA+Wc, uC=uH+Wh, nA=Math.min(2, Math.ceil(nE/2)), nC=Math.min(2, nE-nA);
+    const hs=0.8;   // shafts no fundo do hall
+    B.cell("hall","hall dos elevadores",uH,0,Wh,D-hs,{aberto:true}); B.door("u",0,uH,Wh,-1,"vao",{tipo:"elev", vao:true});
+    NUC_PRUMADAS.forEach((s,i)=>{ const w=Wh/3; B.cell("shaft",s.nome,uH+i*w,D-hs,w,hs,{sub:s.k}); B.door("u",D-hs,uH+i*w+0.08,w-0.16,-1,"shaft") });
+    const lado=(u0,n,porta,uPorta)=>{ for(let i=0;i<2;i++){ const v=i*hE;
+      if(i<n){ B.cell("elev","elevador",u0,v,Wc,hE,{porta, cap:p.cap}); B.door("v",uPorta,v+(hE-p.EV.porta)/2,p.EV.porta,porta==="r"? 1 : -1,"elev") }
+      else { const lixo = u0>uH; B.cell("lixo", lixo? "lixo" : "DML", u0, v, Wc, hE); B.door("v",uPorta,v+0.3,NUC_R.portaServ,porta==="r"? -1 : 1,"servico") } } };
+    lado(uA, nA, "r", uH); lado(uC, nC, "l", uC);
+    B.split=uH+Wh/2;
+  },
+  /* [escada ⟂][antecâmara/dutos] + ala rasa de elevadores e shafts (a unidade vizinha contorna) */
+  l(B, p){
+    const D=Math.max(p.F+p.escD, p.LsMin), F=p.F, E=p.escD, nE=Math.max(1,p.nE);
+    nucEscV(B, p, 0, 0, D, "lo");
+    const Wt=2.2; B.cell("ant", nucAntNome(p), E, 0, Wt, F, {resgate:true});
+    B.door("u",0,E+Wt-1.05,NUC_R.porta,1,"escada"); B.door("v",E,0.15,NUC_R.porta,-1,"escada",{dobra:"b"});
+    if(p.t==="pf_duto"){ B.cell("duto","duto entrada",E,F,Wt/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída",E+Wt/2,F,Wt/2,D-F,{sub:"saida"}) }
+    else if(p.t==="pf_press") B.cell("duto","pressurização",E,F,Wt,D-F,{sub:"press"});
+    else B.cell("duto","duto de ventilação",E,F,Wt,D-F,{sub:"vent"});
+    const u=nucElevs(B, p, E+Wt, nE); nucShaftsU(B, p, u, 0, F, NUC_PRUMADAS.slice(0,2), 0);
+    B.ala={u0:E+Wt, vIn:F};   // fundo da ala dos elevadores: vai para a unidade vizinha
+    B.split=E+Wt;
+  },
+  /* fundo: [balcão aberto (até a fachada)][escada][lixo] · frente: [acesso][shafts][elevadores][hall de serviço] */
+  balcao(B, p){
+    const F=p.F, Wb=2.0, nE=Math.max(1,p.nE); let Ws=1.2;
+    let bEnd=Wb+Ws+nE*p.Wel; if(bEnd-Wb < p.LsMin){ Ws+=p.LsMin-(bEnd-Wb); Ws=Math.round(Ws*20+0.499)/20; bEnd=Wb+Ws+nE*p.Wel }
+    B.cell("ant","acesso ao balcão",0,0,Wb,F); B.door("u",0,Wb-1.05,NUC_R.porta,1,"escada");
+    B.cell("balc","balcão aberto",0,F,Wb,p.escD,{fachada:true}); B.door("u",F,0.55,NUC_R.porta,1,"escada");
+    nucShaftsU(B, p, Wb, 0, F, NUC_PRUMADAS.slice(0,2).concat(Ws>1.5? [NUC_PRUMADAS[2]] : []), 0);
+    if(Ws>1.8){ const c=B.cells[B.cells.length-1]; c.w=Ws-0.6*(B.cells.filter(x=>x.k==="shaft").length-1) }
+    nucElevs(B, p, Wb+Ws, nE);
+    nucEscU(B, p, Wb, F, bEnd-Wb, "lo"); B.door("v",Wb,F+(p.escD-NUC_R.porta)/2,NUC_R.porta,1,"escada");
+    const Wh=1.6; B.cell("hserv","hall de serviço",bEnd,0,Wh,F); B.door("u",0,bEnd+0.35,NUC_R.portaServ,1,"servico");
+    B.cell("lixo","lixo / DML",bEnd,F,Wh,p.escD); B.door("u",F,bEnd+0.35,NUC_R.portaServ,1,"servico");
+    B.split=bEnd;
+  },
+  /* frente: [antecâmara][elevadores][shafts][DML][antecâmara 2] · fundo: [dutos][escada 1][escada 2][dutos] */
+  duas(B, p){
+    const F=p.F, pre0 = nucPreW(p), nE=Math.max(1,p.nE);
+    let Wa=Math.max(p.t==="ep"? 1.8 : 2.4, pre0+1.2);
+    if(Wa+nE*p.Wel-pre0 < p.LsMin){ Wa+=p.LsMin-(Wa+nE*p.Wel-pre0); Wa=Math.round(Wa*20+0.499)/20 }
+    const b1=Wa+nE*p.Wel, Ws=1.2, Wd=Math.max(1.4, Math.round((p.LsMin-Wa+pre0-Ws)*20+0.499)/20), L=b1+Ws+Wd+Wa;
+    B.cell("ant", nucAntNome(p), 0, 0, Wa, F, {resgate:true}); B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");
+    nucElevs(B, p, Wa, nE);
+    nucShaftsU(B, p, b1, 0, F, NUC_PRUMADAS.slice(0,2), 0);
+    B.cell("lixo","lixo / DML",b1+Ws,0,Wd,F); B.door("u",0,b1+Ws+0.3,NUC_R.portaServ,1,"servico");
+    B.cell("ant", nucAntNome(p)+" 2", L-Wa, 0, Wa, F, {resgate:true}); B.door("u",0,L-Wa+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    const pre=nucPre(B, p, 0, F, p.escD); nucEscU(B, p, pre, F, b1-pre, "lo"); B.door("u",F,pre+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    const c0=B.cells.length; const pre2=nucPre(B, p, L-pre0, F, p.escD); B.cells.slice(c0).forEach(c=>{ c.nome+=" 2" });
+    nucEscU(B, p, b1, F, L-pre2-b1, "hi", "escada 2"); B.door("u",F,L-pre2-0.15-NUC_R.porta,NUC_R.porta,1,"escada");
+    B.split=b1;
+  },
+  /* frente: [antecâmara][dutos][elevadores][hall de serviço] · fundo: [elevador de emergência][escada][lixo/DML] */
+  emergencia(B, p, o){
+    if(p.nE>=3){ NUC_MONTA.u(B, p, o, true); return }
+    const F=p.F, nE=Math.max(1,p.nE), We=Math.round((NUC_EMERG.caixa[0]+NUC_R.paredeCF)*20)/20;
+    let Wa=We+1.25; const Wdu = p.t==="pf_duto"? 0.9 : 0;
+    let bEnd=Wa+Wdu+nE*p.Wel; if(bEnd-We < p.LsMin){ Wa+=p.LsMin-(bEnd-We); Wa=Math.round(Wa*20+0.499)/20; bEnd=Wa+Wdu+nE*p.Wel }
+    B.cell("ant", nucAntNome(p), 0, 0, Wa, F, {resgate:true}); B.door("u",0,Wa-1.05,NUC_R.porta,1,"escada");
+    if(Wdu){ B.cell("duto","duto entrada",Wa,0,Wdu,F/2,{sub:"entrada"}); B.cell("duto","duto saída",Wa,F/2,Wdu,F/2,{sub:"saida"}) }
+    nucElevs(B, p, Wa+Wdu, nE);
+    B.cell("emerg","elevador de emergência",0,F,We,p.escD,{porta:"f", cap:"emerg"}); B.door("u",F,(We-NUC_EMERG.porta)/2,NUC_EMERG.porta,-1,"emerg");
+    if(p.t==="pf_press"){ B.cell("duto","pressurização",bEnd-1.0,F,1.0,p.escD,{sub:"press"}) }
+    const escFim = p.t==="pf_press"? bEnd-1.0 : bEnd;
+    nucEscU(B, p, We, F, escFim-We, "lo"); B.door("u",F,We+0.15,NUC_R.porta,1,"escada",{dobra:"b"});
+    const Wh=1.4, Ws=0.7, uh=bEnd;
+    B.cell("hserv","hall de serviço",uh,0,Wh,F); B.door("u",0,uh+0.3,NUC_R.portaServ,1,"servico");
+    NUC_PRUMADAS.forEach((s,i)=>{ const h=F/3; B.cell("shaft",s.nome,uh+Wh,i*h,Ws,h,{sub:s.k}); B.door("v",uh+Wh,i*h+0.07,h-0.14,-1,"shaft") });
+    B.cell("lixo","lixo / DML",uh,F,Wh+Ws,p.escD); B.door("u",F,uh+0.3,NUC_R.portaServ,1,"servico");
+    B.split=bEnd;
+  },
+  /* segunda escada dos núcleos por alas: [escada ⟂][antecâmara/dutos] (EP: só a escada, porta direto no corredor) */
+  escada2(B, p){
+    const D=Math.max(p.F+p.escD, p.LsMin), F=p.F, E=p.escD;
+    nucEscV(B, p, 0, 0, D, "lo", "escada 2");
+    if(p.t==="ep"){ B.door("u",0,0.15,NUC_R.porta,1,"escada"); return }
+    const Wt=2.2;
+    if(p.t==="pf_balcao"){ B.cell("ant","acesso ao balcão",E,0,Wt,F); B.door("u",0,E+Wt-1.05,NUC_R.porta,1,"escada"); B.cell("balc","balcão aberto",E,F,Wt,D-F,{fachada:true}); B.door("u",F,E+0.6,NUC_R.porta,1,"escada"); B.door("v",E,F+0.3,NUC_R.porta,-1,"escada",{dobra:"b"}); return }
+    B.cell("ant", nucAntNome(p)+" 2", E, 0, Wt, F, {resgate:true});
+    B.door("u",0,E+Wt-1.05,NUC_R.porta,1,"escada"); B.door("v",E,0.15,NUC_R.porta,-1,"escada",{dobra:"b"});
+    if(p.t==="pf_press") B.cell("duto","pressurização 2",E,F,Wt,D-F,{sub:"press"});
+    else { B.cell("duto","duto entrada 2",E,F,Wt/2,D-F,{sub:"entrada"}); B.cell("duto","duto saída 2",E+Wt/2,F,Wt/2,D-F,{sub:"saida"}) }
+  },
+};
+
+/* ---------- desenho técnico (linhas no referencial local; o coreBuild leva ao mundo) ---------- */
+/* L: {l:[[u,v],[u,v]], c?:"fino"|"medio"|"tracejado"} · {arrow:[[u,v],[u,v]]} · {txt, p:[u,v], s?} · {dot:[u,v]} */
+function nucleoDesenho(N){
+  const out=[], t=NUC_R.paredeCF/2, ln=(a,b,c)=>out.push({l:[a,b], c}), P=N.p;
+  N.cells.forEach(c=>{
+    if(c.k==="esc"){
+      const ori=c.ori||"u", A0=(ori==="u"? c.u : c.v)+t, A1=(ori==="u"? c.u+c.w : c.v+c.h)-t, C0=(ori==="u"? c.v : c.u)+t, C1=(ori==="u"? c.v+c.h : c.u+c.w)-t;
+      const M=(a,x)=> ori==="u"? [a,x] : [x,a];    // a = ao longo dos lances · x = através
+      const lw=Math.min(P.larg, (C1-C0-NUC_R.bomba)/2), run=P.deg.run, pat=Math.max(0.3,(A1-A0-run)/2);
+      const ent=c.ent||"lo", s0 = ent==="lo"? A0+pat : A1-pat, dir = ent==="lo"? 1 : -1, s1=s0+dir*run;
+      const f1=[C0, C0+lw], f2=[C1-lw, C1];   // lance que sobe (f1) e lance que desce (f2)
+      // bomba (guarda central) e bordas dos patamares
+      ln(M(s0,C0+lw),M(s1,C0+lw),"medio"); ln(M(s0,C1-lw),M(s1,C1-lw),"medio");
+      ln(M(s0,C0),M(s0,C1),"medio"); ln(M(s1,C0),M(s1,C1),"medio");
+      for(let k=1;k<P.deg.a-1;k++){ const a=s0+dir*k*P.deg.p; ln(M(a,f1[0]),M(a,f1[1])); ln(M(a,f2[0]),M(a,f2[1])) }
+      // corte do lance que sobe (linha de quebra) e linhas de piso com seta
+      const ac=s0+dir*run*0.55, z=(f1[1]-f1[0])/3; ln(M(ac-dir*0.12,f1[0]),M(ac-dir*0.12,f1[0]+z),"medio"); ln(M(ac-dir*0.12,f1[0]+z),M(ac+dir*0.12,f1[1]-z),"medio"); ln(M(ac+dir*0.12,f1[1]-z),M(ac+dir*0.12,f1[1]),"medio");
+      const m1=(f1[0]+f1[1])/2, m2=(f2[0]+f2[1])/2;
+      out.push({dot:M(s0-dir*0.35,m1)}); out.push({arrow:[M(s0-dir*0.35,m1),M(ac-dir*0.1,m1)]});
+      out.push({dot:M(s0-dir*0.35,m2)}); out.push({arrow:[M(s0-dir*0.35,m2),M(s1-dir*0.15,m2)]});
+      out.push({txt:"S", p:M(s0-dir*0.15,m1-0.28*(lw>0.9?1:0.6)), s:0.30}); out.push({txt:"D", p:M(s0-dir*0.15,m2+0.28*(lw>0.9?1:0.6)), s:0.30});
+      out.push({txt:c.nome, p:M(ent==="lo"? A1-pat/2 : A0+pat/2,(C0+C1)/2), s:0.22, bg:true, rot:ori==="u"? 0 : 1});
+      // área de resgate no patamar do pavimento (cadeira de rodas 0,80 × 1,20) — só quando a antecâmara não a tem
+      if(pat>=NUC_R.resgate[1]+0.05 && !N.cells.some(a=>a.k==="ant" && a.resgate && a.w>=NUC_R.resgate[1]+0.4)){ const r0= ent==="lo"? A0+0.05 : A1-0.05-NUC_R.resgate[1], [x0,x1]=[C1-0.05-NUC_R.resgate[0], C1-0.05];
+        const q=[M(r0,x0),M(r0+NUC_R.resgate[1],x0),M(r0+NUC_R.resgate[1],x1),M(r0,x1)]; q.forEach((a,i)=>ln(a,q[(i+1)%4],"tracejado")); out.push({txt:"MR", p:M(r0+NUC_R.resgate[1]/2,(x0+x1)/2), s:0.22}) }
+    }
+    if(c.k==="elev"||c.k==="emerg"){
+      const EV = c.k==="emerg"? NUC_EMERG : P.EV, por=c.porta||"f", tw=NUC_R.paredeCF/2;
+      // eixos da cabine: "frente" = lado da porta
+      const fr = por==="f"? {a:[c.u,c.v], ax:[1,0], ay:[0,1], W:c.w, H:c.h} : por==="r"? {a:[c.u+c.w,c.v], ax:[0,1], ay:[-1,0], W:c.h, H:c.w} : {a:[c.u,c.v+c.h], ax:[0,-1], ay:[1,0], W:c.h, H:c.w};
+      const Q=(x,y)=>[fr.a[0]+fr.ax[0]*x+fr.ay[0]*y, fr.a[1]+fr.ax[1]*x+fr.ay[1]*y];
+      const cw=Math.min(EV.cabine[0], fr.W-2*tw-0.35), cd=Math.min(EV.cabine[1], fr.H-2*tw-0.30), x0=(fr.W-cw)/2 - 0.12, y0=tw+0.12;
+      const cab=[Q(x0,y0),Q(x0+cw,y0),Q(x0+cw,y0+cd),Q(x0,y0+cd)]; cab.forEach((a,i)=>ln(a,cab[(i+1)%4],"medio"));
+      ln(cab[0],cab[2]); ln(cab[1],cab[3]);
+      // contrapeso na lateral oposta à botoeira
+      const cx0=x0+cw+0.08, cx1=Math.min(fr.W-tw-0.04, cx0+0.16), cy0=y0+0.15, cy1=Math.min(fr.H-tw-0.08, y0+cd-0.15);
+      if(cx1-cx0>0.06){ const cp=[Q(cx0,cy0),Q(cx1,cy0),Q(cx1,cy1),Q(cx0,cy1)]; cp.forEach((a,i)=>ln(a,cp[(i+1)%4],"medio")); ln(cp[0],cp[2],"fino") }
+      // portas de correr (duas folhas) na soleira
+      const pw=EV.porta, px=(fr.W-pw)/2; ln(Q(px,tw*0.4),Q(px+pw/2+0.05,tw*0.4),"medio"); ln(Q(px+pw/2-0.05,tw*1.4),Q(px+pw,tw*1.4),"medio");
+    }
+    if(c.k==="duto"){
+      const g=0.22; for(let k=g;k<c.w+c.h;k+=g){ const a=[c.u+Math.max(0,k-c.h), c.v+Math.min(c.h,k)], b=[c.u+Math.min(c.w,k), c.v+Math.max(0,k-c.w)]; ln(a,b,"fino") }
+      const cx=c.u+c.w/2, cy=c.v+c.h/2, r=Math.min(c.w,c.h)*0.28;
+      if(c.sub==="entrada") out.push({arrow:[[cx,cy+r],[cx,cy-r]]}); else if(c.sub==="saida") out.push({arrow:[[cx,cy-r],[cx,cy+r]]});
+      out.push({txt: c.sub==="entrada"? "E" : c.sub==="saida"? "S" : c.sub==="vent"? "V" : "P", p:[cx+(c.w>0.7? 0.22 : 0), cy], s:0.24, bg:true});
+    }
+    if(c.k==="shaft"){
+      ln([c.u+0.08,c.v+0.08],[c.u+c.w-0.08,c.v+c.h-0.08],"fino"); ln([c.u+c.w-0.08,c.v+0.08],[c.u+0.08,c.v+c.h-0.08],"fino");
+      out.push({txt:{hidraulica:"H", eletrica:"E", gas:"G"}[c.sub]||"", p:[c.u+c.w/2, c.v+c.h/2], s:0.24, bg:true});
+    }
+    if(c.k==="balc"){ const v=c.v+c.h; ln([c.u+0.1,v-0.12],[c.u+c.w-0.1,v-0.12],"tracejado") }
+    if(c.resgate && c.k==="ant" && c.w>=NUC_R.resgate[1]+0.4){ const x0=c.u+0.15, y0=c.v+c.h-0.1-NUC_R.resgate[0];
+      const q=[[x0,y0],[x0+NUC_R.resgate[1],y0],[x0+NUC_R.resgate[1],y0+NUC_R.resgate[0]],[x0,y0+NUC_R.resgate[0]]]; q.forEach((a,i)=>ln(a,q[(i+1)%4],"tracejado")); out.push({txt:"MR", p:[x0+NUC_R.resgate[1]/2,y0+NUC_R.resgate[0]/2], s:0.22}) }
+  });
+  return out;
+}
+
+/* ---------- validação (nota e problemas em linguagem simples) ---------- */
+const NUC_NF=(x,d=2)=>(Math.round(x*Math.pow(10,d))/Math.pow(10,d)).toFixed(d).replace(".",",");
+/** elevadores necessários (tráfego simplificado: 8% da população em 5 min, intervalo ≤ 120 s) */
+function nucleoElevNec(ctx){
+  const pav=Math.max(1,+ctx.pav||1), H=Math.max(3,+ctx.H||pav*3), popT=Math.max(0,+ctx.pop||0)*pav, cap=+ctx.cap||8;
+  if(pav<=4 && H<=12) return {n:0, rtt:0, intervalo:0, popT, v:1};
+  const v = H<=30? 1.0 : H<=60? 1.75 : 2.5, pp=0.8*cap, N=pav, S=N*(1-Math.pow((N-1)/N, pp));
+  const rtt = 2*H/v + (S+1)*9 + 2*pp*1.2, c5 = 300*pp/rtt;
+  let n=Math.max(1, Math.ceil(0.08*popT/c5 - 1e-9)); while(rtt/n>120 && n<8) n++;
+  if(pav>=8) n=Math.max(2,n);   // a partir de 8 pavimentos, dois elevadores (um fica na manutenção)
+  return {n, rtt, intervalo:rtt/n, popT, v};
+}
+/** nuc = lay.nucleo (com .local = modelo de nucleoMonta) · ctx = {pav, H (altura descendente), pop, units, plateA, fachada, tec} */
+function nucleoValida(nuc, ctx={}){
+  const N=nuc && nuc.local; if(!N) return {nota:null, problemas:[]};
+  const P=N.p, pr=[], add=(k,nivel,msg,parte)=>pr.push({k,nivel,msg,parte});
+  const cs=N.cells, ofK=k=>cs.filter(c=>c.k===k);
+  // escada: largura, degraus, patamares
+  ofK("esc").forEach(c=>{
+    const larg=Math.min(P.larg, ((c.ori==="v"? c.w : c.h)-NUC_R.paredeCF-NUC_R.bomba)/2), lMin=Math.max(NUC_R.escLarg, ctx.largMin||0);
+    if(larg < lMin-0.005) add("escLarg","bad",`Escada com ${NUC_NF(larg)} m de largura útil; precisa de ${NUC_NF(lMin)} m.`, c.nome);
+    const d=P.deg, bl=2*d.e+d.p;
+    if(d.e>NUC_R.espelho[1]+0.003 || d.e<NUC_R.espelho[0]-0.003 || d.p<NUC_R.piso[0]-0.003 || d.p>NUC_R.piso[1]+0.003 || bl<NUC_R.blondel[0]-0.005 || bl>NUC_R.blondel[1]+0.005)
+      add("degrau","warn",`Degraus de ${NUC_NF(d.e*100,1)} × ${NUC_NF(d.p*100,0)} cm fora da faixa (espelho 16–18, piso 28–32, 2e+p 63–65 cm).`, c.nome);
+    const comp=(c.ori==="v"? c.h : c.w)-NUC_R.paredeCF, pat=(comp-d.run)/2;
+    if(pat < larg-0.02) add("patamar","bad",`Patamar de ${NUC_NF(pat)} m, menor que a largura do lance (${NUC_NF(larg)} m).`, c.nome);
+    else if(pat > NUC_R.patamarMax+0.01) add("patamarLongo","warn",`Patamares de ${NUC_NF(pat)} m: a caixa da escada sobra ${NUC_NF((pat-Math.max(larg,1.5))*2*(c.ori==="v"? c.w : c.h),1)} m².`, c.nome);
+  });
+  if(!ofK("esc").length) add("semEscada","bad","Núcleo sem escada.");
+  // antecâmara e dutos (PF), pressurização, balcão
+  const ants=ofK("ant").filter(c=>/antec/.test(c.nome));
+  if(["pf_duto","pf_press"].includes(P.t) && N.partido!=="balcao"){
+    if(!ants.length) add("semAnt","bad","Escada à prova de fumaça sem antecâmara.");
+    ants.forEach(c=>{ const prof=Math.min(c.w,c.h)-NUC_R.paredeCF; if(prof<NUC_R.antProf-0.005) add("antRasa","bad",`Antecâmara com ${NUC_NF(prof)} m de profundidade; o mínimo é ${NUC_NF(NUC_R.antProf)} m.`, c.nome) });
+  }
+  if(P.t==="pf_duto"){ const ent=ofK("duto").filter(c=>c.sub==="entrada"), sai=ofK("duto").filter(c=>c.sub==="saida"), a=c=>Math.max(0,c.w-NUC_R.parede)*Math.max(0,c.h-NUC_R.parede);
+    if(!ent.length || !sai.length) add("semDuto","bad","Escada PF sem os dutos de entrada e de saída de ar da antecâmara.");
+    [...ent,...sai].forEach(c=>{ if(a(c)<NUC_R.dutoA-0.005 || Math.min(c.w,c.h)-NUC_R.parede<NUC_R.dutoLado-0.005) add("dutoPeq","bad",`${c.nome[0].toUpperCase()+c.nome.slice(1)} com ${NUC_NF(a(c))} m²; o mínimo é ${NUC_NF(NUC_R.dutoA)} m² (lado ≥ ${NUC_NF(NUC_R.dutoLado)} m).`, c.nome) });
+    // dutos precisam encostar na antecâmara
+    const enc=(c,d)=>{ const ov=(a0,a1,b0,b1)=>Math.min(a1,b1)-Math.max(a0,b0); return (Math.abs(c.v+c.h-d.v)<0.01||Math.abs(d.v+d.h-c.v)<0.01)&&ov(c.u,c.u+c.w,d.u,d.u+d.w)>0.3 || (Math.abs(c.u+c.w-d.u)<0.01||Math.abs(d.u+d.w-c.u)<0.01)&&ov(c.v,c.v+c.h,d.v,d.v+d.h)>0.3 };
+    [...ent,...sai].forEach(c=>{ if(!ants.some(a=>enc(a,c))) add("dutoLonge","bad",`${c.nome[0].toUpperCase()+c.nome.slice(1)} não encosta na antecâmara.`, c.nome) });
+  }
+  if(P.t==="pf_press" && !ofK("duto").some(c=>c.sub==="press")) add("semPress","bad","Escada pressurizada sem duto de insuflamento.");
+  if(P.t==="pf_balcao"){ ofK("balc").forEach(c=>{ if(ctx.fachada===false || c.semFachada) add("balcFach","bad","O balcão aberto precisa estar na fachada.", c.nome) }); if(!ofK("balc").length) add("semBalc","bad","Escada com balcão sem o balcão aberto.") }
+  if(P.t==="ep" && ctx.fachada===false && !ofK("duto").some(c=>c.sub==="vent")) add("epVent","warn","Escada enclausurada protegida precisa de janela na fachada ou duto de ventilação.");
+  // elevadores: porta na antecâmara, hall à frente, quantidade, cabine, emergência
+  N.doors.filter(d=>d.tipo==="elev").forEach(d=>{ const mid=[(d.a[0]+d.b[0])/2+d.n[0]*0.2, (d.a[1]+d.b[1])/2+d.n[1]*0.2];
+    const c=cs.find(c=>mid[0]>c.u+1e-6&&mid[0]<c.u+c.w-1e-6&&mid[1]>c.v+1e-6&&mid[1]<c.v+c.h-1e-6);
+    if(c && c.k==="ant") add("elevAnt","bad","Porta de elevador abrindo direto na antecâmara (só o de emergência pode).", c.nome) });
+  const nEl=ofK("elev").length, hallU=ofK("hall")[0];
+  if(nEl){ const livre = hallU? (hallU.w-NUC_R.paredeCF) : (ctx.corr!=null? ctx.corr : P.corr);
+    if(livre < NUC_R.hallElev-0.005) add("hallElev","bad",`Hall diante dos elevadores com ${NUC_NF(livre)} m; precisa de ${NUC_NF(NUC_R.hallElev)} m livres (giro da cadeira de rodas).`) }
+  if(P.EV.cabine[0]<1.10-0.001 || P.EV.cabine[1]<1.40-0.001) add("cabine","warn",`Cabine de ${NUC_NF(P.EV.cabine[0])} × ${NUC_NF(P.EV.cabine[1])} m não é acessível (mínimo 1,10 × 1,40).`);
+  if(ctx.pav){ const nec=nucleoElevNec({pav:ctx.pav, H:ctx.H, pop:ctx.pop!=null? ctx.pop : P.pop, cap:P.cap});
+    if(nEl < nec.n) add("elevN", nEl===0||nec.n-nEl>1? "bad" : "warn", nEl? `${nEl} elevador${nEl>1?"es":""} para ${ctx.pav} pavimentos e ${Math.round(nec.popT)} moradores; o tráfego pede ${nec.n}.` : `Sem elevador acima de 4 pavimentos.`);
+    if(ctx.emergObrig && !ofK("emerg").length) add("emerg","bad","Acima de 80 m o núcleo precisa de elevador de emergência abrindo na antecâmara.");
+    if(ctx.escReq && ctx.escOf && ctx.escRank && ctx.escRank[ctx.escOf]<ctx.escRank[ctx.escReq]) add("escTipo","bad",`A altura pede escada ${ctx.escReq}; o núcleo tem ${ctx.escOf}.`) }
+  // acesso: toda peça com porta (dutos e caixas de elevador não precisam), nenhuma peça "sobra"
+  cs.forEach(c=>{ if(["duto","elev","emerg","esc","hall"].includes(c.k) || c.semAcesso) return;
+    const tem=N.doors.some(d=>{ const mid=[(d.a[0]+d.b[0])/2,(d.a[1]+d.b[1])/2]; return mid[0]>=c.u-0.01&&mid[0]<=c.u+c.w+0.01&&mid[1]>=c.v-0.01&&mid[1]<=c.v+c.h+0.01 && !(Math.abs(mid[0]-c.u)>0.01&&Math.abs(mid[0]-c.u-c.w)>0.01&&Math.abs(mid[1]-c.v)>0.01&&Math.abs(mid[1]-c.v-c.h)>0.01) });
+    if(!tem) add(c.k==="tec"? "sobra" : "semAcesso", c.k==="tec"? "warn" : "bad", c.k==="tec"? `Sobra sem uso de ${NUC_NF(c.w*c.h,1)} m² no núcleo.` : `${c.nome[0].toUpperCase()+c.nome.slice(1)} sem porta.`, c.nome) });
+  if(!cs.some(c=>c.k==="shaft" && c.sub==="hidraulica") || !cs.some(c=>c.k==="shaft" && c.sub==="eletrica")) add("shafts","warn","Faltam shafts de prumada (hidráulico e elétrico) com visita pelo hall.");
+  // harmonia: peças lado a lado sem sobreposição, sem buraco, e o fundo encontrando as linhas da frente
+  const harm=nucleoHarmonia(N); harm.forEach(h=>add(h.k,h.nivel,h.msg));
+  if(ctx.plateA && ctx.coreA && ctx.coreA/ctx.plateA>NUC_R.areaMaxPct) add("pesado","warn",`Núcleo ocupa ${Math.round(ctx.coreA/ctx.plateA*100)}% do andar (referência ≤ ${Math.round(NUC_R.areaMaxPct*100)}%).`);
+  if(N.partido==="l") add("emL","warn","Núcleo em L: a unidade vizinha contorna a ala dos elevadores.");
+  const bad=pr.filter(q=>q.nivel==="bad").length, warn=pr.filter(q=>q.nivel==="warn").length;
+  return {nota:Math.max(0, 100-25*bad-6*warn), problemas:pr.sort((a,b)=>(a.nivel==="bad"? 0 : 1)-(b.nivel==="bad"? 0 : 1))};
+}
+/** alinhamento/serrilhado: cobertura do retângulo (sem buraco nem sobreposição) e linhas de eixo comuns às duas fileiras */
+function nucleoHarmonia(N){
+  const out=[], cs=N.cells.filter(c=>!c.fundo && c.w>0.02 && c.h>0.02), L=N.L, D=N.D;
+  let sobre=0; for(let i=0;i<cs.length;i++) for(let j=i+1;j<cs.length;j++){ const a=cs[i], b=cs[j];
+    const w=Math.min(a.u+a.w,b.u+b.w)-Math.max(a.u,b.u), h=Math.min(a.v+a.h,b.v+b.h)-Math.max(a.v,b.v); if(w>0.02&&h>0.02) sobre+=w*h }
+  if(sobre>0.05) out.push({k:"sobrepoe", nivel:"bad", msg:`Peças do núcleo sobrepostas (${NUC_NF(sobre,1)} m²).`});
+  const alvo = N.perfil? N.perfil.reduce((s,t)=>s+(t.u1-t.u0)*t.d,0) : N.ala? L*D-(L-N.ala.u0)*(D-N.ala.vIn) : L*D, soma=cs.reduce((s,c)=>s+c.w*c.h,0);
+  if(alvo-soma>0.3) out.push({k:"buraco", nivel:"warn", msg:`Núcleo com ${NUC_NF(alvo-soma,1)} m² sem uso entre as peças.`});
+  // fileiras: linhas de eixo verticais (u) que cortam a fileira da frente e a do fundo — as do fundo precisam encontrar as da frente
+  const F=N.F, fr=cs.filter(c=>c.v<0.01 && c.h>=F-0.01), bk=cs.filter(c=>c.v>=F-0.01 && c.v<F+0.01);
+  if(fr.length && bk.length){ const lf=new Set(fr.flatMap(c=>[c.u,c.u+c.w]).map(x=>x.toFixed(2)));
+    const esc=bk.filter(c=>c.k==="esc"||c.k==="lixo"||c.k==="emerg"); let des=0;
+    const ants=fr.filter(c=>c.k==="ant"), sob=c=>ants.some(a=>c.u>=a.u-0.02 && c.u+c.w<=a.u+a.w+0.02);   // dutos e elevador de emergência atrás da antecâmara: um bloco só
+    const junto=x=>bk.some(d=>(d.k==="duto"||d.k==="emerg") && sob(d) && (Math.abs(d.u-x)<0.02 || Math.abs(d.u+d.w-x)<0.02));
+    esc.forEach(c=>{ [c.u, c.u+c.w].forEach(x=>{ if(x>0.05 && x<L-0.05 && !junto(x) && ![...lf].some(y=>Math.abs(+y-x)<0.06)) des++ }) });
+    if(des) out.push({k:"desalinhado", nivel:"warn", msg:`Escada ou lixo fora das linhas da frente (${des} ${des>1?"divisas desencontradas":"divisa desencontrada"}): serrilhado.`});
+  }
+  // contorno: retângulo (ou L declarado)
+  const prof=new Set(N.perfil? N.perfil.filter(t=>!t.fach).map(t=>t.d.toFixed(2)) : cs.filter(c=>c.v+c.h>F+0.01).map(c=>(c.v+c.h).toFixed(2)));
+  if(prof.size>1 && !N.ala) out.push({k:"dentes", nivel:"warn", msg:`Fundo do núcleo em ${prof.size} profundidades: contorno com dentes.`});
+  return out;
+}
+
+/* ---------- informação para o contrato (lay.nucleo) — o coreBuild preenche ---------- */
+const NUC_INFO = new WeakMap();   // lobby → nucleo (núcleos montados por outros módulos, ex.: alas, recuperam a ficha)
+
+/* validação no fim do cálculo (altura, pavimentos e população por torre) */
+HOOK.compute.push((m, st)=>{
+  (m.tipo||[]).forEach((l,i)=>{ if(!l || !l.core) return; const t=m.T[i]; if(!t) return;
+    if(!l.nucleo && l.lobby) { const n=NUC_INFO.get(l.lobby); if(n) l.nucleo=n }
+    const nuc=l.nucleo; if(!nuc || !nuc.local) return;
+    const pe=st.produto.pe, Hd=Math.max(0, t.H-pe), pop=typeof normaPopulacao==="function"? normaPopulacao(st.produto.mix) : 0;
+    const escReq = typeof normaEscadaTipo==="function"? normaEscadaTipo(Hd) : null, escOf = typeof normaEscadaOferecida==="function"? normaEscadaOferecida(st.estudo.escTipo) : null;
+    const largMin = pop && typeof normaLarguras==="function"? normaLarguras(pop).escada : 0;
+    const v=nucleoValida(nuc, {pav:t.pav, H:t.H, pop, largMin, plateA:G.area(t.plate), coreA:l.coreA, corr:st.estudo.corrTipo, fachada:nuc.fachada,
+      emergObrig: typeof normaElevEmergObrig==="function" && normaElevEmergObrig(Hd), escReq, escOf, escRank: typeof NORMA_ESC_RANK!=="undefined"? NORMA_ESC_RANK : null});
+    nuc.nota=v.nota; nuc.problemas=v.problemas;
+    if(nuc.elevNec==null) nuc.elevNec=nucleoElevNec({pav:t.pav, H:t.H, pop, cap:nuc.local.p.cap}).n;
+  });
+  const ns=(m.tipo||[]).filter(l=>l && l.nucleo && l.nucleo.nota!=null).map(l=>l.nucleo.nota);
+  m.nucleo = ns.length? {nota:Math.min(...ns), partidos:(m.tipo||[]).map(l=>l && l.nucleo? l.nucleo.partido : null)} : null;
+});
 
 /* ================= orçamento paramétrico por sistema =================
    Cada sistema = coeficiente (fração do CUB) × direcionador tirado do modelo m. Os coeficientes padrão foram calibrados
@@ -19881,18 +20720,44 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     coresAll(true);
     strokeP(floor,css("--ink"),1.6);
   }
-  // núcleo em desenho técnico (todos os andares): paredes, portas, lances, elevadores
+  // núcleo em desenho técnico (todos os andares; src/calc/nucleo.js): paredes com espessura, portas com folha e arco no
+  // sentido da fuga, lances com degraus, patamares e linha de piso, cabines com contrapeso e portas de correr, dutos e shafts
   function coreDraw(lay, lobby){
     if(!lay) return;
+    const sc=V.s, ink=css("--ink"), px=t=>Math.max(1, t*sc), parts=lay.coreParts||[];
     if(lobby && lay.lobby){ fillP(lay.lobby,css("--c-hall"),1); strokeP(lay.lobby,css("--ink"),0.8,[3,2]); if(V.s>6) label("hall dos elevadores", w2s(G.centroid(lay.lobby)), {size:9,bg:false,col:css("--muted")}) }
-    (lay.coreParts||[]).forEach(cp=>fillP(cp.poly, css("--c-"+cp.kind)||css("--surface"), 1));
-    (lay.coreLines||[]).forEach(l=>{ if(l.arrow){ arrow(l.arrow[0],l.arrow[1],css("--ink"),1,5); return } const A=w2s(l[0]),B=w2s(l[1]); g.strokeStyle=css("--ink"); g.globalAlpha=0.55; g.lineWidth=0.7; g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); g.globalAlpha=1 });
-    (lay.coreParts||[]).forEach(cp=>strokeP(cp.poly, css("--ink"), Math.max(1.2,Math.min(3,V.s*0.15))));
-    if(lobby) (lay.coreReserva||[]).forEach(p=>fillP(p, css("--c-tec"), 1));   // atrás da escada rasa: reservado nos outros pavimentos
-    strokeP(lobby? lay.core : (lay.coreOut||lay.core), css("--ink"), Math.max(1.6,Math.min(4,V.s*0.22)));
-    (lay.coreDoors||[]).forEach(d=>{ const A=w2s(d.a), B=w2s(d.b); g.strokeStyle=css(lobby?"--c-hall":"--surface"); g.lineWidth=Math.max(2,Math.min(5,V.s*0.3)); g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke();
-      if(d.sw){ const r=Math.hypot(B[0]-A[0],B[1]-A[1]), ang=Math.atan2(B[1]-A[1],B[0]-A[0]); g.strokeStyle=css("--ink"); g.lineWidth=0.8; g.beginPath(); g.moveTo(...A); g.lineTo(A[0]+Math.cos(ang-Math.PI/2)*r, A[1]+Math.sin(ang-Math.PI/2)*r); g.stroke(); g.globalAlpha=0.6; g.beginPath(); g.arc(A[0],A[1],r,ang-Math.PI/2,ang); g.stroke(); g.globalAlpha=1 } });
-    if(V.s>7) (lay.coreParts||[]).forEach(cp=>{ if(["hall","tec","duto","pass"].includes(cp.kind)) return; const xs=cp.poly.map(q=>w2s(q)[0]), ys=cp.poly.map(q=>w2s(q)[1]), w_=Math.max(...xs)-Math.min(...xs), h_=Math.max(...ys)-Math.min(...ys); g.font="500 9px "+css("--f-mono"); const tw=g.measureText(cp.nome).width; if(w_>tw+8 && h_>12) label(cp.nome, w2s(G.centroid(cp.poly)), {size:9, bg:true}) });
+    // garagens e térreo: a faixa atrás do núcleo (unidades no tipo) vira depósito, com porta para a garagem
+    if(lobby) (lay.coreFundo||[]).forEach(p=>{ fillP(p,css("--c-tec"),1); strokeP(p,ink,px(0.12)); if(V.s>6){ const xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]); if(Math.max(...xs)-Math.min(...xs)>44 && Math.max(...ys)-Math.min(...ys)>12) label("depósito", w2s(G.centroid(p)), {size:9,bg:false,col:css("--muted")}) } });
+    parts.forEach(cp=>fillP(cp.poly, css("--c-"+cp.kind)||css("--surface"), 1));
+    // linhas técnicas (só com zoom suficiente para não virar ruído)
+    (lay.coreLines||[]).forEach(l=>{
+      if(l.arrow){ if(sc<5) return; arrow(l.arrow[0],l.arrow[1],ink,Math.max(0.7,Math.min(1.3,sc*0.04)),Math.max(3.5,Math.min(7,sc*0.22))); return }
+      if(l.dot){ if(sc<6) return; const P_=w2s(l.dot); g.fillStyle=ink; g.beginPath(); g.arc(P_[0],P_[1],Math.max(1.3,Math.min(3,sc*0.05)),0,Math.PI*2); g.fill(); return }
+      if(l.txt!=null){ if(sc<10 || !l.txt) return; const P_=w2s(l.p), fs=Math.round(Math.max(7,Math.min(12,(l.s||0.25)*sc)));
+        g.font="600 "+fs+"px "+css("--f-sans"); g.textAlign="center"; g.textBaseline="middle";
+        if(l.bg){ const tw=g.measureText(l.txt).width+5; g.fillStyle=css("--surface"); g.globalAlpha=0.9; g.fillRect(P_[0]-tw/2,P_[1]-fs*0.62,tw,fs*1.24); g.globalAlpha=1 }
+        g.fillStyle=ink; g.fillText(l.txt,P_[0],P_[1]); return }
+      if(!Array.isArray(l) || (sc<3.5 && l.c!=="medio")) return;
+      const A=w2s(l[0]),B=w2s(l[1]); g.strokeStyle=ink;
+      if(l.c==="medio"){ g.globalAlpha=0.85; g.lineWidth=Math.max(0.7,Math.min(1.3,sc*0.035)) } else if(l.c==="tracejado"){ g.globalAlpha=0.55; g.lineWidth=0.8; g.setLineDash([3,2]) } else { g.globalAlpha=0.45; g.lineWidth=Math.max(0.5,Math.min(0.9,sc*0.025)) }
+      g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); g.setLineDash([]); g.globalAlpha=1 });
+    // paredes no eixo das peças: corta-fogo/estruturais 0,20 m · alvenaria 0,12 m · contorno do núcleo 0,25 m
+    const CF=new Set(["esc","ant","elev","emerg","duto","balc"]);
+    parts.forEach(cp=>{ if(cp.kind==="tec") return; strokeP(cp.poly, ink, px(CF.has(cp.kind)? 0.20 : 0.12)) });
+    strokeP(lobby? lay.core : (lay.coreOut||lay.core), ink, px(0.25));
+    // portas: abre o vão na parede e desenha a folha + o arco para o lado em que ela abre
+    const vaoCor=css(lobby?"--c-hall":"--surface");
+    (lay.coreDoors||[]).forEach(d=>{ const A=w2s(d.a), B=w2s(d.b), r=Math.hypot(B[0]-A[0],B[1]-A[1]); if(r<2) return;
+      const mid=[(d.a[0]+d.b[0])/2+(d.dir? d.dir[0]*0.25 : 0), (d.a[1]+d.b[1])/2+(d.dir? d.dir[1]*0.25 : 0)], dentro=parts.find(cp=>G.pip(mid,cp.poly));
+      g.strokeStyle= dentro? (css("--c-"+dentro.kind)||vaoCor) : vaoCor; g.lineWidth=px(0.30); g.lineCap="butt"; g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke();
+      g.strokeStyle=ink; g.lineWidth=1; [A,B].forEach(Q=>{ const ux_=(B[0]-A[0])/r, uy_=(B[1]-A[1])/r, h=px(0.13); g.beginPath(); g.moveTo(Q[0]-uy_*h,Q[1]+ux_*h); g.lineTo(Q[0]+uy_*h,Q[1]-ux_*h); g.stroke() });   // batentes
+      if(!d.sw || r<4) return;
+      const dw=d.dir? (()=>{ const o0=w2s(d.a), o1=w2s([d.a[0]+d.dir[0], d.a[1]+d.dir[1]]), k=Math.hypot(o1[0]-o0[0],o1[1]-o0[1])||1; return [(o1[0]-o0[0])/k,(o1[1]-o0[1])/k] })() : [-(B[1]-A[1])/r,(B[0]-A[0])/r];
+      const E=[A[0]+dw[0]*r, A[1]+dw[1]*r], a0=Math.atan2(B[1]-A[1],B[0]-A[0]), a1=Math.atan2(E[1]-A[1],E[0]-A[0]); let da=a1-a0; while(da>Math.PI) da-=2*Math.PI; while(da<-Math.PI) da+=2*Math.PI;
+      g.lineWidth=Math.max(1,Math.min(1.8,sc*0.05)); g.beginPath(); g.moveTo(...A); g.lineTo(...E); g.stroke();
+      g.globalAlpha=0.55; g.lineWidth=0.8; g.beginPath(); g.arc(A[0],A[1],r,a0,a1,da<0); g.stroke(); g.globalAlpha=1 });
+    if(V.s>7) parts.forEach(cp=>{ if(["tec","duto","shaft","pass"].includes(cp.kind) || (cp.kind==="esc" && V.s>=10)) return; const xs=cp.poly.map(q=>w2s(q)[0]), ys=cp.poly.map(q=>w2s(q)[1]), w_=Math.max(...xs)-Math.min(...xs), h_=Math.max(...ys)-Math.min(...ys); g.font="500 9px "+css("--f-sans"); const tw=g.measureText(cp.nome).width;
+      if(w_>tw+8 && h_>14){ const c=w2s(G.centroid(cp.poly)); label(cp.nome, cp.kind==="esc"||cp.kind==="elev"||cp.kind==="emerg"? [c[0], c[1]] : c, {size:9, bg:true, font:"--f-sans"}) } });
   }
   function coresAll(lobby, only){ (m.coreSets||[]).forEach(cs=>{ if(only && !only(cs)) return; coreDraw(cs.lay, lobby) }) }
   function lzDraw(list){ (list||[]).forEach(({poly,item})=>{ const agua=/piscina/i.test(item.nome), col= item.desc? (agua? css("--lz-agua") : css("--lz-deck")) : css("--lz-c");
@@ -20150,7 +21015,10 @@ function rebuild3d(m, force){
       yy+=P.pe }
     if(t.duplexA>1){ slab(G.scaleToArea(topP,t.duplexA), yy, P.pe-0.22, col3("--m-cob"), {eop:0.22}); yy+=P.pe }
     if(ti===0) lzMesh(LZ.cob, yy);
-    if(P.atico && topP.length) slab(G.scaleToArea(topP, (t.Atop??t.A)*0.25), yy, 3, col3("--m-gar"));
+    // ático técnico sobre o núcleo (caixa d'água, barrilete, casa de máquinas) e a saída dos dutos acima da cobertura
+    if(P.atico && topP.length){ const nc=lay && (lay.coreOut||lay.core);
+      if(nc && nc.length>2){ slab(nc, yy, 3, col3("--m-gar"), {eop:0.3}); (lay.coreParts||[]).forEach(cp=>{ if(cp.kind==="duto") slab(G.scaleToArea(cp.poly, G.area(cp.poly)*0.8), yy+3, 1.2, col3("--c-duto"), {eop:0.3}) }) }
+      else slab(G.scaleToArea(topP, (t.Atop??t.A)*0.25), yy, 3, col3("--m-gar")) }
   });
   // envelope: extrusão única ou (2.4) pilha de polígonos por cota com recuos progressivos
   if(m.env && m.env.length){ const ce=col3("--m-env"); outline(m.torAll, 0, m.env[0].z0, ce, true); m.env.forEach(e=>{ outline(e.poly, e.z0, e.z1-e.z0, ce, true); outline(e.poly, e.z0, 0.001, ce, true) }) }
@@ -21162,14 +22030,22 @@ function dxfImpl(m){ const d=DXF(); d.poly("LOTE",S.lote.pts,7); d.poly("SUBSOLO
   m.T.forEach((t,i)=>{ dxfTorre(d,"TORRES",t,2); if(t.plate.length) d.text("TEXTOS",G.centroid(t.plate),1.2,`T${i+1} - ${t.pav} pav`) });
   S.lote.pts.forEach((q,i)=>{ const b=S.lote.pts[(i+1)%S.lote.pts.length]; d.text("COTAS",[(q[0]+b[0])/2,(q[1]+b[1])/2],0.8,`L${i+1} ${nf(G.edgeLen(S.lote.pts,i),2)} m`) });
   return d.out() }
-function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (cs.lay.coreParts||[]).forEach(cp=>d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1)) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
+function dxfGar(m,lay,floor){ const d=DXF(); d.poly("PAVIMENTO",floor,7); (lay.path||[]).forEach(p=>{ d.poly("CAMINHO-VEICULO",[p.pts[0],p.pts[1]],1) }); (lay.routes||[]).forEach(r=>d.poly("ROTA-RAMPA",r.pts,2)); (lay.ramps||[]).forEach(r=>d.poly("RAMPA",r.poly,2)); (lay.landings||[]).forEach(p=>d.poly("PATAMAR",p,8)); (m.coreSets||[]).forEach(cs=>{ d.poly("NUCLEO",cs.core,1); if(cs.lobby) d.poly("HALL-ELEVADORES",cs.lobby,4); (cs.lay.coreFundo||[]).forEach(p=>{ d.poly("DEPOSITO",p,8); d.text("NUCLEO-TEXTOS",G.centroid(p),0.25,"DEPOSITO") }); dxfNucleo(d, cs.lay) }); lay.pillars.forEach(p=>d.poly("PILARES",p,1));
   lay.vagas.forEach((v,i)=>{ if(v.tipo==="off") return; const L= v.tipo==="pcd"?"VAGAS-PCD": v.tipo==="idoso"?"VAGAS-IDOSO": v.tipo==="faixa"?"FAIXA-PCD":"VAGAS"; d.poly(L,v.poly, v.tipo==="pcd"?5:v.tipo==="idoso"?3:v.tipo==="faixa"?8:4); if(v.tipo!=="faixa") d.text("NUMERACAO",v.c,0.6,String(i+1)) });
   return d.out() }
 /* contorno da torre: com pátio (C1), borda e vazios em polilinhas separadas (sem a "ponte" do polígono) */
 function dxfTorre(d, layer, t, col){ if(t.oco){ d.poly(layer,t.oco.pts,col); t.oco.vazios.forEach(v=>d.poly(layer+"-VAZIO",v,col)) } else d.poly(layer,t.plate,col) }
+/* núcleo de circulação no DXF: peças por camada, desenho técnico (lances, degraus, cabines, dutos), portas com folha e arco, nomes */
+function dxfNucleo(d, l){
+  (l.coreParts||[]).forEach(cp=>{ d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1); if(cp.poly.length>2 && !["duto","shaft","tec"].includes(cp.kind)) d.text("NUCLEO-TEXTOS",G.centroid(cp.poly),0.25,cp.nome) });
+  (l.coreLines||[]).forEach(x=>{ if(Array.isArray(x)) d.poly("NUCLEO-DETALHE",x,8,true); else if(x.arrow) d.poly("NUCLEO-DETALHE",x.arrow,8,true); else if(x.txt) d.text("NUCLEO-TEXTOS",x.p,0.2,x.txt) });
+  (l.coreDoors||[]).forEach(dr=>{ if(!dr.sw || !dr.dir) return; const r=Math.hypot(dr.b[0]-dr.a[0],dr.b[1]-dr.a[1]), E=[dr.a[0]+dr.dir[0]*r, dr.a[1]+dr.dir[1]*r];
+    d.poly("NUCLEO-PORTAS",[dr.a,E],2,true); const a0=Math.atan2(dr.b[1]-dr.a[1],dr.b[0]-dr.a[0]), a1=Math.atan2(E[1]-dr.a[1],E[0]-dr.a[0]); let da=a1-a0; while(da>Math.PI) da-=2*Math.PI; while(da<-Math.PI) da+=2*Math.PI;
+    d.poly("NUCLEO-PORTAS",Array.from({length:9},(_,k)=>[dr.a[0]+r*Math.cos(a0+da*k/8), dr.a[1]+r*Math.sin(a0+da*k/8)]),2,true) });
+}
 function dxfTipo(m,i){ const d=DXF(), l=m.tipo[i], t=m.T[i]; dxfTorre(d,"PAVIMENTO",t,7);
   (t.faixas||[]).forEach(f=>{ if(f.plate && f.plate!==t.plate && f.plate.length>2){ const ly=`PAVIMENTO-${t.desenhada?"BLOCO":"RECUADO"}-${f.de}-${f.ate}`; if(f.oco){ d.poly(ly,f.oco.pts,3); f.oco.vazios.forEach(v=>d.poly(ly+"-VAZIO",v,3)) } else d.poly(ly,f.plate,3) } });   // 2.4: andares recuados · C2: blocos da pilha (C3: pátio sem ponte)
-  if(!l) return d.out(); d.poly("NUCLEO",l.coreOut||l.core,1); (l.coreExtra||[]).forEach(p=>d.poly("NUCLEO",p,1)); (l.coreParts||[]).forEach(cp=>d.poly("NUCLEO-"+cp.kind.toUpperCase(),cp.poly,1)); (l.corrAneis||[l.corridor]).forEach(r=>d.poly("CIRCULACAO",r,8)); (l.hallEnds||[]).forEach(h=>d.poly("CIRCULACAO",h,8));
+  if(!l) return d.out(); d.poly("NUCLEO",l.coreOut||l.core,1); (l.coreExtra||[]).forEach(p=>d.poly("NUCLEO",p,1)); dxfNucleo(d, l); (l.corrAneis||[l.corridor]).forEach(r=>d.poly("CIRCULACAO",r,8)); (l.hallEnds||[]).forEach(h=>d.poly("CIRCULACAO",h,8));
   if(typeof comDxf==="function" && S.comodos && S.comodos.on) comDxf(d, l);   // cômodos: PAREDES, PORTAS, JANELAS, MOBILIARIO, TEXTOS
   l.units.forEach(u=>{ d.poly(u.livre?"LIVRE":"UNIDADES",u.poly,u.livre?8:3); if(u.poly.length){ const c=G.centroid(u.poly); d.text("TEXTOS",c,0.9,u.livre?"livre":u.nome); if(!u.livre) d.text("TEXTOS",[c[0],c[1]-1.3],0.6,`${nf(u.alvo,1)} m2 priv / ${nf(u.area,1)} m2 bruto`) } });
   return d.out() }
@@ -21215,7 +22091,8 @@ function IFC(m){
             u.com.rooms.forEach((r,k)=>{ if(r.poly.length<3) return; const p=lp(st.p,0); rs.push(add(`IFCSPACE('${ifcGuid()}',$,${str(cod+"-"+String(k+1).padStart(2,"0"))},$,$,${p},${solid(r.poly,2.6)},${str(`${r.longo} - ${nf(r.area,2)} m2`)},.PARTIAL.,.SPACE.,$)`)) });
             if(rs.length) add(`IFCRELAGGREGATES('${ifcGuid()}',$,$,$,${un},(${rs.join(",")}))`);
             comIfcParedes(u,{add,lp,solid,str,guid:ifcGuid,st,cod}) } }) }   // paredes com vãos de porta: IfcOpeningElement + IfcDoor
-      else if(j===t.pav && t.duplexA>1) proxy(st,`Torre ${i+1} - Duplex`,"Cobertura duplex",G.scaleToArea(t.plate,t.duplexA),P.pe);
+      if(j<t.pav){ const ln=m.tipo[i]; if(ln) (ln.coreParts||[]).filter(cp=>cp.poly.length>2 && cp.kind!=="tec").forEach((cp,q)=>space(st,`T${i+1}-${String(j+1).padStart(2,"0")}-N${String(q+1).padStart(2,"0")}`,`Nucleo - ${cp.nome} - ${nf(cp.area,2)} m2`,cp.poly,P.pe-0.2)) }   // núcleo: um IfcSpace por peça
+      if(j>=t.pav && j===t.pav && t.duplexA>1) proxy(st,`Torre ${i+1} - Duplex`,"Cobertura duplex",G.scaleToArea(t.plate,t.duplexA),P.pe);
     });
   }
   add(`IFCRELAGGREGATES('${ifcGuid()}',$,$,$,${bld},(${storeys.map(s=>s.s).join(",")}))`);
@@ -26482,12 +27359,14 @@ STEP_R.projeto = ()=>{
     const desc={ep:"Escada enclausurada com portas corta-fogo e hall de acesso. Edifícios baixos e médios.",pf_duto:"Antecâmara ventilada por dutos de entrada e saída de ar. A mais comum em residenciais altos.",pf_balcao:"Acesso pela fachada por um balcão aberto — exige núcleo encostado na fachada.",pf_press:"Escada pressurizada por ventilador; dispensa dutos na antecâmara, pede casa de máquinas."}[E.escTipo];
     body =
     RES("Andar tipo", `<div id="tipoRes"></div>`, {aside:"", asideId:"tipoStat"}) +
-    SEC("Escadas e elevadores", `<div class="fld wide"><label class="fl" for="escSel">Escada${INFO(desc||"Tipo de escada de emergência.","o tipo de escada")}</label><select class="sel" id="escSel" data-p="estudo.escTipo" data-t="s" data-rr="1">${Object.entries(ESC_TIPOS).map(([k,l])=>`<option value="${k}" ${E.escTipo===k?"selected":""}>${l}</option>`).join("")}</select></div>
+    SEC("Núcleo de circulação", `<div id="nucRes" class="nucres"></div><div class="fld wide"><label class="fl" for="escSel">Escada${INFO(desc||"Tipo de escada de emergência.","o tipo de escada")}</label><select class="sel" id="escSel" data-p="estudo.escTipo" data-t="s" data-rr="1">${Object.entries(ESC_TIPOS).map(([k,l])=>`<option value="${k}" ${E.escTipo===k?"selected":""}>${l}</option>`).join("")}</select></div>
       ${ROW("Escadas",SEG("estudo.nEsc",[[1,"1"],[2,"2"]],{rr:false}))}${ROW("Elevadores",SEG("estudo.elevadores",[[0,"auto"],[1,"1"],[2,"2"],[3,"3"],[4,"4"]],{rr:false}))}
       ${SW("estudo.emerg","Elevador de emergência")}${SW("estudo.fachada",bal?"Núcleo na fachada (obrigatório com balcão)":"Núcleo encostado na fachada",{dis:bal})}`+
-      ADV(ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["auto","auto"],["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
-        {key:"tPos", label:"Posição do núcleo", fechar:"Fechar posição do núcleo"}),
-      {open:true, key:"tNuc", sum:tipoSum("nuc"), info:"Núcleo"}) +
+      ADV(`<div class="fld wide"><label class="fl" for="nucPart">Partido do núcleo${INFO("Automático escolhe pelo número de elevadores e pelo tipo de escada. Fixe um partido para comparar: linear (elevadores no corredor e escada atrás), compacto (um elevador), frente a frente (hall dos elevadores perpendicular ao corredor) ou em L (escada no sentido da profundidade e ala rasa de elevadores).","o partido do núcleo")}</label><select class="sel" id="nucPart" data-p="nucleo.partido" data-t="s" data-rr="1">${[["auto","Automático"],...nucleoCatalogo().filter(c=>c.fixavel).map(c=>[c.id,c.nome])].map(([k,l])=>`<option value="${k}" ${(S.nucleo||{}).partido===k?"selected":""}>${l}</option>`).join("")}</select></div>`+
+        ROW(`Elevador${INFO("Capacidade da cabine. 8 pessoas (600 kg, cabine 1,10 × 1,40 m) é o mínimo acessível usual; conferir com o fabricante.","a capacidade do elevador")}`,SEG("nucleo.cap",[[6,"6"],[8,"8"],[10,"10"],[13,"13"]],{rr:false}))+
+        ROW("Planta",SEG("estudo.tipoPlanta",[["auto","auto"],["central","corredor central"],["lateral","lateral"]],{rr:false}))+ROW("Lado",SEG("estudo.nucleoLado",[["B","lado 1"],["A","lado 2"]],{rr:false}))+ROW("Ordem",SEG("estudo.escadaLado",[["auto","auto"],["E","escada · elev."],["D","elev. · escada"]],{rr:false}))+SLD("estudo.nucleoPos","Posição ao longo do andar",0,1,0.01,"%",{pct:true}),
+        {key:"tPos", label:"Partido e posição do núcleo", fechar:"Fechar partido e posição"}),
+      {open:true, key:"tNuc", sum:tipoSum("nuc"), info:"Núcleo de circulação vertical: escada, antecâmara, dutos, elevadores, hall, shafts e lixo/DML, na mesma posição em todos os pavimentos. A nota parte de 100 e perde 25 por problema grave e 6 por atenção (NBR 9077, IN 09, NBR 9050 — referência, conferir na lei)."}) +
     SEC("Medidas do andar", KV(NUM("estudo.corrTipo","Corredor / hall","m",{step:0.05})+NUM("estudo.profMin","Prof. mín. da unidade","m",{step:0.25})+NUM("produto.sacProf","Prof. da sacada","m",{step:0.1,help:"Sacada"})),
       {key:"tDim", sum:tipoSum("dim"), info:"Medidas de estudo do pavimento tipo. Confirme saídas, tipo de escada e elevador de emergência com a NBR 9077 e a IN do Corpo de Bombeiros."}) +
     SEC("Núcleo e unidades por torre", `<div id="tipoDet"></div>`, {key:"tDet", sum:"áreas do núcleo e das unidades"});
@@ -26514,8 +27393,10 @@ function garSum(k, m){
   if(k==="man"){ const n=Object.keys(E.off||{}).length+Object.keys(E.vtipo||{}).length; return n? `<b>${n}</b> marcaç${n>1?"ões":"ão"}` : "nenhuma" }
   return "";
 }
-function tipoSum(k){
+function tipoSum(k, m){
   const E=S.estudo;
+  const nu=m && (m.tipo||[]).map(l=>l&&l.nucleo).filter(Boolean);
+  if(k==="nuc" && nu && nu.length) return `${esc(nu[0].partidoNome)} · nota <b>${Math.min(...nu.map(n=>n.nota??100))}</b>`;
   if(k==="nuc") return `${E.nEsc} escada${E.nEsc>1?"s":""} · ${+E.elevadores? E.elevadores+" elev." : "elev. auto"}${E.emerg?" · emergência":""}`;
   if(k==="pos") return `${({auto:"planta auto",central:"corredor central",lateral:"lateral"})[E.tipoPlanta]||""} · ${pct(E.nucleoPos,0)}`;
   if(k==="dim") return `corredor ${nf(E.corrTipo,2)} m · prof. ${nf(E.profMin,2)} m`;
@@ -26545,7 +27426,7 @@ STEP_LIVE.projeto = (m, f, fast)=>{
     const mn=document.getElementById("garManN"); if(mn){ const n=Object.keys(S.estudo.off||{}).length+Object.keys(S.estudo.vtipo||{}).length; mn.textContent = n? `${n} marcaç${n>1?"ões":"ão"} manua${n>1?"is":"l"}` : "Sem marcações manuais" }
   }
   if(PSUB==="tipo"){
-    const nomes={esc:"Escada",ant:"Antecâmara / hall",duto:"Dutos",balc:"Balcão",elev:"Elevadores",emerg:"Elev. emergência",shaft:"Shafts",pass:"Acessos",hall:"Hall",tec:"Técnico",lixo:"Lixo / DML",hserv:"Hall de serviço"};
+    const nomes={esc:"Escada",ant:"Antecâmara / hall",hall:"Hall dos elevadores",duto:"Dutos",balc:"Balcão",elev:"Elevadores",emerg:"Elev. emergência",shaft:"Shafts",pass:"Acessos",hall:"Hall",tec:"Técnico",lixo:"Lixo / DML",hserv:"Hall de serviço"};
     const R=m.T.map((t,i)=>{ const l=m.tipo&&m.tipo[i]; if(!l) return null; const us=l.units.filter(u=>!u.livre); return {i, t, l, us, ef:us.reduce((s,u)=>s+u.area,0)/Math.max(1,t.A), baixo:us.filter(u=>u.area<u.alvo).length} });
     const ok=R.filter(Boolean), baixo=ok.reduce((s,r)=>s+r.baixo,0), ts=document.getElementById("tipoStat");
     if(ts) ts.innerHTML = !ok.length? "" : `<span class="pill ${baixo?"warn":"ok"}">${baixo? baixo+" abaixo do alvo" : "áreas no alvo"}</span>`;
@@ -26558,7 +27439,7 @@ STEP_LIVE.projeto = (m, f, fast)=>{
         <div class="stack">${Object.entries(K).filter(([k,a])=>a>0.3).map(([k,a])=>`<span title="${nomes[k]||k}" style="width:${a/l.coreA*100}%;background:var(--c-${k})"></span>`).join("")}</div>
         <div class="stackleg">${Object.entries(K).filter(([k,a])=>a>0.3).map(([k,a])=>`<span><i style="background:var(--c-${k})"></i>${nomes[k]||k} ${nf(a,1)} m²</span>`).join("")}</div>
         <table class="tbl">${us.map(u=>`<tr><td>${esc(u.nome)} · alvo ${nf(u.alvo,0)} m²</td><td style="${u.area<u.alvo?"color:var(--bad)":""}">${nf(u.area,1)} m²</td></tr>`).join("")}</table>` }).join(""));
-    setSum("tNuc", tipoSum("nuc")); setSum("tDim", tipoSum("dim"));
+    setSum("tNuc", tipoSum("nuc", m)); setSum("tDim", tipoSum("dim")); nucResLive(m);
     if(ok.length) setSum("tDet", [...new Set(ok.map(r=>`núcleo ${m2(r.l.coreA)}`))].join(" · "));
     projNormasLive(m, fast);
   }
@@ -26602,6 +27483,25 @@ Object.assign(ACT,{
   andar: b=>{ ANDAR=b.dataset.k; if(VIEW!=="andar") setView("andar"); else { viewbarSegs(window._last.m); redraw2d(); planLegend() } STEP_LIVE.projeto(window._last.m) },
   corte3d: ()=>{ S.corte=ANDAR; save(); setView("3d") },
 });
+
+/* Núcleo de circulação (src/calc/nucleo.js): partido, nota, medidas e problemas em linguagem simples, por torre */
+function nucResLive(m){
+  const el=document.getElementById("nucRes"); if(!el) return;
+  const L=(m.tipo||[]).map((l,i)=>l&&l.nucleo? {i, n:l.nucleo, l} : null).filter(Boolean);
+  if(!L.length){ el.innerHTML=""; return }
+  const nv=n=>n>=85? "ok" : n>=60? "warn" : "bad", mult=L.length>1;
+  el.innerHTML = L.map(({i,n,l})=>{ const d=n.dim||{}, dg=d.degrau||{}, ev=d.elev||{}, pr=n.problemas||[];
+    const med=[`escada ${nf(d.escLarg||1.2,2)} m`, dg.n? `${dg.n} degraus de ${nf(dg.e*100,1)} × ${nf(dg.p*100,0)} cm` : "", d.patamar? `patamar ${nf(d.patamar,2)} m` : "",
+      ev.n? `${ev.n} elevador${ev.n>1?"es":""} de ${ev.cap} pessoas${n.elevNec>ev.n? ` (tráfego pede ${n.elevNec})` : ""}` : "", `${nf(d.L,1)} × ${nf(d.D,1)} m`].filter(Boolean).join(" · ");
+    return `<div class="nr-hd">${mult?`<span class="nr-t">Torre ${i+1}</span>`:""}<b>${esc(n.partidoNome)}</b><span class="pill ${nv(n.nota??100)}">nota ${n.nota??"—"}</span></div>
+      <div class="nr-med">${med}</div>${pr.length? `<ul class="nr-pr">${pr.slice(0,4).map(q=>`<li class="${q.nivel}">${esc(q.msg)}</li>`).join("")}${pr.length>4?`<li class="mais">+ ${pr.length-4}</li>`:""}</ul>` : ""}` }).join("");
+}
+(function nucEstilo(){ if(typeof document==="undefined" || document.getElementById("nucCss")) return; const st=document.createElement("style"); st.id="nucCss";
+  st.textContent=`.nucres{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}.nucres:empty{display:none}.nucres .nr-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.nucres .nr-hd b{font-weight:600}.nucres .nr-hd .pill{margin-left:auto}
+.nucres .nr-t{color:var(--muted);font-size:12px}.nucres .nr-med{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;line-height:1.45}
+.nucres .nr-pr{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:12px}.nucres .nr-pr li{position:relative;padding-left:12px;line-height:1.4}
+.nucres .nr-pr li::before{content:"";position:absolute;left:0;top:.5em;width:6px;height:6px;border-radius:50%;background:var(--warn)}.nucres .nr-pr li.bad::before{background:var(--bad)}.nucres .nr-pr li.mais::before{display:none}`;
+  document.head.appendChild(st) })();
 
 /* ================= etapa Terreno: "Onde é e o que a lei permite" (UX v3 §4.1, pacote P2) =================
    Terreno absorve a antiga etapa Regras. De cima para baixo:
@@ -27650,7 +28550,11 @@ const GLOSS_DATA = {
   "Ático": { t:"Ático técnico", d:"Pavimento no topo para casa de máquinas, reservatórios e equipamentos. Em geral não é computável." },
   "Duplex": { t:"Cobertura duplex", d:"Unidade no último andar com dois pavimentos (o de cima com terraço/lazer privativo)." },
   "Sacada": { t:"Sacada", d:"Varanda da unidade. Algumas cidades não contam parte dela no CA." },
-  "Núcleo": { t:"Núcleo de circulação", d:"Bloco com escadas, elevadores, antecâmara, dutos e shafts, que se repete em todos os andares." },
+  "Núcleo": { t:"Núcleo de circulação", d:"Bloco com escadas, elevadores, antecâmara, dutos e shafts, que se repete em todos os andares — no tipo, no térreo e nas garagens, na mesma posição. O Gabarito monta o núcleo por um <b>partido</b> de mercado com medidas reais (escada de 1,20 m, antecâmara de 1,80 m, caixas de elevador do catálogo) e dá uma nota de 0 a 100 com os problemas em linguagem simples." },
+  "Partido do núcleo": { t:"Partido do núcleo", d:"Arranjo das peças do núcleo. <b>Linear</b>: antecâmara e elevadores no corredor, escada atrás, hall de serviço com lixo/DML e shafts. <b>Compacto</b>: um elevador. <b>Frente a frente</b>: hall dos elevadores perpendicular ao corredor. <b>Em L</b>: escada no sentido da profundidade e ala rasa de elevadores. Há ainda os de escada pressurizada, balcão aberto, duas escadas e com elevador de emergência." },
+  "Área de resgate": { t:"Área de resgate (MR)", d:"Espaço de 0,80 × 1,20 m para uma cadeira de rodas esperar o resgate, na antecâmara ou no patamar da escada, sem diminuir a largura de fuga (NBR 9050/9077)." },
+  "Shaft": { t:"Shaft (prumada)", d:"Duto vertical de instalações que atravessa todos os andares: hidráulico (H), elétrico e telecom (E) e gás (G), com porta de visita no hall." },
+  "Dutos de ventilação": { t:"Dutos de entrada e saída de ar", d:"Na escada à prova de fumaça com antecâmara, dois dutos verticais ventilam a antecâmara: o de entrada traz ar de baixo e o de saída leva a fumaça acima da cobertura. Cada um com pelo menos 0,70 m² (referência; conferir na IN do Corpo de Bombeiros)." },
   "Antecâmara": { t:"Antecâmara", d:"Pequeno ambiente entre o hall e a escada de emergência que segura a fumaça (exigida em prédios altos)." },
   "Escada PF": { t:"Escada à prova de fumaça", d:"Escada enclausurada com antecâmara ventilada. Exigida pelos bombeiros acima de certa altura." },
   "Pé-direito": { t:"Pé-direito", d:"Altura de piso a piso de um andar. Define a altura total do prédio." },

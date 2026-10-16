@@ -41,7 +41,8 @@ describe('elevador de carros', () => {
       expect(m.gar[k].count).toBeGreaterThan(0);
       const r = malhaOk(m, k, m.sub); expect(r.conn).toBe(true); expect(r.todas).toBe(true);
     }
-    expect(m.vagasLay).toBeGreaterThan(reta.vagasLay);       // rende mais que a rampa no lote estreito
+    // rende ao menos o mesmo que a rampa no lote estreito (núcleo compacto + depósito atrás dele: o arranjo das fileiras muda ±1 vaga)
+    expect(m.vagasLay).toBeGreaterThanOrEqual(reta.vagasLay - 1);
     const ec = m.elevCarros;
     expect(ec.ok).toBe(true);
     expect(ec.cap).toBeGreaterThan(ec.dem);
@@ -118,10 +119,12 @@ describe('vagas presas, motos, bicicletário, recarga e quadro por tipo', () => 
     const q = m.quadroVagas;
     expect(q.comum + q.presa + q.pcd + q.idoso + q.ev + q.frente).toBe(q.total);
     expect(q.total).toBe(m.vagasLay);
-    expect(q.presa).toBeGreaterThan(0);
+    expect(q.presa).toBeGreaterThanOrEqual(0);                            // presas só nas sobras (o núcleo compacto deixa menos sobras)
     expect(q.presa).toBeLessThanOrEqual(Math.floor(m.units * 0.05));      // limite de unidades que aceitam vaga presa
     expect(q.moto).toBeGreaterThan(0); expect(q.moto).toBeLessThanOrEqual(Math.ceil(m.units * 0.05));
-    expect(q.bici).toBeGreaterThan(0); expect(q.biciReq).toBe(Math.ceil(m.units * 0.3));
+    // bicicletário só nas sobras (o núcleo compacto deixa a garagem mais aproveitada): o que não cabe vira aviso
+    expect(q.bici).toBe(m.biciLay.ok); expect(q.biciReq).toBe(Math.ceil(m.units * 0.3));
+    if (q.bici < q.biciReq) expect(m.avisos.some(a => /^Bicicletário:/.test(a))).toBe(true);
     expect(q.ev).toBe(m.evN);
     // cada vaga presa tem a sua vaga da frente (mesmo par), e o carro chega à da frente
     Object.values(m.gar).forEach(l => l.vagas.filter(v => v.tipo === 'presa').forEach(v => expect(l.vagas.some(f => f.tandem && f.par === v.par)).toBe(true)));

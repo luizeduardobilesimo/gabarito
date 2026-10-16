@@ -141,18 +141,44 @@ function drawPlan(g, W, H, V, mode, m, opt={}){
     coresAll(true);
     strokeP(floor,css("--ink"),1.6);
   }
-  // núcleo em desenho técnico (todos os andares): paredes, portas, lances, elevadores
+  // núcleo em desenho técnico (todos os andares; src/calc/nucleo.js): paredes com espessura, portas com folha e arco no
+  // sentido da fuga, lances com degraus, patamares e linha de piso, cabines com contrapeso e portas de correr, dutos e shafts
   function coreDraw(lay, lobby){
     if(!lay) return;
+    const sc=V.s, ink=css("--ink"), px=t=>Math.max(1, t*sc), parts=lay.coreParts||[];
     if(lobby && lay.lobby){ fillP(lay.lobby,css("--c-hall"),1); strokeP(lay.lobby,css("--ink"),0.8,[3,2]); if(V.s>6) label("hall dos elevadores", w2s(G.centroid(lay.lobby)), {size:9,bg:false,col:css("--muted")}) }
-    (lay.coreParts||[]).forEach(cp=>fillP(cp.poly, css("--c-"+cp.kind)||css("--surface"), 1));
-    (lay.coreLines||[]).forEach(l=>{ if(l.arrow){ arrow(l.arrow[0],l.arrow[1],css("--ink"),1,5); return } const A=w2s(l[0]),B=w2s(l[1]); g.strokeStyle=css("--ink"); g.globalAlpha=0.55; g.lineWidth=0.7; g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); g.globalAlpha=1 });
-    (lay.coreParts||[]).forEach(cp=>strokeP(cp.poly, css("--ink"), Math.max(1.2,Math.min(3,V.s*0.15))));
-    if(lobby) (lay.coreReserva||[]).forEach(p=>fillP(p, css("--c-tec"), 1));   // atrás da escada rasa: reservado nos outros pavimentos
-    strokeP(lobby? lay.core : (lay.coreOut||lay.core), css("--ink"), Math.max(1.6,Math.min(4,V.s*0.22)));
-    (lay.coreDoors||[]).forEach(d=>{ const A=w2s(d.a), B=w2s(d.b); g.strokeStyle=css(lobby?"--c-hall":"--surface"); g.lineWidth=Math.max(2,Math.min(5,V.s*0.3)); g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke();
-      if(d.sw){ const r=Math.hypot(B[0]-A[0],B[1]-A[1]), ang=Math.atan2(B[1]-A[1],B[0]-A[0]); g.strokeStyle=css("--ink"); g.lineWidth=0.8; g.beginPath(); g.moveTo(...A); g.lineTo(A[0]+Math.cos(ang-Math.PI/2)*r, A[1]+Math.sin(ang-Math.PI/2)*r); g.stroke(); g.globalAlpha=0.6; g.beginPath(); g.arc(A[0],A[1],r,ang-Math.PI/2,ang); g.stroke(); g.globalAlpha=1 } });
-    if(V.s>7) (lay.coreParts||[]).forEach(cp=>{ if(["hall","tec","duto","pass"].includes(cp.kind)) return; const xs=cp.poly.map(q=>w2s(q)[0]), ys=cp.poly.map(q=>w2s(q)[1]), w_=Math.max(...xs)-Math.min(...xs), h_=Math.max(...ys)-Math.min(...ys); g.font="500 9px "+css("--f-mono"); const tw=g.measureText(cp.nome).width; if(w_>tw+8 && h_>12) label(cp.nome, w2s(G.centroid(cp.poly)), {size:9, bg:true}) });
+    // garagens e térreo: a faixa atrás do núcleo (unidades no tipo) vira depósito, com porta para a garagem
+    if(lobby) (lay.coreFundo||[]).forEach(p=>{ fillP(p,css("--c-tec"),1); strokeP(p,ink,px(0.12)); if(V.s>6){ const xs=p.map(q=>w2s(q)[0]), ys=p.map(q=>w2s(q)[1]); if(Math.max(...xs)-Math.min(...xs)>44 && Math.max(...ys)-Math.min(...ys)>12) label("depósito", w2s(G.centroid(p)), {size:9,bg:false,col:css("--muted")}) } });
+    parts.forEach(cp=>fillP(cp.poly, css("--c-"+cp.kind)||css("--surface"), 1));
+    // linhas técnicas (só com zoom suficiente para não virar ruído)
+    (lay.coreLines||[]).forEach(l=>{
+      if(l.arrow){ if(sc<5) return; arrow(l.arrow[0],l.arrow[1],ink,Math.max(0.7,Math.min(1.3,sc*0.04)),Math.max(3.5,Math.min(7,sc*0.22))); return }
+      if(l.dot){ if(sc<6) return; const P_=w2s(l.dot); g.fillStyle=ink; g.beginPath(); g.arc(P_[0],P_[1],Math.max(1.3,Math.min(3,sc*0.05)),0,Math.PI*2); g.fill(); return }
+      if(l.txt!=null){ if(sc<10 || !l.txt) return; const P_=w2s(l.p), fs=Math.round(Math.max(7,Math.min(12,(l.s||0.25)*sc)));
+        g.font="600 "+fs+"px "+css("--f-sans"); g.textAlign="center"; g.textBaseline="middle";
+        if(l.bg){ const tw=g.measureText(l.txt).width+5; g.fillStyle=css("--surface"); g.globalAlpha=0.9; g.fillRect(P_[0]-tw/2,P_[1]-fs*0.62,tw,fs*1.24); g.globalAlpha=1 }
+        g.fillStyle=ink; g.fillText(l.txt,P_[0],P_[1]); return }
+      if(!Array.isArray(l) || (sc<3.5 && l.c!=="medio")) return;
+      const A=w2s(l[0]),B=w2s(l[1]); g.strokeStyle=ink;
+      if(l.c==="medio"){ g.globalAlpha=0.85; g.lineWidth=Math.max(0.7,Math.min(1.3,sc*0.035)) } else if(l.c==="tracejado"){ g.globalAlpha=0.55; g.lineWidth=0.8; g.setLineDash([3,2]) } else { g.globalAlpha=0.45; g.lineWidth=Math.max(0.5,Math.min(0.9,sc*0.025)) }
+      g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke(); g.setLineDash([]); g.globalAlpha=1 });
+    // paredes no eixo das peças: corta-fogo/estruturais 0,20 m · alvenaria 0,12 m · contorno do núcleo 0,25 m
+    const CF=new Set(["esc","ant","elev","emerg","duto","balc"]);
+    parts.forEach(cp=>{ if(cp.kind==="tec") return; strokeP(cp.poly, ink, px(CF.has(cp.kind)? 0.20 : 0.12)) });
+    strokeP(lobby? lay.core : (lay.coreOut||lay.core), ink, px(0.25));
+    // portas: abre o vão na parede e desenha a folha + o arco para o lado em que ela abre
+    const vaoCor=css(lobby?"--c-hall":"--surface");
+    (lay.coreDoors||[]).forEach(d=>{ const A=w2s(d.a), B=w2s(d.b), r=Math.hypot(B[0]-A[0],B[1]-A[1]); if(r<2) return;
+      const mid=[(d.a[0]+d.b[0])/2+(d.dir? d.dir[0]*0.25 : 0), (d.a[1]+d.b[1])/2+(d.dir? d.dir[1]*0.25 : 0)], dentro=parts.find(cp=>G.pip(mid,cp.poly));
+      g.strokeStyle= dentro? (css("--c-"+dentro.kind)||vaoCor) : vaoCor; g.lineWidth=px(0.30); g.lineCap="butt"; g.beginPath(); g.moveTo(...A); g.lineTo(...B); g.stroke();
+      g.strokeStyle=ink; g.lineWidth=1; [A,B].forEach(Q=>{ const ux_=(B[0]-A[0])/r, uy_=(B[1]-A[1])/r, h=px(0.13); g.beginPath(); g.moveTo(Q[0]-uy_*h,Q[1]+ux_*h); g.lineTo(Q[0]+uy_*h,Q[1]-ux_*h); g.stroke() });   // batentes
+      if(!d.sw || r<4) return;
+      const dw=d.dir? (()=>{ const o0=w2s(d.a), o1=w2s([d.a[0]+d.dir[0], d.a[1]+d.dir[1]]), k=Math.hypot(o1[0]-o0[0],o1[1]-o0[1])||1; return [(o1[0]-o0[0])/k,(o1[1]-o0[1])/k] })() : [-(B[1]-A[1])/r,(B[0]-A[0])/r];
+      const E=[A[0]+dw[0]*r, A[1]+dw[1]*r], a0=Math.atan2(B[1]-A[1],B[0]-A[0]), a1=Math.atan2(E[1]-A[1],E[0]-A[0]); let da=a1-a0; while(da>Math.PI) da-=2*Math.PI; while(da<-Math.PI) da+=2*Math.PI;
+      g.lineWidth=Math.max(1,Math.min(1.8,sc*0.05)); g.beginPath(); g.moveTo(...A); g.lineTo(...E); g.stroke();
+      g.globalAlpha=0.55; g.lineWidth=0.8; g.beginPath(); g.arc(A[0],A[1],r,a0,a1,da<0); g.stroke(); g.globalAlpha=1 });
+    if(V.s>7) parts.forEach(cp=>{ if(["tec","duto","shaft","pass"].includes(cp.kind) || (cp.kind==="esc" && V.s>=10)) return; const xs=cp.poly.map(q=>w2s(q)[0]), ys=cp.poly.map(q=>w2s(q)[1]), w_=Math.max(...xs)-Math.min(...xs), h_=Math.max(...ys)-Math.min(...ys); g.font="500 9px "+css("--f-sans"); const tw=g.measureText(cp.nome).width;
+      if(w_>tw+8 && h_>14){ const c=w2s(G.centroid(cp.poly)); label(cp.nome, cp.kind==="esc"||cp.kind==="elev"||cp.kind==="emerg"? [c[0], c[1]] : c, {size:9, bg:true, font:"--f-sans"}) } });
   }
   function coresAll(lobby, only){ (m.coreSets||[]).forEach(cs=>{ if(only && !only(cs)) return; coreDraw(cs.lay, lobby) }) }
   function lzDraw(list){ (list||[]).forEach(({poly,item})=>{ const agua=/piscina/i.test(item.nome), col= item.desc? (agua? css("--lz-agua") : css("--lz-deck")) : css("--lz-c");

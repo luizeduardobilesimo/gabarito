@@ -377,7 +377,7 @@ const blcFora = (p, c) => !p.length || !c || c.length<3 ? 0 : Math.max(0, G.area
 /* fração de um polígono (convexo, ex.: o núcleo) que cai dentro da planta — amostras numa grade 6 × 6; a planta pode ser L, U ou ter pátio */
 function blcDentro(p, plate){
   const ux=G.longestDir(p), vy=[-ux[1],ux[0]], [u0,u1]=G.extent(p,ux), [v0,v1]=G.extent(p,vy); let n=0, d=0;
-  for(let a=0;a<6;a++) for(let b=0;b<6;b++){ const u=u0+(a+0.5)/6*(u1-u0), v=v0+(b+0.5)/6*(v1-v0), q=[ux[0]*u+vy[0]*v, ux[1]*u+vy[1]*v]; if(!G.pip(q,p)) continue; n++; if(G.pip(q,plate)) d++ }
+  for(let a=0;a<12;a++) for(let b=0;b<12;b++){ const u=u0+(a+0.5)/12*(u1-u0), v=v0+(b+0.5)/12*(v1-v0), q=[ux[0]*u+vy[0]*v, ux[1]*u+vy[1]*v]; if(!G.pip(q,p)) continue; n++; if(G.pip(q,plate)) d++ }
   return n ? d/n : 1;
 }
 const blcNome = i => `torre ${i+1}`;
