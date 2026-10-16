@@ -67,7 +67,7 @@ const ok = (c, msg) => { console.log((c ? '  ok   ' : '  FALHA ') + msg); if (!c
     await shot('2-regras');
     if (tag === 'd-light') { await p.selectOption('#assCid', '__outra'); await p.waitForTimeout(200); await shot('2b-outra'); await p.selectOption('#assCid', cid); await p.waitForTimeout(200) }
     await p.click('[data-a="seguir"]'); await p.waitForTimeout(300);
-    await p.click('[data-padrao="familia"]');
+    await p.click((await p.$('[data-padrao="medio"]')) ? '[data-padrao="medio"]' : '[data-padrao="familia"]');
     await p.fill('#assPr', '12000');
     await shot('3-produto');
     if (!completo) { await p.click('[data-a="fechar"]'); await p.waitForTimeout(200); ok(await p.evaluate(() => document.getElementById('assWiz').hidden), 'cancelar fecha sem mudar o estudo'); }
@@ -75,7 +75,11 @@ const ok = (c, msg) => { console.log((c ? '  ok   ' : '  FALHA ') + msg); if (!c
       // comparação canônica (o desfazer pode reordenar as chaves de um objeto)
       await p.evaluate(() => { window._canon = o => JSON.stringify(o, (k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v) });
       const antes = await p.evaluate(() => _canon(S));
-      await p.click('[data-a="seguir"]'); await p.waitForTimeout(900); await shot('4-gerando');
+      // passo 4: restrições (diretrizes do produto) — livre
+      await p.click('[data-a="seguir"]'); await p.waitForTimeout(300);
+      if (await p.$('[data-dmodo]')) { await p.click('[data-dmodo="diretrizes"]'); await p.waitForTimeout(200); await shot('3b-restricoes'); await p.click('[data-dmodo="livre"]'); await p.waitForTimeout(150);
+        await p.click('[data-a="seguir"]'); await p.waitForTimeout(900) }
+      await shot('4-gerando');
       await p.waitForFunction(() => document.getElementById('assWiz').hidden, null, { timeout: 120000 });
       await p.evaluate(() => calcPronto()); await p.waitForTimeout(1500);
       const r = await p.evaluate(() => ({ tab: TAB, nome: S.nome, area: G.area(S.lote.pts), ref: S.regrasRef.id, lucro: window._last.f.lucro, vgv: window._last.f.vgv,

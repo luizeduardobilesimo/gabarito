@@ -2517,6 +2517,7 @@ const MIX_PRESETS = {
 };
 function basePrice(st){ const mx=st.produto.mix, a=mx.reduce((s,u)=>s+u.area*u.qtd,0); return a? mx.reduce((s,u)=>s+u.area*u.qtd*u.preco,0)/a : 10000 }
 function presetMix(st, key, N){
+  if(/^dir/.test(String(key)) && typeof dirPresetMix==="function") return dirPresetMix(st, key, N);   // diretrizes do produto (src/calc/diretrizes.js)
   const pr=MIX_PRESETS[key]; if(!pr.tips){ const cur=st.produto.mix, tot=cur.reduce((s,u)=>s+u.qtd,0)||1; return distrib(cur.map(u=>({...u, w:u.qtd/tot})), N, u=>({nome:u.nome,area:u.area,preco:u.preco,sac:u.sac||0})) }
   const bp=basePrice(st); return distrib(pr.tips, N, t=>({nome:t.nome,area:t.area,preco:Math.round(bp*t.pf/50)*50,sac:t.sac}));
 }
@@ -2721,7 +2722,8 @@ function otimVagasEst(m, st, cal){ const P=st.produto, mv=st.regras.m2Vaga||28;
   return cal.vf + Math.floor(P.subsolos*Math.floor((m.subA||0)/mv)*cal.s + P.garAcima*Math.floor((m.embA||0)/mv)*cal.g + Math.floor((m.gTer||0)/mv)*cal.t) }
 /* nível da combinação para a ordem (antes do objetivo): 2 = lucro > 0 e margem s/ VGV ≥ meta (S.fin.margemAlvo) · 1 = lucro > 0 · 0 = prejuízo */
 const otimNivel = (n, meta) => n.lucro>0 ? (n.margem>=meta-1e-9 ? 2 : 1) : 0;
-const otimMelhor = (a, b) => (b.nivel||0)-(a.nivel||0) || b.sc-a.sc;   // comparador: nível, depois o objetivo
+const otimDirFora = r => r.dir && !r.dir.ok ? 1 : 0;   // diretrizes do produto: quem não as respeita (lazer obrigatório que não coube…) vem depois
+const otimMelhor = (a, b) => otimDirFora(a)-otimDirFora(b) || (b.nivel||0)-(a.nivel||0) || b.sc-a.sc;   // comparador: diretrizes, nível, depois o objetivo
 /** preço médio de venda (R$/m², média das tipologias ponderada pela área) que leva a margem s/ VGV ao alvo — todas as tipologias, coberturas
     e lojas sobem na mesma proporção (finance dp); com tPct o terreno acompanha o VGV. null se nem 5× o preço chega lá */
 function otimPrecoPara(st, m, alvo, tPct){
@@ -2776,7 +2778,9 @@ function otimMotor(base, o){
   const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
   // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
   // rascunho {st, sc0} (nota da massa) sem calcular a garagem — quem calcula é `confere`
-  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null; const {m0, sc0}=notaMassa(s2);
+  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null;
+    if(typeof dirEstadoOk==="function" && !dirEstadoOk(s2)) return null;   // diretrizes do produto (subsolos, elevadas, andares, unidades)
+    const {m0, sc0}=notaMassa(s2);
     if(!cabe(m0) || m0.minApto<R0.aptoMin) return null;
     if(forma && (m0.T.some(t=>t.blcIgn && t.blcIgn.length) || otimDesvio(m0)>rTol)) return null;
     return {st:s2, sc0} };
@@ -2847,6 +2851,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
   opts = {obj:"lucro", ...(opts||{})};
   const prog = typeof onProg==="function"? onProg : ()=>{};
   const base=clone(ctx.st||S);
+  // diretrizes do produto (src/calc/diretrizes.js): fixos do produto + vagas por unidade e margem mínima na conta; null no modo livre
+  const DIR = typeof dirPrepara==="function"? dirPrepara(base) : null;
   const mNow = ctx.m || (typeof window!=="undefined" && window._last && window._last.m) || compute(base);
   // garagem do estudo inválida (rampa que não cabe ou passaria pelo núcleo): a busca parte de uma circulação que funciona
   const garV = opts.cal? null : otimGarValida(base, mNow);
@@ -2863,8 +2869,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const mc = opts.mc!==false;
   // forma desenhada (Fase C): o nº de torres e os blocos são do usuário e não variam; as unidades por andar preenchem o bloco
   const forma = otimFormaAtiva(base), rTol = Math.max(0.01, +(base.otim && base.otim.rTol) || 0.10), pavMinF = forma? otimPavMinForma(base) : 1;
-  const nTs = forma || !opts.torres? [base.produto.torres.length] : [1,2,3];
-  const presets = opts.tipologias? Object.keys(MIX_PRESETS) : ["atual"];
+  const nTs = DIR? dirTorres(DIR.D, forma || !opts.torres? [base.produto.torres.length] : [1,2,3], forma) : forma || !opts.torres? [base.produto.torres.length] : [1,2,3];
+  const presets = DIR? (DIR.pre? [] : dirPresets(base, opts, DIR.D)) : opts.tipologias? Object.keys(MIX_PRESETS) : ["atual"];
   const curN = base.produto.mix.reduce((s,u)=>s+u.qtd,0);
   // eficiência real da planta (torre desenhada / contorno ocupado): as estimativas usam a privativa das unidades desenhadas
   // (blcPrivEstimada: um pavimento tipo por mix e faixa de elevadores, guardado em memoEf); as quantidades candidatas partem
@@ -2875,8 +2881,9 @@ function otimizar(opts, onProg, onDone, ctx={}){
   // unidades por andar: 2…8 e, em lote pequeno (a maior planta possível não comporta 2,5× o andar de 2 unidades), também 1
   const nsLivre = pk=>{ const R=base.regras, mx=presetMix(base, pk, 2), need2=mx.reduce((s,u)=>s+u.area*u.qtd,0)/Math.max(0.3, base.produto.efic);
     return [...(G.area(base.lote.pts)*R.toTorre < 2.5*need2 ? [1] : []), 2,3,4,5,6,8] };
-  const NsDe = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? nsLivre(pk) : [curN];
-  const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
+  const NsDe0 = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? nsLivre(pk) : [curN];
+  const NsDe = pk => DIR? dirNs(DIR.D, NsDe0(pk)) : NsDe0(pk);
+  const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) if(!DIR || dirGarOk(DIR.D, a, b)) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
   const jobs=[]; nTs.forEach(nT=>presets.forEach(pk=>NsDe(pk).forEach(N=>jobs.push({nT,pk,N}))));
   const res=[], pts=[], cont={cabe:0, vagas:0}; let i=0; const t0=performance.now(); const solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
   const score0=OBJ[opts.obj][1];
@@ -2899,13 +2906,15 @@ function otimizar(opts, onProg, onDone, ctx={}){
         st.produto.subsolos=sub; st.produto.garAcima=gac; st.produto.torres=Array.from({length:nT},()=>({pav:4}));
         // teto exato pelo gabarito: acima dele o massing() nem precisa rodar
         const hEmbG=st.produto.peTerreo+gac*st.produto.peGar, pmax=maxPavFast(st, Math.floor((hLimDe(st)+1e-6-hEmbG)/st.produto.pe));
-        const pMin=Math.max(2, pavMinF); if(pmax<pMin) continue;   // forma desenhada: o último bloco começa no andar pavMinF (abaixo disso ele some)
+        const pMin=Math.max(2, pavMinF); if(DIR && pmax>DIR.pmaxG) DIR.pmaxG=pmax; if(pmax<pMin) continue;   // forma desenhada: o último bloco começa no andar pavMinF (abaixo disso ele some)
         // automático: o teto é também o maior nº de pavimentos em que o mix cabe (os subsolos não mudam a torre: um por garagem elevada);
         // a lista inclui alturas menores (70% e 50%): menos andares = planta mais larga, menos vagas exigidas e menos subsolos
         let P=pmax; if(!forma){ let pf=pfit.get(gac); if(pf===undefined){ pf=fitAte(st, nT, Math.min(pMin, pmax), pmax); pfit.set(gac, pf) } P=Math.min(pmax, pf); if(P<pMin) continue }
         // forma desenhada: também o andar mínimo e o meio da faixa — a altura muda o bloco de referência (pilha) e o nº de elevadores
         // (eficiência real da planta), então os pavimentos mais altos podem não comportar o mix
-        for(const pav of [...new Set([P, P-1, P-3, Math.ceil(P*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+P)/2)] : [Math.ceil(P*0.5)])])].filter(p=>p>=pMin && p<=pmax)){
+        const pavs0=[...new Set([P, P-1, P-3, Math.ceil(P*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+P)/2)] : [Math.ceil(P*0.5)])])].filter(p=>p>=pMin && p<=pmax);
+        const pavL = DIR? dirPavs(DIR.D, pavs0, pMin, Math.min(pmax, P)) : pavs0;
+        for(const pav of pavL){
           const kc=gac+"|"+pav, sMin=cumpre.get(kc);
           if(sMin!=null && sub>sMin){ tested++; continue }   // dominada por sMin subsolos: mesmo preço, mais custo (conta como testada, como antes)
           st.produto.torres=Array.from({length:nT},()=>({pav}));
@@ -2916,6 +2925,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
             if(m.H>(m.hLim ?? st.regras.hMax)+1e-6 || m.CA>st.regras.caMax+1e-6 || m.T.some(t=>t.blcIgn && t.blcIgn.length)) continue;
             if(otimDesvio(m)>rTol && !(pk==="atual" && N===curN)) continue }
           const vg = otimVagasEst(m, st, cal), okVg = vg >= m.vagasReq;
+          if(DIR && !okVg){ dirQuase(DIR, {vg, req:m.vagasReq, units:m.units, sub, gac, subA:m.subA, embA:m.embA});
+            const pf=Math.max(pMin, dirPavVagas(m, vg, pav, +st.regras.vagasApto||1)); if(pf<pav && !pavL.includes(pf)) pavL.push(pf) }   // garagem limitada: a altura que as vagas permitem
           if(!okVg && !mc) continue;
           if(m.minApto<st.regras.aptoMin) continue;
           if(okVg) cont.vagas++;
@@ -2933,7 +2944,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
       }
       if(best) res.push(best);
     }
-    prog(0.6*i/jobs.length);
+    prog(0.6*i/Math.max(1, jobs.length));
     if(i<jobs.length) setTimeout(step,0);
     else { res.sort(otimMelhor); prog(0.6); validar(res.slice(0,14), out0=>{
       const canc=e=>/cancelado/.test(e && e.message || "");
@@ -2949,7 +2960,9 @@ function otimizar(opts, onProg, onDone, ctx={}){
         const semGar = !garV && mNow.vert && mNow.vert.ok===false;
         o.semOpcao = !cont.cabe ? {k:"lote", motivo:"o lote é pequeno demais para as regras: nenhuma torre comporta as unidades dentro dos recuos e da ocupação"}
           : semGar ? {k:"vagas", motivo:"nenhuma circulação de veículos (rampa reta, alternada, helicoidal, em L ou elevador de carros) cabe neste lote sem passar pelo núcleo — mude a posição do núcleo ou o acesso de veículos", porSubsolo:0}
-          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo${yg? ` e ${yg} por garagem elevada` : ""} neste lote${gx? ` (${gx})` : ""} e as regras pedem ${nf(va,1)} por unidade: mesmo com 5 subsolos e 3 garagens elevadas seriam cerca de ${maxV} vagas${va>0? `, para no máximo ${Math.floor(maxV/va)} unidades` : ""}`, porSubsolo:ys, porElevada:yg, maxVagas:maxV} }
+          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo${yg? ` e ${yg} por garagem elevada` : ""} neste lote${gx? ` (${gx})` : ""} e as regras pedem ${nf(va,1)} por unidade: mesmo com 5 subsolos e 3 garagens elevadas seriam cerca de ${maxV} vagas${va>0? `, para no máximo ${Math.floor(maxV/va)} unidades` : ""}`, porSubsolo:ys, porElevada:yg, maxVagas:maxV};
+        if(DIR){ const so=dirSemOpcao(DIR, base, cont, cal, mNow); if(so) o.semOpcao=so } }
+      if(DIR) o.dir={resumo:DIR.resumo, padrao:DIR.D.P.curto||DIR.D.nome};
       if(garV) o.garTroca={de:garV.de, para:cicloGarDe(base), validas:garV.validas};
       // sem lucro (ou abaixo da meta): o motivo e o que fecharia a conta da melhor (a menos ruim). Os preços que fecham a conta são os
       // MENORES entre as opções conferidas (opcaoZero/opcaoMeta = índice em res quando não é a primeira): com o preço maior, outra
@@ -2960,6 +2973,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
           const pz=o.fecha.precoZero!=null && r.lucro>0? null : otimPrecoPara(c.st, c.m, 0, tPct), pm=otimPrecoPara(c.st, c.m, meta, tPct);
           if(pz!=null && (o.fecha.precoZero==null || pz<o.fecha.precoZero-1)){ o.fecha.precoZero=pz; o.fecha.opcaoZero=q }
           if(pm!=null && (o.fecha.precoMeta==null || pm<o.fecha.precoMeta-1)){ o.fecha.precoMeta=pm; o.fecha.opcaoMeta=q } });
+        if(DIR) dirFechaAjusta(DIR, o.fecha, cb.st.produto.mix, cb.st);
         if(!(b.lucro>0)){ o.semLucro=o.fecha; b.semLucro=true } }catch(e){ console.error("[otimizar] fecha", e); if(!(b.lucro>0)){ o.semLucro={k:"custo", motivo:"custos acima da receita", meta}; b.semLucro=true } } }
       if(!mc) return finish(o);
       multi(out, o) };
@@ -2978,6 +2992,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
     const v={...r, sc:c.sc, pav:st.produto.torres[0].pav, sub:st.produto.subsolos, gac:st.produto.garAcima, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma)};
     v.nivel=otimNivel(v, meta); v.key=otimKey(v); v.est=false; if(tPct) v.terreno=st.fin.terreno;
     if(gar0) v.garagem=cicloGarDe(st);
+    if(DIR) v.dir=dirConfere(st, m, DIR.D);
     return v };
   // confirma as melhores com o layout real da garagem (reparo em otimMotor)
   const conf=new Map();   // chave → {st, m, f, sc} das opções conferidas (para o ciclo e o "o que fecharia a conta" sem recalcular)
@@ -2994,6 +3009,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
         // (sem o ciclo, a garagem é a do estudo)
         if(!nivelOk(c) && c.m.vert && c.m.vert.ok===false && opts.ciclo!==false && typeof cicloTipos==="function" && nAlt<6){ nAlt++; const c2=garAlt(c); if(c2) c=c2 }
         const st=c.st, m=c.m;
+        if(DIR && !nivelOk(c) && c.m.vagas<c.m.vagasReq) dirQuase(DIR, {vg:m.vagas, req:m.vagasReq, units:m.units, sub:st.produto.subsolos, gac:st.produto.garAcima, subA:m.subA, embA:m.embA}, true);
         if(!nivelOk(c) || (forma && otimDesvio(m)>rTol)) continue;   // forma: unidades além da tolerância não entram nas melhores
         const v=opcao(r, c);
         if(out.some(x=>x.key===v.key)) continue;   // o reparo pode levar duas opções à mesma combinação
@@ -3066,7 +3082,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
     const stepM=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<tBud){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
         if(!m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false, ...(gar0? {garagem:gar0} : {})};
+        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false, ...(gar0? {garagem:gar0} : {}), ...(DIR? {dir:dirConfere(st, m, DIR.D)} : {})};
         v.nivel=otimNivel(v, meta); if(tPct) v.terreno=st.fin.terreno; val.push(extras(st,m,v)) }
       prog(pC1+(1-pC1)*j/Math.max(1,cand.length));
       if(j<cand.length && performance.now()-t1<tBud) return setTimeout(stepM,0);
@@ -3088,7 +3104,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
 function aplicarOtim(r, st=S){ const old=st.produto.torres||[];
   st.produto.torres=Array.from({length:r.nT},(_,i)=> r.forma? {...(old[i]||{}), pav:r.pav} : {pav:r.pav}); st.produto.mix=clone(r.mix); st.produto.subsolos=r.sub; st.produto.garAcima=r.gac;
   if(r.garagem && typeof cicloGarPoe==="function") cicloGarPoe(st, r.garagem);
-  if(Array.isArray(r.lazer)) st.produto.lazer.itens=clone(r.lazer) }
+  if(Array.isArray(r.lazer)) st.produto.lazer.itens=clone(r.lazer);
+  if(typeof dirAplicaFixos==="function") dirAplicaFixos(st) }   // diretrizes do produto: garagem no térreo, coberturas, lojas, lazer obrigatório…
 /* opções do otimizador com vários critérios (vão junto com S.otim para o Worker); filtros fVagas/fSol/solMin são só da tela */
 extendDEF("otim", { ...DEF.otim, rTol:0.10, mc:true, vento:false, malha:false, efic:false, vc:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });
 
@@ -5170,8 +5187,11 @@ function aptoMiniSVG(x, opts={}){
        regras: { id, nome, caMax, hMax, toTorre, recFrente, ia },
                  id = registro de cidadesLista() (cidadeAplicar marca S.regrasRef) · "" = sem cidade (DEF.regras, "regras a conferir")
                  nome = cidade digitada ("Outra") · os 4 números, quando vêm, valem por cima da cidade · ia = ler a lei depois (só marca)
-       produto:{ padrao:"compacto"|"familia"|"alto", preco (R$/m² médio), terreno (R$, opcional) }
+       produto:{ padrao:"compacto"|"familia"|"alto" (presets antigos) | chave de DIR_PADROES com `diretrizes`, preco (R$/m² médio), terreno (R$, opcional) },
+       diretrizes:{ modo:"livre"|"diretrizes", subMax, gacMax (−1 livre · 0 não · N até N), tips [nº de dormitórios] }   (opcional)
      }
+     Com `diretrizes` (assistente novo): o padrão vem de DIR_PADROES (src/calc/diretrizes.js, dirAplicaPadrao: mix, preços, lazer, CUB,
+     vagas, coberturas) e, no modo "diretrizes", subsolos, garagens elevadas e tipologias viram regra para o otimizador.
      O mix vem do preset do otimizador (MIX_PRESETS/presetMix) e cada tipologia recebe preço = preço médio × pf do preset.
      Sem preço do terreno, fin.terreno fica 0 e a tela o estima depois do otimizador (assTerrenoEstimado).
      S.guia.conf (flags de interface do checklist, src/ui/progresso.js) recebe o que o assistente confirmou.
@@ -5244,17 +5264,38 @@ function assEstado(base, resp){
   st.regras.caBas=Math.min(st.regras.caBas, st.regras.caMax);
   if(!R.id && R.nome && String(R.nome).trim()){ st.regras.cidade=String(R.nome).trim(); st.guia.conf.regras=true }
   // ---- produto ----
+  const DR=r.diretrizes;
+  if(DR && typeof DIR_PADROES!=="undefined" && DIR_PADROES[P.padrao]) assDiretrizes(st, P, DR);
+  else {
   const pk = ASS_N0[P.padrao]!=null? P.padrao : "familia", pr=MIX_PRESETS[pk];
   const pm = assNum(P.preco) || assPrecoSugerido(st, pk);
   st.produto.mix = presetMix(st, pk, ASS_N0[pk]).map(u=>{ const t=pr.tips.find(x=>x.nome===u.nome)||{pf:1}; return {...u, preco:Math.round(pm*t.pf/50)*50} });
   st.produto.torres=[{pav:8}];
   const cb=ASS_COB[pk]; st.produto.cob = cb? { ...st.produto.cob, on:true, qtd:2, area:cb.area, preco:Math.round(pm*1.12/50)*50 } : { ...st.produto.cob, on:false };
   st.blocos && (st.blocos.modo="auto");
+  }
   if(assNum(P.preco)) st.guia.conf.preco=true;
   // ---- terreno ----
   const tr=assNum(P.terreno);
   st.fin.terreno = tr>0? Math.round(tr) : 0; st.fin.permuta=0; st.fin.permutaFin=0;
   if(tr>0) st.guia.conf.custo=true;
+  return st;
+}
+/** padrão e diretrizes do assistente novo (src/calc/diretrizes.js) */
+function assDiretrizes(st, P, DR){
+  const k=P.padrao, PD=DIR_PADROES[k], pm=assNum(P.preco)||PD.preco[1];
+  st.diretrizes=clone(DEF.diretrizes);
+  dirAplicaPadrao(st, k, {N:PD.n0, preco:pm});
+  const d=st.diretrizes, on=DR.modo==="diretrizes";
+  d.modo = on? "diretrizes" : "livre";
+  if(on){ d.subMax=dirLim(DR.subMax); d.gacMax=dirLim(DR.gacMax);
+    const tips=Array.isArray(DR.tips)? [...new Set(DR.tips.map(Number).filter(q=>q>=0 && q<=4))].sort((a,b)=>a-b) : [];
+    if(tips.length && JSON.stringify(tips)!==JSON.stringify(d.tips)){ d.tips=tips; const mx=dirPresetMix(st, "dir", PD.n0); if(mx.length) st.produto.mix=mx }
+    if(d.subMax>=0) st.produto.subsolos=Math.min(st.produto.subsolos, d.subMax);
+    if(d.gacMax>=0) st.produto.garAcima=Math.min(st.produto.garAcima, d.gacMax);
+    dirAplicaFixos(st) }
+  st.produto.torres=[{pav:8}];
+  st.blocos && (st.blocos.modo="auto");
   return st;
 }
 /** o estudo é o exemplo que vem com o app (nome e contorno do DEF) */
@@ -6229,7 +6270,7 @@ function cicloGarNome(g, st){ if(!g) return "";
 /* tipos de rampa que fazem sentido no estudo (sem subsolo nem elevada não há rampa: só a posição do acesso conta) */
 function cicloTipos(st){ const P=st.produto, n=(+P.subsolos||0)+(+P.garAcima||0), t0=st.estudo.rampaTipo||"reta";
   if(!n) return [t0];
-  return [...new Set([t0, "reta", ...(P.subsolos>1||P.garAcima>1? ["alternada"] : []), "helicoidal", "L", "elevador"])] }
+  return [...new Set([t0, "reta", ...(P.subsolos>1||P.garAcima>1? ["alternada"] : []), "helicoidal", "L", "elevador"])].filter(t=>typeof dirRampaOk!=="function" || dirRampaOk(st, t)) }   // diretrizes: elevador de carros pode ser proibido
 
 async function cicloGarFinalista(M, c0, o={}){
   const st0=c0.st, g0=cicloGarDe(st0), tem=o.tem||(()=>true), parou=o.parou||(()=>false), pausa=o.pausa||(()=>Promise.resolve());
@@ -6285,7 +6326,8 @@ function cicloLazerEnxuto(st, m){
   const it=(st.produto.lazer&&st.produto.lazer.itens)||[]; if(!it.length) return null;
   const L=(m&&m.lzLay)||{}, missIx=new Set(L.missIx||[]), missN=new Set((L.miss||[]).filter(x=>!x.apoio).map(x=>x.nome));
   const tira=[], fica=[], naoCoube=[];
-  it.forEach((x,i)=>{ const falta=missIx.has(i) || missN.has(x.nome), extra=!CICLO_LZ_BASE.test(x.nome||""); if(falta) naoCoube.push(x.nome||"ambiente"); (falta||extra? tira : fica).push(x) });
+  const obrig=x=>typeof dirLazerObrig==="function" && dirLazerObrig(st, x.nome);   // diretrizes: o lazer obrigatório fica
+  it.forEach((x,i)=>{ if(obrig(x)) return fica.push(x); const falta=missIx.has(i) || missN.has(x.nome), extra=!CICLO_LZ_BASE.test(x.nome||""); if(falta) naoCoube.push(x.nome||"ambiente"); (falta||extra? tira : fica).push(x) });
   if(!tira.length) return null;
   return {itens:clone(fica), tira:tira.map(x=>x.nome||"ambiente"), naoCoube};
 }
@@ -6310,6 +6352,7 @@ function cicloMudouTxt(a, b, o={}){
 
 async function cicloEstudo(st0, opts={}, onProg, ctx={}){
   const base=clone(st0), prog=typeof onProg==="function"? onProg : ()=>{}, parou=()=>!!(ctx.cancelado && ctx.cancelado());
+  if(typeof dirInterno==="function") dirInterno(base);   // diretrizes do produto: vagas por unidade e margem mínima na conta
   const t0=performance.now(), bud=+opts.tempo||9000, pausa=()=>new Promise(r=>setTimeout(r,0));
   const chk=()=>{ if(parou()) throw new Error("cancelado") };
   const mTela=ctx.m||{};
@@ -8756,6 +8799,347 @@ function cubParse(text){
       lines.slice(1).forEach(l=>{ const c=l.split(sep); pads.forEach(i=>put(c[ix("uf")], head[i], c[i], c[ix("ref")], c[ix("fonte")])) }) }
   }
   return Object.values(rows);
+}
+
+/* ---- calc/diretrizes.js ---- */
+/* ================= diretrizes do produto: estudo livre ou com o produto que o incorporador precisa =================
+   Pedido do Luiz (16/10/2026): "pode ser um estudo totalmente livre, onde só importam métricas e aproveitamento, ou a opção do
+   usuário já limitar alguns critérios que ele precisa atender, como o padrão, a quantidade de quartos, o que ele quer ter de área
+   comum aproximada… Afinal, é muito diferente um Minha Casa Minha Vida de um alto padrão."
+   Cálculo puro (página, Worker e testes; sem DOM). A tela fica em src/ui/diretrizes.js (Produto) e no assistente.
+
+   Estado S.diretrizes (extendDEF; modo "livre" por padrão = nada muda, estudos de referência iguais):
+     modo "livre" | "diretrizes" · padrao (chave de DIR_PADROES) · faixa (MCMV: f12 | f3 | f4 → teto por unidade)
+     tips [nº de dormitórios permitidos: 0 = studio … 4] · areas [[mín, máx] por nº de dormitórios; 0 = do padrão] · minPct [mínimo da
+     tipologia nas unidades do andar, 0–1] · subMax / gacMax (−1 = livre, 0 = não pode, N = até N) · garTerreo / vagasFrente / cob / lojas
+     ("livre" | "sim" | "nao") · cobQtd · vagasUn (0 = as da lei) · elevCarros (permitido) · torres ("livre" | "fixo" | "max") + torresN ·
+     pavMin / pavMax / unMin / unMax (0 = livre) · lazerUn (m² de lazer por unidade, aproximado; 0 = sem meta) · lazerObrig [nomes] ·
+     margemMin (0 = a meta da Viabilidade) · tetoUn (R$ por unidade; 0 = o da faixa no econômico, senão sem teto)
+
+   API (todas devolvem o comportamento antigo no modo livre):
+     dirEfetivas(st) → D (diretrizes com o padrão resolvido) | null no modo livre
+     dirTipDe(u) → nº de dormitórios de uma tipologia do mix (u.tip, o nome — "2 dorm.", "3 suítes", "Studio" — ou a área)
+     dirPresetMix(st, "dir" | "dir:<q>", N) → mix com as tipologias permitidas (presetMix do otimizador chama esta para chaves "dir…")
+     presetNome(pk, st?) → nome de um preset do otimizador (MIX_PRESETS ou das diretrizes)
+     dirMixOk(st, mix, D) · dirEstadoOk(st) (otimMotor recusa vizinhos fora das diretrizes) · dirGarOk · dirNs · dirPavs · dirTorres ·
+     dirPresets(st, opts, D) · dirRampaOk(st, tipo) · dirLazerObrig(st, nome)
+     dirAplicaFixos(st) → [rótulos] (o que é fixo no produto: garagem no térreo, vagas na frente, coberturas, lojas, lazer obrigatório,
+       elevador de carros) — aplicarOtim chama, então o que o otimizador conferiu é o que fica no estudo
+     dirPrepara(st) → DIR {D, pre, quase…} | null: fixos + o que só vale na conta (vagas por unidade acima da lei, margem mínima)
+     dirConfere(st, m, D?) → {ok, falhas[{k, msg, grave}], n} · dirSemOpcao(DIR, base, cont, cal, mNow) → {k, diretriz, motivo} | null
+     dirFechaAjusta(DIR, fecha, mix, base) (preço acima do teto não é saída) · dirAplicaPadrao(st, k, o) → [o que mudou]
+     dirResumo(st) · dirTipsTxt(D) · dirGarTxt(D)
+   Valores de referência (áreas, preços, CUB, lazer, tetos do MCMV): genéricos, "conferir" — ⓘ e glossário dizem isso. */
+
+const DIR_Q = ["Studio","1 dorm.","2 dorm.","3 dorm.","4 dorm."];
+const DIR_QC = ["studio","1","2","3","4"];
+const DIR_PF = [1.12, 1.06, 1, 0.97, 0.95];          // preço por m² relativo ao de 2 dormitórios (unidade menor vende mais caro por m²)
+/* tetos do Minha Casa, Minha Vida (valor máximo do imóvel; os das faixas 1 e 2 variam com a cidade — conferir) */
+const DIR_FAIXAS = { f12:{nome:"Faixas 1 e 2", teto:264000}, f3:{nome:"Faixa 3", teto:350000}, f4:{nome:"Faixa 4", teto:500000} };
+const DIR_LZ = (l)=>l.map(([nome,area,local,desc])=>({nome, area, local, ...(desc? {desc:true} : {})}));
+const DIR_LZ_ALTO = [["Salão de festas",120,"terreo"],["Espaço gourmet",60,"terreo"],["Academia",80,"terreo"],["Brinquedoteca",40,"terreo"],["Coworking",40,"terreo"],
+  ["Piscina",90,"emb",1],["Deck / solário",80,"emb",1],["Playground",50,"emb",1],["Pet place",40,"emb",1]];
+/* padrões: áreas [mín, alvo, máx] por nº de dormitórios, peso de cada tipologia no andar (e mínimo: no econômico, ≥ 50% de 2 dorm.), sacada, vagas por unidade (0 = lei), CUB e fator
+   sobre o CUB, garagem equivalente (fração do CUB por m² de garagem; no econômico, vagas no térreo sem estrutura de garagem), faixa de preço R$/m² [mín, referência, máx], coberturas, elevador de carros, unidades por andar [mín, máx] (0 = livre),
+   unidades por andar de partida (assistente), lazer m²/unidade, programa de lazer e itens obrigatórios */
+const DIR_PADROES = {
+  economico:{ nome:"Econômico (MCMV)", curto:"Econômico", sub:"MCMV", nomes:DIR_Q,
+    areas:[[22,27,32],[30,35,42],[38,43,50],[48,55,62],[60,68,76]], tips:[1,2], w:[0,0.3,0.7,0,0], minPct:[0,0,0.5,0,0], sac:[0,0,0,0,0],
+    vagasUn:0, cub:"R8-B", fator:1.05, eqGar:0.5, preco:[5500,7000,8500], cob:"nao", elevCarros:false, un:[4,0], n0:6, lazerUn:1,
+    lazer:[["Salão de festas",50,"terreo"],["Playground",40,"emb",1],["Bicicletário",20,"terreo"]], obrig:["Salão de festas","Playground"] },
+  medio:{ nome:"Médio", curto:"Médio", sub:"2 e 3 dorm.", nomes:["Studio","1 dorm.","2 dorm.","3 dorm. (1 suíte)","4 dorm. (1 suíte)"],
+    areas:[[26,32,38],[36,44,52],[52,62,72],[70,82,95],[95,110,125]], tips:[2,3], w:[0,0,0.6,0.4,0], sac:[3,4,6,8,10],
+    vagasUn:1, cub:"R8-N", fator:1.25, eqGar:0.8, preco:[8000,10500,13000], cob:"livre", elevCarros:true, un:[0,0], n0:4, lazerUn:2,
+    lazer:[["Salão de festas",80,"terreo"],["Espaço gourmet",40,"terreo"],["Academia",45,"terreo"],["Playground",50,"emb",1]], obrig:["Salão de festas","Playground"] },
+  medioAlto:{ nome:"Médio-alto", curto:"Médio-alto", sub:"com suítes", nomes:["Studio","1 suíte","2 suítes","3 dorm. (1 suíte)","4 dorm. (2 suítes)"],
+    areas:[[30,36,45],[42,52,62],[65,76,90],[88,105,120],[115,135,155]], tips:[2,3], w:[0,0,0.5,0.5,0], sac:[4,6,9,12,15],
+    vagasUn:1.5, cub:"R8-A", fator:1.3, eqGar:0.8, preco:[11000,13500,16000], cob:"sim", elevCarros:true, un:[0,4], n0:4, lazerUn:3.5,
+    lazer:[["Salão de festas",90,"terreo"],["Espaço gourmet",45,"terreo"],["Academia",60,"terreo"],["Brinquedoteca",35,"terreo"],["Piscina",70,"emb",1],["Playground",50,"emb",1],["Pet place",40,"emb",1]],
+    obrig:["Salão de festas","Espaço gourmet","Academia","Piscina"] },
+  alto:{ nome:"Alto padrão", curto:"Alto", sub:"3 e 4 suítes", nomes:["Studio","1 suíte","2 suítes","3 suítes","4 suítes"],
+    areas:[[35,42,55],[50,62,75],[80,95,110],[115,135,160],[150,175,210]], tips:[3,4], w:[0,0,0,0.6,0.4], sac:[6,8,12,16,22],
+    vagasUn:2, cub:"R16-A", fator:1.45, eqGar:0.8, preco:[15000,18000,22000], cob:"sim", elevCarros:true, un:[0,4], n0:2, lazerUn:6,
+    lazer:DIR_LZ_ALTO, obrig:["Salão de festas","Espaço gourmet","Academia","Piscina","Brinquedoteca"] },
+  luxo:{ nome:"Luxo", curto:"Luxo", sub:"1 a 2 por andar", nomes:["Studio","1 suíte","2 suítes","3 suítes","4 suítes"],
+    areas:[[45,55,70],[65,80,95],[100,120,140],[160,200,250],[220,280,380]], tips:[3,4], w:[0,0,0,0.4,0.6], sac:[8,12,16,25,35],
+    vagasUn:3, cub:"R16-A", fator:1.8, eqGar:0.8, preco:[22000,27000,35000], cob:"sim", elevCarros:true, un:[0,2], n0:2, lazerUn:10,
+    lazer:[...DIR_LZ_ALTO, ["Sauna",20,"terreo"],["Cinema",35,"terreo"],["Rooftop gourmet",60,"cob"]], obrig:["Salão de festas","Espaço gourmet","Academia","Piscina","Brinquedoteca","Sauna"] }
+};
+const DIR_ORDEM = ["economico","medio","medioAlto","alto","luxo"];
+
+extendDEF("diretrizes", { modo:"livre", padrao:"medio", faixa:"f3", tips:[2,3], areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:[0,0,0,0,0],
+  subMax:-1, gacMax:-1, garTerreo:"livre", vagasFrente:"livre", cob:"livre", cobQtd:0, lojas:"livre", vagasUn:1, elevCarros:true,
+  torres:"livre", torresN:1, pavMin:0, pavMax:0, unMin:0, unMax:0, lazerUn:2, lazerObrig:["Salão de festas","Playground"], margemMin:0, tetoUn:0 });
+
+const dirN = v => { const x=+v; return isFinite(x)? x : 0 };
+const dirLim = v => v==null || v==="" || !isFinite(+v) || +v<0 ? -1 : Math.floor(+v);
+const dirGet = (o,p)=>p.split(".").reduce((a,k)=>a==null? a : a[k], o);
+const dirSet = (o,p,v)=>{ const ks=p.split("."), l=ks.pop(); const t=ks.reduce((a,k)=>a[k]==null? (a[k]={}) : a[k], o); t[l]=v };
+const dirPl = (n, s, p)=>`${n} ${n===1? s : (p||s+"s")}`;
+/* faixa de preço em mil R$/m²: "5,5 a 8,5 mil" */
+const dirMil = v => nf(v/1000, v%1000? 1 : 0);
+function dirFaixaPreco(P){ return `R$ ${dirMil(P.preco[0])} a ${dirMil(P.preco[2])} mil/m²` }
+
+function dirAtiva(st){ return !!(st && st.diretrizes && st.diretrizes.modo==="diretrizes") }
+function dirEfetivas(st){
+  if(!dirAtiva(st)) return null;
+  const d=st.diretrizes, k=DIR_PADROES[d.padrao]? d.padrao : "medio", P=DIR_PADROES[k];
+  const tips=[...new Set((Array.isArray(d.tips)? d.tips : P.tips).map(Number).filter(q=>Number.isInteger(q) && q>=0 && q<=4))].sort((a,b)=>a-b);
+  const am=+(st.regras && st.regras.aptoMin)||0;   // a menor unidade que a lei aceita vale por cima do padrão
+  const area=q=>{ const a=P.areas[q], o=(Array.isArray(d.areas) && d.areas[q]) || [], mn=dirN(o[0])>0? dirN(o[0]) : a[0], mx=dirN(o[1])>0? dirN(o[1]) : a[2];
+    const lo=Math.max(am, Math.min(mn,mx)), hi=Math.max(lo, mn, mx); return [lo, Math.min(hi, Math.max(lo, a[1])), hi] };
+  const fx=DIR_FAIXAS[d.faixa]||null, teto = dirN(d.tetoUn)>0? dirN(d.tetoUn) : (k==="economico" && fx? fx.teto : 0);
+  const un=v=>Math.max(0, Math.floor(dirN(v))), opt=v=>["sim","nao"].includes(v)? v : "livre";
+  return { k, P, nome:P.nome, tips, area, minPct:[0,1,2,3,4].map(q=>Math.max(0, Math.min(1, dirN((d.minPct||[])[q])))),
+    subMax:dirLim(d.subMax), gacMax:dirLim(d.gacMax), garTerreo:opt(d.garTerreo), vagasFrente:opt(d.vagasFrente), cob:opt(d.cob), lojas:opt(d.lojas),
+    cobQtd:un(d.cobQtd), vagasUn:Math.max(0, dirN(d.vagasUn)), elevCarros:d.elevCarros!==false,
+    torres:["fixo","max"].includes(d.torres)? d.torres : "livre", torresN:Math.max(1, un(d.torresN)||1),
+    pavMin:un(d.pavMin), pavMax:un(d.pavMax), unMin:un(d.unMin), unMax:un(d.unMax),
+    lazerUn:Math.max(0, dirN(d.lazerUn)), lazerObrig:(Array.isArray(d.lazerObrig)? d.lazerObrig : []).filter(Boolean).map(String),
+    margemMin:Math.max(0, dirN(d.margemMin)), teto, faixa: k==="economico" && fx && !(dirN(d.tetoUn)>0)? fx.nome : "" };
+}
+
+/* nº de dormitórios de uma tipologia do mix */
+function dirTipDe(u){
+  if(!u) return null; if(u.tip!=null && isFinite(+u.tip)) return Math.max(0, Math.min(4, Math.round(+u.tip)));
+  const n=String(u.nome||"").toLowerCase();
+  if(/st[uú]dio|kitnet|kitinete|loft/.test(n)) return 0;
+  let x=n.match(/(\d)\s*(dorm|quarto|qto|dts?\b|q\b)/); if(x) return Math.min(4, +x[1]);
+  x=n.match(/(\d)\s*su[ií]te/); if(x) return Math.min(4, +x[1]);
+  const a=+u.area||0; return a<35? 0 : a<50? 1 : a<78? 2 : a<120? 3 : 4;
+}
+const dirQRot = q => DIR_Q[q] || "";
+/* "2 e 3 dorm." · "studio e 1 dorm." */
+function dirTipsTxt(D){ const l=(D && D.tips)||[]; if(!l.length) return "nenhuma tipologia";
+  const s=l.filter(q=>q===0).map(()=>"studio"), n=l.filter(q=>q>0);
+  const j=a=>a.length<2? (a[0]||"") : a.slice(0,-1).join(", ")+" e "+a[a.length-1];
+  if(!s.length && D.P && n.every(q=>/^\d su[ií]tes?$/.test(D.P.nomes[q]||""))) return j(n.map(String))+(n.length>1 || n[0]>1? " suítes" : " suíte");
+  return n.length? j([...s, ...n.map(String)])+" dorm." : "studio" }
+function dirGarTxt(D){ if(!D) return ""; const r=[];
+  if(D.subMax===0) r.push("sem subsolo"); else if(D.subMax>0) r.push(`até ${dirPl(D.subMax,"subsolo")}`);
+  if(D.gacMax===0) r.push("sem garagem elevada"); else if(D.gacMax>0) r.push(`até ${dirPl(D.gacMax,"elevada")}`);
+  return r.join(" · ") }
+function dirResumo(st){ const D=dirEfetivas(st); if(!D) return "Livre";
+  return [D.P.curto||D.nome, dirTipsTxt(D), dirGarTxt(D)].filter(Boolean).join(" · ") }
+function presetNome(pk, st){
+  if(MIX_PRESETS[pk]) return MIX_PRESETS[pk].nome;
+  if(pk==="dir"){ const D=st && dirEfetivas(st); return D? `${D.P.curto||D.nome} · ${dirTipsTxt(D)}` : "Diretrizes" }
+  if(/^dir:\d$/.test(String(pk))){ const q=+String(pk).slice(4), D=st && dirEfetivas(st); return D? `${D.P.curto||D.nome} · só ${D.P.nomes[q]}` : `Só ${dirQRot(q)}` }
+  return String(pk||"");
+}
+
+/* preço de uma tipologia: o da mesma tipologia no mix; senão o preço médio × fator da tipologia */
+function dirPrecoDe(st, q){ const mx=(st.produto&&st.produto.mix)||[], u=mx.find(x=>dirTipDe(x)===q && +x.preco>0);
+  return u? +u.preco : Math.round(basePrice(st)*DIR_PF[q]/50)*50 }
+/* área que a tipologia pode ter: o alvo do padrão, limitado pelo teto por unidade (MCMV); null se nem a área mínima cabe no teto */
+function dirAreaViavel(st, D, q){ const a=D.area(q); let x=a[1]; if(D.teto>0){ const p=dirPrecoDe(st,q); if(p>0) x=Math.min(x, Math.floor(D.teto/p)) } return x>=a[0]-1e-9? x : null }
+
+/* mix das diretrizes: "dir" = todas as tipologias permitidas (pesos do padrão e mínimos), "dir:<q>" = só uma */
+function dirPresetMix(st, key, N){
+  const D=dirEfetivas(st); if(!D) return [];
+  const qs=(key==="dir"? D.tips : [+String(key).slice(4)]).filter(q=>D.tips.includes(q) && dirAreaViavel(st, D, q)!=null);
+  if(!qs.length) return [];
+  const ws=qs.map(q=>Math.max(D.minPct[q], D.P.w[q]||0) || 1/qs.length), sw=ws.reduce((a,b)=>a+b,0)||1;
+  const mix=distrib(qs.map((q,i)=>({q, w:ws[i]/sw})), N, t=>({nome:D.P.nomes[t.q], area:dirAreaViavel(st, D, t.q), preco:dirPrecoDe(st, t.q), sac:D.P.sac[t.q], tip:t.q}));
+  if(qs.some(q=>D.minPct[q]>0 && !mix.some(u=>u.tip===q))) return [];
+  return mix;
+}
+/* o mix atende às diretrizes? (tipologias, áreas, teto por unidade, mínimos) */
+function dirMixOk(st, mix, D){
+  D=D||dirEfetivas(st); const falhas=[]; if(!D) return {ok:true, falhas};
+  const L=(mix||[]).filter(u=>+u.qtd>0), N=L.reduce((s,u)=>s+(+u.qtd||0),0);
+  L.forEach(u=>{ const q=dirTipDe(u), a=D.area(q), nome=u.nome||dirQRot(q);
+    if(!D.tips.includes(q)){ falhas.push({k:"tipologia", grave:true, msg:`${nome} fora das tipologias (${dirTipsTxt(D)})`}); return }
+    if(+u.area<a[0]-0.5 || +u.area>a[2]+0.5) falhas.push({k:"area", grave:true, msg:`${nome} com ${nf(+u.area,0)} m² (diretriz ${nf(a[0],0)} a ${nf(a[2],0)} m²)`});
+    if(D.teto>0 && (+u.area)*(+u.preco)>D.teto*1.001) falhas.push({k:"teto", grave:true, msg:`${nome} a ${mi((+u.area)*(+u.preco))} passa do teto de ${mi(D.teto)}`}) });
+  D.tips.forEach(q=>{ if(!(D.minPct[q]>0)) return; const c=L.filter(u=>dirTipDe(u)===q).reduce((s,u)=>s+(+u.qtd||0),0);
+    if(c<1 || c/Math.max(1,N)<D.minPct[q]-1/Math.max(1,N)+1e-9) falhas.push({k:"proporcao", grave:true, msg:`${dirQRot(q)} abaixo de ${pct(D.minPct[q],0)} das unidades`}) });
+  return {ok:!falhas.length, falhas};
+}
+const dirGarOk = (D, sub, gac) => !D || ((D.subMax<0 || sub<=D.subMax) && (D.gacMax<0 || gac<=D.gacMax));
+function dirNs(D, l){ if(!D) return l;
+  const ok=n=>(!D.unMin || n>=D.unMin) && (!D.unMax || n<=D.unMax); let r=l.filter(ok);
+  if(!r.length){ const lo=Math.max(1, D.unMin||1), hi=Math.max(lo, D.unMax||lo+4); r=[]; for(let n=lo; n<=hi && r.length<6; n++) r.push(n) }
+  return r }
+/* pavimentos candidatos dentro de [pavMin, pavMax] (e os próprios limites, quando cabem no gabarito) */
+function dirPavs(D, l, pMin, pmax){ if(!D) return l;
+  const ok=p=>(!D.pavMin || p>=D.pavMin) && (!D.pavMax || p<=D.pavMax);
+  return [...new Set([...l.filter(ok), ...[D.pavMax, D.pavMin].filter(p=>p>0 && p>=pMin && p<=pmax && ok(p))])] }
+function dirTorres(D, l, forma){ if(!D || forma || D.torres==="livre") return l;
+  if(D.torres==="fixo") return [D.torresN];
+  const r=l.filter(n=>n<=D.torresN); return r.length? r : [Math.min(D.torresN, l[0]||1)] }
+/* presets que o otimizador testa com diretrizes: todas as permitidas, cada uma sozinha (sem mínimos) e o mix atual se atende */
+function dirPresets(st, opts, D){
+  const atual=dirMixOk(st, st.produto.mix, D).ok, qs=D.tips.filter(q=>dirAreaViavel(st, D, q)!=null);
+  if(!qs.length) return [];
+  if(!(opts && opts.tipologias)) return [atual? "atual" : "dir"];
+  return [...new Set(["dir", ...(qs.length>1 && !D.minPct.some(x=>x>0)? qs.map(q=>"dir:"+q) : []), ...(atual? ["atual"] : [])])];
+}
+function dirRampaOk(st, tipo){ const D=dirEfetivas(st); return !D || D.elevCarros || tipo!=="elevador" }
+function dirLazerObrig(st, nome){ const D=dirEfetivas(st); return !!D && D.lazerObrig.includes(String(nome||"")) }
+/* estado dentro das diretrizes (vizinhos do reparo da garagem e do "o que fecha a conta"): garagens, andares, unidades, torres e mix */
+function dirEstadoOk(st){
+  const D=dirEfetivas(st); if(!D) return true;
+  const P=st.produto, N=(P.mix||[]).reduce((s,u)=>s+(+u.qtd||0),0), forma=typeof otimFormaAtiva==="function" && otimFormaAtiva(st);
+  if(!dirGarOk(D, +P.subsolos||0, +P.garAcima||0)) return false;
+  if((P.torres||[]).some(t=>(D.pavMax && t.pav>D.pavMax) || (D.pavMin && t.pav<D.pavMin))) return false;
+  if((D.unMin && N<D.unMin) || (D.unMax && N>D.unMax)) return false;
+  if(!forma && ((D.torres==="fixo" && P.torres.length!==D.torresN) || (D.torres==="max" && P.torres.length>D.torresN))) return false;
+  return dirMixOk(st, P.mix, D).ok;
+}
+
+/* o que é fixo no produto (o otimizador não varia): aplicado no estado de partida do otimizador e por aplicarOtim */
+function dirAplicaFixos(st){
+  const D=dirEfetivas(st), out=[]; if(!D) return out;
+  const P=st.produto, set=(p,v,rot)=>{ if(JSON.stringify(dirGet(st,p))!==JSON.stringify(v)){ dirSet(st,p,v); out.push(rot) } };
+  if(D.garTerreo!=="livre") set("produto.garTerOn", D.garTerreo==="sim", D.garTerreo==="sim"? "garagem no térreo" : "sem garagem no térreo");
+  if(D.vagasFrente!=="livre") set("produto.vagasFrente", D.vagasFrente==="sim", D.vagasFrente==="sim"? "vagas na frente" : "sem vagas na frente");
+  if(D.cob!=="livre") set("produto.cob.on", D.cob==="sim", D.cob==="sim"? "com coberturas" : "sem coberturas");
+  if(D.cob==="sim" && D.cobQtd>0) set("produto.cob.qtd", D.cobQtd, `${dirPl(D.cobQtd,"cobertura")} por torre`);
+  if(D.lojas==="nao") set("produto.lojaTerreo", 0, "sem lojas");
+  else if(D.lojas==="sim" && !(+P.lojaTerreo>0)) set("produto.lojaTerreo", 0.2, "com lojas na frente");
+  if(!D.elevCarros && st.estudo && st.estudo.rampaTipo==="elevador"){ st.estudo.rampaTipo="reta"; st.estudo.rampa=null; out.push("rampas no lugar do elevador de carros") }
+  const it=(P.lazer && P.lazer.itens) || []; if(P.lazer && !Array.isArray(P.lazer.itens)) P.lazer.itens=it;
+  D.lazerObrig.forEach(nome=>{ if(it.some(x=>x.nome===nome)) return;
+    const pd=DIR_LZ(D.P.lazer).find(x=>x.nome===nome) || (typeof LZ_PRESETS!=="undefined" && LZ_PRESETS.find(x=>x.nome===nome)) || {nome, area:30, local:"terreo"};
+    it.push(clone(pd)); out.push(nome) });
+  return out;
+}
+/* só na conta do otimizador e do "o que fecha a conta": vagas por unidade acima da lei e margem mínima */
+function dirInterno(st, D){ D=D||dirEfetivas(st); if(!D) return st;
+  if(D.vagasUn > (+st.regras.vagasApto||0)) st.regras.vagasApto=D.vagasUn;
+  if(D.margemMin>0) st.fin.margemAlvo=D.margemMin;
+  return st }
+/* o que nem chega a ser testado: nenhuma tipologia, teto por unidade que nenhuma comporta, mínimo acima do máximo */
+function dirPre(st, D){
+  const r=(diretriz, motivo)=>({k:"diretriz", diretriz, motivo});
+  if(!D.tips.length) return r("tipologias", "nenhuma tipologia está permitida — marque ao menos uma nas diretrizes");
+  if(D.pavMin && D.pavMax && D.pavMin>D.pavMax) return r("pavimentos", `o mínimo de ${D.pavMin} pavimentos passa do máximo de ${D.pavMax}`);
+  if(D.unMin && D.unMax && D.unMin>D.unMax) return r("unidades", `o mínimo de ${D.unMin} unidades por andar passa do máximo de ${D.unMax}`);
+  if(!D.tips.some(q=>dirAreaViavel(st, D, q)!=null)){
+    const q=D.tips.reduce((b,x)=>D.area(x)[0]*dirPrecoDe(st,x)<D.area(b)[0]*dirPrecoDe(st,b)? x : b, D.tips[0]), a=D.area(q)[0], p=dirPrecoDe(st,q);
+    return r("teto", `o teto de ${mi(D.teto)} por unidade${D.faixa? ` (${D.faixa} do MCMV)` : ""} não comporta ${D.P.nomes[q]} de ${nf(a,0)} m² a ${brl(p)}/m² (${mi(a*p)}) — reduza o preço para até ${brl(Math.floor(D.teto/a/50)*50)}/m² ou a área mínima para ${nf(Math.floor(D.teto/p),0)} m²`) }
+  return null;
+}
+function dirPrepara(st){
+  const D=dirEfetivas(st); if(!D) return null;
+  const lei=+st.regras.vagasApto||0; dirAplicaFixos(st); dirInterno(st, D);
+  return {D, lei, pre:dirPre(st, D), quase:null, quaseConf:null, pmaxG:0, resumo:dirResumo(st)};
+}
+/* com a garagem limitada pelas diretrizes: quantos pavimentos as vagas estimadas comportam (o otimizador testa essa altura também) */
+function dirPavVagas(m, vg, pav, vA){ const un=(m.unitsRes ?? m.units ?? 0), lojas=Math.max(0, m.vagasReq-Math.ceil(un*vA)), porPav=un/Math.max(1,pav)*vA;
+  return porPav>0? Math.floor((vg-lojas)/porPav) : 0 }
+/* combinação que chegou mais perto das vagas (para dizer quanto falta): a estimada e a conferida com o layout */
+function dirQuase(DIR, q, conf){ if(!DIR) return; const k=conf? "quaseConf" : "quase", b=DIR[k], d=x=>x.req-x.vg;
+  if(!b || d(q)<d(b) || (d(q)===d(b) && q.units>b.units)) DIR[k]=q }
+
+/* a opção (ou o estudo) atende às diretrizes? Lista o que não atende, em linguagem simples */
+function dirConfere(st, m, D){
+  D=D||dirEfetivas(st); if(!D) return null;
+  const P=st.produto, F=[], add=(k, msg, grave=true)=>F.push({k, msg, grave});
+  dirMixOk(st, P.mix, D).falhas.forEach(x=>F.push(x));
+  const sub=+P.subsolos||0, gac=+P.garAcima||0, N=(P.mix||[]).reduce((s,u)=>s+(+u.qtd||0),0), pavs=(P.torres||[]).map(t=>+t.pav||0);
+  if(D.subMax>=0 && sub>D.subMax) add("subsolo", D.subMax? `${dirPl(sub,"subsolo")} (diretriz: até ${D.subMax})` : "subsolo não permitido");
+  if(D.gacMax>=0 && gac>D.gacMax) add("elevada", D.gacMax? `${dirPl(gac,"garagem elevada","garagens elevadas")} (diretriz: até ${D.gacMax})` : "garagem elevada não permitida");
+  if(D.pavMax && pavs.some(p=>p>D.pavMax)) add("pavimentos", `${Math.max(...pavs)} pavimentos (diretriz: até ${D.pavMax})`);
+  if(D.pavMin && pavs.some(p=>p<D.pavMin)) add("pavimentos", `${Math.min(...pavs)} pavimentos (diretriz: no mínimo ${D.pavMin})`);
+  if((D.unMin && N<D.unMin) || (D.unMax && N>D.unMax)) add("unidades", `${dirPl(N,"unidade")} por andar (diretriz: ${D.unMin&&D.unMax? `${D.unMin} a ${D.unMax}` : D.unMin? `no mínimo ${D.unMin}` : `até ${D.unMax}`})`);
+  const forma=typeof otimFormaAtiva==="function" && otimFormaAtiva(st), nT=(P.torres||[]).length;
+  if(!forma && ((D.torres==="fixo" && nT!==D.torresN) || (D.torres==="max" && nT>D.torresN))) add("torres", `${dirPl(nT,"torre")} (diretriz: ${D.torres==="fixo"? "" : "até "}${D.torresN})`);
+  if(D.garTerreo!=="livre" && !!P.garTerOn!==(D.garTerreo==="sim")) add("terreo", D.garTerreo==="sim"? "sem garagem no térreo (diretriz: com)" : "garagem no térreo (diretriz: sem)");
+  if(D.vagasFrente!=="livre" && !!P.vagasFrente!==(D.vagasFrente==="sim")) add("frente", D.vagasFrente==="sim"? "sem vagas na frente (diretriz: com)" : "vagas na frente (diretriz: sem)", false);
+  if(D.cob!=="livre" && !!(P.cob&&P.cob.on)!==(D.cob==="sim")) add("cob", D.cob==="sim"? "sem coberturas (diretriz: com)" : "coberturas (diretriz: sem)");
+  if(D.lojas==="nao" && +P.lojaTerreo>0) add("lojas", "lojas no térreo (diretriz: sem)");
+  if(D.lojas==="sim" && !(+P.lojaTerreo>0)) add("lojas", "sem lojas no térreo (diretriz: com)");
+  if(!D.elevCarros && st.estudo && st.estudo.rampaTipo==="elevador") add("elevador", "elevador de carros não permitido");
+  if(m && D.vagasUn>0){ const req=Math.ceil((m.unitsRes ?? m.units ?? 0)*D.vagasUn + (m.lojaPriv>0? m.lojaPriv/(+st.regras.m2LojaVaga||50) : 0));
+    if(m.vagas<req) add("vagas", `${m.vagas} vagas para ${req} (diretriz: ${nf(D.vagasUn, D.vagasUn%1? 1 : 0)} por unidade)`) }
+  const it=(P.lazer&&P.lazer.itens)||[], miss=new Set(((m&&m.lzLay&&m.lzLay.miss)||[]).filter(x=>!x.apoio).map(x=>x.nome)), mIx=new Set((m&&m.lzLay&&m.lzLay.missIx)||[]);
+  const falta=D.lazerObrig.filter(n=>!it.some(x=>x.nome===n)), naoCoube=D.lazerObrig.filter(n=>it.some((x,i)=>x.nome===n && (miss.has(n) || mIx.has(i))));
+  if(falta.length) add("lazer", `sem ${cicloListaDir(falta)} (obrigatório)`);
+  if(naoCoube.length) add("lazer", `${cicloListaDir(naoCoube)} não coube${naoCoube.length>1? "ram" : ""} (obrigatório)`);
+  if(m && D.lazerUn>0){ const lz=m.lz||{}, a=(+lz.c||0)+(+lz.d||0), un=Math.max(1, m.units||0);
+    if(a/un < 0.7*D.lazerUn) add("lazerArea", `lazer de ${nf(a/un,1)} m² por unidade (diretriz ≈ ${nf(D.lazerUn,1)})`, false) }
+  const graves=F.filter(x=>x.grave);
+  return {ok:!graves.length, falhas:F, n:graves.length, padrao:D.P.curto||D.nome};
+}
+const cicloListaDir = l=>{ const u=[...new Set(l)]; return u.length<2? (u[0]||"") : u.slice(0,-1).join(", ")+" e "+u[u.length-1] };
+
+/* nenhuma combinação: qual diretriz impede e quanto falta. null = o motivo de sempre (sem diretriz envolvida) */
+function dirSemOpcao(DIR, base, cont, cal, mNow){
+  if(!DIR) return null; const D=DIR.D;
+  if(DIR.pre) return DIR.pre;
+  const tips=dirTipsTxt(D), cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  if(!cont.cabe){
+    if(D.pavMin && DIR.pmaxG>0 && DIR.pmaxG<D.pavMin) return {k:"lote", diretriz:"pavimentos", motivo:`o gabarito comporta até ${DIR.pmaxG} pavimentos e a diretriz pede no mínimo ${D.pavMin} — reduza o mínimo de pavimentos`};
+    if(D.unMin) return {k:"lote", diretriz:"unidades", motivo:`nenhuma torre comporta ${D.unMin} unidades por andar de ${tips} dentro dos recuos e da ocupação — reduza o mínimo de unidades por andar ou a área das unidades`};
+    if(D.torres==="fixo" && D.torresN>1) return {k:"lote", diretriz:"torres", motivo:`${D.torresN} torres de ${tips} não cabem no lote dentro dos recuos — permita menos torres`};
+    const ars=D.tips.map(q=>`${D.P.nomes[q]} de ${nf(D.area(q)[0],0)} m² ou mais`);
+    return {k:"lote", diretriz:"tipologias", motivo:`nenhuma torre comporta ${cicloListaDir(ars)} dentro dos recuos e da ocupação — permita tipologias menores ou reduza a área mínima`};
+  }
+  const q=DIR.quaseConf || DIR.quase; if(!q) return null;
+  const restrSub=D.subMax>=0, restrGac=D.gacMax>=0, vu=D.vagasUn>DIR.lei+1e-9;
+  if(!restrSub && !restrGac && !vu && D.garTerreo!=="nao") return null;
+  const vA=+base.regras.vagasApto||1, lojas=Math.max(0, q.req-Math.ceil(q.units*vA)), U=Math.max(0, Math.floor((q.vg-lojas)/vA));
+  const sem = restrSub && D.subMax===0 && restrGac && D.gacMax===0? "sem subsolo e sem garagem elevada" : restrSub && D.subMax===0? "sem subsolo"
+    : restrSub? `com até ${dirPl(D.subMax,"subsolo")}` : restrGac && D.gacMax===0? "sem garagem elevada" : restrGac? `com até ${dirPl(D.gacMax,"garagem elevada","garagens elevadas")}` : D.garTerreo==="nao"? "sem garagem no térreo" : "";
+  const mv=+base.regras.m2Vaga||28, aL=G.area(base.lote.pts)*(1-(+base.regras.permeab||0));
+  const yS=Math.max(1, Math.round(cal.s*Math.floor((q.subA || (mNow&&mNow.subA) || aL)/mv))), yG=Math.max(1, Math.round(cal.g*Math.floor((q.embA || (mNow&&mNow.embA) || aL*0.8)/mv)));
+  const falta=Math.max(1, q.req-q.vg), ops=[];
+  if(restrSub && D.subMax<5){ const n=D.subMax+Math.max(1, Math.ceil(falta/yS)); ops.push(`permitir ${dirPl(Math.min(5,n),"subsolo")}`) }
+  else if(restrGac && D.gacMax<3){ const n=D.gacMax+Math.max(1, Math.ceil(falta/yG)); ops.push(`permitir ${dirPl(Math.min(3,n),"garagem elevada","garagens elevadas")}`) }
+  if(D.garTerreo==="nao") ops.push("permitir garagem no térreo");
+  if(vu) ops.push(`reduzir para ${nf(Math.max(DIR.lei,1), DIR.lei%1? 1 : 0)} vaga por unidade`);
+  if(lojas>0.25*q.req && D.lojas!=="sim") ops.push(`tirar as lojas (pedem ${dirPl(lojas,"vaga")})`);
+  if(U>=Math.max(4, D.unMin||0)) ops.push(`reduzir para ${dirPl(U,"unidade")}`);
+  const vuTxt = vu? ` (${nf(D.vagasUn, D.vagasUn%1? 1 : 0)} por unidade, pela diretriz)` : "";
+  return {k:"vagas", diretriz: restrSub||restrGac? "garagem" : "vagas", motivo:`${sem? sem+", a" : "a"} garagem comporta ${q.vg} das ${q.req} vagas exigidas${vuTxt} — ${ops.join(" ou ")}`,
+    vagas:q.vg, req:q.req, unidades:U, titulo:cap(sem||"as diretrizes")};
+}
+/* preço médio (R$/m²) máximo pelo teto por unidade: todas as tipologias sobem na mesma proporção (como em otimPrecoPara) */
+function dirPrecoTeto(teto, mix){ const L=(mix||[]).filter(u=>+u.qtd>0 && +u.area>0 && +u.preco>0); if(!(teto>0) || !L.length) return null;
+  return basePrice({produto:{mix:L}})*Math.min(...L.map(u=>teto/(u.area*u.preco))) }
+function dirPrecoTetoEstudo(st){ const D=dirEfetivas(st); return D && D.teto>0? dirPrecoTeto(D.teto, st.produto.mix) : null }
+/* preço que leva à meta acima do teto por unidade não é saída: tira do "o que fecha a conta" e diz o preço máximo */
+function dirFechaAjusta(DIR, fx, mix, base){
+  if(!DIR || !fx || !(DIR.D.teto>0)) return fx;
+  const lim=dirPrecoTeto(DIR.D.teto, mix); if(lim==null) return fx;
+  fx.precoTeto=lim;
+  if(fx.precoMeta && fx.precoMeta>lim+1){ fx.precoMeta=null; fx.metaAcimaTeto=true }
+  if(fx.precoZero && fx.precoZero>lim+1){ fx.precoZero=null; fx.zeroAcimaTeto=true }
+  return fx;
+}
+
+/* escolher um padrão: diretrizes do padrão + predefinições do produto (mix, preços, lazer, custo, coberturas). Garagem (subsolo,
+   elevada, térreo) e forma ficam como o usuário definiu: dependem do lugar, não do padrão. Devolve o que mudou, em linhas curtas.
+   o = {N (unidades por andar), preco (R$/m² médio; senão a referência do padrão)} */
+function dirAplicaPadrao(st, k, o={}){
+  const P=DIR_PADROES[k]; if(!P) return [];
+  const d=st.diretrizes || (st.diretrizes=clone(DEF.diretrizes)), out=[];
+  Object.assign(d, { padrao:k, tips:P.tips.slice(), areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:(P.minPct||[0,0,0,0,0]).slice(), vagasUn:P.vagasUn, elevCarros:P.elevCarros,
+    cob:P.cob, lazerObrig:P.obrig.slice(), lazerUn:P.lazerUn, unMin:P.un[0], unMax:P.un[1], tetoUn:0 });
+  if(k==="economico" && !DIR_FAIXAS[d.faixa]) d.faixa="f3";
+  const Pr=st.produto, cur=(Pr.mix||[]).reduce((s,u)=>s+(+u.qtd||0),0);
+  let N=Math.round(+o.N||0) || cur || P.n0; if(P.un[0]) N=Math.max(N, P.un[0]); if(P.un[1]) N=Math.min(N, P.un[1]);
+  const pm=+o.preco>0? +o.preco : P.preco[1], D=dirEfetivas({...st, diretrizes:{...d, modo:"diretrizes"}});
+  const sw=P.tips.reduce((s,q)=>s+(P.w[q]||0),0)||1;
+  const area=q=>{ const r=D.area(q); let a=r[1]; const pr=Math.round(pm*DIR_PF[q]/50)*50; if(D.teto>0) a=Math.max(r[0], Math.min(a, Math.floor(D.teto/pr))); return a };
+  Pr.mix=distrib(P.tips.map(q=>({q, w:(P.w[q]||0)/sw})), N, t=>({nome:P.nomes[t.q], area:area(t.q), preco:Math.round(pm*DIR_PF[t.q]/50)*50, sac:P.sac[t.q], tip:t.q}));
+  out.push(`Unidades: ${Pr.mix.map(u=>`${u.qtd} × ${u.nome} de ${nf(u.area,0)} m²`).join(" e ")} por andar`);
+  out.push(`Preço médio ${brl(Math.round(basePrice(st)/50)*50)}/m² (referência ${dirFaixaPreco(P)} · conferir)`);
+  if(D.teto>0) out.push(`Teto de ${mi(D.teto)} por unidade${D.faixa? ` (${D.faixa})` : ""}`);
+  Pr.lazer=Pr.lazer||{hall:0, itens:[]}; Pr.lazer.itens=DIR_LZ(P.lazer);
+  out.push(`Lazer: ${dirPl(Pr.lazer.itens.length,"ambiente")} · ${m2(Pr.lazer.itens.reduce((s,x)=>s+x.area,0))}`);
+  if(P.cob==="sim"){ const big=Math.max(...Pr.mix.map(u=>u.area)); Pr.cob={...Pr.cob, on:true, qtd:Math.max(1, +(Pr.cob&&Pr.cob.qtd)||2), area:Math.round(big*1.8/5)*5, preco:Math.round(pm*1.12/50)*50}; out.push(`Coberturas duplex de ${m2(Pr.cob.area)}`) }
+  else if(P.cob==="nao" && Pr.cob && Pr.cob.on){ Pr.cob={...Pr.cob, on:false}; out.push("Sem coberturas") }
+  if(st.orc){ const uf=st.orc.uf||"SC", v=typeof cubValor==="function"? cubValor(st, uf, P.cub) : null;
+    st.orc.padrao=P.cub; if(v>0) st.fin.cub=Math.round(v*100)/100; st.fin.fator=P.fator; st.fin.eqGar=P.eqGar;
+    out.push(`Custo: CUB ${P.cub} ${uf} ${brl(st.fin.cub)}/m² × ${nf(P.fator,2)}${P.eqGar!==0.8? ` · garagem a ${pct(P.eqGar,0)} do CUB` : ""}`) }
+  else { st.fin.fator=P.fator; st.fin.eqGar=P.eqGar }
+  out.push(`Vagas: ${P.vagasUn? `${nf(P.vagasUn, P.vagasUn%1? 1 : 0)} por unidade` : "as da lei"}`);
+  if(!P.elevCarros && st.estudo && st.estudo.rampaTipo==="elevador"){ st.estudo.rampaTipo="reta"; st.estudo.rampa=null }
+  if(st.guia && st.guia.conf){ st.guia.conf.preco=false; st.guia.conf.custo=false }
+  return out;
 }
 
 /* ---- calc/entorno.js ---- */
@@ -15000,6 +15384,7 @@ const MIX_PRESETS = {
 };
 function basePrice(st){ const mx=st.produto.mix, a=mx.reduce((s,u)=>s+u.area*u.qtd,0); return a? mx.reduce((s,u)=>s+u.area*u.qtd*u.preco,0)/a : 10000 }
 function presetMix(st, key, N){
+  if(/^dir/.test(String(key)) && typeof dirPresetMix==="function") return dirPresetMix(st, key, N);   // diretrizes do produto (src/calc/diretrizes.js)
   const pr=MIX_PRESETS[key]; if(!pr.tips){ const cur=st.produto.mix, tot=cur.reduce((s,u)=>s+u.qtd,0)||1; return distrib(cur.map(u=>({...u, w:u.qtd/tot})), N, u=>({nome:u.nome,area:u.area,preco:u.preco,sac:u.sac||0})) }
   const bp=basePrice(st); return distrib(pr.tips, N, t=>({nome:t.nome,area:t.area,preco:Math.round(bp*t.pf/50)*50,sac:t.sac}));
 }
@@ -15204,7 +15589,8 @@ function otimVagasEst(m, st, cal){ const P=st.produto, mv=st.regras.m2Vaga||28;
   return cal.vf + Math.floor(P.subsolos*Math.floor((m.subA||0)/mv)*cal.s + P.garAcima*Math.floor((m.embA||0)/mv)*cal.g + Math.floor((m.gTer||0)/mv)*cal.t) }
 /* nível da combinação para a ordem (antes do objetivo): 2 = lucro > 0 e margem s/ VGV ≥ meta (S.fin.margemAlvo) · 1 = lucro > 0 · 0 = prejuízo */
 const otimNivel = (n, meta) => n.lucro>0 ? (n.margem>=meta-1e-9 ? 2 : 1) : 0;
-const otimMelhor = (a, b) => (b.nivel||0)-(a.nivel||0) || b.sc-a.sc;   // comparador: nível, depois o objetivo
+const otimDirFora = r => r.dir && !r.dir.ok ? 1 : 0;   // diretrizes do produto: quem não as respeita (lazer obrigatório que não coube…) vem depois
+const otimMelhor = (a, b) => otimDirFora(a)-otimDirFora(b) || (b.nivel||0)-(a.nivel||0) || b.sc-a.sc;   // comparador: diretrizes, nível, depois o objetivo
 /** preço médio de venda (R$/m², média das tipologias ponderada pela área) que leva a margem s/ VGV ao alvo — todas as tipologias, coberturas
     e lojas sobem na mesma proporção (finance dp); com tPct o terreno acompanha o VGV. null se nem 5× o preço chega lá */
 function otimPrecoPara(st, m, alvo, tPct){
@@ -15259,7 +15645,9 @@ function otimMotor(base, o){
   const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
   // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
   // rascunho {st, sc0} (nota da massa) sem calcular a garagem — quem calcula é `confere`
-  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null; const {m0, sc0}=notaMassa(s2);
+  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null;
+    if(typeof dirEstadoOk==="function" && !dirEstadoOk(s2)) return null;   // diretrizes do produto (subsolos, elevadas, andares, unidades)
+    const {m0, sc0}=notaMassa(s2);
     if(!cabe(m0) || m0.minApto<R0.aptoMin) return null;
     if(forma && (m0.T.some(t=>t.blcIgn && t.blcIgn.length) || otimDesvio(m0)>rTol)) return null;
     return {st:s2, sc0} };
@@ -15330,6 +15718,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
   opts = {obj:"lucro", ...(opts||{})};
   const prog = typeof onProg==="function"? onProg : ()=>{};
   const base=clone(ctx.st||S);
+  // diretrizes do produto (src/calc/diretrizes.js): fixos do produto + vagas por unidade e margem mínima na conta; null no modo livre
+  const DIR = typeof dirPrepara==="function"? dirPrepara(base) : null;
   const mNow = ctx.m || (typeof window!=="undefined" && window._last && window._last.m) || compute(base);
   // garagem do estudo inválida (rampa que não cabe ou passaria pelo núcleo): a busca parte de uma circulação que funciona
   const garV = opts.cal? null : otimGarValida(base, mNow);
@@ -15346,8 +15736,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const mc = opts.mc!==false;
   // forma desenhada (Fase C): o nº de torres e os blocos são do usuário e não variam; as unidades por andar preenchem o bloco
   const forma = otimFormaAtiva(base), rTol = Math.max(0.01, +(base.otim && base.otim.rTol) || 0.10), pavMinF = forma? otimPavMinForma(base) : 1;
-  const nTs = forma || !opts.torres? [base.produto.torres.length] : [1,2,3];
-  const presets = opts.tipologias? Object.keys(MIX_PRESETS) : ["atual"];
+  const nTs = DIR? dirTorres(DIR.D, forma || !opts.torres? [base.produto.torres.length] : [1,2,3], forma) : forma || !opts.torres? [base.produto.torres.length] : [1,2,3];
+  const presets = DIR? (DIR.pre? [] : dirPresets(base, opts, DIR.D)) : opts.tipologias? Object.keys(MIX_PRESETS) : ["atual"];
   const curN = base.produto.mix.reduce((s,u)=>s+u.qtd,0);
   // eficiência real da planta (torre desenhada / contorno ocupado): as estimativas usam a privativa das unidades desenhadas
   // (blcPrivEstimada: um pavimento tipo por mix e faixa de elevadores, guardado em memoEf); as quantidades candidatas partem
@@ -15358,8 +15748,9 @@ function otimizar(opts, onProg, onDone, ctx={}){
   // unidades por andar: 2…8 e, em lote pequeno (a maior planta possível não comporta 2,5× o andar de 2 unidades), também 1
   const nsLivre = pk=>{ const R=base.regras, mx=presetMix(base, pk, 2), need2=mx.reduce((s,u)=>s+u.area*u.qtd,0)/Math.max(0.3, base.produto.efic);
     return [...(G.area(base.lote.pts)*R.toTorre < 2.5*need2 ? [1] : []), 2,3,4,5,6,8] };
-  const NsDe = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? nsLivre(pk) : [curN];
-  const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
+  const NsDe0 = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? nsLivre(pk) : [curN];
+  const NsDe = pk => DIR? dirNs(DIR.D, NsDe0(pk)) : NsDe0(pk);
+  const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) if(!DIR || dirGarOk(DIR.D, a, b)) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
   const jobs=[]; nTs.forEach(nT=>presets.forEach(pk=>NsDe(pk).forEach(N=>jobs.push({nT,pk,N}))));
   const res=[], pts=[], cont={cabe:0, vagas:0}; let i=0; const t0=performance.now(); const solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
   const score0=OBJ[opts.obj][1];
@@ -15382,13 +15773,15 @@ function otimizar(opts, onProg, onDone, ctx={}){
         st.produto.subsolos=sub; st.produto.garAcima=gac; st.produto.torres=Array.from({length:nT},()=>({pav:4}));
         // teto exato pelo gabarito: acima dele o massing() nem precisa rodar
         const hEmbG=st.produto.peTerreo+gac*st.produto.peGar, pmax=maxPavFast(st, Math.floor((hLimDe(st)+1e-6-hEmbG)/st.produto.pe));
-        const pMin=Math.max(2, pavMinF); if(pmax<pMin) continue;   // forma desenhada: o último bloco começa no andar pavMinF (abaixo disso ele some)
+        const pMin=Math.max(2, pavMinF); if(DIR && pmax>DIR.pmaxG) DIR.pmaxG=pmax; if(pmax<pMin) continue;   // forma desenhada: o último bloco começa no andar pavMinF (abaixo disso ele some)
         // automático: o teto é também o maior nº de pavimentos em que o mix cabe (os subsolos não mudam a torre: um por garagem elevada);
         // a lista inclui alturas menores (70% e 50%): menos andares = planta mais larga, menos vagas exigidas e menos subsolos
         let P=pmax; if(!forma){ let pf=pfit.get(gac); if(pf===undefined){ pf=fitAte(st, nT, Math.min(pMin, pmax), pmax); pfit.set(gac, pf) } P=Math.min(pmax, pf); if(P<pMin) continue }
         // forma desenhada: também o andar mínimo e o meio da faixa — a altura muda o bloco de referência (pilha) e o nº de elevadores
         // (eficiência real da planta), então os pavimentos mais altos podem não comportar o mix
-        for(const pav of [...new Set([P, P-1, P-3, Math.ceil(P*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+P)/2)] : [Math.ceil(P*0.5)])])].filter(p=>p>=pMin && p<=pmax)){
+        const pavs0=[...new Set([P, P-1, P-3, Math.ceil(P*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+P)/2)] : [Math.ceil(P*0.5)])])].filter(p=>p>=pMin && p<=pmax);
+        const pavL = DIR? dirPavs(DIR.D, pavs0, pMin, Math.min(pmax, P)) : pavs0;
+        for(const pav of pavL){
           const kc=gac+"|"+pav, sMin=cumpre.get(kc);
           if(sMin!=null && sub>sMin){ tested++; continue }   // dominada por sMin subsolos: mesmo preço, mais custo (conta como testada, como antes)
           st.produto.torres=Array.from({length:nT},()=>({pav}));
@@ -15399,6 +15792,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
             if(m.H>(m.hLim ?? st.regras.hMax)+1e-6 || m.CA>st.regras.caMax+1e-6 || m.T.some(t=>t.blcIgn && t.blcIgn.length)) continue;
             if(otimDesvio(m)>rTol && !(pk==="atual" && N===curN)) continue }
           const vg = otimVagasEst(m, st, cal), okVg = vg >= m.vagasReq;
+          if(DIR && !okVg){ dirQuase(DIR, {vg, req:m.vagasReq, units:m.units, sub, gac, subA:m.subA, embA:m.embA});
+            const pf=Math.max(pMin, dirPavVagas(m, vg, pav, +st.regras.vagasApto||1)); if(pf<pav && !pavL.includes(pf)) pavL.push(pf) }   // garagem limitada: a altura que as vagas permitem
           if(!okVg && !mc) continue;
           if(m.minApto<st.regras.aptoMin) continue;
           if(okVg) cont.vagas++;
@@ -15416,7 +15811,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
       }
       if(best) res.push(best);
     }
-    prog(0.6*i/jobs.length);
+    prog(0.6*i/Math.max(1, jobs.length));
     if(i<jobs.length) setTimeout(step,0);
     else { res.sort(otimMelhor); prog(0.6); validar(res.slice(0,14), out0=>{
       const canc=e=>/cancelado/.test(e && e.message || "");
@@ -15432,7 +15827,9 @@ function otimizar(opts, onProg, onDone, ctx={}){
         const semGar = !garV && mNow.vert && mNow.vert.ok===false;
         o.semOpcao = !cont.cabe ? {k:"lote", motivo:"o lote é pequeno demais para as regras: nenhuma torre comporta as unidades dentro dos recuos e da ocupação"}
           : semGar ? {k:"vagas", motivo:"nenhuma circulação de veículos (rampa reta, alternada, helicoidal, em L ou elevador de carros) cabe neste lote sem passar pelo núcleo — mude a posição do núcleo ou o acesso de veículos", porSubsolo:0}
-          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo${yg? ` e ${yg} por garagem elevada` : ""} neste lote${gx? ` (${gx})` : ""} e as regras pedem ${nf(va,1)} por unidade: mesmo com 5 subsolos e 3 garagens elevadas seriam cerca de ${maxV} vagas${va>0? `, para no máximo ${Math.floor(maxV/va)} unidades` : ""}`, porSubsolo:ys, porElevada:yg, maxVagas:maxV} }
+          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo${yg? ` e ${yg} por garagem elevada` : ""} neste lote${gx? ` (${gx})` : ""} e as regras pedem ${nf(va,1)} por unidade: mesmo com 5 subsolos e 3 garagens elevadas seriam cerca de ${maxV} vagas${va>0? `, para no máximo ${Math.floor(maxV/va)} unidades` : ""}`, porSubsolo:ys, porElevada:yg, maxVagas:maxV};
+        if(DIR){ const so=dirSemOpcao(DIR, base, cont, cal, mNow); if(so) o.semOpcao=so } }
+      if(DIR) o.dir={resumo:DIR.resumo, padrao:DIR.D.P.curto||DIR.D.nome};
       if(garV) o.garTroca={de:garV.de, para:cicloGarDe(base), validas:garV.validas};
       // sem lucro (ou abaixo da meta): o motivo e o que fecharia a conta da melhor (a menos ruim). Os preços que fecham a conta são os
       // MENORES entre as opções conferidas (opcaoZero/opcaoMeta = índice em res quando não é a primeira): com o preço maior, outra
@@ -15443,6 +15840,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
           const pz=o.fecha.precoZero!=null && r.lucro>0? null : otimPrecoPara(c.st, c.m, 0, tPct), pm=otimPrecoPara(c.st, c.m, meta, tPct);
           if(pz!=null && (o.fecha.precoZero==null || pz<o.fecha.precoZero-1)){ o.fecha.precoZero=pz; o.fecha.opcaoZero=q }
           if(pm!=null && (o.fecha.precoMeta==null || pm<o.fecha.precoMeta-1)){ o.fecha.precoMeta=pm; o.fecha.opcaoMeta=q } });
+        if(DIR) dirFechaAjusta(DIR, o.fecha, cb.st.produto.mix, cb.st);
         if(!(b.lucro>0)){ o.semLucro=o.fecha; b.semLucro=true } }catch(e){ console.error("[otimizar] fecha", e); if(!(b.lucro>0)){ o.semLucro={k:"custo", motivo:"custos acima da receita", meta}; b.semLucro=true } } }
       if(!mc) return finish(o);
       multi(out, o) };
@@ -15461,6 +15859,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
     const v={...r, sc:c.sc, pav:st.produto.torres[0].pav, sub:st.produto.subsolos, gac:st.produto.garAcima, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma)};
     v.nivel=otimNivel(v, meta); v.key=otimKey(v); v.est=false; if(tPct) v.terreno=st.fin.terreno;
     if(gar0) v.garagem=cicloGarDe(st);
+    if(DIR) v.dir=dirConfere(st, m, DIR.D);
     return v };
   // confirma as melhores com o layout real da garagem (reparo em otimMotor)
   const conf=new Map();   // chave → {st, m, f, sc} das opções conferidas (para o ciclo e o "o que fecharia a conta" sem recalcular)
@@ -15477,6 +15876,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
         // (sem o ciclo, a garagem é a do estudo)
         if(!nivelOk(c) && c.m.vert && c.m.vert.ok===false && opts.ciclo!==false && typeof cicloTipos==="function" && nAlt<6){ nAlt++; const c2=garAlt(c); if(c2) c=c2 }
         const st=c.st, m=c.m;
+        if(DIR && !nivelOk(c) && c.m.vagas<c.m.vagasReq) dirQuase(DIR, {vg:m.vagas, req:m.vagasReq, units:m.units, sub:st.produto.subsolos, gac:st.produto.garAcima, subA:m.subA, embA:m.embA}, true);
         if(!nivelOk(c) || (forma && otimDesvio(m)>rTol)) continue;   // forma: unidades além da tolerância não entram nas melhores
         const v=opcao(r, c);
         if(out.some(x=>x.key===v.key)) continue;   // o reparo pode levar duas opções à mesma combinação
@@ -15549,7 +15949,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
     const stepM=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<tBud){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
         if(!m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false, ...(gar0? {garagem:gar0} : {})};
+        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false, ...(gar0? {garagem:gar0} : {}), ...(DIR? {dir:dirConfere(st, m, DIR.D)} : {})};
         v.nivel=otimNivel(v, meta); if(tPct) v.terreno=st.fin.terreno; val.push(extras(st,m,v)) }
       prog(pC1+(1-pC1)*j/Math.max(1,cand.length));
       if(j<cand.length && performance.now()-t1<tBud) return setTimeout(stepM,0);
@@ -15571,7 +15971,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
 function aplicarOtim(r, st=S){ const old=st.produto.torres||[];
   st.produto.torres=Array.from({length:r.nT},(_,i)=> r.forma? {...(old[i]||{}), pav:r.pav} : {pav:r.pav}); st.produto.mix=clone(r.mix); st.produto.subsolos=r.sub; st.produto.garAcima=r.gac;
   if(r.garagem && typeof cicloGarPoe==="function") cicloGarPoe(st, r.garagem);
-  if(Array.isArray(r.lazer)) st.produto.lazer.itens=clone(r.lazer) }
+  if(Array.isArray(r.lazer)) st.produto.lazer.itens=clone(r.lazer);
+  if(typeof dirAplicaFixos==="function") dirAplicaFixos(st) }   // diretrizes do produto: garagem no térreo, coberturas, lojas, lazer obrigatório…
 /* opções do otimizador com vários critérios (vão junto com S.otim para o Worker); filtros fVagas/fSol/solMin são só da tela */
 extendDEF("otim", { ...DEF.otim, rTol:0.10, mc:true, vento:false, malha:false, efic:false, vc:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });
 
@@ -17645,8 +18046,11 @@ function aptoMiniSVG(x, opts={}){
        regras: { id, nome, caMax, hMax, toTorre, recFrente, ia },
                  id = registro de cidadesLista() (cidadeAplicar marca S.regrasRef) · "" = sem cidade (DEF.regras, "regras a conferir")
                  nome = cidade digitada ("Outra") · os 4 números, quando vêm, valem por cima da cidade · ia = ler a lei depois (só marca)
-       produto:{ padrao:"compacto"|"familia"|"alto", preco (R$/m² médio), terreno (R$, opcional) }
+       produto:{ padrao:"compacto"|"familia"|"alto" (presets antigos) | chave de DIR_PADROES com `diretrizes`, preco (R$/m² médio), terreno (R$, opcional) },
+       diretrizes:{ modo:"livre"|"diretrizes", subMax, gacMax (−1 livre · 0 não · N até N), tips [nº de dormitórios] }   (opcional)
      }
+     Com `diretrizes` (assistente novo): o padrão vem de DIR_PADROES (src/calc/diretrizes.js, dirAplicaPadrao: mix, preços, lazer, CUB,
+     vagas, coberturas) e, no modo "diretrizes", subsolos, garagens elevadas e tipologias viram regra para o otimizador.
      O mix vem do preset do otimizador (MIX_PRESETS/presetMix) e cada tipologia recebe preço = preço médio × pf do preset.
      Sem preço do terreno, fin.terreno fica 0 e a tela o estima depois do otimizador (assTerrenoEstimado).
      S.guia.conf (flags de interface do checklist, src/ui/progresso.js) recebe o que o assistente confirmou.
@@ -17719,17 +18123,38 @@ function assEstado(base, resp){
   st.regras.caBas=Math.min(st.regras.caBas, st.regras.caMax);
   if(!R.id && R.nome && String(R.nome).trim()){ st.regras.cidade=String(R.nome).trim(); st.guia.conf.regras=true }
   // ---- produto ----
+  const DR=r.diretrizes;
+  if(DR && typeof DIR_PADROES!=="undefined" && DIR_PADROES[P.padrao]) assDiretrizes(st, P, DR);
+  else {
   const pk = ASS_N0[P.padrao]!=null? P.padrao : "familia", pr=MIX_PRESETS[pk];
   const pm = assNum(P.preco) || assPrecoSugerido(st, pk);
   st.produto.mix = presetMix(st, pk, ASS_N0[pk]).map(u=>{ const t=pr.tips.find(x=>x.nome===u.nome)||{pf:1}; return {...u, preco:Math.round(pm*t.pf/50)*50} });
   st.produto.torres=[{pav:8}];
   const cb=ASS_COB[pk]; st.produto.cob = cb? { ...st.produto.cob, on:true, qtd:2, area:cb.area, preco:Math.round(pm*1.12/50)*50 } : { ...st.produto.cob, on:false };
   st.blocos && (st.blocos.modo="auto");
+  }
   if(assNum(P.preco)) st.guia.conf.preco=true;
   // ---- terreno ----
   const tr=assNum(P.terreno);
   st.fin.terreno = tr>0? Math.round(tr) : 0; st.fin.permuta=0; st.fin.permutaFin=0;
   if(tr>0) st.guia.conf.custo=true;
+  return st;
+}
+/** padrão e diretrizes do assistente novo (src/calc/diretrizes.js) */
+function assDiretrizes(st, P, DR){
+  const k=P.padrao, PD=DIR_PADROES[k], pm=assNum(P.preco)||PD.preco[1];
+  st.diretrizes=clone(DEF.diretrizes);
+  dirAplicaPadrao(st, k, {N:PD.n0, preco:pm});
+  const d=st.diretrizes, on=DR.modo==="diretrizes";
+  d.modo = on? "diretrizes" : "livre";
+  if(on){ d.subMax=dirLim(DR.subMax); d.gacMax=dirLim(DR.gacMax);
+    const tips=Array.isArray(DR.tips)? [...new Set(DR.tips.map(Number).filter(q=>q>=0 && q<=4))].sort((a,b)=>a-b) : [];
+    if(tips.length && JSON.stringify(tips)!==JSON.stringify(d.tips)){ d.tips=tips; const mx=dirPresetMix(st, "dir", PD.n0); if(mx.length) st.produto.mix=mx }
+    if(d.subMax>=0) st.produto.subsolos=Math.min(st.produto.subsolos, d.subMax);
+    if(d.gacMax>=0) st.produto.garAcima=Math.min(st.produto.garAcima, d.gacMax);
+    dirAplicaFixos(st) }
+  st.produto.torres=[{pav:8}];
+  st.blocos && (st.blocos.modo="auto");
   return st;
 }
 /** o estudo é o exemplo que vem com o app (nome e contorno do DEF) */
@@ -18700,7 +19125,7 @@ function cicloGarNome(g, st){ if(!g) return "";
 /* tipos de rampa que fazem sentido no estudo (sem subsolo nem elevada não há rampa: só a posição do acesso conta) */
 function cicloTipos(st){ const P=st.produto, n=(+P.subsolos||0)+(+P.garAcima||0), t0=st.estudo.rampaTipo||"reta";
   if(!n) return [t0];
-  return [...new Set([t0, "reta", ...(P.subsolos>1||P.garAcima>1? ["alternada"] : []), "helicoidal", "L", "elevador"])] }
+  return [...new Set([t0, "reta", ...(P.subsolos>1||P.garAcima>1? ["alternada"] : []), "helicoidal", "L", "elevador"])].filter(t=>typeof dirRampaOk!=="function" || dirRampaOk(st, t)) }   // diretrizes: elevador de carros pode ser proibido
 
 async function cicloGarFinalista(M, c0, o={}){
   const st0=c0.st, g0=cicloGarDe(st0), tem=o.tem||(()=>true), parou=o.parou||(()=>false), pausa=o.pausa||(()=>Promise.resolve());
@@ -18756,7 +19181,8 @@ function cicloLazerEnxuto(st, m){
   const it=(st.produto.lazer&&st.produto.lazer.itens)||[]; if(!it.length) return null;
   const L=(m&&m.lzLay)||{}, missIx=new Set(L.missIx||[]), missN=new Set((L.miss||[]).filter(x=>!x.apoio).map(x=>x.nome));
   const tira=[], fica=[], naoCoube=[];
-  it.forEach((x,i)=>{ const falta=missIx.has(i) || missN.has(x.nome), extra=!CICLO_LZ_BASE.test(x.nome||""); if(falta) naoCoube.push(x.nome||"ambiente"); (falta||extra? tira : fica).push(x) });
+  const obrig=x=>typeof dirLazerObrig==="function" && dirLazerObrig(st, x.nome);   // diretrizes: o lazer obrigatório fica
+  it.forEach((x,i)=>{ if(obrig(x)) return fica.push(x); const falta=missIx.has(i) || missN.has(x.nome), extra=!CICLO_LZ_BASE.test(x.nome||""); if(falta) naoCoube.push(x.nome||"ambiente"); (falta||extra? tira : fica).push(x) });
   if(!tira.length) return null;
   return {itens:clone(fica), tira:tira.map(x=>x.nome||"ambiente"), naoCoube};
 }
@@ -18781,6 +19207,7 @@ function cicloMudouTxt(a, b, o={}){
 
 async function cicloEstudo(st0, opts={}, onProg, ctx={}){
   const base=clone(st0), prog=typeof onProg==="function"? onProg : ()=>{}, parou=()=>!!(ctx.cancelado && ctx.cancelado());
+  if(typeof dirInterno==="function") dirInterno(base);   // diretrizes do produto: vagas por unidade e margem mínima na conta
   const t0=performance.now(), bud=+opts.tempo||9000, pausa=()=>new Promise(r=>setTimeout(r,0));
   const chk=()=>{ if(parou()) throw new Error("cancelado") };
   const mTela=ctx.m||{};
@@ -21221,6 +21648,346 @@ function cubParse(text){
       lines.slice(1).forEach(l=>{ const c=l.split(sep); pads.forEach(i=>put(c[ix("uf")], head[i], c[i], c[ix("ref")], c[ix("fonte")])) }) }
   }
   return Object.values(rows);
+}
+
+/* ================= diretrizes do produto: estudo livre ou com o produto que o incorporador precisa =================
+   Pedido do Luiz (16/10/2026): "pode ser um estudo totalmente livre, onde só importam métricas e aproveitamento, ou a opção do
+   usuário já limitar alguns critérios que ele precisa atender, como o padrão, a quantidade de quartos, o que ele quer ter de área
+   comum aproximada… Afinal, é muito diferente um Minha Casa Minha Vida de um alto padrão."
+   Cálculo puro (página, Worker e testes; sem DOM). A tela fica em src/ui/diretrizes.js (Produto) e no assistente.
+
+   Estado S.diretrizes (extendDEF; modo "livre" por padrão = nada muda, estudos de referência iguais):
+     modo "livre" | "diretrizes" · padrao (chave de DIR_PADROES) · faixa (MCMV: f12 | f3 | f4 → teto por unidade)
+     tips [nº de dormitórios permitidos: 0 = studio … 4] · areas [[mín, máx] por nº de dormitórios; 0 = do padrão] · minPct [mínimo da
+     tipologia nas unidades do andar, 0–1] · subMax / gacMax (−1 = livre, 0 = não pode, N = até N) · garTerreo / vagasFrente / cob / lojas
+     ("livre" | "sim" | "nao") · cobQtd · vagasUn (0 = as da lei) · elevCarros (permitido) · torres ("livre" | "fixo" | "max") + torresN ·
+     pavMin / pavMax / unMin / unMax (0 = livre) · lazerUn (m² de lazer por unidade, aproximado; 0 = sem meta) · lazerObrig [nomes] ·
+     margemMin (0 = a meta da Viabilidade) · tetoUn (R$ por unidade; 0 = o da faixa no econômico, senão sem teto)
+
+   API (todas devolvem o comportamento antigo no modo livre):
+     dirEfetivas(st) → D (diretrizes com o padrão resolvido) | null no modo livre
+     dirTipDe(u) → nº de dormitórios de uma tipologia do mix (u.tip, o nome — "2 dorm.", "3 suítes", "Studio" — ou a área)
+     dirPresetMix(st, "dir" | "dir:<q>", N) → mix com as tipologias permitidas (presetMix do otimizador chama esta para chaves "dir…")
+     presetNome(pk, st?) → nome de um preset do otimizador (MIX_PRESETS ou das diretrizes)
+     dirMixOk(st, mix, D) · dirEstadoOk(st) (otimMotor recusa vizinhos fora das diretrizes) · dirGarOk · dirNs · dirPavs · dirTorres ·
+     dirPresets(st, opts, D) · dirRampaOk(st, tipo) · dirLazerObrig(st, nome)
+     dirAplicaFixos(st) → [rótulos] (o que é fixo no produto: garagem no térreo, vagas na frente, coberturas, lojas, lazer obrigatório,
+       elevador de carros) — aplicarOtim chama, então o que o otimizador conferiu é o que fica no estudo
+     dirPrepara(st) → DIR {D, pre, quase…} | null: fixos + o que só vale na conta (vagas por unidade acima da lei, margem mínima)
+     dirConfere(st, m, D?) → {ok, falhas[{k, msg, grave}], n} · dirSemOpcao(DIR, base, cont, cal, mNow) → {k, diretriz, motivo} | null
+     dirFechaAjusta(DIR, fecha, mix, base) (preço acima do teto não é saída) · dirAplicaPadrao(st, k, o) → [o que mudou]
+     dirResumo(st) · dirTipsTxt(D) · dirGarTxt(D)
+   Valores de referência (áreas, preços, CUB, lazer, tetos do MCMV): genéricos, "conferir" — ⓘ e glossário dizem isso. */
+
+const DIR_Q = ["Studio","1 dorm.","2 dorm.","3 dorm.","4 dorm."];
+const DIR_QC = ["studio","1","2","3","4"];
+const DIR_PF = [1.12, 1.06, 1, 0.97, 0.95];          // preço por m² relativo ao de 2 dormitórios (unidade menor vende mais caro por m²)
+/* tetos do Minha Casa, Minha Vida (valor máximo do imóvel; os das faixas 1 e 2 variam com a cidade — conferir) */
+const DIR_FAIXAS = { f12:{nome:"Faixas 1 e 2", teto:264000}, f3:{nome:"Faixa 3", teto:350000}, f4:{nome:"Faixa 4", teto:500000} };
+const DIR_LZ = (l)=>l.map(([nome,area,local,desc])=>({nome, area, local, ...(desc? {desc:true} : {})}));
+const DIR_LZ_ALTO = [["Salão de festas",120,"terreo"],["Espaço gourmet",60,"terreo"],["Academia",80,"terreo"],["Brinquedoteca",40,"terreo"],["Coworking",40,"terreo"],
+  ["Piscina",90,"emb",1],["Deck / solário",80,"emb",1],["Playground",50,"emb",1],["Pet place",40,"emb",1]];
+/* padrões: áreas [mín, alvo, máx] por nº de dormitórios, peso de cada tipologia no andar (e mínimo: no econômico, ≥ 50% de 2 dorm.), sacada, vagas por unidade (0 = lei), CUB e fator
+   sobre o CUB, garagem equivalente (fração do CUB por m² de garagem; no econômico, vagas no térreo sem estrutura de garagem), faixa de preço R$/m² [mín, referência, máx], coberturas, elevador de carros, unidades por andar [mín, máx] (0 = livre),
+   unidades por andar de partida (assistente), lazer m²/unidade, programa de lazer e itens obrigatórios */
+const DIR_PADROES = {
+  economico:{ nome:"Econômico (MCMV)", curto:"Econômico", sub:"MCMV", nomes:DIR_Q,
+    areas:[[22,27,32],[30,35,42],[38,43,50],[48,55,62],[60,68,76]], tips:[1,2], w:[0,0.3,0.7,0,0], minPct:[0,0,0.5,0,0], sac:[0,0,0,0,0],
+    vagasUn:0, cub:"R8-B", fator:1.05, eqGar:0.5, preco:[5500,7000,8500], cob:"nao", elevCarros:false, un:[4,0], n0:6, lazerUn:1,
+    lazer:[["Salão de festas",50,"terreo"],["Playground",40,"emb",1],["Bicicletário",20,"terreo"]], obrig:["Salão de festas","Playground"] },
+  medio:{ nome:"Médio", curto:"Médio", sub:"2 e 3 dorm.", nomes:["Studio","1 dorm.","2 dorm.","3 dorm. (1 suíte)","4 dorm. (1 suíte)"],
+    areas:[[26,32,38],[36,44,52],[52,62,72],[70,82,95],[95,110,125]], tips:[2,3], w:[0,0,0.6,0.4,0], sac:[3,4,6,8,10],
+    vagasUn:1, cub:"R8-N", fator:1.25, eqGar:0.8, preco:[8000,10500,13000], cob:"livre", elevCarros:true, un:[0,0], n0:4, lazerUn:2,
+    lazer:[["Salão de festas",80,"terreo"],["Espaço gourmet",40,"terreo"],["Academia",45,"terreo"],["Playground",50,"emb",1]], obrig:["Salão de festas","Playground"] },
+  medioAlto:{ nome:"Médio-alto", curto:"Médio-alto", sub:"com suítes", nomes:["Studio","1 suíte","2 suítes","3 dorm. (1 suíte)","4 dorm. (2 suítes)"],
+    areas:[[30,36,45],[42,52,62],[65,76,90],[88,105,120],[115,135,155]], tips:[2,3], w:[0,0,0.5,0.5,0], sac:[4,6,9,12,15],
+    vagasUn:1.5, cub:"R8-A", fator:1.3, eqGar:0.8, preco:[11000,13500,16000], cob:"sim", elevCarros:true, un:[0,4], n0:4, lazerUn:3.5,
+    lazer:[["Salão de festas",90,"terreo"],["Espaço gourmet",45,"terreo"],["Academia",60,"terreo"],["Brinquedoteca",35,"terreo"],["Piscina",70,"emb",1],["Playground",50,"emb",1],["Pet place",40,"emb",1]],
+    obrig:["Salão de festas","Espaço gourmet","Academia","Piscina"] },
+  alto:{ nome:"Alto padrão", curto:"Alto", sub:"3 e 4 suítes", nomes:["Studio","1 suíte","2 suítes","3 suítes","4 suítes"],
+    areas:[[35,42,55],[50,62,75],[80,95,110],[115,135,160],[150,175,210]], tips:[3,4], w:[0,0,0,0.6,0.4], sac:[6,8,12,16,22],
+    vagasUn:2, cub:"R16-A", fator:1.45, eqGar:0.8, preco:[15000,18000,22000], cob:"sim", elevCarros:true, un:[0,4], n0:2, lazerUn:6,
+    lazer:DIR_LZ_ALTO, obrig:["Salão de festas","Espaço gourmet","Academia","Piscina","Brinquedoteca"] },
+  luxo:{ nome:"Luxo", curto:"Luxo", sub:"1 a 2 por andar", nomes:["Studio","1 suíte","2 suítes","3 suítes","4 suítes"],
+    areas:[[45,55,70],[65,80,95],[100,120,140],[160,200,250],[220,280,380]], tips:[3,4], w:[0,0,0,0.4,0.6], sac:[8,12,16,25,35],
+    vagasUn:3, cub:"R16-A", fator:1.8, eqGar:0.8, preco:[22000,27000,35000], cob:"sim", elevCarros:true, un:[0,2], n0:2, lazerUn:10,
+    lazer:[...DIR_LZ_ALTO, ["Sauna",20,"terreo"],["Cinema",35,"terreo"],["Rooftop gourmet",60,"cob"]], obrig:["Salão de festas","Espaço gourmet","Academia","Piscina","Brinquedoteca","Sauna"] }
+};
+const DIR_ORDEM = ["economico","medio","medioAlto","alto","luxo"];
+
+extendDEF("diretrizes", { modo:"livre", padrao:"medio", faixa:"f3", tips:[2,3], areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:[0,0,0,0,0],
+  subMax:-1, gacMax:-1, garTerreo:"livre", vagasFrente:"livre", cob:"livre", cobQtd:0, lojas:"livre", vagasUn:1, elevCarros:true,
+  torres:"livre", torresN:1, pavMin:0, pavMax:0, unMin:0, unMax:0, lazerUn:2, lazerObrig:["Salão de festas","Playground"], margemMin:0, tetoUn:0 });
+
+const dirN = v => { const x=+v; return isFinite(x)? x : 0 };
+const dirLim = v => v==null || v==="" || !isFinite(+v) || +v<0 ? -1 : Math.floor(+v);
+const dirGet = (o,p)=>p.split(".").reduce((a,k)=>a==null? a : a[k], o);
+const dirSet = (o,p,v)=>{ const ks=p.split("."), l=ks.pop(); const t=ks.reduce((a,k)=>a[k]==null? (a[k]={}) : a[k], o); t[l]=v };
+const dirPl = (n, s, p)=>`${n} ${n===1? s : (p||s+"s")}`;
+/* faixa de preço em mil R$/m²: "5,5 a 8,5 mil" */
+const dirMil = v => nf(v/1000, v%1000? 1 : 0);
+function dirFaixaPreco(P){ return `R$ ${dirMil(P.preco[0])} a ${dirMil(P.preco[2])} mil/m²` }
+
+function dirAtiva(st){ return !!(st && st.diretrizes && st.diretrizes.modo==="diretrizes") }
+function dirEfetivas(st){
+  if(!dirAtiva(st)) return null;
+  const d=st.diretrizes, k=DIR_PADROES[d.padrao]? d.padrao : "medio", P=DIR_PADROES[k];
+  const tips=[...new Set((Array.isArray(d.tips)? d.tips : P.tips).map(Number).filter(q=>Number.isInteger(q) && q>=0 && q<=4))].sort((a,b)=>a-b);
+  const am=+(st.regras && st.regras.aptoMin)||0;   // a menor unidade que a lei aceita vale por cima do padrão
+  const area=q=>{ const a=P.areas[q], o=(Array.isArray(d.areas) && d.areas[q]) || [], mn=dirN(o[0])>0? dirN(o[0]) : a[0], mx=dirN(o[1])>0? dirN(o[1]) : a[2];
+    const lo=Math.max(am, Math.min(mn,mx)), hi=Math.max(lo, mn, mx); return [lo, Math.min(hi, Math.max(lo, a[1])), hi] };
+  const fx=DIR_FAIXAS[d.faixa]||null, teto = dirN(d.tetoUn)>0? dirN(d.tetoUn) : (k==="economico" && fx? fx.teto : 0);
+  const un=v=>Math.max(0, Math.floor(dirN(v))), opt=v=>["sim","nao"].includes(v)? v : "livre";
+  return { k, P, nome:P.nome, tips, area, minPct:[0,1,2,3,4].map(q=>Math.max(0, Math.min(1, dirN((d.minPct||[])[q])))),
+    subMax:dirLim(d.subMax), gacMax:dirLim(d.gacMax), garTerreo:opt(d.garTerreo), vagasFrente:opt(d.vagasFrente), cob:opt(d.cob), lojas:opt(d.lojas),
+    cobQtd:un(d.cobQtd), vagasUn:Math.max(0, dirN(d.vagasUn)), elevCarros:d.elevCarros!==false,
+    torres:["fixo","max"].includes(d.torres)? d.torres : "livre", torresN:Math.max(1, un(d.torresN)||1),
+    pavMin:un(d.pavMin), pavMax:un(d.pavMax), unMin:un(d.unMin), unMax:un(d.unMax),
+    lazerUn:Math.max(0, dirN(d.lazerUn)), lazerObrig:(Array.isArray(d.lazerObrig)? d.lazerObrig : []).filter(Boolean).map(String),
+    margemMin:Math.max(0, dirN(d.margemMin)), teto, faixa: k==="economico" && fx && !(dirN(d.tetoUn)>0)? fx.nome : "" };
+}
+
+/* nº de dormitórios de uma tipologia do mix */
+function dirTipDe(u){
+  if(!u) return null; if(u.tip!=null && isFinite(+u.tip)) return Math.max(0, Math.min(4, Math.round(+u.tip)));
+  const n=String(u.nome||"").toLowerCase();
+  if(/st[uú]dio|kitnet|kitinete|loft/.test(n)) return 0;
+  let x=n.match(/(\d)\s*(dorm|quarto|qto|dts?\b|q\b)/); if(x) return Math.min(4, +x[1]);
+  x=n.match(/(\d)\s*su[ií]te/); if(x) return Math.min(4, +x[1]);
+  const a=+u.area||0; return a<35? 0 : a<50? 1 : a<78? 2 : a<120? 3 : 4;
+}
+const dirQRot = q => DIR_Q[q] || "";
+/* "2 e 3 dorm." · "studio e 1 dorm." */
+function dirTipsTxt(D){ const l=(D && D.tips)||[]; if(!l.length) return "nenhuma tipologia";
+  const s=l.filter(q=>q===0).map(()=>"studio"), n=l.filter(q=>q>0);
+  const j=a=>a.length<2? (a[0]||"") : a.slice(0,-1).join(", ")+" e "+a[a.length-1];
+  if(!s.length && D.P && n.every(q=>/^\d su[ií]tes?$/.test(D.P.nomes[q]||""))) return j(n.map(String))+(n.length>1 || n[0]>1? " suítes" : " suíte");
+  return n.length? j([...s, ...n.map(String)])+" dorm." : "studio" }
+function dirGarTxt(D){ if(!D) return ""; const r=[];
+  if(D.subMax===0) r.push("sem subsolo"); else if(D.subMax>0) r.push(`até ${dirPl(D.subMax,"subsolo")}`);
+  if(D.gacMax===0) r.push("sem garagem elevada"); else if(D.gacMax>0) r.push(`até ${dirPl(D.gacMax,"elevada")}`);
+  return r.join(" · ") }
+function dirResumo(st){ const D=dirEfetivas(st); if(!D) return "Livre";
+  return [D.P.curto||D.nome, dirTipsTxt(D), dirGarTxt(D)].filter(Boolean).join(" · ") }
+function presetNome(pk, st){
+  if(MIX_PRESETS[pk]) return MIX_PRESETS[pk].nome;
+  if(pk==="dir"){ const D=st && dirEfetivas(st); return D? `${D.P.curto||D.nome} · ${dirTipsTxt(D)}` : "Diretrizes" }
+  if(/^dir:\d$/.test(String(pk))){ const q=+String(pk).slice(4), D=st && dirEfetivas(st); return D? `${D.P.curto||D.nome} · só ${D.P.nomes[q]}` : `Só ${dirQRot(q)}` }
+  return String(pk||"");
+}
+
+/* preço de uma tipologia: o da mesma tipologia no mix; senão o preço médio × fator da tipologia */
+function dirPrecoDe(st, q){ const mx=(st.produto&&st.produto.mix)||[], u=mx.find(x=>dirTipDe(x)===q && +x.preco>0);
+  return u? +u.preco : Math.round(basePrice(st)*DIR_PF[q]/50)*50 }
+/* área que a tipologia pode ter: o alvo do padrão, limitado pelo teto por unidade (MCMV); null se nem a área mínima cabe no teto */
+function dirAreaViavel(st, D, q){ const a=D.area(q); let x=a[1]; if(D.teto>0){ const p=dirPrecoDe(st,q); if(p>0) x=Math.min(x, Math.floor(D.teto/p)) } return x>=a[0]-1e-9? x : null }
+
+/* mix das diretrizes: "dir" = todas as tipologias permitidas (pesos do padrão e mínimos), "dir:<q>" = só uma */
+function dirPresetMix(st, key, N){
+  const D=dirEfetivas(st); if(!D) return [];
+  const qs=(key==="dir"? D.tips : [+String(key).slice(4)]).filter(q=>D.tips.includes(q) && dirAreaViavel(st, D, q)!=null);
+  if(!qs.length) return [];
+  const ws=qs.map(q=>Math.max(D.minPct[q], D.P.w[q]||0) || 1/qs.length), sw=ws.reduce((a,b)=>a+b,0)||1;
+  const mix=distrib(qs.map((q,i)=>({q, w:ws[i]/sw})), N, t=>({nome:D.P.nomes[t.q], area:dirAreaViavel(st, D, t.q), preco:dirPrecoDe(st, t.q), sac:D.P.sac[t.q], tip:t.q}));
+  if(qs.some(q=>D.minPct[q]>0 && !mix.some(u=>u.tip===q))) return [];
+  return mix;
+}
+/* o mix atende às diretrizes? (tipologias, áreas, teto por unidade, mínimos) */
+function dirMixOk(st, mix, D){
+  D=D||dirEfetivas(st); const falhas=[]; if(!D) return {ok:true, falhas};
+  const L=(mix||[]).filter(u=>+u.qtd>0), N=L.reduce((s,u)=>s+(+u.qtd||0),0);
+  L.forEach(u=>{ const q=dirTipDe(u), a=D.area(q), nome=u.nome||dirQRot(q);
+    if(!D.tips.includes(q)){ falhas.push({k:"tipologia", grave:true, msg:`${nome} fora das tipologias (${dirTipsTxt(D)})`}); return }
+    if(+u.area<a[0]-0.5 || +u.area>a[2]+0.5) falhas.push({k:"area", grave:true, msg:`${nome} com ${nf(+u.area,0)} m² (diretriz ${nf(a[0],0)} a ${nf(a[2],0)} m²)`});
+    if(D.teto>0 && (+u.area)*(+u.preco)>D.teto*1.001) falhas.push({k:"teto", grave:true, msg:`${nome} a ${mi((+u.area)*(+u.preco))} passa do teto de ${mi(D.teto)}`}) });
+  D.tips.forEach(q=>{ if(!(D.minPct[q]>0)) return; const c=L.filter(u=>dirTipDe(u)===q).reduce((s,u)=>s+(+u.qtd||0),0);
+    if(c<1 || c/Math.max(1,N)<D.minPct[q]-1/Math.max(1,N)+1e-9) falhas.push({k:"proporcao", grave:true, msg:`${dirQRot(q)} abaixo de ${pct(D.minPct[q],0)} das unidades`}) });
+  return {ok:!falhas.length, falhas};
+}
+const dirGarOk = (D, sub, gac) => !D || ((D.subMax<0 || sub<=D.subMax) && (D.gacMax<0 || gac<=D.gacMax));
+function dirNs(D, l){ if(!D) return l;
+  const ok=n=>(!D.unMin || n>=D.unMin) && (!D.unMax || n<=D.unMax); let r=l.filter(ok);
+  if(!r.length){ const lo=Math.max(1, D.unMin||1), hi=Math.max(lo, D.unMax||lo+4); r=[]; for(let n=lo; n<=hi && r.length<6; n++) r.push(n) }
+  return r }
+/* pavimentos candidatos dentro de [pavMin, pavMax] (e os próprios limites, quando cabem no gabarito) */
+function dirPavs(D, l, pMin, pmax){ if(!D) return l;
+  const ok=p=>(!D.pavMin || p>=D.pavMin) && (!D.pavMax || p<=D.pavMax);
+  return [...new Set([...l.filter(ok), ...[D.pavMax, D.pavMin].filter(p=>p>0 && p>=pMin && p<=pmax && ok(p))])] }
+function dirTorres(D, l, forma){ if(!D || forma || D.torres==="livre") return l;
+  if(D.torres==="fixo") return [D.torresN];
+  const r=l.filter(n=>n<=D.torresN); return r.length? r : [Math.min(D.torresN, l[0]||1)] }
+/* presets que o otimizador testa com diretrizes: todas as permitidas, cada uma sozinha (sem mínimos) e o mix atual se atende */
+function dirPresets(st, opts, D){
+  const atual=dirMixOk(st, st.produto.mix, D).ok, qs=D.tips.filter(q=>dirAreaViavel(st, D, q)!=null);
+  if(!qs.length) return [];
+  if(!(opts && opts.tipologias)) return [atual? "atual" : "dir"];
+  return [...new Set(["dir", ...(qs.length>1 && !D.minPct.some(x=>x>0)? qs.map(q=>"dir:"+q) : []), ...(atual? ["atual"] : [])])];
+}
+function dirRampaOk(st, tipo){ const D=dirEfetivas(st); return !D || D.elevCarros || tipo!=="elevador" }
+function dirLazerObrig(st, nome){ const D=dirEfetivas(st); return !!D && D.lazerObrig.includes(String(nome||"")) }
+/* estado dentro das diretrizes (vizinhos do reparo da garagem e do "o que fecha a conta"): garagens, andares, unidades, torres e mix */
+function dirEstadoOk(st){
+  const D=dirEfetivas(st); if(!D) return true;
+  const P=st.produto, N=(P.mix||[]).reduce((s,u)=>s+(+u.qtd||0),0), forma=typeof otimFormaAtiva==="function" && otimFormaAtiva(st);
+  if(!dirGarOk(D, +P.subsolos||0, +P.garAcima||0)) return false;
+  if((P.torres||[]).some(t=>(D.pavMax && t.pav>D.pavMax) || (D.pavMin && t.pav<D.pavMin))) return false;
+  if((D.unMin && N<D.unMin) || (D.unMax && N>D.unMax)) return false;
+  if(!forma && ((D.torres==="fixo" && P.torres.length!==D.torresN) || (D.torres==="max" && P.torres.length>D.torresN))) return false;
+  return dirMixOk(st, P.mix, D).ok;
+}
+
+/* o que é fixo no produto (o otimizador não varia): aplicado no estado de partida do otimizador e por aplicarOtim */
+function dirAplicaFixos(st){
+  const D=dirEfetivas(st), out=[]; if(!D) return out;
+  const P=st.produto, set=(p,v,rot)=>{ if(JSON.stringify(dirGet(st,p))!==JSON.stringify(v)){ dirSet(st,p,v); out.push(rot) } };
+  if(D.garTerreo!=="livre") set("produto.garTerOn", D.garTerreo==="sim", D.garTerreo==="sim"? "garagem no térreo" : "sem garagem no térreo");
+  if(D.vagasFrente!=="livre") set("produto.vagasFrente", D.vagasFrente==="sim", D.vagasFrente==="sim"? "vagas na frente" : "sem vagas na frente");
+  if(D.cob!=="livre") set("produto.cob.on", D.cob==="sim", D.cob==="sim"? "com coberturas" : "sem coberturas");
+  if(D.cob==="sim" && D.cobQtd>0) set("produto.cob.qtd", D.cobQtd, `${dirPl(D.cobQtd,"cobertura")} por torre`);
+  if(D.lojas==="nao") set("produto.lojaTerreo", 0, "sem lojas");
+  else if(D.lojas==="sim" && !(+P.lojaTerreo>0)) set("produto.lojaTerreo", 0.2, "com lojas na frente");
+  if(!D.elevCarros && st.estudo && st.estudo.rampaTipo==="elevador"){ st.estudo.rampaTipo="reta"; st.estudo.rampa=null; out.push("rampas no lugar do elevador de carros") }
+  const it=(P.lazer && P.lazer.itens) || []; if(P.lazer && !Array.isArray(P.lazer.itens)) P.lazer.itens=it;
+  D.lazerObrig.forEach(nome=>{ if(it.some(x=>x.nome===nome)) return;
+    const pd=DIR_LZ(D.P.lazer).find(x=>x.nome===nome) || (typeof LZ_PRESETS!=="undefined" && LZ_PRESETS.find(x=>x.nome===nome)) || {nome, area:30, local:"terreo"};
+    it.push(clone(pd)); out.push(nome) });
+  return out;
+}
+/* só na conta do otimizador e do "o que fecha a conta": vagas por unidade acima da lei e margem mínima */
+function dirInterno(st, D){ D=D||dirEfetivas(st); if(!D) return st;
+  if(D.vagasUn > (+st.regras.vagasApto||0)) st.regras.vagasApto=D.vagasUn;
+  if(D.margemMin>0) st.fin.margemAlvo=D.margemMin;
+  return st }
+/* o que nem chega a ser testado: nenhuma tipologia, teto por unidade que nenhuma comporta, mínimo acima do máximo */
+function dirPre(st, D){
+  const r=(diretriz, motivo)=>({k:"diretriz", diretriz, motivo});
+  if(!D.tips.length) return r("tipologias", "nenhuma tipologia está permitida — marque ao menos uma nas diretrizes");
+  if(D.pavMin && D.pavMax && D.pavMin>D.pavMax) return r("pavimentos", `o mínimo de ${D.pavMin} pavimentos passa do máximo de ${D.pavMax}`);
+  if(D.unMin && D.unMax && D.unMin>D.unMax) return r("unidades", `o mínimo de ${D.unMin} unidades por andar passa do máximo de ${D.unMax}`);
+  if(!D.tips.some(q=>dirAreaViavel(st, D, q)!=null)){
+    const q=D.tips.reduce((b,x)=>D.area(x)[0]*dirPrecoDe(st,x)<D.area(b)[0]*dirPrecoDe(st,b)? x : b, D.tips[0]), a=D.area(q)[0], p=dirPrecoDe(st,q);
+    return r("teto", `o teto de ${mi(D.teto)} por unidade${D.faixa? ` (${D.faixa} do MCMV)` : ""} não comporta ${D.P.nomes[q]} de ${nf(a,0)} m² a ${brl(p)}/m² (${mi(a*p)}) — reduza o preço para até ${brl(Math.floor(D.teto/a/50)*50)}/m² ou a área mínima para ${nf(Math.floor(D.teto/p),0)} m²`) }
+  return null;
+}
+function dirPrepara(st){
+  const D=dirEfetivas(st); if(!D) return null;
+  const lei=+st.regras.vagasApto||0; dirAplicaFixos(st); dirInterno(st, D);
+  return {D, lei, pre:dirPre(st, D), quase:null, quaseConf:null, pmaxG:0, resumo:dirResumo(st)};
+}
+/* com a garagem limitada pelas diretrizes: quantos pavimentos as vagas estimadas comportam (o otimizador testa essa altura também) */
+function dirPavVagas(m, vg, pav, vA){ const un=(m.unitsRes ?? m.units ?? 0), lojas=Math.max(0, m.vagasReq-Math.ceil(un*vA)), porPav=un/Math.max(1,pav)*vA;
+  return porPav>0? Math.floor((vg-lojas)/porPav) : 0 }
+/* combinação que chegou mais perto das vagas (para dizer quanto falta): a estimada e a conferida com o layout */
+function dirQuase(DIR, q, conf){ if(!DIR) return; const k=conf? "quaseConf" : "quase", b=DIR[k], d=x=>x.req-x.vg;
+  if(!b || d(q)<d(b) || (d(q)===d(b) && q.units>b.units)) DIR[k]=q }
+
+/* a opção (ou o estudo) atende às diretrizes? Lista o que não atende, em linguagem simples */
+function dirConfere(st, m, D){
+  D=D||dirEfetivas(st); if(!D) return null;
+  const P=st.produto, F=[], add=(k, msg, grave=true)=>F.push({k, msg, grave});
+  dirMixOk(st, P.mix, D).falhas.forEach(x=>F.push(x));
+  const sub=+P.subsolos||0, gac=+P.garAcima||0, N=(P.mix||[]).reduce((s,u)=>s+(+u.qtd||0),0), pavs=(P.torres||[]).map(t=>+t.pav||0);
+  if(D.subMax>=0 && sub>D.subMax) add("subsolo", D.subMax? `${dirPl(sub,"subsolo")} (diretriz: até ${D.subMax})` : "subsolo não permitido");
+  if(D.gacMax>=0 && gac>D.gacMax) add("elevada", D.gacMax? `${dirPl(gac,"garagem elevada","garagens elevadas")} (diretriz: até ${D.gacMax})` : "garagem elevada não permitida");
+  if(D.pavMax && pavs.some(p=>p>D.pavMax)) add("pavimentos", `${Math.max(...pavs)} pavimentos (diretriz: até ${D.pavMax})`);
+  if(D.pavMin && pavs.some(p=>p<D.pavMin)) add("pavimentos", `${Math.min(...pavs)} pavimentos (diretriz: no mínimo ${D.pavMin})`);
+  if((D.unMin && N<D.unMin) || (D.unMax && N>D.unMax)) add("unidades", `${dirPl(N,"unidade")} por andar (diretriz: ${D.unMin&&D.unMax? `${D.unMin} a ${D.unMax}` : D.unMin? `no mínimo ${D.unMin}` : `até ${D.unMax}`})`);
+  const forma=typeof otimFormaAtiva==="function" && otimFormaAtiva(st), nT=(P.torres||[]).length;
+  if(!forma && ((D.torres==="fixo" && nT!==D.torresN) || (D.torres==="max" && nT>D.torresN))) add("torres", `${dirPl(nT,"torre")} (diretriz: ${D.torres==="fixo"? "" : "até "}${D.torresN})`);
+  if(D.garTerreo!=="livre" && !!P.garTerOn!==(D.garTerreo==="sim")) add("terreo", D.garTerreo==="sim"? "sem garagem no térreo (diretriz: com)" : "garagem no térreo (diretriz: sem)");
+  if(D.vagasFrente!=="livre" && !!P.vagasFrente!==(D.vagasFrente==="sim")) add("frente", D.vagasFrente==="sim"? "sem vagas na frente (diretriz: com)" : "vagas na frente (diretriz: sem)", false);
+  if(D.cob!=="livre" && !!(P.cob&&P.cob.on)!==(D.cob==="sim")) add("cob", D.cob==="sim"? "sem coberturas (diretriz: com)" : "coberturas (diretriz: sem)");
+  if(D.lojas==="nao" && +P.lojaTerreo>0) add("lojas", "lojas no térreo (diretriz: sem)");
+  if(D.lojas==="sim" && !(+P.lojaTerreo>0)) add("lojas", "sem lojas no térreo (diretriz: com)");
+  if(!D.elevCarros && st.estudo && st.estudo.rampaTipo==="elevador") add("elevador", "elevador de carros não permitido");
+  if(m && D.vagasUn>0){ const req=Math.ceil((m.unitsRes ?? m.units ?? 0)*D.vagasUn + (m.lojaPriv>0? m.lojaPriv/(+st.regras.m2LojaVaga||50) : 0));
+    if(m.vagas<req) add("vagas", `${m.vagas} vagas para ${req} (diretriz: ${nf(D.vagasUn, D.vagasUn%1? 1 : 0)} por unidade)`) }
+  const it=(P.lazer&&P.lazer.itens)||[], miss=new Set(((m&&m.lzLay&&m.lzLay.miss)||[]).filter(x=>!x.apoio).map(x=>x.nome)), mIx=new Set((m&&m.lzLay&&m.lzLay.missIx)||[]);
+  const falta=D.lazerObrig.filter(n=>!it.some(x=>x.nome===n)), naoCoube=D.lazerObrig.filter(n=>it.some((x,i)=>x.nome===n && (miss.has(n) || mIx.has(i))));
+  if(falta.length) add("lazer", `sem ${cicloListaDir(falta)} (obrigatório)`);
+  if(naoCoube.length) add("lazer", `${cicloListaDir(naoCoube)} não coube${naoCoube.length>1? "ram" : ""} (obrigatório)`);
+  if(m && D.lazerUn>0){ const lz=m.lz||{}, a=(+lz.c||0)+(+lz.d||0), un=Math.max(1, m.units||0);
+    if(a/un < 0.7*D.lazerUn) add("lazerArea", `lazer de ${nf(a/un,1)} m² por unidade (diretriz ≈ ${nf(D.lazerUn,1)})`, false) }
+  const graves=F.filter(x=>x.grave);
+  return {ok:!graves.length, falhas:F, n:graves.length, padrao:D.P.curto||D.nome};
+}
+const cicloListaDir = l=>{ const u=[...new Set(l)]; return u.length<2? (u[0]||"") : u.slice(0,-1).join(", ")+" e "+u[u.length-1] };
+
+/* nenhuma combinação: qual diretriz impede e quanto falta. null = o motivo de sempre (sem diretriz envolvida) */
+function dirSemOpcao(DIR, base, cont, cal, mNow){
+  if(!DIR) return null; const D=DIR.D;
+  if(DIR.pre) return DIR.pre;
+  const tips=dirTipsTxt(D), cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  if(!cont.cabe){
+    if(D.pavMin && DIR.pmaxG>0 && DIR.pmaxG<D.pavMin) return {k:"lote", diretriz:"pavimentos", motivo:`o gabarito comporta até ${DIR.pmaxG} pavimentos e a diretriz pede no mínimo ${D.pavMin} — reduza o mínimo de pavimentos`};
+    if(D.unMin) return {k:"lote", diretriz:"unidades", motivo:`nenhuma torre comporta ${D.unMin} unidades por andar de ${tips} dentro dos recuos e da ocupação — reduza o mínimo de unidades por andar ou a área das unidades`};
+    if(D.torres==="fixo" && D.torresN>1) return {k:"lote", diretriz:"torres", motivo:`${D.torresN} torres de ${tips} não cabem no lote dentro dos recuos — permita menos torres`};
+    const ars=D.tips.map(q=>`${D.P.nomes[q]} de ${nf(D.area(q)[0],0)} m² ou mais`);
+    return {k:"lote", diretriz:"tipologias", motivo:`nenhuma torre comporta ${cicloListaDir(ars)} dentro dos recuos e da ocupação — permita tipologias menores ou reduza a área mínima`};
+  }
+  const q=DIR.quaseConf || DIR.quase; if(!q) return null;
+  const restrSub=D.subMax>=0, restrGac=D.gacMax>=0, vu=D.vagasUn>DIR.lei+1e-9;
+  if(!restrSub && !restrGac && !vu && D.garTerreo!=="nao") return null;
+  const vA=+base.regras.vagasApto||1, lojas=Math.max(0, q.req-Math.ceil(q.units*vA)), U=Math.max(0, Math.floor((q.vg-lojas)/vA));
+  const sem = restrSub && D.subMax===0 && restrGac && D.gacMax===0? "sem subsolo e sem garagem elevada" : restrSub && D.subMax===0? "sem subsolo"
+    : restrSub? `com até ${dirPl(D.subMax,"subsolo")}` : restrGac && D.gacMax===0? "sem garagem elevada" : restrGac? `com até ${dirPl(D.gacMax,"garagem elevada","garagens elevadas")}` : D.garTerreo==="nao"? "sem garagem no térreo" : "";
+  const mv=+base.regras.m2Vaga||28, aL=G.area(base.lote.pts)*(1-(+base.regras.permeab||0));
+  const yS=Math.max(1, Math.round(cal.s*Math.floor((q.subA || (mNow&&mNow.subA) || aL)/mv))), yG=Math.max(1, Math.round(cal.g*Math.floor((q.embA || (mNow&&mNow.embA) || aL*0.8)/mv)));
+  const falta=Math.max(1, q.req-q.vg), ops=[];
+  if(restrSub && D.subMax<5){ const n=D.subMax+Math.max(1, Math.ceil(falta/yS)); ops.push(`permitir ${dirPl(Math.min(5,n),"subsolo")}`) }
+  else if(restrGac && D.gacMax<3){ const n=D.gacMax+Math.max(1, Math.ceil(falta/yG)); ops.push(`permitir ${dirPl(Math.min(3,n),"garagem elevada","garagens elevadas")}`) }
+  if(D.garTerreo==="nao") ops.push("permitir garagem no térreo");
+  if(vu) ops.push(`reduzir para ${nf(Math.max(DIR.lei,1), DIR.lei%1? 1 : 0)} vaga por unidade`);
+  if(lojas>0.25*q.req && D.lojas!=="sim") ops.push(`tirar as lojas (pedem ${dirPl(lojas,"vaga")})`);
+  if(U>=Math.max(4, D.unMin||0)) ops.push(`reduzir para ${dirPl(U,"unidade")}`);
+  const vuTxt = vu? ` (${nf(D.vagasUn, D.vagasUn%1? 1 : 0)} por unidade, pela diretriz)` : "";
+  return {k:"vagas", diretriz: restrSub||restrGac? "garagem" : "vagas", motivo:`${sem? sem+", a" : "a"} garagem comporta ${q.vg} das ${q.req} vagas exigidas${vuTxt} — ${ops.join(" ou ")}`,
+    vagas:q.vg, req:q.req, unidades:U, titulo:cap(sem||"as diretrizes")};
+}
+/* preço médio (R$/m²) máximo pelo teto por unidade: todas as tipologias sobem na mesma proporção (como em otimPrecoPara) */
+function dirPrecoTeto(teto, mix){ const L=(mix||[]).filter(u=>+u.qtd>0 && +u.area>0 && +u.preco>0); if(!(teto>0) || !L.length) return null;
+  return basePrice({produto:{mix:L}})*Math.min(...L.map(u=>teto/(u.area*u.preco))) }
+function dirPrecoTetoEstudo(st){ const D=dirEfetivas(st); return D && D.teto>0? dirPrecoTeto(D.teto, st.produto.mix) : null }
+/* preço que leva à meta acima do teto por unidade não é saída: tira do "o que fecha a conta" e diz o preço máximo */
+function dirFechaAjusta(DIR, fx, mix, base){
+  if(!DIR || !fx || !(DIR.D.teto>0)) return fx;
+  const lim=dirPrecoTeto(DIR.D.teto, mix); if(lim==null) return fx;
+  fx.precoTeto=lim;
+  if(fx.precoMeta && fx.precoMeta>lim+1){ fx.precoMeta=null; fx.metaAcimaTeto=true }
+  if(fx.precoZero && fx.precoZero>lim+1){ fx.precoZero=null; fx.zeroAcimaTeto=true }
+  return fx;
+}
+
+/* escolher um padrão: diretrizes do padrão + predefinições do produto (mix, preços, lazer, custo, coberturas). Garagem (subsolo,
+   elevada, térreo) e forma ficam como o usuário definiu: dependem do lugar, não do padrão. Devolve o que mudou, em linhas curtas.
+   o = {N (unidades por andar), preco (R$/m² médio; senão a referência do padrão)} */
+function dirAplicaPadrao(st, k, o={}){
+  const P=DIR_PADROES[k]; if(!P) return [];
+  const d=st.diretrizes || (st.diretrizes=clone(DEF.diretrizes)), out=[];
+  Object.assign(d, { padrao:k, tips:P.tips.slice(), areas:[[0,0],[0,0],[0,0],[0,0],[0,0]], minPct:(P.minPct||[0,0,0,0,0]).slice(), vagasUn:P.vagasUn, elevCarros:P.elevCarros,
+    cob:P.cob, lazerObrig:P.obrig.slice(), lazerUn:P.lazerUn, unMin:P.un[0], unMax:P.un[1], tetoUn:0 });
+  if(k==="economico" && !DIR_FAIXAS[d.faixa]) d.faixa="f3";
+  const Pr=st.produto, cur=(Pr.mix||[]).reduce((s,u)=>s+(+u.qtd||0),0);
+  let N=Math.round(+o.N||0) || cur || P.n0; if(P.un[0]) N=Math.max(N, P.un[0]); if(P.un[1]) N=Math.min(N, P.un[1]);
+  const pm=+o.preco>0? +o.preco : P.preco[1], D=dirEfetivas({...st, diretrizes:{...d, modo:"diretrizes"}});
+  const sw=P.tips.reduce((s,q)=>s+(P.w[q]||0),0)||1;
+  const area=q=>{ const r=D.area(q); let a=r[1]; const pr=Math.round(pm*DIR_PF[q]/50)*50; if(D.teto>0) a=Math.max(r[0], Math.min(a, Math.floor(D.teto/pr))); return a };
+  Pr.mix=distrib(P.tips.map(q=>({q, w:(P.w[q]||0)/sw})), N, t=>({nome:P.nomes[t.q], area:area(t.q), preco:Math.round(pm*DIR_PF[t.q]/50)*50, sac:P.sac[t.q], tip:t.q}));
+  out.push(`Unidades: ${Pr.mix.map(u=>`${u.qtd} × ${u.nome} de ${nf(u.area,0)} m²`).join(" e ")} por andar`);
+  out.push(`Preço médio ${brl(Math.round(basePrice(st)/50)*50)}/m² (referência ${dirFaixaPreco(P)} · conferir)`);
+  if(D.teto>0) out.push(`Teto de ${mi(D.teto)} por unidade${D.faixa? ` (${D.faixa})` : ""}`);
+  Pr.lazer=Pr.lazer||{hall:0, itens:[]}; Pr.lazer.itens=DIR_LZ(P.lazer);
+  out.push(`Lazer: ${dirPl(Pr.lazer.itens.length,"ambiente")} · ${m2(Pr.lazer.itens.reduce((s,x)=>s+x.area,0))}`);
+  if(P.cob==="sim"){ const big=Math.max(...Pr.mix.map(u=>u.area)); Pr.cob={...Pr.cob, on:true, qtd:Math.max(1, +(Pr.cob&&Pr.cob.qtd)||2), area:Math.round(big*1.8/5)*5, preco:Math.round(pm*1.12/50)*50}; out.push(`Coberturas duplex de ${m2(Pr.cob.area)}`) }
+  else if(P.cob==="nao" && Pr.cob && Pr.cob.on){ Pr.cob={...Pr.cob, on:false}; out.push("Sem coberturas") }
+  if(st.orc){ const uf=st.orc.uf||"SC", v=typeof cubValor==="function"? cubValor(st, uf, P.cub) : null;
+    st.orc.padrao=P.cub; if(v>0) st.fin.cub=Math.round(v*100)/100; st.fin.fator=P.fator; st.fin.eqGar=P.eqGar;
+    out.push(`Custo: CUB ${P.cub} ${uf} ${brl(st.fin.cub)}/m² × ${nf(P.fator,2)}${P.eqGar!==0.8? ` · garagem a ${pct(P.eqGar,0)} do CUB` : ""}`) }
+  else { st.fin.fator=P.fator; st.fin.eqGar=P.eqGar }
+  out.push(`Vagas: ${P.vagasUn? `${nf(P.vagasUn, P.vagasUn%1? 1 : 0)} por unidade` : "as da lei"}`);
+  if(!P.elevCarros && st.estudo && st.estudo.rampaTipo==="elevador"){ st.estudo.rampaTipo="reta"; st.estudo.rampa=null }
+  if(st.guia && st.guia.conf){ st.guia.conf.preco=false; st.guia.conf.custo=false }
+  return out;
 }
 
 /* ================= edição das edificações do entorno (cálculo puro) =================
@@ -29168,7 +29935,9 @@ function plaSelect(id, dataAttr, chave, rot, cab, atual, obrig){
 /* ================= assistente "Novo estudo", faixa do exemplo e entrada da 1ª visita (UX v3 §3.1 e §3.2) =================
    Parte pura em src/calc/assistente.js (assEstado, assEhExemplo, assPrecoSugerido…). Aqui só a tela:
    - assAbrir(opts?)  → tela cheia por cima do app (criada aqui, listener próprio). opts = {onDone(estudoId), onCancel(), primeira}.
-     Estado local ASS (nada vai para S antes de "Gerar"). 4 passos: Terreno · Regras · Produto · Gerando (barra, Voltar, Pular).
+     Estado local ASS (nada vai para S antes de "Gerar"). 5 passos: Terreno · Regras · Produto (padrão: Econômico/MCMV, Médio, Médio-alto,
+     Alto, Luxo — DIR_PADROES de src/calc/diretrizes.js) · Restrições (Livre | Com diretrizes: subsolo, garagem elevada, tipologias) ·
+     Gerando (barra, Voltar, Pular).
      Gerar: assEstado → otimizador (otimRodar(opts, onProg, {st, m}) do P3 quando aceitar o 3º argumento; senão o Worker "job" do
      calcworker com o estado explícito; senão otimizar() na página) → aplicarOtim → um único passo de desfazer → Viabilidade
      + cartão "O que fizemos". Sem combinação: máximo de pavimentos (maxPav) e Produto com aviso. Mapa/"desenhar depois": sem otimizador,
@@ -29182,7 +29951,7 @@ function plaSelect(id, dataAttr, chave, rot, cab, atual, obrig){
 
 const ASS_PRIMEIRA = (()=>{ try{ return !localStorage.getItem("gabarito.v2") && !localStorage.getItem("gabarito.estudo") && !localStorage.getItem("gabarito.boasvindas") }catch(e){ return false } })();
 const ASS = { el:null, passo:0, r:null, opts:{}, rodando:false, cancel:false, erro:"", prog:0, fase:0, feito:null };
-const ASS_PASSOS = ["Terreno","Regras","Produto","Pronto"];
+const ASS_PASSOS = ["Terreno","Regras","Produto","Restrições","Pronto"];
 const ASS_IC = {
   ret:'<rect x="7.5" y="3.5" width="12" height="17" rx="1"/><path d="M4 3.5v17M3 3.5h2M3 20.5h2" opacity=".55"/>',
   mapa:'<path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.4"/>',
@@ -29191,10 +29960,16 @@ const ASS_IC = {
   compacto:'<path d="M3.5 20.5h17"/><rect x="6" y="11" width="12" height="9.5" rx=".8"/><path d="M9 14h1.5M13.5 14H15M9 17h1.5M13.5 17H15" opacity=".6"/>',
   familia:'<path d="M3.5 20.5h17"/><rect x="7" y="6" width="10" height="14.5" rx=".8"/><path d="M9.7 9h1.3M13 9h1.3M9.7 12h1.3M13 12h1.3M9.7 15h1.3M13 15h1.3" opacity=".6"/>',
   alto:'<path d="M3.5 20.5h17"/><rect x="8" y="3" width="8" height="17.5" rx=".8"/><path d="M10.3 6h1.1M12.6 6h1.1M10.3 9h1.1M12.6 9h1.1M10.3 12h1.1M12.6 12h1.1M10.3 15h1.1M12.6 15h1.1" opacity=".6"/>',
+  medioAlto:'<path d="M3.5 20.5h17"/><rect x="5" y="9" width="6.5" height="11.5" rx=".8"/><rect x="12.5" y="5" width="6.5" height="15.5" rx=".8"/><path d="M7 12h2.5M7 15h2.5M14.5 8h2.5M14.5 11h2.5M14.5 14h2.5" opacity=".6"/>',
+  luxo:'<path d="M3.5 20.5h17"/><rect x="8.5" y="6" width="7" height="14.5" rx=".8"/><path d="M12 2.5v3.5M10.2 4.2h3.6" /><path d="M10.5 9h3M10.5 12h3M10.5 15h3" opacity=".6"/>',
+  livre:'<circle cx="12" cy="12" r="8"/><path d="m9 15 1.8-4.2L15 9l-1.8 4.2z"/>',
+  regras:'<rect x="5" y="3.5" width="14" height="17" rx="1.5"/><path d="M8.5 8h7M8.5 11.5h7M8.5 15h4.5"/>',
   ok:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   x:'<path d="M6 6l12 12M18 6 6 18"/>',
 };
-const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ASS_IC[k]}</svg>`;
+const ASS_IC_PAD = { economico:"compacto", medio:"familia", medioAlto:"medioAlto", alto:"alto", luxo:"luxo" };
+const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ASS_IC[k]||ASS_IC[ASS_IC_PAD[k]]||""}</svg>`;
+const ASS_DIR = ()=>typeof DIR_PADROES!=="undefined";   // diretrizes do produto (src/calc/diretrizes.js) presentes
 
 (function(){ const s=document.createElement("style"); s.textContent=`
 .ass{position:fixed;inset:0;z-index:76;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;align-items:center;overflow-y:auto;font-family:var(--f-sans,var(--f-body));-webkit-font-smoothing:antialiased}
@@ -29208,7 +29983,7 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass-top .by{display:none}
 .ass-tt{font-size:13px;font-weight:550;color:var(--muted);padding-left:12px;margin-left:2px;border-left:1px solid var(--line)}
 @keyframes assIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.ass-prog{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:22px 32px 0}
+.ass-prog{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:22px 32px 0}
 .ass-seg{display:grid;gap:7px;font-size:11.5px;font-weight:550;color:var(--faint,var(--muted));letter-spacing:.01em}
 .ass-seg i{display:block;height:3px;border-radius:9px;background:var(--line);overflow:hidden;position:relative}
 .ass-seg i::after{content:"";position:absolute;inset:0;width:0;background:var(--sel);border-radius:9px;transition:width .45s var(--ease)}
@@ -29226,7 +30001,14 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 .ass textarea{min-height:96px;font-size:13px;font-family:var(--f-code,monospace);resize:vertical}
 .ass-g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .ass-tiles{display:grid;gap:10px}
-.ass-tiles.t4{grid-template-columns:repeat(4,1fr)} .ass-tiles.t3{grid-template-columns:repeat(3,1fr)}
+.ass-tiles.t4{grid-template-columns:repeat(4,1fr)} .ass-tiles.t3{grid-template-columns:repeat(3,1fr)} .ass-tiles.t5{grid-template-columns:repeat(5,1fr);gap:8px} .ass-tiles.t2{grid-template-columns:1fr 1fr}
+.ass-tiles.t5 .ass-tile{padding:12px 10px 11px;min-height:104px}
+.ass-tiles.t5 .ass-tile b{font-size:13px}
+.ass-tiles.t5 .ass-tile span{font-size:11.5px}
+.ass-dr{display:grid;gap:14px}
+.ass-dr .seg{width:100%}
+.ass-dr .seg button{font-size:13px;padding:7px 10px}
+.ass .chips .chip{font-size:12.5px;padding:6px 13px}
 .ass-tile{display:grid;align-content:start;gap:4px;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:var(--r,12px);padding:13px 13px 12px;cursor:pointer;color:var(--ink);font:inherit;box-shadow:var(--shadow-s);transition:border-color .15s var(--ease),box-shadow .15s var(--ease),background .15s var(--ease);min-height:96px}
 .ass-tile:hover{border-color:var(--line-2)}
 .ass-tile svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;color:var(--muted);margin-bottom:6px;transition:color .15s}
@@ -29280,9 +30062,11 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
   .ass-prog{padding:14px 16px 0;gap:6px}
   .ass-body{padding:22px 16px 12px;gap:16px;flex:1;align-content:start}
   .ass-h h1{font-size:23px}
-  .ass-tiles.t4{grid-template-columns:1fr 1fr} .ass-tiles.t3{grid-template-columns:1fr}
-  .ass-tiles.t3 .ass-tile{grid-template-columns:28px 1fr;column-gap:12px;min-height:0;align-items:center}
-  .ass-tiles.t3 .ass-tile svg{grid-row:span 2;margin:0}
+  .ass-tiles.t4{grid-template-columns:1fr 1fr} .ass-tiles.t3,.ass-tiles.t5,.ass-tiles.t2{grid-template-columns:1fr}
+  .ass-tiles.t3 .ass-tile,.ass-tiles.t5 .ass-tile,.ass-tiles.t2 .ass-tile{grid-template-columns:28px 1fr;column-gap:12px;min-height:0;align-items:center}
+  .ass-tiles.t3 .ass-tile svg,.ass-tiles.t5 .ass-tile svg,.ass-tiles.t2 .ass-tile svg{grid-row:span 2;margin:0}
+  .ass-tiles.t5 .ass-tile{min-height:0;padding:11px 13px}
+  .ass-tiles.t5 .ass-tile span+span{display:none}
   .ass-tile{min-height:84px}
   .ass-ret{grid-template-columns:1fr 1fr}
   .ass-prev{grid-column:1/-1;height:74px}
@@ -29326,7 +30110,8 @@ const assIc = (k, cls="")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden=
 function assResp0(){
   return { nome:"", lote:{modo:"ret", frente:"20", fundo:"40", texto:""},
     regras:{ id:"", outra:false, nome:"", vals:assRegVals(null), ia:false },
-    produto:{ padrao:"familia", preco:"", terreno:"" } };
+    produto:{ padrao: ASS_DIR()? "medio" : "familia", preco:"", terreno:"" },
+    dir:{ modo:"livre", subMax:-1, gacMax:-1, tips:null } };
 }
 /* os 4 números das regras mostrados no passo 2 (toTorre em %) */
 function assRegVals(c){
@@ -29337,7 +30122,8 @@ function assRespFinal(){
   const r=ASS.r, R=r.regras, v=R.vals, to=assNum(v.toTorre);
   return { nome:r.nome, lote:{...r.lote},
     regras:{ id: R.outra? "" : R.id, nome: R.outra? R.nome : "", caMax:v.caMax, hMax:v.hMax, toTorre: to!=null? to/100 : null, recFrente:v.recFrente, ia:R.ia },
-    produto:{...r.produto} };
+    produto:{...r.produto},
+    ...(ASS_DIR() && DIR_PADROES[r.produto.padrao]? { diretrizes:{ ...r.dir, tips: r.dir.tips || DIR_PADROES[r.produto.padrao].tips.slice() } } : {}) };
 }
 const assArea = ()=>{ const f=assNum(ASS.r.lote.frente), p=assNum(ASS.r.lote.fundo); return f>0&&p>0? f*p : 0 };
 
@@ -29383,17 +30169,35 @@ function assP2(){
       <div class="ass-ctx"><div class="ass-g2">${n("caMax","Aproveitamento máximo (CA)","×")}${n("hMax","Altura máxima","m")}${n("toTorre","Ocupação da torre (TO)","%")}${n("recFrente","Recuo frontal","m")}</div>${tag}</div>
       <label class="sw"><input type="checkbox" id="assIA" ${R.ia?"checked":""}><span class="tg"></span><span>Ler a lei com IA depois <span style="color:var(--muted)">· você envia o PDF em Terreno</span></span></label>` };
 }
+/* padrão: os 5 de DIR_PADROES (diretrizes do produto); sem o módulo, os 3 presets antigos */
+const assSugPreco = k => ASS_DIR() && DIR_PADROES[k]? DIR_PADROES[k].preco[1] : assPrecoSugerido(DEF, k);
+const assNomePadrao = k => ASS_DIR() && DIR_PADROES[k]? DIR_PADROES[k].nome : (MIX_PRESETS[k]||{}).nome||k;
+function assPadraoDesc(k){
+  if(!(ASS_DIR() && DIR_PADROES[k])) return assPresetDesc(k).split(" · ").map(x=>x.replace("–"," a "));
+  const P=DIR_PADROES[k], a=P.tips.map(q=>P.areas[q][1]);
+  return [k==="economico"? "MCMV" : P.sub, `${Math.min(...a)} a ${Math.max(...a)} m²`, dirFaixaPreco(P)];
+}
 function assP3(){
-  const P=ASS.r.produto, sug=assPrecoSugerido(DEF, P.padrao), nomeP=MIX_PRESETS[P.padrao].nome;
-  const tile=k=>`<button type="button" class="ass-tile" data-padrao="${k}" aria-pressed="${P.padrao===k}">${assIc(k)}<b>${MIX_PRESETS[k].nome}</b>${assPresetDesc(k).split(" · ").map(x=>`<span>${esc(x.replace("–"," a "))}</span>`).join("")}</button>`;
-  return { t:"Que produto e por quanto?", d:"Escolha o padrão e o preço de venda. A gente testa torres, andares, unidades e garagens.",
-    body:`<div><span class="ass-l" id="assPL">Padrão das unidades</span><div class="ass-tiles t3" role="group" aria-labelledby="assPL">${tile("compacto")}${tile("familia")}${tile("alto")}</div></div>
+  const P=ASS.r.produto, sug=assSugPreco(P.padrao), nomeP=assNomePadrao(P.padrao), ks=ASS_DIR()? DIR_ORDEM : ["compacto","familia","alto"];
+  const tile=k=>`<button type="button" class="ass-tile" data-padrao="${k}" aria-pressed="${P.padrao===k}" title="${esc(assNomePadrao(k))}">${assIc(k)}<b>${esc(ASS_DIR()? (DIR_PADROES[k].curto||DIR_PADROES[k].nome) : MIX_PRESETS[k].nome)}</b>${(ASS_DIR()? [k==="economico"? "MCMV" : DIR_PADROES[k].sub, assPadraoDesc(k)[1]] : assPadraoDesc(k)).map(x=>`<span>${esc(x)}</span>`).join("")}</button>`;
+  return { t:"Que produto e por quanto?", d:"Escolha o padrão e o preço de venda. Ele traz unidades, lazer, custo e vagas típicos — tudo editável depois.",
+    body:`<div><span class="ass-l" id="assPL">Padrão do empreendimento</span><div class="ass-tiles ${ks.length>3? "t5" : "t3"}" role="group" aria-labelledby="assPL">${ks.map(tile).join("")}</div></div>
       <div class="ass-g2"><div class="fld"><label class="fl" for="assPr">Preço médio de venda</label><div class="inp"><input id="assPr" data-r="produto.preco" inputmode="decimal" value="${esc(P.preco)}" placeholder="${nf(sug,0)}" autocomplete="off"><em>R$/m²</em></div>
           <div class="ass-sug" id="assSug">${assNum(P.preco)? "" : `Sugestão para ${esc(nomeP)} <button type="button" data-sug="${sug}">R$ ${nf(sug,0)}</button>`}</div></div>
         <div class="fld"><label class="fl" for="assT">Preço do terreno <span style="color:var(--muted);font-weight:400">· opcional</span></label><div class="inp"><input id="assT" data-r="produto.terreno" inputmode="decimal" value="${esc(P.terreno)}" placeholder="—" autocomplete="off"><em>R$</em></div>
           <div class="ass-sug">${assNum(P.terreno)? "" : "Sem valor, estimamos 12% do VGV"}</div></div></div>` };
 }
+/* passo 4: estudo livre ou com diretrizes (o que o produto precisa ter) */
 function assP4(){
+  const D=ASS.r.dir, pk=ASS.r.produto.padrao, PD=ASS_DIR()? DIR_PADROES[pk] : null, tips=D.tips || (PD? PD.tips : []);
+  const tile=(k,t,d,ic)=>`<button type="button" class="ass-tile" data-dmodo="${k}" aria-pressed="${D.modo===k}">${assIc(ic)}<b>${t}</b><span>${d}</span></button>`;
+  const seg=(k,rot)=>`<div class="fld"><span class="ass-l">${rot}</span><div class="seg full" role="group" aria-label="${esc(rot)}">${[[0,"Não"],[1,"Até 1"],[2,"Até 2"],[-1,"Livre"]].map(([v,l])=>`<button type="button" data-d${k}="${v}" aria-pressed="${+D[k==="sub"? "subMax" : "gacMax"]===v}">${l}</button>`).join("")}</div></div>`;
+  const chips=[0,1,2,3,4].map(q=>`<button type="button" class="chip" data-dtip="${q}" aria-pressed="${tips.includes(q)}">${PD? PD.nomes[q] : DIR_Q[q]}</button>`).join("");
+  return { t:"O produto tem regras próprias?", d:"No livre, o sistema busca o melhor resultado. Com diretrizes, ele obedece ao padrão e ao que você marcar aqui.",
+    body:`<div class="ass-tiles t2" role="group" aria-label="Modo do estudo">${tile("livre","Livre","Só resultado e aproveitamento","livre")}${tile("diretrizes","Com diretrizes",`${esc(PD? PD.nome : "Padrão")} e as restrições abaixo`,"regras")}</div>
+      ${D.modo==="diretrizes"? `<div class="ass-ctx ass-dr">${seg("sub","Pode ter subsolo?")}${seg("gac","Garagem elevada?")}<div class="fld"><span class="ass-l">Tipologias</span><div class="chips" role="group" aria-label="Tipologias">${chips}</div></div></div>` : ""}` };
+}
+function assP5(){
   const fases=["Lote e regras","Torres, andares e unidades","Garagem conferida no desenho","Viabilidade"];
   return { t:"Montando o seu estudo", d:"Testamos as combinações dentro das regras e ficamos com a de maior lucro.",
     body:`<div class="ass-run"><div><div class="ass-bar"><i id="assBar" style="width:${(ASS.prog*100).toFixed(0)}%"></i></div><div class="ass-pc"><span id="assFase">${fases[ASS.fase]||""}</span><span id="assPct">${nf(ASS.prog*100,0)}%</span></div></div>
@@ -29404,16 +30208,16 @@ const ASS_FASES = ["Lote e regras","Torres, andares e unidades","Garagem conferi
 function assRender(foco){
   const el=ASS.el; if(!el) return;
   const novo = ASS.ult!==ASS.passo; ASS.ult=ASS.passo;
-  const P=[assP1,assP2,assP3,assP4][ASS.passo](), n=ASS.passo, rodando=n===3;
+  const P=[assP1,assP2,assP3,assP4,assP5][ASS.passo](), n=ASS.passo, rodando=n===4;
   const prim = ASS.opts.primeira && !rodando;
   el.innerHTML = `<div class="ass-top"><div class="brand" aria-hidden="true"><svg class="rx-ic" viewBox="0 0 32 32"><rect class="t" y="1" width="32" height="30" rx="6"/><path class="g" d="M11.2 8.8L18.6 16.2L11.2 23.6L8.3 20.7L12.8 16.2L8.3 11.7ZM21.2 9.35L23.75 11.9L21.2 14.45L18.65 11.9ZM21.2 17.95L23.75 20.5L21.2 23.05L18.65 20.5Z"/></svg><span class="wm">gabarito<i>.</i></span><span class="ass-tt">Novo estudo</span></div>
       ${rodando? "" : `<button type="button" class="btn ghost sm" data-a="fechar">${prim? "Explorar o exemplo" : "Cancelar"}</button>`}</div>
     <div class="ass-wrap"><div class="ass-box${novo?" in":""}" role="dialog" aria-modal="true" aria-labelledby="assT">
       <div class="ass-prog" aria-hidden="true">${ASS_PASSOS.map((l,i)=>`<div class="ass-seg ${i<n?"done":i===n?"on":""}"><i></i>${l}</div>`).join("")}</div>
-      <div class="ass-body"><div class="ass-h"><p class="eb">${rodando? "Quase pronto" : `Passo ${n+1} de 3`}</p><h1 id="assT">${P.t}</h1><p>${P.d}</p></div>${P.body}
+      <div class="ass-body"><div class="ass-h"><p class="eb">${rodando? "Quase pronto" : `Passo ${n+1} de 4`}</p><h1 id="assT">${P.t}</h1><p>${P.d}</p></div>${P.body}
         ${ASS.erro? `<p class="ass-st bad" role="alert">${esc(ASS.erro)}</p>` : ""}</div>
       <div class="ass-foot">${rodando? `<span class="sp"></span><button type="button" class="btn ghost" data-a="cancelar">Cancelar</button>`
-        : `${n>0? `<button type="button" class="btn ghost" data-a="voltar">← Voltar</button>` : ""}<span class="sp"></span><button type="button" class="btn ghost" data-a="pular">Pular</button><button type="button" class="btn pri" data-a="seguir">${n===2? "Gerar estudo" : "Continuar"}</button>`}</div>
+        : `${n>0? `<button type="button" class="btn ghost" data-a="voltar">← Voltar</button>` : ""}<span class="sp"></span><button type="button" class="btn ghost" data-a="pular">Pular</button><button type="button" class="btn pri" data-a="seguir">${n===3? "Gerar estudo" : "Continuar"}</button>`}</div>
     </div></div>`;
   if(foco!==false) setTimeout(()=>{ const f= foco && el.querySelector(foco) || el.querySelector(".ass-body input:not([type=checkbox]),.ass-body select,.ass-body textarea") || el.querySelector("[data-a=seguir],[data-a=cancelar]"); if(f) try{ f.focus({preventScroll:true}) }catch(e){} }, 20);
 }
@@ -29440,7 +30244,7 @@ function assDigita(e){
   assSet(p, t.value); ASS.erro="";
   if(p==="lote.frente"||p==="lote.fundo"){ const pv=document.getElementById("assPrev"); if(pv) pv.innerHTML=assPrevSVG() }
   if(p==="lote.texto"){ const s=document.getElementById("assCSt"); if(s) s.innerHTML=assCoordSt() }
-  if(p==="produto.preco"){ const s=document.getElementById("assSug"); const sug=assPrecoSugerido(DEF, ASS.r.produto.padrao); if(s) s.innerHTML= assNum(t.value)? "" : `Sugestão para ${esc(MIX_PRESETS[ASS.r.produto.padrao].nome)} <button type="button" data-sug="${sug}">R$ ${nf(sug,0)}</button>` }
+  if(p==="produto.preco"){ const s=document.getElementById("assSug"); const sug=assSugPreco(ASS.r.produto.padrao); if(s) s.innerHTML= assNum(t.value)? "" : `Sugestão para ${esc(assNomePadrao(ASS.r.produto.padrao))} <button type="button" data-sug="${sug}">R$ ${nf(sug,0)}</button>` }
   const al=ASS.el.querySelector(".ass-body [role=alert]"); if(al) al.remove();
 }
 function assMuda(e){
@@ -29463,7 +30267,14 @@ document.addEventListener("keydown", e=>{
 function assClique(e){
   const tl=e.target.closest(".ass-tile");
   if(tl){ if(tl.dataset.modo){ ASS.r.lote.modo=tl.dataset.modo; ASS.erro=""; assRender(ASS.r.lote.modo==="coord"? "#assC" : ASS.r.lote.modo==="ret"? "#assF" : false) }
-    else if(tl.dataset.padrao){ ASS.r.produto.padrao=tl.dataset.padrao; assRender(false); const b=ASS.el.querySelector(`[data-padrao="${tl.dataset.padrao}"]`); if(b) b.focus() } return }
+    else if(tl.dataset.padrao){ ASS.r.produto.padrao=tl.dataset.padrao; ASS.r.dir.tips=null; assRender(false); const b=ASS.el.querySelector(`[data-padrao="${tl.dataset.padrao}"]`); if(b) b.focus() }
+    else if(tl.dataset.dmodo){ ASS.r.dir.modo=tl.dataset.dmodo; assRender(false); const b=ASS.el.querySelector(`[data-dmodo="${tl.dataset.dmodo}"]`); if(b) b.focus() } return }
+  const dg=e.target.closest("[data-dsub],[data-dgac]");
+  if(dg){ const k=dg.dataset.dsub!=null? "subMax" : "gacMax"; ASS.r.dir[k]=+(dg.dataset.dsub ?? dg.dataset.dgac); dg.parentElement.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed", x===dg)); return }
+  const dt=e.target.closest("[data-dtip]");
+  if(dt){ const D=ASS.r.dir, PD=ASS_DIR()? DIR_PADROES[ASS.r.produto.padrao] : null, q=+dt.dataset.dtip, l=(D.tips || (PD? PD.tips : [])).slice();
+    const nl=l.includes(q)? l.filter(x=>x!==q) : [...l, q].sort((a,b)=>a-b); if(!nl.length) return;
+    D.tips=nl; dt.setAttribute("aria-pressed", nl.includes(q)); return }
   const sg=e.target.closest("[data-sug]");
   if(sg){ ASS.r.produto.preco=nf(+sg.dataset.sug,0); const i=document.getElementById("assPr"); if(i){ i.value=ASS.r.produto.preco; i.focus() } sg.parentElement.innerHTML=""; return }
   const b=e.target.closest("[data-a]"); if(!b) return;
@@ -29491,13 +30302,14 @@ function assValida(){
 function assSeguir(){
   const er=assValida(); if(er){ ASS.erro=er; assRender(false); return }
   ASS.erro="";
-  if(ASS.passo<2){ ASS.passo++; assRender() } else assGerar();
+  if(ASS.passo<3){ ASS.passo++; assRender() } else assGerar();
 }
 function assPular(){
   const r=ASS.r; ASS.erro="";
   if(ASS.passo===0){ r.lote.modo="depois" }
   if(ASS.passo===1){ r.regras.id=""; r.regras.outra=false; r.regras.vals=assRegVals(null) }
-  if(ASS.passo===2){ r.produto.preco=""; r.produto.terreno=""; return assGerar() }
+  if(ASS.passo===2){ r.produto.preco=""; r.produto.terreno="" }
+  if(ASS.passo===3){ r.dir.modo="livre"; return assGerar() }
   ASS.passo++; assRender();
 }
 
@@ -29524,11 +30336,11 @@ async function assOtimizar(st, onProg){
 }
 function assCancelar(){
   ASS.cancel=true; if(typeof otimCancelar==="function") otimCancelar(); if(ASS.job && typeof calcCancelar==="function") calcCancelar();
-  ASS.rodando=false; ASS.passo=2; assRender(); toast("Geração cancelada");
+  ASS.rodando=false; ASS.passo=3; assRender(); toast("Geração cancelada");
 }
 const assEspera = ms=>new Promise(r=>setTimeout(r, ms));
 async function assGerar(){
-  ASS.passo=3; ASS.rodando=true; ASS.cancel=false; ASS.prog=0; ASS.fase=0; assRender(false);
+  ASS.passo=4; ASS.rodando=true; ASS.cancel=false; ASS.prog=0; ASS.fase=0; assRender(false);
   const resp=assRespFinal(), semLote = resp.lote.modo==="mapa" || resp.lote.modo==="depois";
   try{
     await assEspera(250);
@@ -29553,12 +30365,13 @@ async function assGerar(){
     });
     ASS.rodando=false; assFechar(false);
     if(destino==="terreno" && resp.lote.modo==="mapa" && typeof mapaAbrir==="function") setTimeout(()=>{ try{ mapaAbrir() }catch(e){ console.error(e) } }, 120);
-    assFeitoMostra({ resp, best, motivo, estimado, semLote, terreno:fin.fin.terreno });
+    const dirFalha = best && best.dir && !best.dir.ok ? best.dir.falhas.filter(x=>x.grave).map(x=>x.msg)[0] : "";
+    assFeitoMostra({ resp, best, motivo, estimado, semLote, terreno:fin.fin.terreno, dirFalha });
     toast(motivo? "Estudo criado com aviso — veja o cartão" : "Estudo criado — Ctrl+Z desfaz");
     if(typeof ASS.opts.onDone==="function") try{ ASS.opts.onDone(typeof EST!=="undefined"? EST.id : null) }catch(e){ console.error("[assistente] onDone", e) }
   }catch(e){
     if(ASS.cancel) return;
-    console.error("[assistente]", e); ASS.rodando=false; ASS.passo=2; ASS.erro="Não foi possível gerar o estudo. Tente de novo."; assRender(false);
+    console.error("[assistente]", e); ASS.rodando=false; ASS.passo=3; ASS.erro="Não foi possível gerar o estudo. Tente de novo."; assRender(false);
   }
 }
 /* troca o estado inteiro num só passo de desfazer. Exemplo intocado aberto: vira o estudo; senão, um estudo novo (o aberto fica guardado) */
@@ -29605,7 +30418,7 @@ function assFeitoLive(){
   const pend = m? progressoItens(S, m, f).filter(i=>i.ok===false && !(I.semLote && i.k==="ruas")).slice(0,3) : [];
   const warn = !!I.motivo;
   const h = `<div class="fh"><span class="ic${warn?" warn":""}">${assIc(warn? "x" : "ok")}</span><div><b>${warn? "Estudo criado com aviso" : "Estudo pronto"}</b><span>${warn? esc(I.motivo) : I.semLote? "Desenhe o lote e peça a melhor combinação em Produto." : "Primeira versão montada. Ctrl+Z desfaz tudo."}</span></div><button type="button" class="fx" data-fx aria-label="Fechar">${assIc("x")}</button></div>
-    <dl><dt>Lote</dt><dd>${lote}</dd><dt>Regras</dt><dd>${regras}</dd><dt>Produto</dt><dd>${prod}</dd>${I.semLote? "" : `<dt>Resultado</dt><dd id="assFRes">${res}</dd>`}${I.estimado? `<dt>Terreno</dt><dd class="warn">${mi(S.fin.terreno)} estimado (12% do VGV)</dd>` : ""}</dl>
+    <dl><dt>Lote</dt><dd>${lote}</dd><dt>Regras</dt><dd>${regras}</dd><dt>Produto</dt><dd>${prod}</dd>${typeof dirAtiva==="function" && dirAtiva(S)? `<dt>Diretrizes</dt><dd${I.dirFalha? ' class="warn"' : ""}>${esc(dirResumo(S))}${I.dirFalha? ` · ${esc(I.dirFalha)}` : ""}</dd>` : ""}${I.semLote? "" : `<dt>Resultado</dt><dd id="assFRes">${res}</dd>`}${I.estimado? `<dt>Terreno</dt><dd class="warn">${mi(S.fin.terreno)} estimado (12% do VGV)</dd>` : ""}</dl>
     ${pend.length || R.regras.ia? `<div class="pg">Próximos passos</div>${R.regras.ia? `<div class="pi"><span>Ler a lei com IA<i>envie o PDF do plano diretor</i></span><button type="button" class="btn sm" data-fi="ia">Abrir</button></div>` : ""}${pend.map(i=>`<div class="pi"><span>${esc(i.nome)}<i>${esc(i.dica)}</i></span><button type="button" class="btn sm" data-fi="${i.k}">Resolver</button></div>`).join("")}` : ""}`;
   if(c.innerHTML!==h) c.innerHTML=h;
 }
@@ -31173,7 +31986,8 @@ function cxSecHTML(){
 }
 function cxLinhasViab(m, f){
   const meta=S.fin.margemAlvo, L=[], sig=JSON.stringify(S);
-  if(CX.prSig!==sig){ CX.prSig=sig; try{ CX.pr=otimPrecoPara(S, m, meta) }catch(e){ CX.pr=null; console.error("[cx] preço", e) } }
+  if(CX.prSig!==sig){ CX.prSig=sig; try{ CX.pr=otimPrecoPara(S, m, meta) }catch(e){ CX.pr=null; console.error("[cx] preço", e) }
+    const pt=typeof dirPrecoTetoEstudo==="function"? dirPrecoTetoEstudo(S) : null; if(CX.pr && pt!=null && CX.pr>pt+1) CX.pr=null }   // diretrizes: acima do teto por unidade (MCMV) não é saída
   const pm=basePrice(S);
   if(CX.pr && CX.pr>pm) L.push({src:"viab", k:"preco", rot:`Preço médio de ${cxR(CX.pr)}`, desc:`hoje ${cxR(pm)} · leva à meta`, v:`+${pct(CX.pr/pm-1,0)}`});
   if(cxTerrenoOk() && f.maxTerreno>0 && f.maxTerreno<S.fin.terreno) L.push({src:"viab", k:"terreno", rot:`Terreno até ${mi(f.maxTerreno)}`, desc:`hoje ${mi(S.fin.terreno)} · leva à meta`, v:`−${pct(1-f.maxTerreno/S.fin.terreno,0)}`});
@@ -32009,6 +32823,139 @@ Object.assign(ACT,{
   ctxCam: b=>{ const k=b.dataset.k; S.contexto.camadas[k]=!ctxCam(k); b.setAttribute("aria-pressed", ctxCam(k)); save(); redraw2d(); if(window._last && typeof rebuild3d==="function") rebuild3d(window._last.m) },
   ctxApaga: b=>{ if(!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar"; b.classList.add("on"); return }
     S.contexto.dados=null; S.entorno=(S.entorno||[]).filter(e=>!e.osm); if(typeof ENT!=="undefined") ENT.sel=new Set(); update(); renderTab(); toast("Contexto do OSM apagado (Ctrl+Z desfaz)") },
+});
+
+/* ================= Produto › "Diretrizes do produto" (cálculo em src/calc/diretrizes.js) =================
+   Seção fechada logo abaixo do RES "Uso do potencial", antes de "Sugerir a melhor combinação":
+   - Livre | Com diretrizes (S.diretrizes.modo). Livre = o otimizador só olha resultado e aproveitamento, como sempre.
+   - Com diretrizes: Padrão (5 botões; escolher APLICA as predefinições — mix, preços, lazer, CUB, vagas, coberturas — num passo de
+     desfazer e mostra o que mudou), faixa do MCMV (no econômico), tipologias permitidas (chips), subsolos e garagem elevada; a linha
+     de situação diz se o estudo atual atende e oferece "Ajustar o estudo". O resto (térreo, vagas por unidade, elevador de carros,
+     torres, pavimentos, unidades por andar, coberturas, lojas, áreas por tipologia, lazer obrigatório e por unidade, margem mínima,
+     teto por unidade) fica em "Mais opções".
+   - Nenhum campo visível fora de "Mais opções" (só botões): a etapa continua dentro das metas da UX v3.
+   Estado de tela (DIRUI: o "o que mudou" do último padrão) fica fora de S. */
+const DIRUI = { mudou:null };
+(function(){ const s=document.createElement("style"); s.textContent=`
+.seg.dir-pads button{padding:5px 4px;font-size:12px;flex:1 1 auto}
+.dir-pd{font-size:11px;color:var(--muted);line-height:1.4;margin-top:-2px}
+.dir-l{font-size:11px;font-weight:550;color:var(--muted);margin:2px 0 -2px}
+.dir-st{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-2);line-height:1.35;min-height:28px}
+.dir-st .d{width:7px;height:7px;border-radius:50%;flex:none;background:var(--ok)}
+.dir-st.bad .d{background:var(--bad)} .dir-st.warn .d{background:var(--warn)}
+.dir-st span{flex:1;min-width:0}
+.dir-st .btn{flex:none}
+.dir-mud{border-radius:var(--r);padding:8px 10px 8px 11px;background:var(--info-soft);border:1px solid color-mix(in srgb,var(--info) 25%,transparent);font-size:11.5px;color:var(--ink);display:grid;gap:3px}
+.dir-mud .h{display:flex;align-items:center;gap:6px;font-weight:600}
+.dir-mud .h button{margin-left:auto;border:0;background:none;color:var(--muted);cursor:pointer;padding:2px 4px;border-radius:6px;font-size:14px;line-height:1}
+.dir-mud .h button:hover{background:var(--soft);color:var(--ink)}
+.dir-mud ul{margin:0;padding:0 0 0 14px;color:var(--ink-2)}
+.dir-mud li{margin:1px 0}
+.dir-ar{display:grid;grid-template-columns:minmax(0,1.25fr) repeat(3,minmax(0,1fr));gap:6px;align-items:end}
+.dir-ar .q{font-size:11.5px;color:var(--ink-2);padding-bottom:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-ok{color:var(--ok-t)}
+`; document.head.appendChild(s) })();
+
+const DIR_GAR_OPC = [[0,"Não"],[1,"Até 1"],[2,"Até 2"],[-1,"Livre"]];
+const DIR_SNL = [["livre","Livre"],["sim","Sim"],["nao","Não"]];
+function dirSegLinha(rot, p, opts, info){ return `<div class="row sb" style="flex-wrap:nowrap;gap:8px"><span class="fl" style="flex:none">${rot}${info? INFO(info) : ""}</span>${SEG(p, opts, {fx:"save", label:rot})}</div>` }
+
+/* resumo do cabeçalho: "Livre" ou "Médio-alto · 2 e 3 dorm. · sem subsolo" + selo de situação do estudo atual */
+function dirSumHTML(m){
+  if(!dirAtiva(S)) return "Livre";
+  const c=m? dirConfere(S, m) : null, sel=!c? "" : c.ok? ` <span class="pill ok">atende</span>` : ` <span class="pill bad">${c.n} fora</span>`;
+  return esc(dirResumo(S))+sel;
+}
+function dirSecHTML(){
+  const d=S.diretrizes, on=dirAtiva(S), D=on? dirEfetivas(S) : null;
+  let body = SEG("diretrizes.modo", [["livre","Livre"],["diretrizes","Com diretrizes"]], {fx:"save", full:true, label:"Modo do estudo"});
+  if(!on) body += `<p class="note">O otimizador escolhe tudo dentro das regras da prefeitura.</p>`;
+  else {
+    const pads = DIR_ORDEM.map(k=>{ const P=DIR_PADROES[k]; return `<button type="button" data-act="dirPadrao" data-k="${k}" aria-pressed="${D.k===k}" title="${esc(P.nome)} — aplica unidades, preços, lazer, custo e vagas do padrão (Ctrl+Z desfaz)">${esc(P.curto||P.nome)}</button>` }).join("");
+    const PD=D.P, aa=PD.tips.map(q=>D.area(q)[1]);
+    const mud = DIRUI.mudou && DIRUI.mudou.k===D.k ? `<div class="dir-mud" role="status"><div class="h">${esc(DIR_PADROES[D.k].nome)} aplicado<button type="button" data-act="dirMudFecha" aria-label="Fechar" title="Fechar">×</button></div><ul>${DIRUI.mudou.l.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
+    const chips = [0,1,2,3,4].map(q=>`<button type="button" class="chip" data-act="dirTip" data-q="${q}" aria-pressed="${D.tips.includes(q)}">${DIR_Q[q]}</button>`).join("");
+    body += `<div class="dir-l">Padrão${INFO("Padrão do empreendimento")}</div><div class="seg full dir-pads" role="group" aria-label="Padrão do empreendimento">${pads}</div>
+      <div class="dir-pd">${esc(PD.nome)}${INFO(PD.nome)} · ${esc(dirTipsTxt({tips:PD.tips}))} de ${nf(Math.min(...aa),0)} a ${nf(Math.max(...aa),0)} m² · ${dirFaixaPreco(PD)} · ${PD.vagasUn? `${nf(PD.vagasUn, PD.vagasUn%1? 1 : 0)} vaga${PD.vagasUn>1? "s" : ""}/un` : "vagas da lei"}</div>${mud}
+      ${D.k==="economico"? dirSegLinha("Faixa do MCMV", "diretrizes.faixa", Object.entries(DIR_FAIXAS).map(([k,f])=>[k, f.nome]), "MCMV") : ""}
+      <div class="dir-l">Tipologias permitidas</div><div class="chips" role="group" aria-label="Tipologias permitidas">${chips}</div>
+      <div class="fsub" id="dirAreas">${esc(D.tips.map(q=>{ const a=D.area(q); return `${D.P.nomes[q]} ${nf(a[0],0)}–${nf(a[2],0)} m²` }).join(" · "))}${D.teto>0? ` · teto ${esc(mi(D.teto))}/unidade` : ""}</div>
+      ${dirSegLinha("Subsolos", "diretrizes.subMax", DIR_GAR_OPC)}
+      ${dirSegLinha("Garagem elevada", "diretrizes.gacMax", DIR_GAR_OPC)}
+      <div class="dir-st" id="dirSt"></div>
+      ${ADV(dirMaisHTML(D), {key:"dir"})}`;
+  }
+  return SEC("Diretrizes do produto", body, {key:"pr-dir", sum:dirSumHTML(window._last && window._last.m), info:"Diretrizes do produto"});
+}
+/* "Mais opções": tudo o que não é essencial (casa única: estes data-p só existem aqui) */
+function dirMaisHTML(D){
+  const d=S.diretrizes, n=(p,l,u,o={})=>NUM(p, l, u, {fx:"dir", zero:true, min:0, ...o});
+  const ar = D.tips.map(q=>{ const a=D.P.areas[q]; return `<div class="dir-ar"><span class="q">${esc(D.P.nomes[q])}</span>${n(`diretrizes.areas.${q}.0`,"Mín.","m²",{ph:String(a[0]),step:1})}${n(`diretrizes.areas.${q}.1`,"Máx.","m²",{ph:String(a[2]),step:1})}${n(`diretrizes.minPct.${q}`,"No andar","%",{pct:true,step:5,ph:"—",max:1})}</div>` }).join("");
+  const lzNomes=[...new Set([...DIR_LZ(D.P.lazer).map(x=>x.nome), ...((S.produto.lazer&&S.produto.lazer.itens)||[]).map(x=>x.nome)])].filter(Boolean);
+  return GRP("Garagem e térreo") +
+    dirSegLinha("Garagem no térreo", "diretrizes.garTerreo", DIR_SNL) + dirSegLinha("Vagas na frente", "diretrizes.vagasFrente", DIR_SNL) +
+    KV(n("diretrizes.vagasUn","Vagas por unidade","",{step:0.5,ph:"lei",help:"Vazio: as vagas que a lei pede. Acima da lei, o otimizador garante esse número de vagas por unidade."})) +
+    SW("diretrizes.elevCarros","Elevador de carros permitido",{fx:"save"}) +
+    GRP("Forma") + dirSegLinha("Torres", "diretrizes.torres", [["livre","Livre"],["fixo","Exatamente"],["max","No máximo"]]) +
+    KV((d.torres!=="livre"? n("diretrizes.torresN","Torres","",{int:true,step:1,min:1}) : "") + n("diretrizes.pavMin","Pavimentos mín.","",{int:true,step:1,ph:"—"}) + n("diretrizes.pavMax","Pavimentos máx.","",{int:true,step:1,ph:"—"}) +
+      n("diretrizes.unMin","Unid./andar mín.","",{int:true,step:1,ph:"—"}) + n("diretrizes.unMax","Unid./andar máx.","",{int:true,step:1,ph:"—"})) +
+    dirSegLinha("Coberturas", "diretrizes.cob", DIR_SNL, "Duplex") + (d.cob==="sim"? KV(n("diretrizes.cobQtd","Coberturas por torre","",{int:true,step:1,ph:"as do estudo"})) : "") +
+    dirSegLinha("Lojas no térreo", "diretrizes.lojas", DIR_SNL) +
+    GRP("Áreas por tipologia") + (ar || `<p class="note">Marque ao menos uma tipologia.</p>`) +
+    GRP("Áreas comuns") + KV(n("diretrizes.lazerUn","Lazer por unidade","m²",{step:0.5,ph:"—",help:"Área de lazer aproximada por unidade (salão, academia, piscina…). Abaixo de 70% dela, a sugestão avisa."})) +
+    `<div class="dir-l">Obrigatórios no lazer</div><div class="chips" role="group" aria-label="Lazer obrigatório">${lzNomes.map(nm=>`<button type="button" class="chip" data-act="dirLz" data-n="${esc(nm)}" aria-pressed="${D.lazerObrig.includes(nm)}">${esc(nm)}</button>`).join("")}</div>` +
+    GRP("Metas") + KV(n("diretrizes.margemMin","Margem mínima","%",{pct:true,step:1,ph:pct(S.fin.margemAlvo,0).replace("%",""),help:"Margem sobre o VGV que a sugestão precisa atingir. Vazio: a meta da Viabilidade."}) +
+      n("diretrizes.tetoUn","Teto por unidade","R$",{step:5000,ph:D.teto>0? nf(D.teto,0) : "—",help:"Preço máximo de venda de cada unidade (no MCMV, o teto da faixa). As tipologias encolhem até caber; se nem a área mínima cabe, a sugestão diz o preço que cabe."}));
+}
+/* situação do estudo atual frente às diretrizes (linha viva) */
+function dirLive(m){
+  setSum("pr-dir", dirSumHTML(m));
+  const e=document.getElementById("dirSt"); if(!e) return;
+  const c=m && dirConfere(S, m); if(!c){ e.innerHTML=""; return }
+  const g=c.falhas.filter(x=>x.grave), w=c.falhas.filter(x=>!x.grave);
+  const ajusta=g.some(x=>!["vagas","lazer"].includes(x.k) || /^sem /.test(x.msg));   // vagas e lazer que não coube: quem resolve é a sugestão
+  const h = g.length? `<span class="d"></span><span>Fora: ${esc(g.slice(0,2).map(x=>x.msg).join(" · "))}${g.length>2? ` e mais ${g.length-2}` : ""}</span>${ajusta? `<button type="button" class="btn sm" data-act="dirAjusta">Ajustar o estudo</button>` : ""}`
+    : `<span class="d"></span><span>O estudo atual atende às diretrizes${w.length? ` · ${esc(w[0].msg)}` : ""}</span>`;
+  e.className="dir-st"+(g.length? " bad" : w.length? " warn" : "");
+  if(e.innerHTML!==h) e.innerHTML=h;
+}
+/* uma linha na sugestão: respeita as diretrizes, ou o que não deu para respeitar */
+function dirOpcaoHTML(r){
+  if(!r || !r.dir) return "";
+  const g=r.dir.falhas.filter(x=>x.grave);
+  return g.length? `<div class="note" style="color:var(--warn-t)">Não deu para respeitar: ${esc(g.slice(0,2).map(x=>x.msg).join(" · "))}</div>`
+    : `<div class="note dir-ok">Respeita as diretrizes (${esc(r.dir.padrao)})</div>`;
+}
+/* "Ajustar o estudo": fixos, garagens, andares, unidades por andar e mix dentro das diretrizes (um passo de desfazer) */
+function dirAjustaEstudo(st){
+  const D=dirEfetivas(st); if(!D) return [];
+  const P=st.produto, out=dirAplicaFixos(st);
+  if(D.subMax>=0 && P.subsolos>D.subMax){ P.subsolos=D.subMax; out.push(dirPl(D.subMax,"subsolo")) }
+  if(D.gacMax>=0 && P.garAcima>D.gacMax){ P.garAcima=D.gacMax; out.push(dirPl(D.gacMax,"garagem elevada","garagens elevadas")) }
+  const forma=typeof otimFormaAtiva==="function" && otimFormaAtiva(st);
+  if(!forma && ((D.torres==="fixo" && P.torres.length!==D.torresN) || (D.torres==="max" && P.torres.length>D.torresN))){
+    const n=D.torresN, pav=(P.torres[0]||{}).pav||8; P.torres=Array.from({length:n},(_,i)=>P.torres[i]||{pav}); out.push(dirPl(n,"torre")) }
+  P.torres.forEach(t=>{ if(D.pavMax && t.pav>D.pavMax) t.pav=D.pavMax; if(D.pavMin && t.pav<D.pavMin) t.pav=D.pavMin });
+  let N=P.mix.reduce((s,u)=>s+(+u.qtd||0),0); const N2=Math.max(D.unMin||1, Math.min(D.unMax||99, N||1));
+  if(N2!==N || !dirMixOk(st, P.mix, D).ok){ const mx=dirPresetMix(st, "dir", N2); if(mx.length){ P.mix=mx; out.push(`unidades: ${mx.map(u=>`${u.qtd} × ${u.nome}`).join(" e ")}`) } }
+  return out;
+}
+FX.dir = live => { save(); dirLive(window._last && window._last.m); if(!live){ const a=document.getElementById("dirAreas"); if(a && dirAtiva(S)){ const D=dirEfetivas(S); a.textContent=D.tips.map(q=>{ const x=D.area(q); return `${D.P.nomes[q]} ${nf(x[0],0)}–${nf(x[2],0)} m²` }).join(" · ")+(D.teto>0? ` · teto ${mi(D.teto)}/unidade` : "") } } };
+Object.assign(ACT, {
+  dirPadrao: b=>{ const k=b.dataset.k, P=DIR_PADROES[k]; if(!P) return;
+    const l=dirAplicaPadrao(S, k); S.diretrizes.modo="diretrizes"; DIRUI.mudou={k, l};
+    if(typeof PR!=="undefined"){ PR.mix=-1; PR.lz=-1 }
+    renderTab(); toast(`${P.nome}: unidades, preços, lazer e custo aplicados — Ctrl+Z desfaz`) },
+  dirMudFecha: b=>{ DIRUI.mudou=null; const e=b.closest(".dir-mud"); if(e) e.remove() },
+  dirTip: b=>{ const q=+b.dataset.q, d=S.diretrizes, l=(Array.isArray(d.tips)? d.tips : []).map(Number);
+    d.tips = l.includes(q)? l.filter(x=>x!==q) : [...l, q].sort((a,c)=>a-c);
+    if(!d.tips.length){ d.tips=[q]; toast("Ao menos uma tipologia fica permitida"); return }
+    save(); renderTab() },
+  dirLz: b=>{ const nm=b.dataset.n, d=S.diretrizes, l=Array.isArray(d.lazerObrig)? d.lazerObrig.slice() : [];
+    d.lazerObrig = l.includes(nm)? l.filter(x=>x!==nm) : [...l, nm]; b.setAttribute("aria-pressed", d.lazerObrig.includes(nm)); FX.dir(false) },
+  dirAjusta: ()=>{ const l=dirAjustaEstudo(S); if(typeof PR!=="undefined") PR.mix=-1; renderTab(); if(typeof fit3dDepois==="function") fit3dDepois();
+    toast(l.length? `Ajustado: ${l.slice(0,3).join(" · ")} — Ctrl+Z desfaz` : "O estudo já está dentro do que dá para ajustar") },
+  dirAbrir: ()=>{ if(typeof irPara==="function") irPara("produto", null, "pr-dir"); else { const s=document.querySelector('#tabbody details[data-key="pr-dir"]'); if(s){ s.open=true; s.scrollIntoView({block:"start", behavior:"smooth"}) } } },
 });
 
 /* ================= edição das edificações do entorno (interface) =================
@@ -34274,6 +35221,15 @@ const GLOSS_DATA = {
   "Cota": { t:"Cota (altitude)", d:"Altura de um ponto acima do nível do mar, em metros. A cota do térreo e as cotas dos cantos do lote ficam no mesmo referencial." },
   "O que fecha a conta": { t:"O que fecha a conta", d:"Aparece quando a margem fica abaixo da meta. Mostra, já calculado para o estudo, o preço médio e o terreno que levam à meta e — com “Procurar no projeto” — as mudanças do projeto real que melhoram o resultado: tipo de rampa ou elevador de carros, posição do acesso e ângulo das vagas (com os subsolos e andares que isso permite), lazer enxuto e uma unidade a mais ou a menos por andar. Cada linha tem Aplicar; Ctrl+Z desfaz.", ex:"Lote de 15 × 50 m: trocar as rampas retas pelo elevador de carros fecha as vagas com um andar a mais e o lucro sobe cerca de R$ 1 mi." },
   "Lazer enxuto": { t:"Lazer enxuto", d:"Variante do programa de lazer sem o que não coube no térreo ou na laje (é pago e não é construído) e sem os complementos (cinema, sauna, jogos, brinquedoteca, coworking, quadra, pet, rooftop). Fica salão de festas, gourmet, academia, piscina, deck, playground e bicicletário. É sempre uma alternativa explícita: nunca é aplicada sem você escolher." },
+  /* --- diretrizes do produto (src/calc/diretrizes.js) --- */
+  "Diretrizes do produto": { t:"Diretrizes do produto", d:"O que o produto precisa ter, além das regras da prefeitura: padrão, tipologias e áreas, garagem (pode ter subsolo? garagem elevada?), torres, andares, unidades por andar, coberturas, lojas, lazer obrigatório e metas. <b>Livre</b>: a sugestão só olha resultado e aproveitamento. <b>Com diretrizes</b>: ela só propõe combinações que as respeitam, mostra em cada opção se respeita e, quando nada fecha, diz qual diretriz impede e quanto falta.", ex:"Sem subsolo, a garagem comporta 22 das 49 vagas exigidas — permitir 1 subsolo ou reduzir para 30 unidades." },
+  "Padrão do empreendimento": { t:"Padrão do empreendimento", d:"Escolher um padrão aplica valores de referência ao estudo — unidades e áreas, preço de venda, lazer, custo (CUB e fator) e vagas por unidade — num passo só (Ctrl+Z desfaz). Subsolo e garagem elevada não mudam: dependem do lugar. Os valores são genéricos: <b>confira com o seu mercado</b>.", f:"Econômico (MCMV) · Médio · Médio-alto · Alto padrão · Luxo" },
+  "Econômico (MCMV)": { t:"Padrão econômico (MCMV)", d:"1 e 2 dormitórios de 35 a 43 m², vagas da lei, salão de festas e playground, sem coberturas nem elevador de carros. Custo CUB R8-B × 1,05 e garagem a 50% do CUB (vagas no térreo, sem estrutura de garagem); venda de R$ 5,5 a 8,5 mil/m², com o teto por unidade da faixa do MCMV." },
+  "Médio": { t:"Padrão médio", d:"2 e 3 dormitórios (o de 3 com suíte) de 62 a 82 m², 1 vaga por unidade, salão, gourmet, academia e playground. Custo CUB R8-N × 1,25; venda de R$ 8 a 13 mil/m²." },
+  "Médio-alto": { t:"Padrão médio-alto", d:"2 suítes e 3 dormitórios (1 suíte) de 76 a 105 m², varanda maior, 1,5 vaga por unidade, até 4 unidades por andar, coberturas duplex e lazer com piscina e brinquedoteca. Custo CUB R8-A × 1,3; venda de R$ 11 a 16 mil/m²." },
+  "Alto padrão": { t:"Alto padrão", d:"3 e 4 suítes de 135 a 175 m², 2 vagas por unidade, até 4 unidades por andar, coberturas duplex e lazer completo (piscina, deck, academia, gourmet, brinquedoteca, coworking, pet). Custo CUB R16-A × 1,45; venda de R$ 15 a 22 mil/m²." },
+  "Luxo": { t:"Padrão luxo", d:"3 e 4 suítes de 200 a 280 m², 1 a 2 unidades por andar, 3 vagas por unidade, coberturas duplex e o lazer do alto padrão mais sauna, cinema e rooftop. Custo CUB R16-A × 1,8; venda de R$ 22 a 35 mil/m²." },
+  "MCMV": { t:"Minha Casa, Minha Vida", d:"Programa federal de habitação. O valor do imóvel tem teto por faixa de renda: faixas 1 e 2 até R$ 264 mil (varia com a cidade), faixa 3 até R$ 350 mil, faixa 4 até R$ 500 mil. Com o teto, as tipologias encolhem até caber; se nem a área mínima cabe, a sugestão diz o preço que cabe. Valores de referência — confira as regras vigentes e o teto da sua cidade." },
   "Alavancas": { t:"Alavancas do negócio", d:"Quanto o resultado muda se uma só coisa melhorar um pouco: mais eficiência, preço maior, terreno mais barato, obra mais barata ou um andar a mais. Mostra onde vale a pena concentrar o esforço. Cada linha muda apenas aquilo e recalcula o fluxo de caixa; as outras premissas ficam como estão.", ex:"No estudo exemplo, +5% no preço de venda rende cerca de +R$ 4,5 mi de lucro e +3,7 p.p. de margem. Os passos (5%, 10%…) ficam em Mais opções." },
   "Potencial do terreno": { t:"Potencial do terreno", d:"O quanto o lote comporta dentro do CA e do gabarito. O privativo possível usa a eficiência global do estudo (privativa ÷ área total construída), que já carrega garagem, térreo e lazer. A conta só pela eficiência do andar (privativa ÷ pavimento tipo) ignora tudo isso e superestima.", f:"área construída possível × eficiência global" },
   "Plano ajustado": { t:"Plano ajustado", d:"Superfície reta que melhor representa o terreno em volta do lote. É calculada por mínimos quadrados, descartando pontos muito fora (prédios, árvores). Dá a inclinação e a direção da descida." },
@@ -35860,7 +36816,7 @@ function paretoLive(){
   const nF=frL.length, nP=L.filter(o=>o.passa).length, pill=document.getElementById("pfPill"); // detalhe do ponto escolhido
   const s=PF_SEL!=null && L[PF_SEL]? L[PF_SEL] : null;
   if(pill) pill.textContent=`${nF} na fronteira · ${nP} de ${L.length} nos filtros${s?"":" · toque num ponto"}`;
-  const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button type="button" class="btn sm" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
+  const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc(typeof presetNome==="function"? presetNome(p.pk, S) : (MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button type="button" class="btn sm" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
     <div class="note">${pfDesc(p)}${o.passa?"":" · fora dos filtros"}</div>
     <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
     ${p.tir!=null?`<span>Retorno<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.forma?`<span>Unidades<b>${p.dev>0.005?"+"+pct(p.dev,0):"no mix"}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };
@@ -35965,6 +36921,10 @@ button.pr-tx:hover b{color:var(--accent)}
 .pr-av .k b{color:var(--ink);font-weight:500}
 .pr-av .k i{font-style:normal}
 .pr-lzm{display:grid;gap:10px}
+.pr-qd{margin-top:6px}
+.pr-qd>summary .sum{margin-left:auto;font-weight:400;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.pr-qd>summary{color:var(--ink-2)}
+.pr-qd>.tbl{margin-top:6px}
 @media (max-width:520px){ .mets.pr-pot{grid-template-columns:1.2fr 1fr 1fr} .pr-pot .met{padding:8px 9px} .pr-pot .met .v{font-size:16px} }
 `; document.head.appendChild(s) })();
 
@@ -36001,7 +36961,9 @@ const PR_OT_INFO_FORMA = "Com a forma desenhada, o número de torres e os blocos
 STEP_R.produto = ()=>{
   const P=S.produto, fm=typeof otimFormaAtiva==="function" && otimFormaAtiva(S), otInfo=fm? PR_OT_INFO_FORMA : PR_OT_INFO;
   const body =
-    RES("Uso do potencial", `<div class="mets pr-pot" id="pot"></div><div class="use" id="compl"></div>`, {aside:`<span id="complTxt"></span>`}) +
+    RES("Uso do potencial", `<div class="mets pr-pot" id="pot"></div><div class="use" id="compl"></div>
+      <details class="pr-more pr-qd" data-key="pr-quadro"><summary>Quadro de áreas<span class="sum" id="sum-pr-quadro"></span></summary><table class="tbl" id="quadro"></table></details>`, {aside:`<span id="complTxt"></span>`}) +
+    (typeof dirSecHTML==="function"? dirSecHTML() : "") +   // diretrizes do produto (src/ui/diretrizes.js): livre ou com o padrão e as restrições
     `<div class="pr-sug"><button type="button" class="btn" data-act="otim" ${OTRUN?"disabled":""}>${OTRUN?"Analisando…":"Sugerir a melhor combinação"}</button><div class="prog" id="otProg" ${OTRUN?"":"hidden"}><i style="width:0"></i></div>
       ${ADV(prOtimOpcoes(), {key:"otim", label:"Opções", fechar:"Menos"})}</div>` +
     (OTIM? SEC("Sugestões", `<div class="list" id="otRes">${otimHTML()}</div>${typeof paretoCardHTML==="function"? paretoCardHTML() : ""}`, {key:"pr-otres", open:true, sum:prOtSum(), info:otInfo}) : "") +
@@ -36025,8 +36987,7 @@ STEP_R.produto = ()=>{
       <div class="pr-menu" id="lzMenu" role="menu" aria-label="Modelos de ambiente" ${PR.menu?"":"hidden"}></div>`,
       {key:"pr-lz", info:"Diga o que o empreendimento terá e onde. O hall e o lazer do térreo empurram a garagem para os fundos; a laje do embasamento, o pavimento de lazer e o rooftop entram no 3D, nas plantas e nos custos. Toque num ambiente para editar."}) +
     SEC("Coberturas", SW("produto.cob.on","Unidades de cobertura no último andar",{rr:true})+(P.cob.on? KV(NUM("produto.cob.qtd","Por torre","un",{int:true,min:1,step:1})+NUM("produto.cob.area","Área privativa","m²",{step:1,help:"Duplex"})+NUM("produto.cob.preco","Preço","R$/m²",{step:50,wide:true})) : ""),
-      {key:"pr-cob", sum:P.cob.on? "ligadas" : "desligadas", info:"Unidades maiores no último andar de cada torre. Maior que o andar, vira duplex com pavimento superior."}) +
-    SEC("Quadro de áreas", `<table class="tbl" id="quadro"></table>`, {key:"pr-quadro"});
+      {key:"pr-cob", sum:P.cob.on? "ligadas" : "desligadas", info:"Unidades maiores no último andar de cada torre. Maior que o andar, vira duplex com pavimento superior."});
   return { desc:"Torres, unidades, garagem e lazer — dentro das regras.", body };
 };
 function prEmbSum(){ const P=S.produto; return `${P.subsolos} subsolo${P.subsolos!==1?"s":""}${P.garAcima?` + ${P.garAcima} elevada${P.garAcima>1?"s":""}`:""} · lojas ${pct(P.lojaTerreo,0)}${P.garTerOn?" · garagem no térreo":""}` }
@@ -36038,10 +36999,12 @@ function prOtAviso(O){
   if(!O) return "";
   // a garagem do estudo não funciona no lote (rampa que não cabe ou passaria pelo núcleo): a busca partiu de outra circulação (src/optim.js otimGarValida)
   const gt = O.garTroca && typeof CICLO_TIPO_ROT!=="undefined" ? `<div class="note" style="color:var(--warn-t)">Com ${esc(CICLO_TIPO_ROT[O.garTroca.de.rampaTipo]||O.garTroca.de.rampaTipo)} a garagem não funciona neste lote — as opções foram conferidas com ${esc(CICLO_TIPO_ROT[O.garTroca.para.rampaTipo]||O.garTroca.para.rampaTipo)}.</div>` : "";
+  if(O.semOpcao && O.semOpcao.diretriz) return gt+`<div class="pr-av bad" role="status"><b>Nenhuma combinação atende às diretrizes</b> — ${esc(O.semOpcao.motivo)}.<div class="k"><button type="button" class="btn sm ghost" data-act="dirAbrir">Rever as diretrizes</button></div></div>`;
   if(O.semOpcao) return gt+`<div class="pr-av bad" role="status"><b>Nenhuma combinação fecha as regras com as vagas exigidas</b> — ${esc(O.semOpcao.motivo)}.</div>`;
   const fx=O.semLucro || O.fecha; if(!fx || !O.res.length) return gt;
   // o que fecha a conta, cada linha com Aplicar (src/ui/ciclo.js): lazer enxuto, preço médio, terreno
-  const L=typeof cxLinhasOtim==="function"? cxLinhasOtim(O) : [], k=`<div class="cx">${L.map(cxLinhaHTML).join("")}</div>`;
+  const L=typeof cxLinhasOtim==="function"? cxLinhasOtim(O) : [], k=`<div class="cx">${L.map(cxLinhaHTML).join("")}</div>`
+    + (fx.precoTeto && (fx.metaAcimaTeto || fx.zeroAcimaTeto)? `<div class="k"><i>pelo teto por unidade, o preço médio vai até <b>${brl(Math.floor(fx.precoTeto/50)*50)}/m²</b></i></div>` : "");
   return gt + (O.semLucro ? `<div class="pr-av bad" role="status"><b>Nenhuma combinação dá lucro</b> — ${esc(fx.motivo)}. A primeira é a menos ruim.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`
     : `<div class="pr-av" role="status"><b>Margem abaixo da meta de ${pct(fx.meta,0)}</b> na melhor opção.${L.length? " O que fecha a conta:" : ""}${L.length? k : ""}</div>`);
 }
@@ -36052,18 +37015,19 @@ function prOtGarHTML(r){
   const n=gi && gi.tipos? gi.tipos.filter(x=>x.ok).length : 0;
   return `<div class="note">Garagem: ${esc(cicloGarNome(r.garagem, S))}${n>1? ` · a melhor de ${n} tipos de circulação` : ""}${troca? ` <span class="pill">muda</span>` : ""}</div>`;
 }
-function prOtPendHTML(r){ const p=(r.pend||[]).filter(x=>x.grave); return p.length? `<div class="note" style="color:var(--warn-t)">${esc(p.slice(0,2).map(x=>x.msg).join(" · "))}</div>` : "" }
+function prOtPendHTML(r){ const p=(r.pend||[]).filter(x=>x.grave && !(x.k==="lazer" && r.dir && r.dir.falhas.some(f=>f.k==="lazer")));   /* o lazer obrigatório que não coube já aparece na linha das diretrizes */ return p.length? `<div class="note" style="color:var(--warn-t)">${esc(p.slice(0,2).map(x=>x.msg).join(" · "))}</div>` : "" }
 function otimHTML(){
   const O=OTIM; if(!O.res.length) return prOtAviso(O) || `<p class="note">${O.forma? "Nenhuma combinação preenche a forma desenhada dentro das regras e das vagas. Ajuste a forma ou o mix." : "Nenhuma combinação atende às regras e às vagas exigidas."}</p>`;
   const cur=window._last.f, ob=OBJ[O.obj][2];
-  const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0? (r.semLucro? "Menos ruim" : "Melhor opção") : "Opção "+(k+1)} · ${MIX_PRESETS[r.pk].nome}</b><button type="button" class="btn sm" data-act="otApply" data-i="${k}">Aplicar</button></div>
-    <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas${r.forma?` · ${r.dev>0.005?"unidades "+pct(r.dev,0)+" maiores que o mix":"preenche a forma"}`:""}</div>${prOtGarHTML(r)}${prOtPendHTML(r)}
+  const nomeP=pk=>typeof presetNome==="function"? presetNome(pk, S) : (MIX_PRESETS[pk]||{}).nome||pk;
+  const card=(r,k)=>`<div class="res ${k===0?"top1":""}"><div class="rh"><b>${k===0? (r.semLucro? "Menos ruim" : "Melhor opção") : "Opção "+(k+1)} · ${esc(nomeP(r.pk))}</b><button type="button" class="btn sm" data-act="otApply" data-i="${k}">Aplicar</button></div>
+    <div class="note">${r.nT} torre${r.nT>1?"s":""} × ${r.pav} pav · ${r.N} un/andar · ${r.units} un · ${r.sub} subsolo${r.sub!==1?"s":""}${r.gac?` + ${r.gac} elevada${r.gac>1?"s":""}`:""} · ${r.vagas}/${r.req} vagas${r.forma?` · ${r.dev>0.005?"unidades "+pct(r.dev,0)+" maiores que o mix":"preenche a forma"}`:""}</div>${prOtGarHTML(r)}${prOtPendHTML(r)}${typeof dirOpcaoHTML==="function"? dirOpcaoHTML(r) : ""}
     <div class="rm"><span>Lucro<b${r.lucro<0?' class="pr-bad"':""}>${mi(r.lucro)}</b></span><span>Margem<b>${pct(r.margem)}</b></span><span>Retorno<b>${r.tir==null?"—":pct(r.tir)}</b></span><span>VGV<b>${mi(r.vgv)}</b></span></div></div>`;
   const L=O.res.slice(0,4);
   // margem na meta: a alternativa "lazer enxuto" (quando melhora) fica logo abaixo da melhor opção; abaixo da meta ela vai no aviso
   const enx = !(O.semLucro || O.fecha) && typeof cxLinhasOtim==="function"? cxLinhasOtim(O) : [];
   return prOtAviso(O) + card(L[0],0) + (enx.length? `<div class="cx">${enx.map(cxLinhaHTML).join("")}</div>` : "") + (L.length>1? `<details class="pr-more"><summary>Outras opções · ${L.length-1}</summary><div class="list">${L.slice(1).map((r,k)=>card(r,k+1)).join("")}</div></details>` : "")
-    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}${O.forma?" · forma desenhada fixa":""}${O.terrenoPct? ` · terreno a ${pct(O.terrenoPct,0)} do VGV`:""} · hoje: lucro ${mi(cur.lucro)}, margem ${pct(cur.margemVGV)}</p>`;
+    + `<p class="note">${nf(O.testadas)} combinações em ${nf(O.ms/1000,1)} s · por ${ob}${O.forma?" · forma desenhada fixa":""}${O.dir?` · diretrizes: ${esc(O.dir.padrao)}`:""}${O.terrenoPct? ` · terreno a ${pct(O.terrenoPct,0)} do VGV`:""} · hoje: lucro ${mi(cur.lucro)}, margem ${pct(cur.margemVGV)}</p>`;
 }
 
 /* ---------------- partes vivas ---------------- */
@@ -36139,7 +37103,7 @@ STEP_LIVE.produto = (m,f)=>{
   const rows=prConfLinhas(m), fora=rows.filter(r=>r[3]==="bad").length;
   setHTML("compl", rows.map(r=>useRow(r[0],r[1],r[2],r[3]==="ok"?"ok":r[3])).join(""));
   const ct=document.getElementById("complTxt"); if(ct) ct.innerHTML = fora? `<span class="pr-bad">${fora} fora das regras</span>` : `<span class="pr-ok">dentro das regras</span>`;
-  prTorresLive(m); prMixLive(m); prLazerLive(m); if(typeof blcLive==="function") blcLive(m);
+  prTorresLive(m); prMixLive(m); prLazerLive(m); if(typeof blcLive==="function") blcLive(m); if(typeof dirLive==="function") dirLive(m);
   if(OTIM && typeof paretoLive==="function") paretoLive();
   setSub("produto.subsolos",`${m2(m.subA)} · ${m.gar&&m.gar.s1? m.gar.s1.count+" vg no 1º" : Math.floor(m.subA/R.m2Vaga)+" vg (est.)"}`);
   setSub("produto.garAcima",`${m2(m.embA)} · ${m.gar&&m.gar.g1? m.gar.g1.count+" vg no 1º" : Math.floor(m.embA/R.m2Vaga)+" vg (est.)"}`);

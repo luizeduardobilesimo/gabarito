@@ -88,7 +88,7 @@ function paretoLive(){
   const nF=frL.length, nP=L.filter(o=>o.passa).length, pill=document.getElementById("pfPill"); // detalhe do ponto escolhido
   const s=PF_SEL!=null && L[PF_SEL]? L[PF_SEL] : null;
   if(pill) pill.textContent=`${nF} na fronteira · ${nP} de ${L.length} nos filtros${s?"":" · toque num ponto"}`;
-  const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc((MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button type="button" class="btn sm" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
+  const card=(o,top)=>{ const p=o.p; return `<div class="res ${top?"top1":""}"><div class="rh"><b>${o.front?"Fronteira":"Opção"} · ${esc(typeof presetNome==="function"? presetNome(p.pk, S) : (MIX_PRESETS[p.pk]||{}).nome||p.pk)}</b><button type="button" class="btn sm" data-act="pfApply" data-i="${o.i}">Aplicar</button></div>
     <div class="note">${pfDesc(p)}${o.passa?"":" · fora dos filtros"}</div>
     <div class="rm"><span>Lucro<b>${mi(p.lucro)}</b></span><span>Margem<b>${pct(p.margem)}</b></span><span>Sol médio<b>${nf(p.sol,1)} h</b></span><span>Vagas<b style="color:${p.vagas<p.req?"var(--bad)":"var(--ink)"}">${p.vagas}/${p.req}</b></span>
     ${p.tir!=null?`<span>Retorno<b>${pct(p.tir)}</b></span>`:""}${S.otim.efic&&p.efic!=null?`<span>Efic. global<b>${pct(p.efic,1)}</b></span>`:""}${S.otim.vc&&p.vc!=null?`<span>V/C<b>${nf(p.vc,2)}×</b></span>`:""}${p.forma?`<span>Unidades<b>${p.dev>0.005?"+"+pct(p.dev,0):"no mix"}</b></span>`:""}${p.vento!=null?`<span>Vento<b>${pct(p.vento,0)}</b></span>`:""}${p.malha?`<span>Malha<b>${esc(p.malha.nome)}</b></span>`:""}</div></div>` };

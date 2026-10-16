@@ -7,6 +7,7 @@ const MIX_PRESETS = {
 };
 function basePrice(st){ const mx=st.produto.mix, a=mx.reduce((s,u)=>s+u.area*u.qtd,0); return a? mx.reduce((s,u)=>s+u.area*u.qtd*u.preco,0)/a : 10000 }
 function presetMix(st, key, N){
+  if(/^dir/.test(String(key)) && typeof dirPresetMix==="function") return dirPresetMix(st, key, N);   // diretrizes do produto (src/calc/diretrizes.js)
   const pr=MIX_PRESETS[key]; if(!pr.tips){ const cur=st.produto.mix, tot=cur.reduce((s,u)=>s+u.qtd,0)||1; return distrib(cur.map(u=>({...u, w:u.qtd/tot})), N, u=>({nome:u.nome,area:u.area,preco:u.preco,sac:u.sac||0})) }
   const bp=basePrice(st); return distrib(pr.tips, N, t=>({nome:t.nome,area:t.area,preco:Math.round(bp*t.pf/50)*50,sac:t.sac}));
 }
@@ -211,7 +212,8 @@ function otimVagasEst(m, st, cal){ const P=st.produto, mv=st.regras.m2Vaga||28;
   return cal.vf + Math.floor(P.subsolos*Math.floor((m.subA||0)/mv)*cal.s + P.garAcima*Math.floor((m.embA||0)/mv)*cal.g + Math.floor((m.gTer||0)/mv)*cal.t) }
 /* nível da combinação para a ordem (antes do objetivo): 2 = lucro > 0 e margem s/ VGV ≥ meta (S.fin.margemAlvo) · 1 = lucro > 0 · 0 = prejuízo */
 const otimNivel = (n, meta) => n.lucro>0 ? (n.margem>=meta-1e-9 ? 2 : 1) : 0;
-const otimMelhor = (a, b) => (b.nivel||0)-(a.nivel||0) || b.sc-a.sc;   // comparador: nível, depois o objetivo
+const otimDirFora = r => r.dir && !r.dir.ok ? 1 : 0;   // diretrizes do produto: quem não as respeita (lazer obrigatório que não coube…) vem depois
+const otimMelhor = (a, b) => otimDirFora(a)-otimDirFora(b) || (b.nivel||0)-(a.nivel||0) || b.sc-a.sc;   // comparador: diretrizes, nível, depois o objetivo
 /** preço médio de venda (R$/m², média das tipologias ponderada pela área) que leva a margem s/ VGV ao alvo — todas as tipologias, coberturas
     e lojas sobem na mesma proporção (finance dp); com tPct o terreno acompanha o VGV. null se nem 5× o preço chega lá */
 function otimPrecoPara(st, m, alvo, tPct){
@@ -266,7 +268,9 @@ function otimMotor(base, o){
   const notaMassa=st=>{ const m0=massing(st); if(memoEf) blcPrivEstimada(st, m0, memoEf); return {m0, sc0:score(fin(st,m0),m0)} };
   // vizinho: conferido pela massa antes (regras; na forma desenhada também blocos ignorados e tamanho das unidades); devolve o
   // rascunho {st, sc0} (nota da massa) sem calcular a garagem — quem calcula é `confere`
-  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null; const {m0, sc0}=notaMassa(s2);
+  const rascunho=(st, mut)=>{ const s2=clone(st); if(mut(s2.produto)===false) return null;
+    if(typeof dirEstadoOk==="function" && !dirEstadoOk(s2)) return null;   // diretrizes do produto (subsolos, elevadas, andares, unidades)
+    const {m0, sc0}=notaMassa(s2);
     if(!cabe(m0) || m0.minApto<R0.aptoMin) return null;
     if(forma && (m0.T.some(t=>t.blcIgn && t.blcIgn.length) || otimDesvio(m0)>rTol)) return null;
     return {st:s2, sc0} };
@@ -337,6 +341,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
   opts = {obj:"lucro", ...(opts||{})};
   const prog = typeof onProg==="function"? onProg : ()=>{};
   const base=clone(ctx.st||S);
+  // diretrizes do produto (src/calc/diretrizes.js): fixos do produto + vagas por unidade e margem mínima na conta; null no modo livre
+  const DIR = typeof dirPrepara==="function"? dirPrepara(base) : null;
   const mNow = ctx.m || (typeof window!=="undefined" && window._last && window._last.m) || compute(base);
   // garagem do estudo inválida (rampa que não cabe ou passaria pelo núcleo): a busca parte de uma circulação que funciona
   const garV = opts.cal? null : otimGarValida(base, mNow);
@@ -353,8 +359,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
   const mc = opts.mc!==false;
   // forma desenhada (Fase C): o nº de torres e os blocos são do usuário e não variam; as unidades por andar preenchem o bloco
   const forma = otimFormaAtiva(base), rTol = Math.max(0.01, +(base.otim && base.otim.rTol) || 0.10), pavMinF = forma? otimPavMinForma(base) : 1;
-  const nTs = forma || !opts.torres? [base.produto.torres.length] : [1,2,3];
-  const presets = opts.tipologias? Object.keys(MIX_PRESETS) : ["atual"];
+  const nTs = DIR? dirTorres(DIR.D, forma || !opts.torres? [base.produto.torres.length] : [1,2,3], forma) : forma || !opts.torres? [base.produto.torres.length] : [1,2,3];
+  const presets = DIR? (DIR.pre? [] : dirPresets(base, opts, DIR.D)) : opts.tipologias? Object.keys(MIX_PRESETS) : ["atual"];
   const curN = base.produto.mix.reduce((s,u)=>s+u.qtd,0);
   // eficiência real da planta (torre desenhada / contorno ocupado): as estimativas usam a privativa das unidades desenhadas
   // (blcPrivEstimada: um pavimento tipo por mix e faixa de elevadores, guardado em memoEf); as quantidades candidatas partem
@@ -365,8 +371,9 @@ function otimizar(opts, onProg, onDone, ctx={}){
   // unidades por andar: 2…8 e, em lote pequeno (a maior planta possível não comporta 2,5× o andar de 2 unidades), também 1
   const nsLivre = pk=>{ const R=base.regras, mx=presetMix(base, pk, 2), need2=mx.reduce((s,u)=>s+u.area*u.qtd,0)/Math.max(0.3, base.produto.efic);
     return [...(G.area(base.lote.pts)*R.toTorre < 2.5*need2 ? [1] : []), 2,3,4,5,6,8] };
-  const NsDe = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? nsLivre(pk) : [curN];
-  const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
+  const NsDe0 = pk => forma? (opts.unidades? otimNsForma(base, pk, capsF, rTol, curN, effF) : [curN]) : opts.unidades? nsLivre(pk) : [curN];
+  const NsDe = pk => DIR? dirNs(DIR.D, NsDe0(pk)) : NsDe0(pk);
+  const gars=[]; for(let a=0;a<=4;a++) for(let b=0;b<=3;b++) if(!DIR || dirGarOk(DIR.D, a, b)) gars.push([a,b]); gars.sort((x,y)=>(x[0]*1.6+x[1])-(y[0]*1.6+y[1]));
   const jobs=[]; nTs.forEach(nT=>presets.forEach(pk=>NsDe(pk).forEach(N=>jobs.push({nT,pk,N}))));
   const res=[], pts=[], cont={cabe:0, vagas:0}; let i=0; const t0=performance.now(); const solMemo=new Map(), entPrs=mc? otimEntorno(base) : null;
   const score0=OBJ[opts.obj][1];
@@ -389,13 +396,15 @@ function otimizar(opts, onProg, onDone, ctx={}){
         st.produto.subsolos=sub; st.produto.garAcima=gac; st.produto.torres=Array.from({length:nT},()=>({pav:4}));
         // teto exato pelo gabarito: acima dele o massing() nem precisa rodar
         const hEmbG=st.produto.peTerreo+gac*st.produto.peGar, pmax=maxPavFast(st, Math.floor((hLimDe(st)+1e-6-hEmbG)/st.produto.pe));
-        const pMin=Math.max(2, pavMinF); if(pmax<pMin) continue;   // forma desenhada: o último bloco começa no andar pavMinF (abaixo disso ele some)
+        const pMin=Math.max(2, pavMinF); if(DIR && pmax>DIR.pmaxG) DIR.pmaxG=pmax; if(pmax<pMin) continue;   // forma desenhada: o último bloco começa no andar pavMinF (abaixo disso ele some)
         // automático: o teto é também o maior nº de pavimentos em que o mix cabe (os subsolos não mudam a torre: um por garagem elevada);
         // a lista inclui alturas menores (70% e 50%): menos andares = planta mais larga, menos vagas exigidas e menos subsolos
         let P=pmax; if(!forma){ let pf=pfit.get(gac); if(pf===undefined){ pf=fitAte(st, nT, Math.min(pMin, pmax), pmax); pfit.set(gac, pf) } P=Math.min(pmax, pf); if(P<pMin) continue }
         // forma desenhada: também o andar mínimo e o meio da faixa — a altura muda o bloco de referência (pilha) e o nº de elevadores
         // (eficiência real da planta), então os pavimentos mais altos podem não comportar o mix
-        for(const pav of [...new Set([P, P-1, P-3, Math.ceil(P*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+P)/2)] : [Math.ceil(P*0.5)])])].filter(p=>p>=pMin && p<=pmax)){
+        const pavs0=[...new Set([P, P-1, P-3, Math.ceil(P*0.7), ...(forma? [curPav, ...(pavMinF>1? [pMin] : []), Math.round((pMin+P)/2)] : [Math.ceil(P*0.5)])])].filter(p=>p>=pMin && p<=pmax);
+        const pavL = DIR? dirPavs(DIR.D, pavs0, pMin, Math.min(pmax, P)) : pavs0;
+        for(const pav of pavL){
           const kc=gac+"|"+pav, sMin=cumpre.get(kc);
           if(sMin!=null && sub>sMin){ tested++; continue }   // dominada por sMin subsolos: mesmo preço, mais custo (conta como testada, como antes)
           st.produto.torres=Array.from({length:nT},()=>({pav}));
@@ -406,6 +415,8 @@ function otimizar(opts, onProg, onDone, ctx={}){
             if(m.H>(m.hLim ?? st.regras.hMax)+1e-6 || m.CA>st.regras.caMax+1e-6 || m.T.some(t=>t.blcIgn && t.blcIgn.length)) continue;
             if(otimDesvio(m)>rTol && !(pk==="atual" && N===curN)) continue }
           const vg = otimVagasEst(m, st, cal), okVg = vg >= m.vagasReq;
+          if(DIR && !okVg){ dirQuase(DIR, {vg, req:m.vagasReq, units:m.units, sub, gac, subA:m.subA, embA:m.embA});
+            const pf=Math.max(pMin, dirPavVagas(m, vg, pav, +st.regras.vagasApto||1)); if(pf<pav && !pavL.includes(pf)) pavL.push(pf) }   // garagem limitada: a altura que as vagas permitem
           if(!okVg && !mc) continue;
           if(m.minApto<st.regras.aptoMin) continue;
           if(okVg) cont.vagas++;
@@ -423,7 +434,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
       }
       if(best) res.push(best);
     }
-    prog(0.6*i/jobs.length);
+    prog(0.6*i/Math.max(1, jobs.length));
     if(i<jobs.length) setTimeout(step,0);
     else { res.sort(otimMelhor); prog(0.6); validar(res.slice(0,14), out0=>{
       const canc=e=>/cancelado/.test(e && e.message || "");
@@ -439,7 +450,9 @@ function otimizar(opts, onProg, onDone, ctx={}){
         const semGar = !garV && mNow.vert && mNow.vert.ok===false;
         o.semOpcao = !cont.cabe ? {k:"lote", motivo:"o lote é pequeno demais para as regras: nenhuma torre comporta as unidades dentro dos recuos e da ocupação"}
           : semGar ? {k:"vagas", motivo:"nenhuma circulação de veículos (rampa reta, alternada, helicoidal, em L ou elevador de carros) cabe neste lote sem passar pelo núcleo — mude a posição do núcleo ou o acesso de veículos", porSubsolo:0}
-          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo${yg? ` e ${yg} por garagem elevada` : ""} neste lote${gx? ` (${gx})` : ""} e as regras pedem ${nf(va,1)} por unidade: mesmo com 5 subsolos e 3 garagens elevadas seriam cerca de ${maxV} vagas${va>0? `, para no máximo ${Math.floor(maxV/va)} unidades` : ""}`, porSubsolo:ys, porElevada:yg, maxVagas:maxV} }
+          : {k:"vagas", motivo:`a garagem rende cerca de ${ys} vaga${ys===1?"":"s"} por subsolo${yg? ` e ${yg} por garagem elevada` : ""} neste lote${gx? ` (${gx})` : ""} e as regras pedem ${nf(va,1)} por unidade: mesmo com 5 subsolos e 3 garagens elevadas seriam cerca de ${maxV} vagas${va>0? `, para no máximo ${Math.floor(maxV/va)} unidades` : ""}`, porSubsolo:ys, porElevada:yg, maxVagas:maxV};
+        if(DIR){ const so=dirSemOpcao(DIR, base, cont, cal, mNow); if(so) o.semOpcao=so } }
+      if(DIR) o.dir={resumo:DIR.resumo, padrao:DIR.D.P.curto||DIR.D.nome};
       if(garV) o.garTroca={de:garV.de, para:cicloGarDe(base), validas:garV.validas};
       // sem lucro (ou abaixo da meta): o motivo e o que fecharia a conta da melhor (a menos ruim). Os preços que fecham a conta são os
       // MENORES entre as opções conferidas (opcaoZero/opcaoMeta = índice em res quando não é a primeira): com o preço maior, outra
@@ -450,6 +463,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
           const pz=o.fecha.precoZero!=null && r.lucro>0? null : otimPrecoPara(c.st, c.m, 0, tPct), pm=otimPrecoPara(c.st, c.m, meta, tPct);
           if(pz!=null && (o.fecha.precoZero==null || pz<o.fecha.precoZero-1)){ o.fecha.precoZero=pz; o.fecha.opcaoZero=q }
           if(pm!=null && (o.fecha.precoMeta==null || pm<o.fecha.precoMeta-1)){ o.fecha.precoMeta=pm; o.fecha.opcaoMeta=q } });
+        if(DIR) dirFechaAjusta(DIR, o.fecha, cb.st.produto.mix, cb.st);
         if(!(b.lucro>0)){ o.semLucro=o.fecha; b.semLucro=true } }catch(e){ console.error("[otimizar] fecha", e); if(!(b.lucro>0)){ o.semLucro={k:"custo", motivo:"custos acima da receita", meta}; b.semLucro=true } } }
       if(!mc) return finish(o);
       multi(out, o) };
@@ -468,6 +482,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
     const v={...r, sc:c.sc, pav:st.produto.torres[0].pav, sub:st.produto.subsolos, gac:st.produto.garAcima, mix:clone(st.produto.mix), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma)};
     v.nivel=otimNivel(v, meta); v.key=otimKey(v); v.est=false; if(tPct) v.terreno=st.fin.terreno;
     if(gar0) v.garagem=cicloGarDe(st);
+    if(DIR) v.dir=dirConfere(st, m, DIR.D);
     return v };
   // confirma as melhores com o layout real da garagem (reparo em otimMotor)
   const conf=new Map();   // chave → {st, m, f, sc} das opções conferidas (para o ciclo e o "o que fecharia a conta" sem recalcular)
@@ -484,6 +499,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
         // (sem o ciclo, a garagem é a do estudo)
         if(!nivelOk(c) && c.m.vert && c.m.vert.ok===false && opts.ciclo!==false && typeof cicloTipos==="function" && nAlt<6){ nAlt++; const c2=garAlt(c); if(c2) c=c2 }
         const st=c.st, m=c.m;
+        if(DIR && !nivelOk(c) && c.m.vagas<c.m.vagasReq) dirQuase(DIR, {vg:m.vagas, req:m.vagasReq, units:m.units, sub:st.produto.subsolos, gac:st.produto.garAcima, subA:m.subA, embA:m.embA}, true);
         if(!nivelOk(c) || (forma && otimDesvio(m)>rTol)) continue;   // forma: unidades além da tolerância não entram nas melhores
         const v=opcao(r, c);
         if(out.some(x=>x.key===v.key)) continue;   // o reparo pode levar duas opções à mesma combinação
@@ -556,7 +572,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
     const stepM=()=>{ if(parou()) return cancela(); const ts=performance.now();
       while(j<cand.length && performance.now()-ts<60 && performance.now()-t1<tBud){ const p=cand[j++], st=stOf(p), m=compute(st,{quick:true});
         if(!m.T.every(x=>x.fit) || m.H>(m.hLim ?? R.hMax)+1e-6 || m.CA>R.caMax+1e-6) continue;
-        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false, ...(gar0? {garagem:gar0} : {})};
+        const f=fin(st,m), v={...p, sc:score(f,m), units:m.units, priv:m.priv, vagas:m.vagas, req:m.vagasReq, CA:m.CA, H:m.H, ...otimNum(f,m,forma), est:false, ...(gar0? {garagem:gar0} : {}), ...(DIR? {dir:dirConfere(st, m, DIR.D)} : {})};
         v.nivel=otimNivel(v, meta); if(tPct) v.terreno=st.fin.terreno; val.push(extras(st,m,v)) }
       prog(pC1+(1-pC1)*j/Math.max(1,cand.length));
       if(j<cand.length && performance.now()-t1<tBud) return setTimeout(stepM,0);
@@ -578,6 +594,7 @@ function otimizar(opts, onProg, onDone, ctx={}){
 function aplicarOtim(r, st=S){ const old=st.produto.torres||[];
   st.produto.torres=Array.from({length:r.nT},(_,i)=> r.forma? {...(old[i]||{}), pav:r.pav} : {pav:r.pav}); st.produto.mix=clone(r.mix); st.produto.subsolos=r.sub; st.produto.garAcima=r.gac;
   if(r.garagem && typeof cicloGarPoe==="function") cicloGarPoe(st, r.garagem);
-  if(Array.isArray(r.lazer)) st.produto.lazer.itens=clone(r.lazer) }
+  if(Array.isArray(r.lazer)) st.produto.lazer.itens=clone(r.lazer);
+  if(typeof dirAplicaFixos==="function") dirAplicaFixos(st) }   // diretrizes do produto: garagem no térreo, coberturas, lojas, lazer obrigatório…
 /* opções do otimizador com vários critérios (vão junto com S.otim para o Worker); filtros fVagas/fSol/solMin são só da tela */
 extendDEF("otim", { ...DEF.otim, rTol:0.10, mc:true, vento:false, malha:false, efic:false, vc:false, paretoMax:8, fVagas:false, fSol:false, solMin:3 });
