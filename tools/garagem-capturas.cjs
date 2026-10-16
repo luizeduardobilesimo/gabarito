@@ -7,6 +7,7 @@ const path = require('path'), fs = require('fs');
 const { prepara, abre, ROOT } = require('./pw-comum.cjs');
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d };
 const lote = (pts, front = [0]) => ({ pts, front, rec: pts.map(() => ({})) });
+const gira = (pts, g) => { const a = g * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return pts.map(([x, y]) => [+(x * c - y * s).toFixed(4), +(x * s + y * c).toFixed(4)]) };
 const CASOS = {
   exemplo: {},
   grande: { nome: 'Lote grande 60 × 50', lote: lote([[0, 0], [60, 0], [60, 50], [0, 50]]), produto: { torres: [{ pav: 15 }], subsolos: 2 } },
@@ -14,6 +15,11 @@ const CASOS = {
   trapezio: { nome: 'Lote em trapézio', lote: lote([[0, 0], [40, 0], [50, 45], [-5, 45]]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
   esquina: { nome: 'Lote de esquina 35 × 40', lote: lote([[0, 0], [35, 0], [35, 40], [0, 40]], [0, 3]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
   duas: { nome: 'Duas torres 70 × 45', lote: lote([[0, 0], [70, 0], [70, 45], [0, 45]]), produto: { torres: [{ pav: 12 }, { pav: 12 }], subsolos: 2 } },
+  // lados inclinados: as vagas acompanham a parede (zonas inclinadas) e o referencial segue o lote girado
+  girado30: { nome: 'Retângulo 40 × 50 girado 30°', lote: lote(gira([[0, 0], [40, 0], [40, 50], [0, 50]], 30)), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
+  paralelogramo: { nome: 'Paralelogramo', lote: lote([[0, 0], [40, 0], [55, 45], [15, 45]]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
+  losango: { nome: 'Losango', lote: lote([[0, 0], [40, -25], [80, 0], [40, 25]]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
+  canto: { nome: 'Canto cortado a 45°', lote: lote([[0, 0], [40, 0], [40, 35], [25, 50], [0, 50]]), produto: { torres: [{ pav: 12 }], subsolos: 2 } },
 };
 (async () => {
   const html = path.resolve(arg('--html', path.join(ROOT, 'test.html'))), out = path.resolve(arg('--out', path.join(ROOT, 'shots-garagem')));
